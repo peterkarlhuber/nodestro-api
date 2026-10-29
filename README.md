@@ -32,6 +32,12 @@ dazu `NODESTRO_HOST`, `NODESTRO_PORT`, `NODESTRO_DATA_DIR` und eine `.env` im ak
 `nodestro-studio`; wer sie mit dieser API ausliefern will, setzt `NODESTRO_STATIC_DIR` (und für den Nodestro
 Assistant `NODESTRO_DOCS_DIR`).
 
+Die Studio-API hat keine eigenen Schlüssel. Damit keine Webseite im Browser sie bedienen kann, beantwortet sie nur
+Anfragen an `localhost`, Loopback-Adressen und die mit `--host` gewählte Adresse (DNS-Rebinding) und nimmt Änderungen
+nur von ihren eigenen Seiten oder ohne `Origin` an (Cross-Site-Anfragen). Hinter einem Reverse Proxy nennt
+`NODESTRO_ALLOWED_HOSTS` weitere Hostnamen (kommagetrennt, `*` für alle); mit `--host 0.0.0.0` wird jeder Hostname
+beantwortet, die Origin-Prüfung bleibt.
+
 In Python:
 
 ```python

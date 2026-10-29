@@ -551,13 +551,34 @@ def delete_run(run_id: str, ctx: Ctx) -> Response:
     if ctx.runs.is_live(run_id) or ctx.runs.get(run_id) in ctx.runs.live_runs():
         raise NodestroError("run.delete_running", "A running run cannot be deleted")
     run = ctx.runs.get(run_id)
-    if not ctx.store.delete("runs", run_id):
+    if run is None or not ctx.store.delete("runs", run_id):
         raise KeyError(run_id)
-    ctx.files.delete_run(run_id)
-    if run is not None:
-        # Input files only this run used go with it (knowledge files are never touched).
-        ctx.inputs.release(run.file_ids)
+    # The runs of its sub-workflows hold copies of its inputs and results: they go with it.
+    tree = [run, *_child_runs(ctx, run)]
+    for item in tree:
+        ctx.store.delete("runs", item.id)
+        ctx.files.delete_run(item.id)
+    # Input files only these runs used go with them (knowledge files are never touched).
+    ctx.inputs.release([file_id for item in tree for file_id in item.file_ids])
     return Response(status_code=204)
+
+
+def _child_runs(ctx: Nodestro, run: Run) -> list[Run]:
+    """The runs of a run's sub-workflows, at any depth (not the earlier runs a continued run reuses)."""
+    found: list[Run] = []
+    queue = [run]
+    seen = {run.id}
+    while queue:
+        parent = queue.pop()
+        for state in parent.nodes.values():
+            if not state.child_run_id or state.child_run_id in seen:
+                continue
+            child = ctx.store.get("runs", state.child_run_id, Run)
+            if child is not None and child.parent_run_id == parent.id:
+                seen.add(child.id)
+                found.append(child)
+                queue.append(child)
+    return found
 
 
 def _sse(kind: str, data: Any) -> str:

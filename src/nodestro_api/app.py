@@ -25,6 +25,7 @@ from .api_inputs import router as inputs_router
 from .api_publish import router as publish_router
 from .api_python import router as python_router
 from .context import AppConfig, Nodestro
+from .local_access import LocalAccessMiddleware, allowed_hosts
 from .serving import build_router
 
 
@@ -77,6 +78,8 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # Outermost: web pages in the user's browser must not use the key-less studio API.
+    app.add_middleware(LocalAccessMiddleware, hosts=allowed_hosts(config.host, config.allowed_hosts))
     install_error_handlers(app)
     # Before the main router: /api/tools/drafts must not be taken for a tool named "drafts".
     # Published workflows (``/api/published``): key-protected, answered only on this computer here;

@@ -721,7 +721,10 @@ class Assistant:
 
     def unsubscribe(self, message_id: str, queue: asyncio.Queue[ReplyEvent | None]) -> None:
         with self._lock, suppress(ValueError, KeyError):
-            self._subscribers[message_id].remove(queue)
+            queues = self._subscribers[message_id]
+            queues.remove(queue)
+            if not queues and message_id not in self._live:
+                del self._subscribers[message_id]
 
     def _emit(self, message: ChatMessage, kind: str, *, text: str = "", **data: Any) -> None:
         with self._lock:
@@ -782,6 +785,9 @@ class Assistant:
         with self._lock:
             self._live.pop(message.id, None)
             self._cancel.pop(message.id, None)
+            # A finished answer is read from the store; its live events are not needed any more.
+            self._events.pop(message.id, None)
+            self._subscribers.pop(message.id, None)
         return True
 
     def _record_usage(self, message: ChatMessage, records: list[UsageRecord], *, estimated: bool) -> None:

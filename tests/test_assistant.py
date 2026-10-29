@@ -219,6 +219,9 @@ def test_the_event_stream_delivers_snapshot_deltas_and_end(make_app: Callable[..
     ).text
     assert "event: snapshot" in events and "event: end" in events
     assert '"content": "Fertig."' in events
+    # Nothing of a finished answer stays in memory, also not after its stream was read.
+    service = client.app.state.nodestro.assistant  # type: ignore[attr-defined]
+    assert service._events == {} and service._subscribers == {}
 
 
 def _api_error(kind: str) -> Callable[[dict[str, Any]], Any]:
@@ -292,7 +295,7 @@ def test_without_api_key_nothing_is_sent_or_stored(tmp_path: Path, monkeypatch: 
     from nodestro_api.app import create_app
     from nodestro_api.context import AppConfig
 
-    with TestClient(create_app(AppConfig(data_dir=tmp_path))) as client:
+    with TestClient(create_app(AppConfig(data_dir=tmp_path)), base_url="http://127.0.0.1") as client:
         conversation_id = chat(client)
         response = client.post(f"/api/assistant/conversations/{conversation_id}/messages", json={"content": "Hallo"})
         assert response.status_code == 400 and response.json()["code"] == "api_key_missing"

@@ -15,7 +15,7 @@ from nodestro_api.context import AppConfig
 
 def test_the_api_serves_no_interface(tmp_path: Path) -> None:
     app = create_app(AppConfig(data_dir=tmp_path / "data"), integrations=[], scheduler=False)
-    with TestClient(app) as client:
+    with TestClient(app, base_url="http://127.0.0.1") as client:
         assert client.get("/api/meta").status_code == 200
         assert client.get("/api/docs").status_code == 200
         assert client.get("/").status_code == 404
@@ -30,10 +30,13 @@ def test_the_assistant_reads_the_documentation_it_is_given(tmp_path: Path) -> No
         encoding="utf-8",
     )
     config = AppConfig(data_dir=tmp_path / "data", docs_dir=tmp_path / "docs")
-    with TestClient(create_app(config, integrations=[], scheduler=False)) as client:
+    with TestClient(create_app(config, integrations=[], scheduler=False), base_url="http://127.0.0.1") as client:
         hits = client.get("/api/assistant/docs/search", params={"q": "approvals", "language": "en"}).json()
         assert [hit["link"] for hit in hits] == ["/docs/start#approvals"]
-    with TestClient(create_app(AppConfig(data_dir=tmp_path / "other"), integrations=[], scheduler=False)) as client:
+    with TestClient(
+        create_app(AppConfig(data_dir=tmp_path / "other"), integrations=[], scheduler=False),
+        base_url="http://127.0.0.1",
+    ) as client:
         assert client.get("/api/assistant/docs/search", params={"q": "approvals", "language": "en"}).json() == []
 
 
