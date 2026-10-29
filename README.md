@@ -38,7 +38,7 @@ In Python:
 from nodestro_api.app import create_app
 from nodestro_api.context import AppConfig
 
-app = create_app(AppConfig.from_env())   # eine FastAPI-App, z. B. für uvicorn
+app = create_app(AppConfig.from_env())  # eine FastAPI-App, z. B. für uvicorn
 ```
 
 Integrationen (z. B. die OCR aus `nodestro-integrations`) werden über ihren Einstiegspunkt gefunden, sobald sie
