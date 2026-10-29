@@ -9,7 +9,7 @@ organisation and search, publishing with its keys and the network listener.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
 from pathlib import Path
 from typing import Any, Literal
@@ -41,16 +41,24 @@ class AppConfig:
     static_dir: Path | None = None
     #: The documentation chapters the assistant reads (the studio passes its own).
     docs_dir: Path | None = None
+    #: The interface the server listens on (``NODESTRO_HOST``); with ``0.0.0.0`` every host name is answered.
+    host: str = "127.0.0.1"
+    #: Host names answered besides this computer's (``NODESTRO_ALLOWED_HOSTS``; ``*``: all), see
+    #: :mod:`nodestro_api.local_access`.
+    allowed_hosts: list[str] = field(default_factory=list)
 
     @classmethod
     def from_env(cls) -> AppConfig:
         data = Path(os.environ.get("NODESTRO_DATA_DIR", Path.home() / ".nodestro")).expanduser()
         static = os.environ.get("NODESTRO_STATIC_DIR")
         docs = os.environ.get("NODESTRO_DOCS_DIR")
+        allowed = os.environ.get("NODESTRO_ALLOWED_HOSTS", "")
         return cls(
             data_dir=data,
             static_dir=Path(static) if static else None,
             docs_dir=Path(docs) if docs else None,
+            host=os.environ.get("NODESTRO_HOST", "127.0.0.1"),
+            allowed_hosts=[item.strip() for item in allowed.split(",") if item.strip()],
         )
 
 

@@ -352,7 +352,7 @@ def test_secrets_never_appear_in_runs_or_errors(published: Callable[..., Any]) -
 
 def test_studio_port_only_answers_this_computer(published: Callable[..., Any]) -> None:
     client, publication, token = published()
-    remote = TestClient(client.app, client=("192.168.1.20", 50000))
+    remote = TestClient(client.app, client=("192.168.1.20", 50000), base_url="http://127.0.0.1")
     answer = remote.get(f"{PUBLISHED}/{publication['slug']}", headers=auth(token))
     assert answer.status_code == 403
     assert answer.json()["error"]["code"] == "lan.not_enabled"
@@ -530,7 +530,7 @@ def test_pending_approval_survives_a_restart(make_app: Callable[..., TestClient]
     client.__exit__(None, None, None)
     fake = ScriptedClient({})
     app = create_app(AppConfig(data_dir=tmp_path / "data0"), client_factory=lambda _key: fake, scheduler=False)
-    with TestClient(app) as restarted:
+    with TestClient(app, base_url="http://127.0.0.1") as restarted:
         status = restarted.get(f"{PUBLISHED}/{slug}/runs/{run_id}", headers=auth(token)).json()
         assert status["status"] == "awaiting_approval"
         restarted.post(f"{PUBLISHED}/{slug}/runs/{run_id}/approve", json={"decision": "approved"}, headers=auth(token))

@@ -453,6 +453,14 @@ def test_sub_workflows_get_the_same_files_by_reference(make_app: Callable[..., T
     child = client.get(f"/api/runs/{empty['nodes']['sub']['child_run_id']}").json()
     assert child["values"]["dokumente"] is None and child["file_ids"] == []
 
+    # Deleting the run deletes its sub-workflow's run too: no hidden copy keeps the inputs or the file.
+    child_id = finished["nodes"]["sub"]["child_run_id"]
+    assert client.delete(f"/api/runs/{finished['id']}").status_code == 204
+    assert client.get(f"/api/runs/{child_id}").status_code == 404
+    assert client.get(f"/api/inputs/{item['id']}").status_code == 404
+    # Another run's sub-workflow run is untouched.
+    assert client.get(f"/api/runs/{empty['nodes']['sub']['child_run_id']}").status_code == 200
+
 
 # ---- knowledge adoption ---------------------------------------------------------------------
 

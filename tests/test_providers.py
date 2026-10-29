@@ -202,7 +202,7 @@ def providers_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[.
             client_factory=lambda provider: fakes.get(provider),
             scheduler=False,
         )
-        client = TestClient(app)
+        client = TestClient(app, base_url="http://127.0.0.1")
         client.__enter__()
         clients.append(client)
         return client

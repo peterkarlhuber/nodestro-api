@@ -387,10 +387,10 @@ def test_rejection_follows_its_branch_or_ends_the_run(make_app: Callable[..., Te
 def test_pending_approvals_survive_a_restart(tmp_path: Path) -> None:
     fake = ScriptedClient({"DRAFT": [text("Entwurf")], "SEND": [text("Gesendet")]})
     config = AppConfig(data_dir=tmp_path / "data")
-    with TestClient(create_app(config, client_factory=lambda _key: fake)) as client:
+    with TestClient(create_app(config, client_factory=lambda _key: fake), base_url="http://127.0.0.1") as client:
         client.fake = fake  # type: ignore[attr-defined]
         run_id = run(client, approval_workflow(client))["id"]
-    with TestClient(create_app(config, client_factory=lambda _key: fake)) as client:
+    with TestClient(create_app(config, client_factory=lambda _key: fake), base_url="http://127.0.0.1") as client:
         pending = client.get("/api/approvals").json()
         assert [item["run_id"] for item in pending] == [run_id]
         assert client.get(f"/api/runs/{run_id}").json()["status"] == "paused"
@@ -429,7 +429,9 @@ def test_interrupted_runs_are_marked_on_start(tmp_path: Path) -> None:
         ),
     )
     store.close()
-    with TestClient(create_app(config, client_factory=lambda _key: ScriptedClient({}))) as client:
+    with TestClient(
+        create_app(config, client_factory=lambda _key: ScriptedClient({})), base_url="http://127.0.0.1"
+    ) as client:
         stored = client.get("/api/runs/run_x").json()
         assert stored["status"] == "failed" and stored["error_code"] == "run.interrupted"
         assert stored["nodes"]["a"]["status"] == "failed"
