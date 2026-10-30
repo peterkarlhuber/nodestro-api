@@ -30,7 +30,7 @@ jobs:
           NODESTRO_READ: ${{ secrets.NODESTRO_READ }}
         run: |
           if [ -z "$NODESTRO_READ" ]; then
-            echo "::error::Secret NODESTRO_READ fehlt: ein Token mit Lesezugriff auf orkexa und die nodestro-Repositories."
+            echo "::error::The secret NODESTRO_READ is missing: a token that can read orkexa and the nodestro repositories."
             exit 1
           fi
           git config --global url."https://x-access-token:${NODESTRO_READ}@github.com/peterkarlhuber/".insteadOf "https://github.com/peterkarlhuber/"
@@ -59,7 +59,7 @@ jobs:
           NODESTRO_READ: ${{ secrets.NODESTRO_READ }}
         run: |
           if [ -z "$NODESTRO_READ" ]; then
-            echo "::error::Secret NODESTRO_READ fehlt: ein Token mit Lesezugriff auf orkexa und die nodestro-Repositories."
+            echo "::error::The secret NODESTRO_READ is missing: a token that can read orkexa and the nodestro repositories."
             exit 1
           fi
           git config --global url."https://x-access-token:${NODESTRO_READ}@github.com/peterkarlhuber/".insteadOf "https://github.com/peterkarlhuber/"
@@ -71,6 +71,20 @@ jobs:
           "$RUNNER_TEMP/wheel/bin/pip" install dist/*.whl
           cd "$RUNNER_TEMP"
           "$RUNNER_TEMP/wheel/bin/python" -c "import nodestro_api as p; print(p.__name__, p.__version__)"
+      - name: Start the installed API and call it over HTTP
+        run: |
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/wheel/bin/nodestro-api" --data-dir "$RUNNER_TEMP/data" --port 8765 > "$RUNNER_TEMP/server.log" 2>&1 &
+          server=$!
+          for _ in $(seq 60); do curl -fsS http://127.0.0.1:8765/api/health && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8765/api/health
+          curl -fsS http://127.0.0.1:8765/api/openapi.json > /dev/null
+          curl -fsS http://127.0.0.1:8765/api/meta > /dev/null
+          # A foreign host name is refused (DNS rebinding protection).
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: attacker.example' http://127.0.0.1:8765/api/health)" = 403
+          kill "$server"
+          wait "$server" || true
+          cat "$RUNNER_TEMP/server.log"
       - uses: actions/upload-artifact@v7
         with:
           name: dist

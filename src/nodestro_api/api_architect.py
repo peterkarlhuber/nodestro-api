@@ -44,10 +44,9 @@ async def architect_events(job_id: str, request: Request, ctx: Ctx) -> Streaming
             yield _sse("snapshot", job.model_dump(mode="json"))
             yield _sse("end", {"status": job.status})
             return
-        history, queue = ctx.architect.subscribe(job_id)
+        snapshot, last, queue = ctx.architect.follow(job_id)
         try:
-            yield _sse("snapshot", ctx.architect.get(job_id).model_dump(mode="json"))
-            last = history[-1].seq if history else 0
+            yield _sse("snapshot", snapshot.model_dump(mode="json"))
             while True:
                 if await request.is_disconnected():
                     return

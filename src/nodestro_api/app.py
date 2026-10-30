@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable, Iterable
 from contextlib import asynccontextmanager
+import logging
 from typing import Any
 
 from fastapi import FastAPI
@@ -27,6 +28,8 @@ from .api_python import router as python_router
 from .context import AppConfig, Nodestro
 from .local_access import LocalAccessMiddleware, allowed_hosts, listens_everywhere
 from .serving import build_router
+
+logger = logging.getLogger(__name__)
 
 
 def create_app(
@@ -49,18 +52,34 @@ def create_app(
         integrations=integrations,
     )
 
+    async def shutdown() -> None:
+        # Every service is stopped even when one of them fails, and the database is closed last.
+        for name, stop in (
+            ("network listener", nodestro.network.stop),
+            ("scheduler", nodestro.schedules.stop),
+            ("batches", nodestro.batches.shutdown),
+            ("runs", nodestro.runs.shutdown),
+        ):
+            try:
+                await stop()
+            except Exception:
+                logger.exception("Stopping the %s failed", name)
+        nodestro.close()
+
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        if scheduler:
-            nodestro.schedules.start()
-        # The network listener for published APIs runs only when the user switched it on.
-        await nodestro.network.start()
-        yield
-        await nodestro.network.stop()
-        await nodestro.schedules.stop()
-        await nodestro.batches.shutdown()
-        await nodestro.runs.shutdown()
-        nodestro.close()
+        try:
+            if scheduler:
+                nodestro.schedules.start()
+            # The network listener for published APIs runs only when the user switched it on.
+            await nodestro.network.start()
+        except BaseException:
+            await shutdown()
+            raise
+        try:
+            yield
+        finally:
+            await shutdown()
 
     # /docs belongs to the built-in user documentation; the API reference lives under /api.
     app = FastAPI(

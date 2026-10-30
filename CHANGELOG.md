@@ -1,33 +1,77 @@
 # Changelog
 
-## Unveröffentlicht
+## Unreleased
 
-- Sicherheit: Mit `--host 0.0.0.0` (oder `::`) beantwortete die Studio-API jeden Hostnamen; eine Webseite konnte sie
-  dann per DNS-Rebinding lesen und bedienen, die Origin-Prüfung half dagegen nicht (gleicher Origin). Jetzt werden
-  dort IP-Adressen, Loopback, der Name dieses Rechners (`name`, `name.local`) und `NODESTRO_ALLOWED_HOSTS`
-  beantwortet, fremde Hostnamen erhalten 403 `request.host_not_allowed`. `NODESTRO_ALLOWED_HOSTS=*` nimmt weiter
-  ausdrücklich jeden Hostnamen an.
-- Sicherheit: Die Studio-API (ohne eigene Schlüssel) beantwortet nur Anfragen an `localhost`, Loopback-Adressen und
-  die mit `--host` gewählte Adresse und nimmt Änderungen nur von ihren eigenen Seiten an. Eine Webseite im Browser
-  kann sie so weder über DNS-Rebinding lesen und bedienen noch per Cross-Site-Anfrage Workflows anlegen, Läufe
-  starten oder Dateien hochladen (Antwort 403 mit `request.host_not_allowed` bzw. `request.origin_not_allowed`).
-  `NODESTRO_ALLOWED_HOSTS` nennt weitere Hostnamen (Reverse Proxy).
-- Datenschutz: Das Löschen eines Laufs löscht auch die Läufe seiner Unter-Workflows (mit ihren Ergebnisdateien) und
-  gibt deren Eingabedateien frei. Bisher blieben diese Kopien unsichtbar in der Datenbank und hielten die
-  hochgeladenen Dateien fest.
-- Der Nodestro Assistant gibt die Live-Ereignisse einer beendeten Antwort frei (bisher blieben sie für jede Antwort
-  im Speicher).
-- Pins von `nodestro-runtime` und `nodestro-examples` auf den aktuellen Stand.
-- CI: aktuelle Actions (Node 24), Checkout ohne gespeicherte Zugangsdaten.
+Quality round of 2026-10-30: security, data integrity, streaming and reliability. No data migration, no change of
+routes, fields, error codes or the OpenAPI document; existing clients and SDKs keep working.
+
+- Security: uploaded knowledge files were served inline with the type the uploader chose, so an HTML file ran its
+  scripts in the studio's origin (stored cross-site scripting against the key-less studio API). HTML, SVG and XML
+  files are now downloaded, every uploaded file is served with `X-Content-Type-Options: nosniff`, and everything
+  except PDF carries a restrictive `Content-Security-Policy`. Result files carry `nosniff` as well.
+- Security: published APIs limited the request size (80 MB) only when the client sent a truthful
+  `Content-Length`; a chunked or mislabeled request was read without limit. The size is now counted while reading,
+  for JSON and `multipart/form-data` alike (`413 request.too_large`).
+- Security: a key verification that read a key just before it was revoked could store it back unrevoked (the
+  update of `last_used_at`). Key changes and the usage update now happen under one lock and re-read the key; two
+  rotations of the same key at the same time give one new key instead of two.
+- Limits: the daily cost limit, the limit of waiting runs, the usage report, the run list of an API, the run counts
+  of its versions, "switch off and cancel" and the check before deleting a publication looked only at the 5,000
+  most recently updated runs of the whole installation. With more runs (a large batch, for example) older API runs
+  were ignored: the daily budget could be exceeded, waiting approvals stayed uncancelled and a publication with
+  waiting runs could be deleted. Every run of the publication is now counted (filtered in SQLite with
+  nodestro-runtime's `Store.find`, when available). The retention cleanup of exported projects likewise missed the
+  oldest runs beyond 100,000.
+- Idempotency: a retried request that is answered from its `Idempotency-Key` no longer counts against
+  `runs_per_minute` (a retry could get `429` instead of its run). When storing the idempotency record fails after the
+  run started, the client still gets the started run instead of `500`, so it does not start it again.
+- Server-Sent Events: after a reconnect with `Last-Event-ID`, the published event stream sent the status with the
+  newest id before replaying the missed events with lower ids. A client that dropped during the replay then
+  reconnected with the newest id and lost the events in between. The status now carries an id only when nothing is
+  replayed, so ids increase strictly.
+- Assistant and Workflow Architect streams: a subscriber's snapshot could already contain a text delta, step,
+  source or handover whose event it then received again (duplicated text). Changes and their events are now recorded
+  in one step. Architect events beyond the 400 kept log entries got numbers that repeated; they are numbered by a
+  counter now.
+- Network listener: a configuration change stopped the running listener first; when the new one could not start
+  (port taken, unusable certificate) published APIs stayed unreachable in the network. The previous listener now
+  keeps running and the status reports why the change failed. Changes are serialized, and a listener that fails to
+  start releases its port.
+- Backups: a backup whose entries would not fit on the disk when unpacked (a "ZIP bomb") is refused before
+  unpacking (`backup.too_large`). A restore copies the tool and input files before it replaces the database, so a
+  full disk no longer leaves restored data next to the old files; only one restore runs at a time
+  (`backup.restore_running`).
+- Published APIs: a non-numeric `limit` or `days` query parameter answered `500`; it answers `422 request.invalid`.
+- Shutdown: when stopping one service failed, the remaining services and the database stayed open; every service is
+  now stopped and the database closed. A failed start stops what had already started.
+- English-only technical content: README (rewritten: security models, published APIs, export, backups,
+  limitations), CHANGELOG, PROVENANCE and CI messages. Localized content (the German export README, multilingual
+  word lists, user data in tests) is unchanged.
+- CI: the package job starts the installed wheel with `nodestro-api` and calls it over HTTP, including the Host check.
+- Security: with `--host 0.0.0.0` (or `::`) the studio API answered every host name; a web page could read and use
+  it through DNS rebinding, and the origin check did not help (same origin). It now answers IP addresses, loopback,
+  this computer's name (`name`, `name.local`) and `NODESTRO_ALLOWED_HOSTS` there; other host names get
+  `403 request.host_not_allowed`. `NODESTRO_ALLOWED_HOSTS=*` still accepts every host name explicitly.
+- Security: the studio API (without keys of its own) answers only requests for `localhost`, loopback addresses and
+  the address chosen with `--host`, and accepts changes only from its own pages. A web page in the browser can
+  therefore neither read and use it through DNS rebinding nor create workflows, start runs or upload files with a
+  cross-site request (`403` with `request.host_not_allowed` or `request.origin_not_allowed`).
+  `NODESTRO_ALLOWED_HOSTS` names further host names (reverse proxy).
+- Privacy: deleting a run also deletes the runs of its sub-workflows (with their result files) and releases their
+  input files. Before, these copies stayed invisible in the database and kept the uploaded files.
+- The Nodestro Assistant releases the live events of a finished answer (before, they stayed in memory for every
+  answer).
+- Pins of `nodestro-runtime` and `nodestro-examples` at the current state.
+- CI: current actions (Node 24), checkout without stored credentials.
 
 ## 0.2.0 (2026-10-29)
 
-- Erste Version als eigenes Repository: aus `nodestro` 0.1.0 (Commit 15e2076, heute `nodestro-legacy`)
-  herausgelöst, ohne neue Funktionen und ohne Verhaltensänderung. Herkunft jeder Datei: PROVENANCE.md.
-- Abhängigkeiten auf exakte Commits gepinnt (orkexa `cbf6df3d6f727b96924f1ae66e60b469eeef58e6`); die getestete
-  Kombination steht in `nodestro-studio/platform/versions.json`.
-- CI mit dem Repository-Secret `NODESTRO_READ`.
-- `Nodestro` erweitert jetzt den `Workspace` der Runtime. Die API liefert keine Oberfläche mehr aus (das macht
-  `nodestro-studio`); neu sind der Befehl `nodestro-api` und der OpenAPI-Vertrag `openapi/nodestro-api.json`.
-- Export: Die Laufzeit liegt im exportierten Projekt als `nodestro_runtime/` und `nodestro_api/`; `RUNTIME.json` nennt
-  die Versionen und Commits.
+- First version as a repository of its own: extracted from `nodestro` 0.1.0 (commit 15e2076, now
+  `nodestro-legacy`) without new features and without behavior changes. The origin of every file: PROVENANCE.md.
+- Dependencies pinned to exact commits (orkexa `cbf6df3d6f727b96924f1ae66e60b469eeef58e6`); the tested combination
+  is recorded in `nodestro-studio/platform/versions.json`.
+- CI with the repository secret `NODESTRO_READ`.
+- `Nodestro` now extends the runtime's `Workspace`. The API no longer serves an interface (that is
+  `nodestro-studio`'s job); new are the command `nodestro-api` and the OpenAPI contract `openapi/nodestro-api.json`.
+- Export: the runtime is part of the exported project as `nodestro_runtime/` and `nodestro_api/`; `RUNTIME.json` names
+  the versions and commits.

@@ -85,8 +85,9 @@ def api_overview(workflow_id: str, request: Request, ctx: Ctx) -> ApiOverview:
     if network.running and publication.network:
         overview.network_urls = [url + path for url in network.urls]
     overview.keys = sum(publication.id in key.publications and key.revoked_at is None for key in ctx.api_keys.all())
-    overview.runs = api_runs(ctx, publication.id, limit=20)
-    overview.pending_approvals = sum(run.status == "paused" for run in api_runs(ctx, publication.id, limit=500))
+    runs = api_runs(ctx, publication.id, limit=None)
+    overview.runs = runs[:20]
+    overview.pending_approvals = sum(run.status == "paused" for run in runs)
     if publication.active_release is not None:
         _, served = _served(ctx, publication, None)
         overview.missing_resources = served.missing_resources
@@ -192,7 +193,7 @@ def activate(publication_id: str, body: ActivateIn, ctx: Ctx) -> Publication:
 @router.delete("/publications/{publication_id}", status_code=204)
 def delete_publication(publication_id: str, ctx: Ctx) -> Response:
     publication = ctx.publications.get(publication_id)
-    live = [run for run in api_runs(ctx, publication.id, limit=5000) if run.status in ("queued", "running", "paused")]
+    live = [run for run in api_runs(ctx, publication.id, limit=None) if run.status in ("queued", "running", "paused")]
     if live:
         raise NodestroError(
             "api.runs_active",

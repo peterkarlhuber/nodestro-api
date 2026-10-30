@@ -443,6 +443,8 @@ class WorkflowArchitect:
         self.jobs: dict[str, ArchitectJob] = {}
         self._cancel: dict[str, threading.Event] = {}
         self._subscribers: dict[str, list[asyncio.Queue[ArchitectEvent | None]]] = {}
+        #: The last event number of each live job (log events beyond the cap are numbered, not kept).
+        self._seq: dict[str, int] = {}
         self._loop: asyncio.AbstractEventLoop | None = None
         self._lock = threading.RLock()
 
@@ -541,6 +543,18 @@ class WorkflowArchitect:
             history = list(job.events) if job else []
         return history, queue
 
+    def follow(self, job_id: str) -> tuple[ArchitectJob, int, asyncio.Queue[ArchitectEvent | None]]:
+        """A copy of the job, the number of the last event it contains and a queue for the next events.
+
+        All three are taken in one step: an event in the queue is never already part of the copy.
+        """
+        queue: asyncio.Queue[ArchitectEvent | None] = asyncio.Queue()
+        with self._lock:
+            self._subscribers.setdefault(job_id, []).append(queue)
+            job = self.get(job_id).model_copy(deep=True)
+            last = self._seq.get(job_id, job.events[-1].seq if job.events else 0)
+        return job, last, queue
+
     def unsubscribe(self, job_id: str, queue: asyncio.Queue[ArchitectEvent | None]) -> None:
         with self._lock, suppress(ValueError, KeyError):
             self._subscribers[job_id].remove(queue)
@@ -550,9 +564,9 @@ class WorkflowArchitect:
         with self._lock:
             if job.status != "running" and kind != "finished":
                 return
-            event = ArchitectEvent(
-                seq=len(job.events) + 1, job_id=job.id, type=kind, cost_usd=job.usage.estimated_cost_usd, **fields
-            )
+            seq = self._seq.get(job.id, len(job.events)) + 1
+            self._seq[job.id] = seq
+            event = ArchitectEvent(seq=seq, job_id=job.id, type=kind, cost_usd=job.usage.estimated_cost_usd, **fields)
             if len(job.events) < _MAX_EVENTS or kind != "log":
                 job.events.append(event)
             queues = list(self._subscribers.get(job.id, []))
@@ -582,6 +596,8 @@ class WorkflowArchitect:
             params=error.params if error else {},
             message=error.message if error else "",
         )
+        with self._lock:
+            self._seq.pop(job.id, None)
         self._persist(job)
         return True
 

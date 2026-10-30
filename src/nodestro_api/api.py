@@ -492,7 +492,7 @@ async def create_result_file(run_id: str, body: FileRequest, ctx: Ctx) -> Result
 def download_result_file(run_id: str, file_id: str, ctx: Ctx, inline: bool = False) -> Response:
     entry, data = ctx.files.content(run_id, file_id)
     disposition = "inline" if inline and entry.format in ("html", "pdf", "md") else "attachment"
-    headers = {"Content-Disposition": f"{disposition}; filename*=UTF-8''{_quote(entry.name)}"}
+    headers = {"Content-Disposition": f"{disposition}; filename*=UTF-8''{_quote(entry.name)}", **_NOSNIFF}
     if entry.format == "html":
         # A generated page is shown without scripts or remote content.
         headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
@@ -1005,10 +1005,36 @@ async def recognise_knowledge(file_id: str, ctx: Ctx) -> KnowledgeFile:
 
 @router.get("/knowledge/{file_id}/content")
 def knowledge_content(file_id: str, ctx: Ctx) -> Response:
+    # Documents and images open in the browser; active content (HTML, SVG, XML) is downloaded.
     entry = ctx.knowledge.store.info(file_id)
     data = ctx.knowledge.store.get_bytes(file_id)
-    disposition = f"inline; filename*=UTF-8''{_quote(entry.name)}"
-    return Response(content=data, media_type=entry.media_type, headers={"Content-Disposition": disposition})
+    return Response(
+        content=data, media_type=entry.media_type, headers=uploaded_file_headers(entry.name, entry.media_type)
+    )
+
+
+#: The browser must not guess a type: an uploaded "text file" may hold HTML with scripts.
+_NOSNIFF = {"X-Content-Type-Options": "nosniff"}
+#: Types a browser would execute in the studio's own origin (stored cross-site scripting).
+_ACTIVE_TYPES = ("html", "xml", "svg", "javascript", "ecmascript", "xhtml")
+
+
+def uploaded_file_headers(name: str, media_type: str | None, *, inline: bool = True) -> dict[str, str]:
+    """Headers for a file that a user or API client uploaded: shown inline only when it cannot run scripts.
+
+    The studio API has no keys, so a script running in its origin could use all of it; HTML, SVG
+    and XML are therefore always downloaded, and every answer forbids scripts and plugins.
+    """
+    kind = (media_type or "").lower()
+    active = not kind or any(item in kind for item in _ACTIVE_TYPES)
+    disposition = "inline" if inline and not active else "attachment"
+    headers = {"Content-Disposition": f"{disposition}; filename*=UTF-8''{_quote(name)}", **_NOSNIFF}
+    if "pdf" not in kind:
+        # Browsers render PDF with a plugin that this policy would block; PDF viewers run no page scripts.
+        headers["Content-Security-Policy"] = (
+            "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox"
+        )
+    return headers
 
 
 def _quote(name: str) -> str:
