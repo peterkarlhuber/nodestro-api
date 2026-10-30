@@ -14,6 +14,7 @@ Platform integration (2026-10-30): pins of `nodestro-runtime` at `ad75859` and `
 - `nodestro-api` and `nodestro` stop with one sentence, before they announce a URL, when another Nodestro process already uses the data directory
   (the runtime now refuses a second workspace on it; two processes marked each other's runs as interrupted and ran
   every schedule twice).
+- The README of an exported API says "1 approval step" ("1 Freigabeschritt") instead of "1 approval steps".
 - The interactive reference under `/api/docs` loads Swagger UI from a CDN; offline, `/api/openapi.json` and
   `openapi/nodestro-api.json` remain available.
 

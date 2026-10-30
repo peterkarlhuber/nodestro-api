@@ -153,6 +153,7 @@ def test_export_contains_no_secrets_and_is_reproducible(exported: Callable[..., 
     assert manifest["orkexa"]["private_repository_access_needed"] is True
     assert manifest["providers"] == ["anthropic"]
     assert "orkexa" in readme and "API_KEYS" in readme and "ANTHROPIC_API_KEY" in readme
+    assert "This workflow has 1 approval step." in readme
     history = client.get(f"/api/publications/{publication['id']}/exports").json()
     assert [item["id"] for item in history] == [second["id"], first["id"]]
 

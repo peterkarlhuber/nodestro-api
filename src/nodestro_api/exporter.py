@@ -1110,6 +1110,12 @@ def _upload_section(curl: str | None, german: bool) -> str:
     return f"\n{intro}\n\n```bash\n{curl}\n```\n"
 
 
+def _approval_steps(count: int, german: bool) -> str:
+    if german:
+        return f"{count} Freigabeschritt" if count == 1 else f"{count} Freigabeschritte"
+    return f"{count} approval step" if count == 1 else f"{count} approval steps"
+
+
 def _readme(
     publication: Publication,
     release: Release,
@@ -1147,7 +1153,7 @@ def _readme(
         "{curl_approve}": sample.curl["approve"],
         "{upload}": _upload_section(sample.curl.get("upload"), german),
         "{key_variable}": KEY_VARIABLE,
-        "{approvals}": str(bundle.approvals()),
+        "{approvals}": _approval_steps(bundle.approvals(), german),
         "{limits}": "\n".join(
             f"| `LIMIT_{key.upper()}` | `{value}` |" for key, value in publication.limits.model_dump().items()
         ),
@@ -1337,7 +1343,7 @@ always the complete current status. `examples/client.py` does all of this in Pyt
 
 ## Approvals
 
-This workflow has {approvals} approval steps. A run that reaches one pauses with the status
+This workflow has {approvals}. A run that reaches one pauses with the status
 `awaiting_approval`; the status lists what to review. A key with the permission `approve` decides:
 
 ```bash
@@ -1483,7 +1489,7 @@ zeigt alles in Python.
 
 ## Freigaben
 
-Dieser Workflow hat {approvals} Freigabeschritte. Ein Lauf, der einen erreicht, pausiert mit dem Status
+Dieser Workflow hat {approvals}. Ein Lauf, der einen erreicht, pausiert mit dem Status
 `awaiting_approval`; der Status zeigt, was zu prüfen ist. Ein Schlüssel mit dem Recht `approve` entscheidet:
 
 ```bash
