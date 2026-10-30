@@ -41,7 +41,8 @@ class AppConfig:
     static_dir: Path | None = None
     #: The documentation chapters the assistant reads (the studio passes its own).
     docs_dir: Path | None = None
-    #: The interface the server listens on (``NODESTRO_HOST``); with ``0.0.0.0`` every host name is answered.
+    #: The interface the server listens on (``NODESTRO_HOST``); with ``0.0.0.0`` every IP address
+    #: and this computer's name are answered.
     host: str = "127.0.0.1"
     #: Host names answered besides this computer's (``NODESTRO_ALLOWED_HOSTS``; ``*``: all), see
     #: :mod:`nodestro_api.local_access`.

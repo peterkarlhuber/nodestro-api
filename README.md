@@ -35,8 +35,11 @@ Assistant `NODESTRO_DOCS_DIR`).
 Die Studio-API hat keine eigenen Schlüssel. Damit keine Webseite im Browser sie bedienen kann, beantwortet sie nur
 Anfragen an `localhost`, Loopback-Adressen und die mit `--host` gewählte Adresse (DNS-Rebinding) und nimmt Änderungen
 nur von ihren eigenen Seiten oder ohne `Origin` an (Cross-Site-Anfragen). Hinter einem Reverse Proxy nennt
-`NODESTRO_ALLOWED_HOSTS` weitere Hostnamen (kommagetrennt, `*` für alle); mit `--host 0.0.0.0` wird jeder Hostname
-beantwortet, die Origin-Prüfung bleibt.
+`NODESTRO_ALLOWED_HOSTS` weitere Hostnamen (kommagetrennt, `*` für alle). Mit `--host 0.0.0.0` beantwortet sie
+jede IP-Adresse und den Namen dieses Rechners (`name`, `name.local`), aber keine fremden Hostnamen: DNS-Rebinding
+funktioniert nur über Namen. Andere Namen im Netz (etwa `nodestro.home.arpa`) gehören in `NODESTRO_ALLOWED_HOSTS`.
+Die Origin-Prüfung ersetzt keine Anmeldung: Wer Nodestro im Netz freigibt, gibt die Studio-API jedem Gerät dieses
+Netzes frei.
 
 In Python:
 
