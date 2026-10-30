@@ -284,6 +284,44 @@ def test_failed_answers_keep_the_conversation_and_can_be_retried(
     assert detail["usage"]["requests"] == 2
 
 
+def test_a_finished_answer_is_seen_whole_and_not_busy(make_app: Callable[..., TestClient]) -> None:
+    """Whoever sees an answer as finished sees its usage and may send or retry at once.
+
+    A reader looks at the conversation exactly while the finished answer is stored; before the
+    fix it saw the answer finished while the conversation was still busy (a retry got
+    ``assistant.busy``), or the conversation's usage without the answer's request.
+    """
+    client = make_app({ASSISTANT: [text("Antwort")]})
+    service = client.app.state.nodestro.assistant  # type: ignore[attr-defined]
+    conversation_id = chat(client)
+    put = service.store.put
+    seen: list[tuple[str | None, bool, int]] = []
+    readers: list[threading.Thread] = []
+
+    def read() -> None:
+        detail = service.detail(conversation_id)
+        seen.append((detail.streaming, service._busy(conversation_id), detail.usage.requests))
+
+    def watched_put(collection: str, key: str, value: Any) -> None:
+        put(collection, key, value)
+        if getattr(value, "role", None) == "assistant" and getattr(value, "status", None) == "complete":
+            reader = threading.Thread(target=read)
+            readers.append(reader)
+            reader.start()
+            reader.join(timeout=0.5)  # returns at once unless the reader waits for the answer to finish
+
+    service.store.put = watched_put
+    try:
+        send(client, conversation_id, "Frage")
+    finally:
+        service.store.put = put
+    for reader in readers:
+        reader.join(timeout=5)
+    assert seen, "the finished answer was never stored"
+    for streaming, busy, requests in seen:
+        assert streaming is not None or (not busy and requests == 1), (streaming, busy, requests)
+
+
 def test_only_the_last_failed_answer_can_be_retried(make_app: Callable[..., TestClient]) -> None:
     client = make_app({ASSISTANT: [text("Antwort")]})
     conversation_id = chat(client)

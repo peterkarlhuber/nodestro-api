@@ -22,12 +22,15 @@ keeps it as a pending restore; nothing changes yet. :func:`restore_backup` repla
 data only after the user confirmed: first it saves the current state as a safety
 backup in ``<data dir>/backups`` and copies the backup's tool and input files next to the
 current ones, then it copies all tables in one transaction (all or nothing) and finally
-swaps the directories. One restore runs at a time; an archive that would not fit on the disk
-when unpacked is refused before it is unpacked.
+swaps the directories. One restore runs at a time, and checking another backup waits for it;
+an archive that would not fit on the disk when unpacked is refused before it is unpacked, and
+zipfile never unpacks an entry beyond its declared size.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 import hashlib
 import json
@@ -40,6 +43,7 @@ import threading
 from typing import TYPE_CHECKING, Any
 import uuid
 import zipfile
+import zlib
 
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.providers import has_credentials
@@ -325,8 +329,36 @@ def _check_database(path: Path) -> None:
         connection.close()
 
 
+@contextmanager
+def _reading(name: str) -> Iterator[None]:
+    """Turn a damaged entry into a clear refusal instead of an internal error.
+
+    zipfile stops at an entry's declared size and then checks its CRC, so an entry whose data
+    does not match its header (a lying size, a wrong CRC, a cut-off stream) ends here.
+    """
+    try:
+        yield
+    except (zipfile.BadZipFile, zlib.error, EOFError):
+        raise _fail("backup.checksum", f"{name} is damaged (checksum mismatch)", name=name) from None
+    except (RuntimeError, NotImplementedError):
+        # Encrypted entries and compression methods Nodestro never writes.
+        raise _fail("backup.unexpected_file", f"Unexpected file in the backup: {name}", name=name) from None
+
+
+def _read(archive: zipfile.ZipFile, name: str) -> bytes:
+    with _reading(name):
+        return archive.read(name)
+
+
 def inspect_backup(nodestro: Nodestro, upload: Path, file_name: str) -> BackupInfo:
     """Check an uploaded backup completely and keep it for :func:`restore_backup`."""
+    # Checking replaces the waiting backup; a restore running meanwhile reads from it, so the
+    # check waits until that restore has finished.
+    with _RESTORE_LOCK:
+        return _inspect(nodestro, upload, file_name)
+
+
+def _inspect(nodestro: Nodestro, upload: Path, file_name: str) -> BackupInfo:
     if not zipfile.is_zipfile(upload):
         raise _fail("backup.not_zip", "The file is not a Nodestro backup (no ZIP file)")
     root = _pending_root(nodestro)
@@ -335,7 +367,11 @@ def inspect_backup(nodestro: Nodestro, upload: Path, file_name: str) -> BackupIn
     target = root / backup_id
     target.mkdir(parents=True)
     try:
-        with zipfile.ZipFile(upload) as archive:
+        try:
+            archive = zipfile.ZipFile(upload)
+        except (zipfile.BadZipFile, OSError, EOFError):
+            raise _fail("backup.not_zip", "The file is not a Nodestro backup (no ZIP file)") from None
+        with archive:
             names = archive.namelist()
             if "manifest.json" not in names or "nodestro.db" not in names:
                 raise _fail("backup.incomplete", "The backup has no manifest or no database")
@@ -350,7 +386,7 @@ def inspect_backup(nodestro: Nodestro, upload: Path, file_name: str) -> BackupIn
                 ):
                     raise _fail("backup.unexpected_file", f"Unexpected file in the backup: {name}", name=name)
             try:
-                manifest = json.loads(archive.read("manifest.json"))
+                manifest = json.loads(_read(archive, "manifest.json"))
             except ValueError:
                 raise _fail("backup.manifest_invalid", "The manifest is not valid JSON") from None
             if not isinstance(manifest, dict) or manifest.get("format") != FORMAT:
@@ -379,11 +415,11 @@ def inspect_backup(nodestro: Nodestro, upload: Path, file_name: str) -> BackupIn
                     continue
                 destination = target / name
                 destination.parent.mkdir(parents=True, exist_ok=True)
-                with archive.open(name) as source, destination.open("wb") as sink:
+                with _reading(name), archive.open(name) as source, destination.open("wb") as sink:
                     shutil.copyfileobj(source, sink)
                 if _sha256(destination) != listed[name]:
                     raise _fail("backup.checksum", f"{name} is damaged (checksum mismatch)", name=name)
-            (target / "manifest.json").write_bytes(archive.read("manifest.json"))
+            (target / "manifest.json").write_bytes(_read(archive, "manifest.json"))
         _check_database(target / "nodestro.db")
         for tool in target.glob("tools/*/v*.json"):
             try:
@@ -426,6 +462,9 @@ def _copy_tables(connection: sqlite3.Connection, source: Path, keep_settings: di
             for row in connection.execute("SELECT name, sql FROM restore_source.sqlite_master WHERE type = 'table'")
             if not _DERIVED.match(row[0])
         }
+        # ATTACH creates an empty database for a missing file; copying from it would empty every table.
+        if "nodestro_documents" not in backup_tables:
+            raise _fail("backup.expired", "This backup is no longer waiting to be restored; please choose it again")
         main_tables = {row[0] for row in connection.execute("SELECT name FROM main.sqlite_master WHERE type = 'table'")}
         marks = ", ".join("?" for _ in _LOCAL_COLLECTIONS)
         kept = connection.execute(

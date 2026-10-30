@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+Release check (2026-10-30): no change of routes, fields or the OpenAPI document.
+
+- Assistant: an answer was stored as finished a moment before it was released, so a retry or a new message sent right
+  after it finished could be refused with `assistant.busy`, and a conversation could be read without the finished
+  answer's usage. Storing and releasing are now one step, and reading a conversation is consistent. This was the
+  cause of the intermittently failing assistant usage test.
+- Backups: an archive whose entry does not match its header (wrong CRC, a size that differs from the data, encryption,
+  an unknown compression method) answered `500`; it is now refused with `400 backup.checksum` or
+  `backup.unexpected_file`. Checking a backup while a restore runs waits for the restore instead of deleting the
+  backup the restore reads from, and a restore never copies from a database without Nodestro documents.
+
 Platform integration (2026-10-30): pins of `nodestro-runtime` at `ad75859` and `nodestro-examples` at `520fa72` (before:
 `b1bae2a` and `0e7e6fa`). No change of routes, fields or the OpenAPI document.
 

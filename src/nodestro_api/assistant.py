@@ -433,11 +433,16 @@ class Assistant:
         return self.detail(conversation.id)
 
     def messages(self, conversation_id: str) -> list[ChatMessage]:
+        # Under the lock, so an answer that finishes meanwhile is never read as stored "streaming"
+        # but no longer live, and then wrongly marked as interrupted.
+        with self._lock:
+            return self._messages(conversation_id)
+
+    def _messages(self, conversation_id: str) -> list[ChatMessage]:
         found = self.store.list_prefix(_MESSAGES, f"{conversation_id}:", ChatMessage)
         result = []
         for message in found:
-            with self._lock:
-                live = self._live.get(message.id)
+            live = self._live.get(message.id)
             if live is not None:
                 message = live.model_copy(deep=True)
             elif message.status == "streaming":
@@ -449,8 +454,10 @@ class Assistant:
         return result
 
     def detail(self, conversation_id: str) -> ConversationDetail:
-        conversation = self._conversation(conversation_id)
-        history = self.messages(conversation_id)
+        # One consistent view: a finished answer's usage is already on the conversation.
+        with self._lock:
+            conversation = self._conversation(conversation_id)
+            history = self.messages(conversation_id)
         streaming = next((item.id for item in history if item.status == "streaming"), None)
         return ConversationDetail(
             **conversation.model_dump(),
@@ -652,6 +659,17 @@ class Assistant:
     ) -> ChatMessage:
         """Answer a failed or cancelled message again, with the same question and context."""
         self.nodestro.connect_model(self.nodestro.settings().assistant_model)
+        # Checked and started under the lock, like a new message: two retries never both start.
+        with self._lock:
+            return self._retry(conversation_id, message_id, body, loop)
+
+    def _retry(
+        self,
+        conversation_id: str,
+        message_id: str,
+        body: RetryRequest,
+        loop: asyncio.AbstractEventLoop | None,
+    ) -> ChatMessage:
         history = self.messages(conversation_id)
         message = next((item for item in history if item.id == message_id), None)
         if message is None:
@@ -783,15 +801,17 @@ class Assistant:
             message.error = error
             message.finished_at = now()
             snapshot = message.model_copy(deep=True)
-        self.store.put(_MESSAGES, _key(message.conversation_id, message.seq), snapshot)
+            # Stored and no longer live in one step: whoever sees the finished answer can retry or
+            # send the next message at once (no "assistant.busy").
+            self.store.put(_MESSAGES, _key(message.conversation_id, message.seq), snapshot)
+            self._live.pop(message.id, None)
+            self._cancel.pop(message.id, None)
         self._emit(
             message,
             "finished",
             data={"status": status, "message": snapshot.model_dump(mode="json")},
         )
         with self._lock:
-            self._live.pop(message.id, None)
-            self._cancel.pop(message.id, None)
             # A finished answer is read from the store; its live events are not needed any more.
             self._events.pop(message.id, None)
             self._subscribers.pop(message.id, None)
