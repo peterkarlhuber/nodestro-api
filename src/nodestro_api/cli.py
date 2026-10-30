@@ -22,12 +22,16 @@ def parser(prog: str, description: str) -> argparse.ArgumentParser:
 
 
 def prepare(args: argparse.Namespace) -> str:
-    """Apply ``--data-dir`` and ``.env``; returns the URL the server will listen on."""
+    """Apply ``--data-dir`` and ``.env``; returns the URL the server will listen on.
+
+    Stops when another Nodestro process already uses the data directory.
+    """
     if args.data_dir:
         os.environ["NODESTRO_DATA_DIR"] = str(Path(args.data_dir).expanduser().resolve())
     # The application answers only the host names it is reachable under (nodestro_api.local_access).
     os.environ["NODESTRO_HOST"] = args.host
     load_dotenv(Path.cwd() / ".env")
+    _refuse_a_used_data_directory()
     return f"http://{'localhost' if args.host in ('127.0.0.1', '0.0.0.0') else args.host}:{args.port}"
 
 
@@ -36,6 +40,25 @@ def serve(factory: str, args: argparse.Namespace) -> None:
     import uvicorn
 
     uvicorn.run(factory, factory=True, host=args.host, port=args.port, reload=args.reload, log_level="info")
+
+
+def _refuse_a_used_data_directory() -> None:
+    """Stop with a clear sentence when another Nodestro process already uses the data directory.
+
+    The workspace refuses it anyway (see ``nodestro_runtime.workspace.DataDirectoryLock``); checking
+    here first replaces the server's traceback by one line.
+    """
+    from nodestro_runtime.problems import NodestroError
+    from nodestro_runtime.workspace import DataDirectoryLock
+
+    from .context import AppConfig
+
+    data_dir = AppConfig.from_env().data_dir
+    data_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        DataDirectoryLock(data_dir).release()
+    except NodestroError as error:
+        raise SystemExit(str(error)) from None
 
 
 def main(argv: list[str] | None = None) -> None:

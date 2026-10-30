@@ -959,21 +959,27 @@ async def upload_knowledge(
     description: Annotated[str, Form()] = "",
     collection: Annotated[str, Form()] = "",
 ) -> list[KnowledgeFile]:
-    added = []
-    for upload in files:
-        data = await upload.read()
-        name = upload.filename or "upload"
-        media_type = upload.content_type if upload.content_type not in (None, "application/octet-stream") else None
-        added.append(
-            await asyncio.to_thread(
-                ctx.knowledge.add,
-                data,
-                name=name,
-                description=description,
-                media_type=media_type,
-                collection=collection,
+    added: list[KnowledgeFile] = []
+    try:
+        for upload in files:
+            data = await upload.read()
+            name = upload.filename or "upload"
+            media_type = upload.content_type if upload.content_type not in (None, "application/octet-stream") else None
+            added.append(
+                await asyncio.to_thread(
+                    ctx.knowledge.add,
+                    data,
+                    name=name,
+                    description=description,
+                    media_type=media_type,
+                    collection=collection,
+                )
             )
-        )
+    except BaseException:
+        # One upload is one decision: when a file is refused, the files before it are not kept either.
+        for item in added:
+            ctx.knowledge.delete(item.id)
+        raise
     return added
 
 
