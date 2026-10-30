@@ -120,3 +120,24 @@ def test_a_second_server_on_the_same_data_directory_is_refused(tmp_path: Any) ->
         )
         assert refused.returncode == 1
         assert "used by another Nodestro process" in refused.stderr
+
+
+def test_the_public_event_of_a_decision_carries_no_comment() -> None:
+    from nodestro_runtime.schemas import RunEvent
+
+    from nodestro_api.serving import ServingCore
+
+    class Host:
+        runs = None
+
+    core = ServingCore(Host())  # type: ignore[arg-type]
+    event = RunEvent(
+        seq=3,
+        run_id="run_1",
+        type="approval_decided",
+        node_id="check",
+        data={"decision": "approved", "comment": SECRET},
+    )
+    public = core.public_event(event, text=False)
+    assert public is not None and public["decision"] == "approved"
+    assert SECRET not in str(public)

@@ -88,7 +88,8 @@ _PUBLIC_EVENTS: dict[str, tuple[str, ...]] = {
     "node_started": (),
     "node_finished": ("status", "error_code", "error_params", "usage"),
     "approval_requested": ("status",),
-    "approval_decided": ("decision", "comment"),
+    # The reviewer's comment is internal: it stays in the run's approval record (studio, audit trail).
+    "approval_decided": ("decision",),
     "evaluation_started": (),
     "evaluation": ("passed", "attempts"),
     "usage": ("usage",),

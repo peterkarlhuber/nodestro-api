@@ -22,12 +22,16 @@ def parser(prog: str, description: str) -> argparse.ArgumentParser:
 
 
 def prepare(args: argparse.Namespace) -> str:
-    """Apply ``--data-dir`` and ``.env``; returns the URL the server will listen on."""
+    """Apply ``--data-dir`` and ``.env``; returns the URL the server will listen on.
+
+    Stops when another Nodestro process already uses the data directory.
+    """
     if args.data_dir:
         os.environ["NODESTRO_DATA_DIR"] = str(Path(args.data_dir).expanduser().resolve())
     # The application answers only the host names it is reachable under (nodestro_api.local_access).
     os.environ["NODESTRO_HOST"] = args.host
     load_dotenv(Path.cwd() / ".env")
+    _refuse_a_used_data_directory()
     return f"http://{'localhost' if args.host in ('127.0.0.1', '0.0.0.0') else args.host}:{args.port}"
 
 
@@ -35,7 +39,6 @@ def serve(factory: str, args: argparse.Namespace) -> None:
     """Run ``factory`` (``module:function`` returning the FastAPI app) with uvicorn."""
     import uvicorn
 
-    _refuse_a_used_data_directory()
     uvicorn.run(factory, factory=True, host=args.host, port=args.port, reload=args.reload, log_level="info")
 
 
