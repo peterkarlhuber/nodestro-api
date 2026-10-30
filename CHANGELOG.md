@@ -2,11 +2,16 @@
 
 ## Unveröffentlicht
 
+- Sicherheit: Mit `--host 0.0.0.0` (oder `::`) beantwortete die Studio-API jeden Hostnamen; eine Webseite konnte sie
+  dann per DNS-Rebinding lesen und bedienen, die Origin-Prüfung half dagegen nicht (gleicher Origin). Jetzt werden
+  dort IP-Adressen, Loopback, der Name dieses Rechners (`name`, `name.local`) und `NODESTRO_ALLOWED_HOSTS`
+  beantwortet, fremde Hostnamen erhalten 403 `request.host_not_allowed`. `NODESTRO_ALLOWED_HOSTS=*` nimmt weiter
+  ausdrücklich jeden Hostnamen an.
 - Sicherheit: Die Studio-API (ohne eigene Schlüssel) beantwortet nur Anfragen an `localhost`, Loopback-Adressen und
   die mit `--host` gewählte Adresse und nimmt Änderungen nur von ihren eigenen Seiten an. Eine Webseite im Browser
   kann sie so weder über DNS-Rebinding lesen und bedienen noch per Cross-Site-Anfrage Workflows anlegen, Läufe
   starten oder Dateien hochladen (Antwort 403 mit `request.host_not_allowed` bzw. `request.origin_not_allowed`).
-  `NODESTRO_ALLOWED_HOSTS` nennt weitere Hostnamen (Reverse Proxy); `--host 0.0.0.0` beantwortet jeden Hostnamen.
+  `NODESTRO_ALLOWED_HOSTS` nennt weitere Hostnamen (Reverse Proxy).
 - Datenschutz: Das Löschen eines Laufs löscht auch die Läufe seiner Unter-Workflows (mit ihren Ergebnisdateien) und
   gibt deren Eingabedateien frei. Bisher blieben diese Kopien unsichtbar in der Datenbank und hielten die
   hochgeladenen Dateien fest.

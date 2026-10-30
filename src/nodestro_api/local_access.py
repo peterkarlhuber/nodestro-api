@@ -11,9 +11,10 @@ page the user visits can reach that address too, through the browser:
   studio's own origin or from this computer.
 
 ``NODESTRO_ALLOWED_HOSTS`` (comma-separated) adds host names, e.g. of a reverse proxy;
-``*`` accepts every host name. Listening on every interface (``--host 0.0.0.0``) accepts every
-host name as well, since the addresses of this computer are not known in advance; the origin
-check stays. Published workflow APIs are protected by their keys and are checked the same way.
+``*`` accepts every host name. Listening on every interface (``--host 0.0.0.0``) answers every
+IP address, since the addresses of this computer are not known in advance, and this computer's
+own name; other host names are refused there too, as DNS rebinding works with names only. The
+origin check stays. Published workflow APIs are protected by their keys and are checked the same way.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 import ipaddress
 import json
+import socket
 from urllib.parse import urlsplit
 
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -51,12 +53,37 @@ def split_host(value: str) -> str:
     return value
 
 
+def is_ip_address(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host.strip("[]"))
+    except ValueError:
+        return False
+    return True
+
+
+def listens_everywhere(bind_host: str | None) -> bool:
+    """``0.0.0.0``, ``::`` (or no address): the server is reachable under every address of this computer."""
+    return bind_host is not None and bind_host.strip() in _WILDCARD_HOSTS
+
+
+def computer_names() -> set[str]:
+    """This computer's own name, as other devices of the network reach it (``name``, ``name.local``)."""
+    name = socket.gethostname().strip().lower().rstrip(".")
+    if not name:
+        return set()
+    short = name.split(".", 1)[0]
+    return {name, short, f"{short}.local"}
+
+
 def allowed_hosts(bind_host: str | None, extra: Iterable[str] = ()) -> frozenset[str] | None:
-    """The host names to answer besides loopback; ``None``: every host name."""
-    names = {split_host(item) for item in extra if item.strip()}
-    if "*" in {item.strip() for item in extra} or (bind_host is not None and bind_host.strip() in _WILDCARD_HOSTS):
+    """The host names to answer besides loopback (and, when listening everywhere, IP addresses);
+    ``None``: every host name."""
+    if "*" in {item.strip() for item in extra}:
         return None
-    if bind_host and not is_loopback(bind_host):
+    names = {split_host(item) for item in extra if item.strip()}
+    if listens_everywhere(bind_host):
+        names |= computer_names()
+    elif bind_host and not is_loopback(bind_host):
         names.add(split_host(bind_host))
     return frozenset(names)
 
@@ -64,12 +91,17 @@ def allowed_hosts(bind_host: str | None, extra: Iterable[str] = ()) -> frozenset
 class LocalAccessMiddleware:
     """Refuse requests with a foreign ``Host`` (DNS rebinding) and changing requests with a foreign ``Origin``."""
 
-    def __init__(self, app: ASGIApp, *, hosts: frozenset[str] | None) -> None:
+    def __init__(self, app: ASGIApp, *, hosts: frozenset[str] | None, ip_addresses: bool = False) -> None:
+        """``ip_addresses``: answer every IP address (listening on every interface); a page cannot
+        rebind an address, only a name."""
         self.app = app
         self.hosts = hosts
+        self.ip_addresses = ip_addresses
 
     def _host_allowed(self, host: str) -> bool:
-        return self.hosts is None or is_loopback(host) or host in self.hosts
+        if self.hosts is None or is_loopback(host) or host in self.hosts:
+            return True
+        return self.ip_addresses and is_ip_address(host)
 
     def _origin_allowed(self, origin: str, host_header: str) -> bool:
         parts = urlsplit(origin)
@@ -91,7 +123,7 @@ class LocalAccessMiddleware:
                 send,
                 "request.host_not_allowed",
                 f"Requests for the host name {split_host(host_header)!r} are not answered "
-                "(add it to NODESTRO_ALLOWED_HOSTS when Nodestro runs behind a proxy)",
+                "(add it to NODESTRO_ALLOWED_HOSTS when Nodestro is reached under this name)",
                 host=split_host(host_header),
             )
             return
