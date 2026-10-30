@@ -20,8 +20,10 @@ Restoring takes two steps. :func:`inspect_backup` checks the file completely (ZI
 structure, paths, checksums, database integrity, every workflow, template and run) and
 keeps it as a pending restore; nothing changes yet. :func:`restore_backup` replaces the
 data only after the user confirmed: first it saves the current state as a safety
-backup in ``<data dir>/backups``, then it copies all tables in one transaction (all or
-nothing) and swaps the tool directory.
+backup in ``<data dir>/backups`` and copies the backup's tool and input files next to the
+current ones, then it copies all tables in one transaction (all or nothing) and finally
+swaps the directories. One restore runs at a time; an archive that would not fit on the disk
+when unpacked is refused before it is unpacked.
 """
 
 from __future__ import annotations
@@ -34,6 +36,7 @@ import re
 import shutil
 import sqlite3
 import tempfile
+import threading
 from typing import TYPE_CHECKING, Any
 import uuid
 import zipfile
@@ -63,6 +66,12 @@ _PROVIDER_SECRETS = "provider_keys"
 #: (they are credentials, even hashed) and the API's idempotency records. A restore keeps the
 #: current ones.
 _LOCAL_COLLECTIONS = ("api_keys", "api_idempotency")
+
+
+#: Space that has to stay free on the disk after unpacking a backup.
+_FREE_SPACE_RESERVE = 200 * 1024 * 1024
+#: One restore at a time: a second one would copy over a half-restored database.
+_RESTORE_LOCK = threading.Lock()
 
 
 class BackupError(NodestroError):
@@ -354,6 +363,17 @@ def inspect_backup(nodestro: Nodestro, upload: Path, file_name: str) -> BackupIn
             listed = manifest.get("files")
             if not isinstance(listed, dict) or set(listed) != set(names) - {"manifest.json"}:
                 raise _fail("backup.incomplete", "The files in the backup do not match its manifest")
+            # A small archive can unpack to far more than the disk holds (a "ZIP bomb"); zipfile
+            # never reads more than the declared size of an entry, so checking those sizes suffices.
+            unpacked = sum(info.file_size for info in archive.infolist())
+            free = shutil.disk_usage(target).free
+            if unpacked > free - _FREE_SPACE_RESERVE:
+                raise _fail(
+                    "backup.too_large",
+                    f"Unpacking the backup needs {unpacked // 2**20} MB, but only {free // 2**20} MB are free",
+                    needed_mb=unpacked // 2**20,
+                    free_mb=free // 2**20,
+                )
             for name in names:
                 if name == "manifest.json":
                     continue
@@ -453,6 +473,15 @@ def restore_backup(nodestro: Nodestro, backup_id: str) -> RestoreResult:
     """Replace all data with a checked backup; the current state is saved first."""
     if not re.fullmatch(r"[0-9a-f]{12}", backup_id):
         raise KeyError(backup_id)
+    if not _RESTORE_LOCK.acquire(blocking=False):
+        raise _fail("backup.restore_running", "A backup is being restored already; wait until it has finished")
+    try:
+        return _restore(nodestro, backup_id)
+    finally:
+        _RESTORE_LOCK.release()
+
+
+def _restore(nodestro: Nodestro, backup_id: str) -> RestoreResult:
     source = _pending_root(nodestro) / backup_id
     if not (source / "nodestro.db").is_file():
         raise _fail("backup.expired", "This backup is no longer waiting to be restored; please choose it again")
@@ -460,34 +489,33 @@ def restore_backup(nodestro: Nodestro, backup_id: str) -> RestoreResult:
         raise _fail("backup.runs_active", "Wait until all runs have finished, then restore the backup")
     safety = backup_dir(nodestro) / backup_file_name("before-restore")
     create_backup(nodestro, safety)
-    keep = nodestro.store.get_raw("settings", "app") or {}
-    with nodestro.store._lock:
-        _copy_tables(nodestro.store._connection, source / "nodestro.db", keep)
-    tools = nodestro.config.data_dir / "tools"
-    staged = nodestro.config.data_dir / f".tools-restore-{backup_id}"
-    shutil.rmtree(staged, ignore_errors=True)
-    if (source / "tools").is_dir():
-        shutil.copytree(source / "tools", staged)
-    else:
-        staged.mkdir()
-    old = nodestro.config.data_dir / f".tools-old-{backup_id}"
-    if tools.exists():
-        tools.replace(old)
-    staged.replace(tools)
-    shutil.rmtree(old, ignore_errors=True)
-    # The input files of runs: replaced the same way (a backup without them restores none).
-    inputs = nodestro.config.data_dir / "inputs"
-    staged_inputs = nodestro.config.data_dir / f".inputs-restore-{backup_id}"
-    shutil.rmtree(staged_inputs, ignore_errors=True)
-    if (source / "inputs").is_dir():
-        shutil.copytree(source / "inputs", staged_inputs)
-    else:
-        (staged_inputs / "blobs").mkdir(parents=True)
-    old_inputs = nodestro.config.data_dir / f".inputs-old-{backup_id}"
-    if inputs.exists():
-        inputs.replace(old_inputs)
-    staged_inputs.replace(inputs)
-    shutil.rmtree(old_inputs, ignore_errors=True)
+    data_dir = nodestro.config.data_dir
+    # Copy the tool and input files next to the current ones first: what can fail (a full disk)
+    # fails before anything is replaced. Afterwards only renames follow the database transaction.
+    staged = data_dir / f".tools-restore-{backup_id}"
+    staged_inputs = data_dir / f".inputs-restore-{backup_id}"
+    try:
+        shutil.rmtree(staged, ignore_errors=True)
+        if (source / "tools").is_dir():
+            shutil.copytree(source / "tools", staged)
+        else:
+            staged.mkdir()
+        # The input files of runs (a backup without them restores none).
+        shutil.rmtree(staged_inputs, ignore_errors=True)
+        if (source / "inputs").is_dir():
+            shutil.copytree(source / "inputs", staged_inputs)
+        else:
+            (staged_inputs / "blobs").mkdir(parents=True)
+        keep = nodestro.store.get_raw("settings", "app") or {}
+        with nodestro.store._lock:
+            _copy_tables(nodestro.store._connection, source / "nodestro.db", keep)
+    except BaseException:
+        shutil.rmtree(staged, ignore_errors=True)
+        shutil.rmtree(staged_inputs, ignore_errors=True)
+        raise
+    tools = data_dir / "tools"
+    _swap(staged, tools, data_dir / f".tools-old-{backup_id}")
+    _swap(staged_inputs, data_dir / "inputs", data_dir / f".inputs-old-{backup_id}")
     nodestro.reload_after_restore()
     connection = sqlite3.connect(nodestro.store.database, timeout=30)
     try:
@@ -497,6 +525,15 @@ def restore_backup(nodestro: Nodestro, backup_id: str) -> RestoreResult:
     contents.tools = len(list(tools.glob("*/v*.json")))
     shutil.rmtree(source, ignore_errors=True)
     return RestoreResult(contents=contents, safety_backup=safety.name)
+
+
+def _swap(staged: Path, current: Path, old: Path) -> None:
+    """Put the staged directory in place of the current one (two renames on the same disk)."""
+    shutil.rmtree(old, ignore_errors=True)
+    if current.exists():
+        current.replace(old)
+    staged.replace(current)
+    shutil.rmtree(old, ignore_errors=True)
 
 
 def local_backups(nodestro: Nodestro) -> list[LocalBackup]:

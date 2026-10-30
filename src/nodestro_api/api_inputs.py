@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from typing import Annotated, Any
-from urllib.parse import quote
 
 from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import Response
@@ -25,7 +24,7 @@ from nodestro_runtime.knowledge import CollectionInfo
 from nodestro_runtime.problems import Problem
 from pydantic import BaseModel, Field
 
-from .api import Ctx
+from .api import Ctx, uploaded_file_headers
 
 router = APIRouter(prefix="/api")
 _PREVIEW_CHARS = 20_000
@@ -142,9 +141,10 @@ def input_file(file_id: str, ctx: Ctx) -> InputFileOut:
 @router.get("/inputs/{file_id}/content")
 def input_content(file_id: str, ctx: Ctx) -> Response:
     item = ctx.inputs.get(file_id)
-    disposition = f"attachment; filename*=UTF-8''{quote(item.name)}"
     return Response(
-        content=ctx.inputs.data(file_id), media_type=item.media_type, headers={"Content-Disposition": disposition}
+        content=ctx.inputs.data(file_id),
+        media_type=item.media_type,
+        headers=uploaded_file_headers(item.name, item.media_type, inline=False),
     )
 
 

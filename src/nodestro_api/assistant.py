@@ -24,6 +24,7 @@ conversation as ``ref``, the message as ``request``), also when it fails or is c
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from contextlib import suppress
 from datetime import datetime
 import json
@@ -726,8 +727,14 @@ class Assistant:
             if not queues and message_id not in self._live:
                 del self._subscribers[message_id]
 
-    def _emit(self, message: ChatMessage, kind: str, *, text: str = "", **data: Any) -> None:
+    def _emit(
+        self, message: ChatMessage, kind: str, *, text: str = "", apply: Callable[[], None] | None = None, **data: Any
+    ) -> None:
+        """Record an event and publish it; ``apply`` changes the message in the same step, so a
+        subscriber's snapshot never contains a change whose event it receives again."""
         with self._lock:
+            if apply is not None:
+                apply()
             if message.id not in self._live and kind != "finished":
                 return
             events = self._events.setdefault(message.id, [])
@@ -849,9 +856,13 @@ class _Reply:
     # ---- steps -----------------------------------------------------------------------
 
     def step(self, kind: StepKind, detail: str = "") -> None:
-        with self.service._lock:
-            self.message.steps.append(Step(kind=kind, detail=detail[:200]))
-        self.service._emit(self.message, "step", data={"kind": kind, "detail": detail[:200]})
+        step = Step(kind=kind, detail=detail[:200])
+        self.service._emit(
+            self.message,
+            "step",
+            apply=lambda: self.message.steps.append(step),
+            data={"kind": kind, "detail": step.detail},
+        )
 
     def check(self) -> None:
         if self.cancelled.is_set():
@@ -862,9 +873,11 @@ class _Reply:
         if not self.text_in_round and self.message.content and not self.message.content.endswith("\n"):
             delta = "\n\n" + delta
         self.text_in_round = True
-        with self.service._lock:
+
+        def append() -> None:
             self.message.content += delta
-        self.service._emit(self.message, "delta", text=delta)
+
+        self.service._emit(self.message, "delta", text=delta, apply=append)
 
     def on_request(self, request: ModelRequest) -> None:
         self.check()
@@ -967,8 +980,9 @@ class _Reply:
             if any(item.ref == ref for item in self.message.sources):
                 return
             source = DocSource(ref=ref, title=title, chapter_title=chapter_title, link=link)
-            self.message.sources.append(source)
-        self.service._emit(self.message, "source", data=source.model_dump())
+            self.service._emit(
+                self.message, "source", apply=lambda: self.message.sources.append(source), data=source.model_dump()
+            )
 
     def handover(self, target: str, instruction: str, attachment_id: str) -> str:
         instruction = instruction.strip()
@@ -999,9 +1013,9 @@ class _Reply:
             attachment_id=ref.attachment_id if ref is not None else None,
             variant=ref.variant if ref is not None else None,
         )
-        with self.service._lock:
-            self.message.handovers.append(item)
-        self.service._emit(self.message, "handover", data=item.model_dump())
+        self.service._emit(
+            self.message, "handover", apply=lambda: self.message.handovers.append(item), data=item.model_dump()
+        )
         return (
             "The proposal is shown to the user as a card. Nothing has been changed: the user opens the "
             "function, reviews its result and decides. Tell the user what will happen next."

@@ -50,7 +50,16 @@ from nodestro_runtime.tool_library import ToolLibrary, make_sandbox
 from orkexa import __version__ as library_version
 from pydantic import BaseModel, Field
 
-from .serving import SLUG, ApiError, ApiLimits, KeyIdentity, ServedRelease, input_model, output_schema
+from .serving import (
+    SLUG,
+    ApiError,
+    ApiLimits,
+    KeyIdentity,
+    ServedRelease,
+    api_run_summaries,
+    input_model,
+    output_schema,
+)
 
 if TYPE_CHECKING:
     from nodestro_runtime.schemas import Run
@@ -216,8 +225,8 @@ class Publications:
 
     def summaries(self, publication: Publication) -> list[ReleaseSummary]:
         counts: dict[str, int] = {}
-        for summary in self.store.list("runs", RunSummary, limit=5000):
-            if summary.release_id and summary.trigger_ref == publication.id:
+        for summary in api_run_summaries(self.store, publication.id):
+            if summary.release_id:
                 counts[summary.release_id] = counts.get(summary.release_id, 0) + 1
         return [
             ReleaseSummary(
@@ -582,27 +591,29 @@ class Publications:
         return candidate
 
     def activate(self, publication_id: str, number: int) -> Publication:
-        publication = self.get(publication_id)
-        self.release(publication_id, number)
-        publication.active_release = number
-        publication.history.append(PublicationEvent(kind="activated", details={"release": number}))
-        self._put(publication)
+        with self._lock:
+            publication = self.get(publication_id)
+            self.release(publication_id, number)
+            publication.active_release = number
+            publication.history.append(PublicationEvent(kind="activated", details={"release": number}))
+            self._put(publication)
         return publication
 
     def set_enabled(
         self, publication_id: str, enabled: bool, *, cancel_running: bool = False
     ) -> tuple[Publication, int]:
-        publication = self.get(publication_id)
-        publication.enabled = enabled
-        publication.history.append(PublicationEvent(kind="enabled" if enabled else "disabled"))
-        self._put(publication)
+        with self._lock:
+            publication = self.get(publication_id)
+            publication.enabled = enabled
+            publication.history.append(PublicationEvent(kind="enabled" if enabled else "disabled"))
+            self._put(publication)
         cancelled = 0
         if not enabled and cancel_running:
             for run in self.ctx.runs.live_runs():
                 if run.trigger == "api" and run.trigger_ref == publication_id and run.parent_run_id is None:
                     cancelled += int(self.ctx.runs.cancel(run.id))
-            for summary in self.store.list("runs", RunSummary, limit=5000):
-                if summary.trigger == "api" and summary.trigger_ref == publication_id and summary.status == "paused":
+            for summary in api_run_summaries(self.store, publication_id):
+                if summary.status == "paused":
                     cancelled += int(self.ctx.runs.cancel(summary.id))
         return publication, cancelled
 
@@ -614,6 +625,18 @@ class Publications:
         description: str | None = None,
         limits: ApiLimits | None = None,
         network: bool | None = None,
+    ) -> Publication:
+        with self._lock:
+            return self._update(publication_id, slug=slug, description=description, limits=limits, network=network)
+
+    def _update(
+        self,
+        publication_id: str,
+        *,
+        slug: str | None,
+        description: str | None,
+        limits: ApiLimits | None,
+        network: bool | None,
     ) -> Publication:
         publication = self.get(publication_id)
         if slug is not None and slug != publication.slug:
@@ -639,11 +662,12 @@ class Publications:
         return publication
 
     def delete(self, publication_id: str) -> None:
-        publication = self.get(publication_id)
-        for release in self.releases(publication.id):
-            self.forget_environment(release.id)
-        self.store.delete_prefix(RELEASES, f"{publication.id}:")
-        self.store.delete(PUBLICATIONS, publication.id)
+        with self._lock:
+            publication = self.get(publication_id)
+            for release in self.releases(publication.id):
+                self.forget_environment(release.id)
+            self.store.delete_prefix(RELEASES, f"{publication.id}:")
+            self.store.delete(PUBLICATIONS, publication.id)
 
     def forget_workflow(self, workflow_id: str) -> list[str]:
         removed = []
@@ -808,10 +832,6 @@ class StudioHost:
         return set(self.ctx.tools.builtin)
 
 
-def api_runs(ctx: Nodestro, publication_id: str, limit: int = 50) -> list[RunSummary]:
-    summaries = [
-        summary
-        for summary in ctx.store.list("runs", RunSummary, limit=5000)
-        if summary.trigger == "api" and summary.trigger_ref == publication_id and summary.parent_run_id is None
-    ]
-    return sorted(summaries, key=lambda item: item.created_at, reverse=True)[:limit]
+def api_runs(ctx: Nodestro, publication_id: str, limit: int | None = 50) -> list[RunSummary]:
+    """The newest top-level runs of a publication (``limit=None``: all of them)."""
+    return api_run_summaries(ctx.store, publication_id)[:limit]

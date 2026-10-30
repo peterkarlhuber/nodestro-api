@@ -212,7 +212,7 @@ class Schedules:
     # ---- storage -------------------------------------------------------------
 
     def list(self) -> list[Schedule]:
-        return sorted(self.ctx.store.list(COLLECTION, Schedule, limit=1000), key=lambda item: item.created_at)
+        return sorted(self.ctx.store.list(COLLECTION, Schedule), key=lambda item: item.created_at)
 
     def get(self, schedule_id: str) -> Schedule:
         found = self.ctx.store.get(COLLECTION, schedule_id, Schedule)
@@ -414,10 +414,18 @@ class Schedules:
         schedule.next_run_at = slot
         if schedule.kind == "once" and slot is None:
             schedule.enabled, schedule.completed = False, True
-        run_id = None
-        if run_now:
-            run_id = await self._run(schedule, current)
+        # The slot is taken before the run starts: a crash during the start never runs it twice.
         self._save(schedule)
+        if not run_now:
+            return None
+        run_id = await self._run(schedule, current)
+        # Starting takes a moment: the user may have switched the schedule off, changed or deleted it
+        # meanwhile. Only the outcome of this run is recorded on the stored schedule.
+        latest = self.ctx.store.get(COLLECTION, schedule.id, Schedule)
+        if latest is not None:
+            for name in ("last_run_at", "last_run_id", "runs", "last_error_code", "last_error", "last_error_params"):
+                setattr(latest, name, getattr(schedule, name))
+            self._save(latest)
         return run_id
 
     async def _run(self, schedule: Schedule, current: datetime) -> str | None:

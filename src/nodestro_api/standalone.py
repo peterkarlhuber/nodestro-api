@@ -307,7 +307,8 @@ class StandaloneHost:
             return 0
         cutoff = now() - timedelta(days=days)
         removed = 0
-        for summary in self.store.list("runs", RunSummary, limit=100_000):
+        # Every run: the list is newest first, so a limit would leave out exactly the oldest ones.
+        for summary in self.store.list("runs", RunSummary):
             if summary.created_at < cutoff and summary.status not in ("queued", "running", "paused"):
                 run = self.store.get("runs", summary.id, Run)
                 self.store.delete("runs", summary.id)

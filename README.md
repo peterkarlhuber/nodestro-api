@@ -1,45 +1,47 @@
 # Nodestro API
 
-Die HTTP-API von [Nodestro](https://github.com/peterkarlhuber/nodestro-studio) als eigenes Paket: alles, was die
-Oberfläche über `/api` nutzt, die veröffentlichten Workflow-APIs mit Schlüsseln und der Export eines Workflows als
-eigenständiges FastAPI-Projekt. Die Workflows selbst führt
-[nodestro-runtime](https://github.com/peterkarlhuber/nodestro-runtime) aus.
+The HTTP backend of [Nodestro](https://github.com/peterkarlhuber/nodestro-studio) as a package of its own. It
+provides
 
-Teil der Nodestro-Plattform; den Überblick gibt
-[PLATTFORM.md](https://github.com/peterkarlhuber/nodestro-studio/blob/master/docs/PLATTFORM.md).
+- the **studio REST API** under `/api` that the Nodestro Studio interface uses (workflows, runs, approvals,
+  knowledge, tools, the Workflow Architect, the Nodestro Assistant, batches, test series, schedules, backups),
+- the **published workflow APIs** under `/api/published/{slug}`, protected by Nodestro's own API keys,
+- **Server-Sent Events** for runs, published runs, the Workflow Architect and the assistant,
+- the **standalone export** of a published workflow as an independent FastAPI project.
 
-## Inhalt
+Workflows are executed by [nodestro-runtime](https://github.com/peterkarlhuber/nodestro-runtime); this package never
+runs a workflow itself. Agents are built on [orkexa](https://github.com/peterkarlhuber/orkexa). The platform overview
+is [PLATFORM.md](https://github.com/peterkarlhuber/nodestro-studio/blob/master/docs/PLATFORM.md).
 
-| Bereich | Module |
+## Contents
+
+| Area | Modules |
 | --- | --- |
-| Anwendung | `app` (`create_app`), `context` (`AppConfig`, `Nodestro` als Erweiterung des Runtime-`Workspace`), `cli` (`nodestro-api`) |
-| Studio-REST-API `/api` | `api`, `api_data`, `api_inputs`, `api_examples`, `api_python`, `api_architect`, `api_assistant`, `api_automation`, `api_guide` |
-| Veröffentlichte APIs `/api/published/{slug}` | `publishing`, `serving`, `api_publish`, `api_keys`, `network` (eigener Port fürs lokale Netz) |
-| Export | `exporter` (ZIP mit Laufzeit, Lock-Dateien, Tests; Orkexa aus Git oder gebündelt), `standalone` |
-| Dienste | `assistants`, `architect`, `assistant`, `assistant_context`, `docs_index`, `batches`, `benchmarks`, `schedules`, `backup`, `organize`, `search`, `diagnostics` |
-| Vertrag | `openapi` und `openapi/nodestro-api.json` |
+| Application | `app` (`create_app`), `context` (`AppConfig`; `Nodestro` extends the runtime `Workspace`), `cli` (`nodestro-api`), `local_access` (Host/Origin guard) |
+| Studio REST API `/api` | `api`, `api_data`, `api_inputs`, `api_examples`, `api_python`, `api_architect`, `api_assistant`, `api_automation`, `api_guide`, `api_publish` |
+| Published APIs `/api/published/{slug}` | `serving` (shared with exports), `publishing`, `api_keys`, `network` (separate listener for the local network) |
+| Export | `exporter` (ZIP with runtime, lock file, tests; orkexa from Git or bundled), `standalone` |
+| Services | `assistants`, `architect`, `assistant`, `assistant_context`, `docs_index`, `batches`, `benchmarks`, `schedules`, `backup`, `organize`, `search`, `diagnostics` |
+| Contract | `openapi` and `openapi/nodestro-api.json` |
 
-## Installation und Start
+## Installation and start
+
+The Nodestro components are pinned by commit (see `pyproject.toml`; the tested combination of all components is
+`nodestro-studio/platform/versions.json`).
 
 ```bash
 pip install "nodestro-api @ git+https://github.com/peterkarlhuber/nodestro-api.git@<commit>"
-nodestro-api                       # http://localhost:8000/api, Referenz unter /api/docs
+nodestro-api                       # http://localhost:8000/api, reference under /api/docs
 ```
 
-`nodestro-api` hat die Optionen von `nodestro` außer `--no-browser`: `--host`, `--port`, `--data-dir`, `--reload`,
-dazu `NODESTRO_HOST`, `NODESTRO_PORT`, `NODESTRO_DATA_DIR` und eine `.env` im aktuellen Ordner. Standard ist
-`127.0.0.1:8000` mit dem Datenordner `~/.nodestro`, den sich API und Studio teilen. Die Oberfläche gehört zu
-`nodestro-studio`; wer sie mit dieser API ausliefern will, setzt `NODESTRO_STATIC_DIR` (und für den Nodestro
-Assistant `NODESTRO_DOCS_DIR`).
+Options: `--host`, `--port`, `--data-dir`, `--reload`, or the variables `NODESTRO_HOST`, `NODESTRO_PORT` and
+`NODESTRO_DATA_DIR`; a `.env` file in the current directory is read without overriding the environment. The default
+is `127.0.0.1:8000` with the data directory `~/.nodestro`, which the API shares with the studio.
 
-Die Studio-API hat keine eigenen Schlüssel. Damit keine Webseite im Browser sie bedienen kann, beantwortet sie nur
-Anfragen an `localhost`, Loopback-Adressen und die mit `--host` gewählte Adresse (DNS-Rebinding) und nimmt Änderungen
-nur von ihren eigenen Seiten oder ohne `Origin` an (Cross-Site-Anfragen). Hinter einem Reverse Proxy nennt
-`NODESTRO_ALLOWED_HOSTS` weitere Hostnamen (kommagetrennt, `*` für alle). Mit `--host 0.0.0.0` beantwortet sie
-jede IP-Adresse und den Namen dieses Rechners (`name`, `name.local`), aber keine fremden Hostnamen: DNS-Rebinding
-funktioniert nur über Namen. Andere Namen im Netz (etwa `nodestro.home.arpa`) gehören in `NODESTRO_ALLOWED_HOSTS`.
-Die Origin-Prüfung ersetzt keine Anmeldung: Wer Nodestro im Netz freigibt, gibt die Studio-API jedem Gerät dieses
-Netzes frei.
+The API needs neither the studio nor a built frontend. `NODESTRO_STATIC_DIR` names a built interface to serve next to
+it, and `NODESTRO_DOCS_DIR` the documentation chapters the Nodestro Assistant searches (without it, the documentation
+search returns no hits). Without provider credentials the API starts normally; runs, the architect and the assistant
+then answer with a clear error (`api_key_missing`; published runs `503 model.unavailable`).
 
 In Python:
 
@@ -47,34 +49,141 @@ In Python:
 from nodestro_api.app import create_app
 from nodestro_api.context import AppConfig
 
-app = create_app(AppConfig.from_env())  # eine FastAPI-App, z. B. für uvicorn
+app = create_app(AppConfig.from_env())  # a FastAPI application, e.g. for uvicorn
 ```
 
-Integrationen (z. B. die OCR aus `nodestro-integrations`) werden über ihren Einstiegspunkt gefunden, sobald sie
-installiert sind; `create_app(..., integrations=[...])` gibt sie ausdrücklich vor.
+Integrations (such as the OCR of `nodestro-integrations`) are found through their entry point once they are
+installed; `create_app(..., integrations=[...])` sets them explicitly.
 
-## Der Vertrag
+## Two security models
 
-`openapi/nodestro-api.json` ist das OpenAPI-Dokument genau dieser API. Ein Test schlägt fehl, solange die Datei nicht
-zum Code passt; nach einer Änderung an Routen oder Schemas schreibt `python -m nodestro_api.openapi
-openapi/nodestro-api.json` sie neu. Die SDKs in [nodestro-sdk](https://github.com/peterkarlhuber/nodestro-sdk) werden
-daraus generiert.
+**The studio API has no keys of its own.** It trusts whoever reaches it, so it is meant for this computer. To keep
+web pages in the user's browser from using it, it
 
-## Entwicklung
+- answers only requests for `localhost`, loopback addresses and the address chosen with `--host` (protection
+  against DNS rebinding; other host names get `403 request.host_not_allowed`),
+- accepts changing requests only from its own pages, from this computer's origins, or without `Origin`
+  (cross-site requests get `403 request.origin_not_allowed`),
+- allows CORS only for the studio's development server (`localhost:5173`).
+
+Behind a reverse proxy, `NODESTRO_ALLOWED_HOSTS` lists further host names (comma-separated, `*` for all). With
+`--host 0.0.0.0` (or `::`) the API answers every IP address and this computer's name (`name`, `name.local`), but no
+other host names, since DNS rebinding works with names only. The origin check does not replace authentication:
+whoever exposes the studio API in a network exposes it to every device of that network.
+
+Uploaded files are served with `X-Content-Type-Options: nosniff`; HTML, SVG and XML files are always downloaded, and
+everything except PDF carries a restrictive `Content-Security-Policy`, so an uploaded page cannot run scripts in the
+studio's origin.
+
+**Published workflow APIs use API keys** (`Authorization: Bearer ndk_<id>_<secret>` or `X-API-Key`). A key is shown
+once when it is created or rotated; only a SHA-256 hash is stored. Each key names the publications it may use and
+its permissions:
+
+| Scope | Allows |
+| --- | --- |
+| `run` | start, cancel and continue runs |
+| `read` | the API description, run status, results, events, files, usage |
+| `approve` | decide approvals |
+
+A key never reaches other publications (they answer `404` as if they did not exist), runs of other publications or
+the studio API. Revoking a key takes effect at once; rotating creates a new key with the same name, permissions and
+publications and revokes the old one in the same step. Failed authentications are limited per client address.
+
+## Published workflow APIs
+
+A **publication** is the API of one workflow; a **release** is an explicitly published, saved version, frozen with
+its sub-workflow versions, tool code and approved Python libraries. Saving the workflow again never changes a
+release; publishing again creates the next one, and any release can be made active again (rollback).
+`/versions/{n}/runs` calls a release directly. Knowledge files are read as they are at run time, and persistent
+memory is shared with the studio; the publish check says so.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/published/{slug}` | input and output schema, example request, limits, versions |
+| `POST /api/published/{slug}/runs` | start a run (JSON, or `multipart/form-data` with files); `202` with the status |
+| `GET .../runs`, `GET .../runs/{id}` | latest runs, status of one run |
+| `GET .../runs/{id}/result` | the result of a finished run (`409` while it runs) |
+| `GET .../runs/{id}/events` | progress as Server-Sent Events |
+| `GET/POST .../runs/{id}/approvals`, `/approve` | waiting approvals and decisions |
+| `POST .../runs/{id}/cancel`, `/resume` | cancel, or continue a failed or cancelled run |
+| `GET .../runs/{id}/files[/{file}]` | result files |
+| `GET .../usage`, `GET .../openapi.json` | runs, tokens and cost; the OpenAPI description of this API |
+
+- **Errors** have the form `{"error": {"status", "code", "message", "params"}}` with a stable `code`
+  (the studio API uses `{"detail", "code", "params"}`). Messages never contain keys or credentials.
+- **Limits** per publication: parallel runs, waiting runs, runs and requests per minute and key, a daily cost limit
+  over the runs of the last 24 hours, a cost limit per run, the upload size per file (default 10 MB) and 80 MB per
+  request. Exceeded limits answer `429` with `Retry-After`; a request that is too large answers `413`, also when it
+  is sent without `Content-Length`.
+- **Idempotency:** a request with `Idempotency-Key` that is repeated with the same body within 24 hours returns the
+  run it started (`200`, `Idempotent-Replayed: true`) instead of starting another one; the same key with a different
+  body answers `409 idempotency.conflict`. Keys are separate per publication and API key.
+- **Events:** the stream starts with a `status` event, then sends progress events until `end`. After a reconnect
+  with `Last-Event-ID`, the events since then are sent again, with increasing ids. `?text=true` adds the agents' text
+  as it is written.
+- **Synchronous calls** (`?wait=<seconds>`) are available only when enabled for the publication.
+- **Costs** are estimates from the providers' token counts; requests of models without a known price are reported
+  as unpriced instead of free.
+
+The published endpoints answer only this computer on the studio's port. **Network access** is a separate listener
+(`/api/api-network`, default port 8100) that serves the published endpoints of publications shared with the network,
+plus `/health`, and nothing else. Without a TLS certificate and key it speaks plain HTTP, so keys would travel
+unencrypted; the studio says so before enabling it. When a new listener configuration cannot start (port taken,
+certificate unusable), the previous listener keeps running and the status reports the error. After a backup is
+restored, network access is off.
+
+## Standalone export
+
+A release can be exported as a FastAPI project that runs without Nodestro: the release snapshot, the runtime and the
+API layer (copied unchanged, listed with versions and SHA-256 checksums in `RUNTIME.json`), exact dependency
+versions (`requirements.lock`), key tooling (`python -m app.keys`), examples, a Dockerfile and its own tests with a
+simulated model. orkexa is installed from its repository at the pinned commit, or bundled as source code
+(`vendor/orkexa`, only after confirming its redistribution). The project contains no provider or API keys; keys are
+configured as hashes in `API_KEYS`. The README of the project is written in English or German.
+
+## Backups
+
+`GET /api/backup` creates a ZIP file with a consistent SQLite snapshot, the tools and the input files of runs, and a
+manifest with SHA-256 checksums. Provider keys, base URLs with credentials in them, API keys and idempotency records
+are never part of a backup and stay on this computer when one is restored. A restore checks the file completely
+first (paths, checksums, database integrity, every stored document, and whether it fits on the disk), saves the
+current state as a safety backup, copies the tool and input files next to the current ones, replaces all tables in
+one transaction and only then swaps the directories. One restore runs at a time, and none while runs are executing.
+
+## The contract
+
+`openapi/nodestro-api.json` is the OpenAPI document of exactly this API. A test fails while the file does not match
+the code; after changing routes or schemas, `python -m nodestro_api.openapi openapi/nodestro-api.json` writes it
+again. The SDKs in [nodestro-sdk](https://github.com/peterkarlhuber/nodestro-sdk) are generated from it and tested
+against a running server.
+
+## Development
 
 ```bash
 pip install -e ".[dev]"
 ruff check . && ruff format --check . && mypy && pytest
 ```
 
-Die Tests laufen gegen die echte App mit simulierten Anbieter-Clients (`nodestro_runtime.testing`), nie gegen einen
-bezahlten Anbieter. Sie decken die REST-API, veröffentlichte APIs, Schlüssel, Freigaben, Fortsetzen, Stapel,
-Zeitpläne, Dateien, Python-Bibliotheken und den Export ab; der exportierte Workflow besteht im Test seine eigenen
-Tests. `NODESTRO_NETWORK_TESTS=1` schaltet den Test frei, der ein echtes Paket von PyPI installiert.
+The tests run against the real application with scripted provider clients (`nodestro_runtime.testing`) and never
+call a paid provider. They cover the REST API, published APIs, keys, approvals, continued runs, batches, schedules,
+files, Python libraries, backups, the network listener, the Host/Origin guard and the export; the exported project
+passes its own tests. `NODESTRO_NETWORK_TESTS=1` enables the test that installs a real package from PyPI. CI runs on
+Python 3.10 and 3.13, builds the wheel and the source distribution, installs the wheel into a fresh environment and
+calls the started server over HTTP. It needs the repository secret `NODESTRO_READ` (read access to orkexa and the
+Nodestro repositories).
 
-Die CI braucht das Repository-Secret `NODESTRO_READ` (Lesezugriff auf orkexa und die nodestro-Repositories).
+## Limitations
 
-## Herkunft und Lizenz
+- One process per data directory: limits, idempotency and key changes are synchronized within the process, not
+  between several server processes.
+- Without network access enabled, the published endpoints answer only this computer; with it, TLS is the
+  operator's responsibility (certificate, key, or a reverse proxy).
+- The studio API is not an authenticated API; do not expose it to untrusted networks.
+- Nodestro provides technical means for traceability (immutable releases, recorded approvals, usage records,
+  sanitized exports) and data minimization (secrets stay out of backups and exports). It does not by itself make an
+  installation compliant with the GDPR, the EU AI Act or ISO/IEC 42001; these obligations remain with the operator.
 
-Aus `nodestro` 0.1 (15e2076) herausgelöst, siehe [PROVENANCE.md](PROVENANCE.md) und [CHANGELOG.md](CHANGELOG.md).
-MIT, siehe [LICENSE](LICENSE).
+## Provenance and license
+
+Extracted from `nodestro` 0.1 (15e2076), see [PROVENANCE.md](PROVENANCE.md) and [CHANGELOG.md](CHANGELOG.md).
+MIT, see [LICENSE](LICENSE).

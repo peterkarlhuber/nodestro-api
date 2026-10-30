@@ -10,6 +10,7 @@ rejected at once.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import threading
 
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.schemas import now
@@ -61,8 +62,15 @@ def _out(key: ApiKey) -> ApiKeyOut:
 
 
 class ApiKeys:
+    """The keys of this installation; every change reads and writes a key under one lock.
+
+    Requests verify keys in worker threads while the studio revokes or rotates them: without the
+    lock, a verification that read a key before it was revoked could store it back unrevoked.
+    """
+
     def __init__(self, store: Store) -> None:
         self.store = store
+        self._lock = threading.RLock()
 
     def _get(self, key_id: str) -> ApiKey:
         found = self.store.get(_COLLECTION, key_id, ApiKey)
@@ -96,37 +104,47 @@ class ApiKeys:
             publications=list(dict.fromkeys(publications)),
             replaces=replaces,
         )
-        self.store.put(_COLLECTION, key.id, key)
+        with self._lock:
+            self.store.put(_COLLECTION, key.id, key)
         return NewApiKey(key=_out(key), token=token)
 
     def revoke(self, key_id: str) -> ApiKeyOut:
-        key = self._get(key_id)
-        if key.revoked_at is None:
-            key.revoked_at = now()
-            self.store.put(_COLLECTION, key.id, key)
+        with self._lock:
+            key = self._get(key_id)
+            if key.revoked_at is None:
+                key.revoked_at = now()
+                self.store.put(_COLLECTION, key.id, key)
         return _out(key)
 
     def rotate(self, key_id: str) -> NewApiKey:
-        """A new key with the same name and permissions; the old one is revoked at once."""
-        old = self._get(key_id)
-        if old.revoked_at is not None:
-            raise NodestroError("apikey.revoked", "This key was revoked; create a new one")
-        publications = [item for item in old.publications if self.store.get_raw("publications", item) is not None]
-        created = self.create(old.name, old.scopes, publications, replaces=old.id)
-        self.revoke(old.id)
+        """A new key with the same name and permissions; the old one is revoked at once.
+
+        Two rotations of the same key at the same time give one new key; the second answers
+        ``apikey.revoked``. Should the process stop between the two writes, the old key is
+        still valid (nothing is locked out) and the unseen new key can be revoked in the list.
+        """
+        with self._lock:
+            old = self._get(key_id)
+            if old.revoked_at is not None:
+                raise NodestroError("apikey.revoked", "This key was revoked; create a new one")
+            publications = [item for item in old.publications if self.store.get_raw("publications", item) is not None]
+            created = self.create(old.name, old.scopes, publications, replaces=old.id)
+            self.revoke(old.id)
         return created
 
     def delete(self, key_id: str) -> None:
-        key = self._get(key_id)
-        if key.revoked_at is None:
-            raise NodestroError("apikey.delete_active", "Revoke the key before deleting it")
-        self.store.delete(_COLLECTION, key_id)
+        with self._lock:
+            key = self._get(key_id)
+            if key.revoked_at is None:
+                raise NodestroError("apikey.delete_active", "Revoke the key before deleting it")
+            self.store.delete(_COLLECTION, key_id)
 
     def forget_publication(self, publication_id: str) -> None:
-        for key in self.store.list(_COLLECTION, ApiKey):
-            if publication_id in key.publications:
-                key.publications = [item for item in key.publications if item != publication_id]
-                self.store.put(_COLLECTION, key.id, key)
+        with self._lock:
+            for key in self.store.list(_COLLECTION, ApiKey):
+                if publication_id in key.publications:
+                    key.publications = [item for item in key.publications if item != publication_id]
+                    self.store.put(_COLLECTION, key.id, key)
 
     def verify(self, key_id: str, secret: str) -> KeyIdentity | None:
         key = self.store.get(_COLLECTION, key_id, ApiKey)
@@ -134,6 +152,11 @@ class ApiKeys:
             return None
         moment = now()
         if key.last_used_at is None or moment - key.last_used_at > timedelta(minutes=1):
-            key.last_used_at = moment
-            self.store.put(_COLLECTION, key.id, key)
+            with self._lock:
+                # Read again: the key may have been revoked or changed since it was read above.
+                key = self.store.get(_COLLECTION, key_id, ApiKey)
+                if key is None or key.revoked_at is not None:
+                    return None
+                key.last_used_at = moment
+                self.store.put(_COLLECTION, key.id, key)
         return KeyIdentity(id=key.id, name=key.name, scopes=key.scopes, publications=key.publications)

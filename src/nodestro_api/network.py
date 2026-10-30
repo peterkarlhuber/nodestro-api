@@ -136,7 +136,9 @@ class _Server:
                 break
             await asyncio.sleep(0.05)
         if self.task.done():
-            error = self.task.exception()
+            # E.g. a certificate or key uvicorn cannot load; the port must not stay taken.
+            sock.close()
+            error = self.task.exception() if not self.task.cancelled() else None
             raise NodestroError("lan.start_failed", f"The network listener did not start: {error}", error=str(error))
 
     async def stop(self) -> None:
@@ -152,6 +154,8 @@ class NetworkListener:
         self.core = core
         self._server: _Server | None = None
         self._error: tuple[str, str] | None = None
+        #: One change at a time: starting and stopping wait for the server, other changes wait for them.
+        self._changing = asyncio.Lock()
 
     def config(self) -> NetworkConfig:
         raw = self.store.get_raw(_COLLECTION, _KEY)
@@ -188,13 +192,27 @@ class NetworkListener:
             raise NodestroError("lan.tls_incomplete", "TLS needs both a certificate and its key")
         config.tls_certfile = str(Path(config.tls_certfile).expanduser()) if config.tls_certfile else ""
         config.tls_keyfile = str(Path(config.tls_keyfile).expanduser()) if config.tls_keyfile else ""
-        await self.stop()
-        self._save(config)
-        if config.enabled:
-            await self.start()
+        async with self._changing:
+            previous = self.config()
+            was_running = self._server is not None
+            await self._stop()
+            self._save(config)
+            if config.enabled:
+                await self._start()
+                if self._server is None and was_running:
+                    # The new settings do not work (port taken, certificate unusable): keep serving
+                    # with the ones that did, and report why the change failed.
+                    failure = self._error
+                    self._save(previous)
+                    await self._start()
+                    self._error = failure
         return self.status()
 
     async def start(self) -> None:
+        async with self._changing:
+            await self._start()
+
+    async def _start(self) -> None:
         config = self.config()
         if not config.enabled or self._server is not None:
             return
@@ -210,6 +228,10 @@ class NetworkListener:
         logger.info("Published APIs are reachable in the network on port %s", config.port)
 
     async def stop(self) -> None:
+        async with self._changing:
+            await self._stop()
+
+    async def _stop(self) -> None:
         server, self._server = self._server, None
         if server is not None:
             await server.stop()

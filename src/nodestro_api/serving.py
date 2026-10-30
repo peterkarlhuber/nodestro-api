@@ -264,6 +264,29 @@ class ServingHost(Protocol):
 # ---- request and response models -------------------------------------------------------
 
 
+async def read_body(request: Request, limit: int | None = None) -> bytes:
+    """The request body, refused with ``413`` above ``limit`` bytes (default 80 MB).
+
+    The size is counted while reading, so a missing or wrong ``Content-Length`` (a chunked
+    upload, for example) cannot get a larger body in. The body is kept on the request, so
+    :meth:`Request.form` parses it from there afterwards.
+    """
+    limit = _MAX_BODY_BYTES if limit is None else limit
+    length = request.headers.get("content-length", "")
+    if length.isdigit() and int(length) > limit:
+        raise ApiError(413, "request.too_large", "The request is too large", limit_mb=limit // (1024 * 1024))
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > limit:
+            raise ApiError(413, "request.too_large", "The request is too large", limit_mb=limit // (1024 * 1024))
+        chunks.append(chunk)
+    body = b"".join(chunks)
+    request._body = body
+    return body
+
+
 async def multipart_payload(request: Request, release: ServedRelease) -> dict[str, Any]:
     """A ``multipart/form-data`` request as the JSON body it stands for (files as Base64).
 
@@ -687,6 +710,27 @@ class _Window:
             return None
 
 
+def api_run_summaries(store: Store, publication_id: str) -> list[RunSummary]:
+    """Every top-level run of a publication, newest first, however many runs are stored.
+
+    Limits, the daily cost and waiting approvals are counted from these runs, so none may be
+    left out (a fixed number of the most recent runs of all workflows could hide older ones).
+    """
+    # nodestro-runtime with Store.find filters in SQLite; older versions read every run.
+    find = getattr(store, "find", None)
+    candidates: list[RunSummary] = (
+        find("runs", "trigger_ref", [publication_id], RunSummary)
+        if find is not None
+        else store.list("runs", RunSummary)
+    )
+    found = [
+        summary
+        for summary in candidates
+        if summary.trigger == "api" and summary.trigger_ref == publication_id and summary.parent_run_id is None
+    ]
+    return sorted(found, key=lambda summary: summary.created_at, reverse=True)
+
+
 # ---- the core ------------------------------------------------------------------------------
 
 
@@ -891,16 +935,12 @@ class ServingCore:
     # ---- runs -----------------------------------------------------------------------
 
     def _summaries(self, publication_id: str) -> list[RunSummary]:
-        return [
-            summary
-            for summary in self.host.store.list("runs", RunSummary, limit=5000)
-            if summary.trigger == "api" and summary.trigger_ref == publication_id and summary.parent_run_id is None
-        ]
+        return api_run_summaries(self.host.store, publication_id)
 
-    def spent_since(self, publication_id: str, since: datetime) -> float:
+    def spent_since(self, publication_id: str, since: datetime, summaries: list[RunSummary] | None = None) -> float:
         return sum(
             summary.usage.estimated_cost_usd or 0.0
-            for summary in self._summaries(publication_id)
+            for summary in (self._summaries(publication_id) if summaries is None else summaries)
             if summary.created_at >= since
         )
 
@@ -920,7 +960,8 @@ class ServingCore:
                 headers={"Retry-After": "10"},
                 limit=limits.max_concurrent_runs,
             )
-        waiting = sum(summary.status == "paused" for summary in self._summaries(release.publication_id))
+        summaries = self._summaries(release.publication_id)
+        waiting = sum(summary.status == "paused" for summary in summaries)
         if waiting >= limits.max_waiting_runs and limits.max_waiting_runs >= 0:
             raise ApiError(
                 429,
@@ -929,7 +970,7 @@ class ServingCore:
                 limit=limits.max_waiting_runs,
             )
         if limits.daily_budget_usd is not None:
-            spent = self.spent_since(release.publication_id, now() - timedelta(hours=24))
+            spent = self.spent_since(release.publication_id, now() - timedelta(hours=24), summaries)
             if spent >= limits.daily_budget_usd:
                 raise ApiError(
                     429,
@@ -1016,13 +1057,10 @@ class ServingCore:
         wait: float,
     ) -> Response:
         identity, release = self.access(request, slug, "run", number=number, channel=channel)
-        length = request.headers.get("content-length")
-        if length is not None and length.isdigit() and int(length) > _MAX_BODY_BYTES:
-            raise ApiError(413, "request.too_large", "The request is too large")
+        raw = await read_body(request)
         if request.headers.get("content-type", "").lower().startswith("multipart/form-data"):
             payload = await multipart_payload(request, release)
         else:
-            raw = await request.body()
             try:
                 payload = json.loads(raw or b"{}")
             except ValueError:
@@ -1036,15 +1074,6 @@ class ServingCore:
         """Start a run of ``release`` for ``identity`` (also used by the studio's test of an API)."""
         if not release.enabled:
             raise ApiError(503, "publication.disabled", "This API is switched off", headers={"Retry-After": "60"})
-        wait_time = self.host_runs_per_minute(identity, release)
-        if wait_time is not None:
-            raise ApiError(
-                429,
-                "limit.runs",
-                "Too many new runs; slow down",
-                headers={"Retry-After": str(int(wait_time))},
-                limit=release.limits.runs_per_minute,
-            )
         if wait > 0 and not release.limits.sync_enabled:
             raise ApiError(
                 400, "sync.disabled", "Waiting for the result is not enabled for this API; poll the status instead"
@@ -1076,6 +1105,16 @@ class ServingCore:
                             status_code=200,
                             headers={"Idempotent-Replayed": "true"},
                         )
+            # A replayed retry starts nothing, so only a run that really starts counts as a new run.
+            wait_time = self.host_runs_per_minute(identity, release)
+            if wait_time is not None:
+                raise ApiError(
+                    429,
+                    "limit.runs",
+                    "Too many new runs; slow down",
+                    headers={"Retry-After": str(int(wait_time))},
+                    limit=release.limits.runs_per_minute,
+                )
             self.check_limits(release)
             await self.host.prepare_start(release)
             run_request = self.run_request(release, body)
@@ -1090,9 +1129,13 @@ class ServingCore:
                 api_key_id=identity.id,
             )
             if record_key:
-                self.host.store.put_raw(
-                    _IDEMPOTENCY, record_key, {"run_id": run.id, "request": fingerprint, "at": now().isoformat()}
-                )
+                try:
+                    self.host.store.put_raw(
+                        _IDEMPOTENCY, record_key, {"run_id": run.id, "request": fingerprint, "at": now().isoformat()}
+                    )
+                except Exception:
+                    # The run has started: answering 500 now would make the client retry and start it twice.
+                    logger.exception("The Idempotency-Key of run %s could not be stored", run.id)
         status_code = 202
         if wait > 0:
             timeout = min(wait, release.limits.sync_timeout_seconds)
@@ -1209,7 +1252,8 @@ class ServingCore:
 
     def usage_summary(self, release: ServedRelease, days: int) -> UsageSummaryOut:
         since = now() - timedelta(days=days)
-        summaries = [item for item in self._summaries(release.publication_id) if item.created_at >= since]
+        every = self._summaries(release.publication_id)
+        summaries = [item for item in every if item.created_at >= since]
         result = UsageSummaryOut(days=days, runs=len(summaries), daily_budget_usd=release.limits.daily_budget_usd)
         total = Usage()
         durations = []
@@ -1223,7 +1267,7 @@ class ServingCore:
         result.usage = usage_out(total)
         if durations:
             result.average_duration_seconds = round(sum(durations) / len(durations), 3)
-        result.last_24h_usd = round(self.spent_since(release.publication_id, now() - timedelta(hours=24)), 6)
+        result.last_24h_usd = round(self.spent_since(release.publication_id, now() - timedelta(hours=24), every), 6)
         return result
 
     # ---- events -----------------------------------------------------------------------
@@ -1259,13 +1303,17 @@ class ServingCore:
             try:
                 current = runs.get(run.id) or run
                 newest = history[-1].seq if history else 0
-                yield sse("status", self.status(slug, current).model_dump(mode="json"), newest or None)
+                missed = [event for event in history if after and event.seq > after]
+                # The status carries the newest id only when nothing is replayed after it: ids
+                # stay increasing, and a client that drops during the replay resumes where it was.
+                yield sse(
+                    "status", self.status(slug, current).model_dump(mode="json"), None if missed else newest or None
+                )
                 # After a reconnect: what happened since the last event the client saw.
-                for event in history:
-                    if after and event.seq > after:
-                        public = self.public_event(event, text=text)
-                        if public is not None:
-                            yield sse(event.type, public, event.seq)
+                for event in missed:
+                    public = self.public_event(event, text=text)
+                    if public is not None:
+                        yield sse(event.type, public, event.seq)
                 while True:
                     if await request.is_disconnected():
                         return
@@ -1365,6 +1413,14 @@ def build_router(
                     "Published APIs answer only this computer; enable network access in Nodestro",
                 )
 
+    def int_param(request: Request, name: str, default: int, low: int, high: int) -> int:
+        raw = request.query_params.get(name, "") or str(default)
+        try:
+            value = int(raw)
+        except ValueError:
+            raise ApiError(422, "request.invalid", f"{name} must be a whole number", field=name) from None
+        return min(max(value, low), high)
+
     def wait_param(request: Request) -> float:
         raw = request.query_params.get("wait", "0")
         try:
@@ -1420,10 +1476,10 @@ def build_router(
     async def list_runs(request: Request, slug: str) -> list[RunStatusOut]:
         guard(request)
         _, served = core.access(request, slug, "read", channel=channel)
-        limit = min(max(int(request.query_params.get("limit", "20") or 20), 1), 100)
+        limit = int_param(request, "limit", 20, 1, 100)
         wanted = request.query_params.get("status")
         found = []
-        for summary in sorted(core._summaries(served.publication_id), key=lambda s: s.created_at, reverse=True):
+        for summary in core._summaries(served.publication_id):
             if wanted and API_STATUS[summary.status] != wanted:
                 continue
             run = core.host.runs.get(summary.id)
@@ -1572,7 +1628,7 @@ def build_router(
     async def usage(request: Request, slug: str) -> UsageSummaryOut:
         guard(request)
         _, served = core.access(request, slug, "read", channel=channel)
-        days = min(max(int(request.query_params.get("days", "30") or 30), 1), 365)
+        days = int_param(request, "days", 30, 1, 365)
         return core.usage_summary(served, days)
 
     router.add_api_route(
