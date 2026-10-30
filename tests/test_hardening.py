@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Iterator
+import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+import hashlib
 import io
 import json
 from pathlib import Path
 import socket
+import struct
 from typing import Any
 import zipfile
 
@@ -514,6 +517,114 @@ def test_a_zip_entry_outside_the_backup_is_refused(make_app: Callable[..., TestC
         archive.writestr("../evil.txt", b"x")
     answer = client.post("/api/backup/inspect", files={"file": ("b.zip", buffer.getvalue(), "application/zip")})
     assert answer.json()["code"] == "backup.unsafe_path"
+
+
+def _entry_offsets(data: bytes, name: bytes) -> tuple[int, int]:
+    """Offsets of ``name``'s local header and central directory record in a small test ZIP."""
+    local = next(i for i in _find_all(data, b"PK\x03\x04") if data[i + 30 : i + 30 + len(name)] == name)
+    central = next(i for i in _find_all(data, b"PK\x01\x02") if data[i + 46 : i + 46 + len(name)] == name)
+    return local, central
+
+
+def _find_all(data: bytes, marker: bytes) -> Iterator[int]:
+    index = data.find(marker)
+    while index != -1:
+        yield index
+        index = data.find(marker, index + 1)
+
+
+def _with_blob(client: TestClient, blob: bytes) -> bytes:
+    """A real backup plus one input file, with a correct manifest (small, built in memory)."""
+    with zipfile.ZipFile(io.BytesIO(client.get("/api/backup").content)) as archive:
+        files = {name: archive.read(name) for name in archive.namelist()}
+    manifest = json.loads(files["manifest.json"])
+    files["inputs/blobs/0123456789abcdef"] = blob
+    manifest["files"]["inputs/blobs/0123456789abcdef"] = hashlib.sha256(blob).hexdigest()
+    files["manifest.json"] = json.dumps(manifest).encode()
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name, content in files.items():
+            archive.writestr(name, content)
+    return buffer.getvalue()
+
+
+def test_damaged_zip_entries_are_refused_clearly(make_app: Callable[..., TestClient]) -> None:
+    """Headers that lie about an entry are a 400 with a code, never a 500, and leave nothing behind."""
+    client = make_app({})
+    name = b"inputs/blobs/0123456789abcdef"
+    # 64 KiB of zeros compress to a few hundred bytes: a tiny, harmless "bomb".
+    data = _with_blob(client, b"\0" * 65536)
+    local, central = _entry_offsets(data, name)
+
+    def patched(changes: list[tuple[int, bytes]]) -> bytes:
+        changed = bytearray(data)
+        for offset, value in changes:
+            changed[offset : offset + len(value)] = value
+        return bytes(changed)
+
+    small = struct.pack("<I", 10)
+    cases = {
+        # Declares 10 bytes but holds 64 KiB: zipfile stops at 10 bytes, then the CRC fails.
+        "lying size": (patched([(local + 22, small), (central + 24, small)]), "backup.checksum"),
+        "wrong CRC": (patched([(local + 14, b"\0\0\0\0"), (central + 16, b"\0\0\0\0")]), "backup.checksum"),
+        "encrypted": (patched([(local + 6, b"\x01"), (central + 8, b"\x01")]), "backup.unexpected_file"),
+        "unknown method": (
+            patched([(local + 8, struct.pack("<H", 99)), (central + 10, struct.pack("<H", 99))]),
+            "backup.unexpected_file",
+        ),
+    }
+    pending = client.app.state.nodestro.config.data_dir / "backups" / ".pending"  # type: ignore[attr-defined]
+    for label, (archive, code) in cases.items():
+        answer = client.post("/api/backup/inspect", files={"file": ("b.zip", archive, "application/zip")})
+        assert answer.status_code == 400, (label, answer.text)
+        assert answer.json()["code"] == code, label
+        assert not list(pending.glob("*/*")), label
+    # The same backup with honest headers is fine.
+    answer = client.post("/api/backup/inspect", files={"file": ("b.zip", data, "application/zip")})
+    assert answer.status_code == 200, answer.text
+
+
+def test_checking_a_backup_waits_for_a_running_restore(
+    make_app: Callable[..., TestClient], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A second check used to delete the backup a running restore was reading from."""
+    client = make_app({})
+    form_workflow(client)
+    data = client.get("/api/backup").content
+    info = _backup(client)
+    form_workflow(client)
+    nodestro = client.app.state.nodestro  # type: ignore[attr-defined]
+    create = backup.create_backup
+    checks: list[ThreadPoolExecutor] = []
+
+    def safety_backup_then_check(*args: Any) -> Any:
+        result = create(*args)
+        # Another tab checks a backup while this restore runs.
+        upload = nodestro.config.data_dir.parent / "second.zip"
+        upload.write_bytes(data)
+        pool = ThreadPoolExecutor(1)
+        checks.append(pool)
+        future = pool.submit(backup.inspect_backup, nodestro, upload, "second.zip")
+        with pytest.raises(concurrent.futures.TimeoutError):
+            future.result(timeout=0.3)  # it waits for the restore
+        return result
+
+    monkeypatch.setattr(backup, "create_backup", safety_backup_then_check)
+    answer = client.post("/api/backup/restore", json={"id": info["id"], "confirm": True})
+    assert answer.status_code == 200, answer.text
+    assert len(client.get("/api/workflows").json()) == 1
+    for pool in checks:
+        pool.shutdown(wait=True)
+
+
+def test_a_restore_never_copies_from_a_missing_database(make_app: Callable[..., TestClient], tmp_path: Path) -> None:
+    client = make_app({})
+    form_workflow(client)
+    nodestro = client.app.state.nodestro  # type: ignore[attr-defined]
+    with nodestro.store._lock, pytest.raises(backup.BackupError) as raised:
+        backup._copy_tables(nodestro.store._connection, tmp_path / "gone.db", {})
+    assert raised.value.code == "backup.expired"
+    assert len(client.get("/api/workflows").json()) == 1
 
 
 # ---- architect events ------------------------------------------------------------------------------
