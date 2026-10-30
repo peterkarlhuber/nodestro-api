@@ -175,7 +175,10 @@ Nodestro repositories).
 ## Limitations
 
 - One process per data directory: limits, idempotency and key changes are synchronized within the process, not
-  between several server processes.
+  between several server processes. The runtime enforces it with a lock file (`nodestro.lock`): a second `nodestro`
+  or `nodestro-api` on the same data directory stops at start. Do not run the app with several uvicorn workers.
+- The interactive reference `/api/docs` loads Swagger UI from a CDN and needs internet access; the OpenAPI document
+  itself (`/api/openapi.json`) is served locally.
 - Without network access enabled, the published endpoints answer only this computer; with it, TLS is the
   operator's responsibility (certificate, key, or a reverse proxy).
 - The studio API is not an authenticated API; do not expose it to untrusted networks.

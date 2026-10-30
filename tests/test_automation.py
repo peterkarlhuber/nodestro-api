@@ -397,6 +397,8 @@ def test_schedules_need_a_budget_and_survive_a_restart(make_app: Any, tmp_path: 
     from nodestro_api.context import AppConfig, Nodestro
 
     data_dir = client.app.state.nodestro.config.data_dir  # type: ignore[attr-defined]
+    # A restart: one process per data directory, so the first one stops before the next one opens it.
+    client.app.state.nodestro.close()  # type: ignore[attr-defined]
     reopened = Nodestro(AppConfig(data_dir=data_dir))
     try:
         stored = reopened.schedules.get(created["id"])

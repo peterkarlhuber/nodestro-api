@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+Platform integration (2026-10-30): pins of `nodestro-runtime` at `ad75859` and `nodestro-examples` at `520fa72` (before:
+`b1bae2a` and `0e7e6fa`). No change of routes, fields or the OpenAPI document.
+
+- With that runtime, a published run's result and its result files no longer contain an approval's comment, an
+  unreadable knowledge PDF answers `400 document.unreadable` or `document.encrypted` instead of `500`, and the event
+  ids of a paused run continue after a restart, so `Last-Event-ID` reconnects miss nothing.
+- Knowledge uploads are all or nothing: when one file of an upload is refused, the files before it are removed again.
+- `nodestro-api` and `nodestro` stop with one sentence when another Nodestro process already uses the data directory
+  (the runtime now refuses a second workspace on it; two processes marked each other's runs as interrupted and ran
+  every schedule twice).
+- The interactive reference under `/api/docs` loads Swagger UI from a CDN; offline, `/api/openapi.json` and
+  `openapi/nodestro-api.json` remain available.
+
 Quality round of 2026-10-30: security, data integrity, streaming and reliability. No data migration, no change of
 routes, fields, error codes or the OpenAPI document; existing clients and SDKs keep working.
 

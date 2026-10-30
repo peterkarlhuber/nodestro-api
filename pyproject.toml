@@ -12,8 +12,8 @@ license-files = ["LICENSE"]
 requires-python = ">=3.10"
 authors = [{ name = "Peter Karlhuber" }]
 dependencies = [
-    "nodestro-runtime @ git+https://github.com/peterkarlhuber/nodestro-runtime.git@b1bae2ae9aed86ffddcac64fb83abe48a7acc996",
-    "nodestro-examples @ git+https://github.com/peterkarlhuber/nodestro-examples.git@0e7e6fa7224526254c688a3fce1b18204de241c1",
+    "nodestro-runtime @ git+https://github.com/peterkarlhuber/nodestro-runtime.git@ad758590c0bad4e476207b21579dd0dc1a6b3d74",
+    "nodestro-examples @ git+https://github.com/peterkarlhuber/nodestro-examples.git@520fa721f890cfa07f7ceff0cbfa99ec1e7c5925",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "python-multipart>=0.0.9",
