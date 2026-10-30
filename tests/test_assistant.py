@@ -219,8 +219,12 @@ def test_the_event_stream_delivers_snapshot_deltas_and_end(make_app: Callable[..
     ).text
     assert "event: snapshot" in events and "event: end" in events
     assert '"content": "Fertig."' in events
-    # Nothing of a finished answer stays in memory, also not after its stream was read.
+    # Nothing of a finished answer stays in memory, also not after its stream was read. The answer's
+    # thread stores the message before it releases the live events, so give it that moment.
     service = client.app.state.nodestro.assistant  # type: ignore[attr-defined]
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and (service._events or service._subscribers):
+        time.sleep(0.01)
     assert service._events == {} and service._subscribers == {}
 
 
