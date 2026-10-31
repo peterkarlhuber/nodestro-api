@@ -18,7 +18,7 @@ is [PLATFORM.md](https://github.com/peterkarlhuber/nodestro-studio/blob/master/d
 | Area | Modules |
 | --- | --- |
 | Application | `app` (`create_app`), `context` (`AppConfig`; `Nodestro` extends the runtime `Workspace`), `cli` (`nodestro-api`), `local_access` (Host/Origin guard) |
-| Studio REST API `/api` | `api`, `api_data`, `api_inputs`, `api_examples`, `api_python`, `api_architect`, `api_assistant`, `api_automation`, `api_guide`, `api_publish`, `api_pricing` (model prices, reconciliation) |
+| Studio REST API `/api` | `api`, `api_data`, `api_inputs`, `api_examples`, `api_python`, `api_architect`, `api_assistant`, `api_automation`, `api_guide`, `api_publish`, `api_pricing` (model prices, reconciliation), `api_mcp` (connected MCP services) |
 | Published APIs `/api/published/{slug}` | `serving` (shared with exports), `publishing`, `release_gate` (opt-in release gate), `api_keys`, `network` (separate listener for the local network) |
 | Export | `exporter` (ZIP with runtime, lock file, tests; orkexa from Git or bundled), `standalone` |
 | Services | `pricing_setup` (price sync on desktop and server), `assistants`, `architect`, `assistant`, `assistant_context`, `docs_index`, `batches`, `benchmarks`, `schedules`, `backup`, `organize`, `search`, `diagnostics` |
@@ -212,6 +212,26 @@ review decisions answer 403 for them. Offline the last valid prices stay; prices
 `NODESTRO_OPENAI_ADMIN_KEY` / `NODESTRO_ANTHROPIC_ADMIN_KEY` or send the key with one `POST /reconciliation`.
 `GET /api/usage` separates known, partial and unknown costs (`cost_state`) and names the price versions, sources
 and the lowest quality used.
+
+## Connected MCP services
+
+Administrators connect remote MCP servers (Streamable HTTP) and approve their tools one by one (ADR-0007 in the
+studio repository; the client lives in the runtime, `nodestro_runtime.mcp`). Routes under `/api/mcp`; listing needs
+`read`, everything else `admin`:
+
+| Route | |
+| --- | --- |
+| `GET /api/mcp/status` | SDK available, token vault present, the operator's endpoint list, local servers possible, unattended use enabled, tools that change data enabled |
+| `GET` / `POST /api/mcp/servers`, `GET` / `PUT` / `DELETE /api/mcp/servers/{id}` | servers; the token is write-only (`token_set` only, `""` removes it, a new address drops it) |
+| `POST /api/mcp/servers/{id}/discover` | connect, negotiate the protocol version, list the tools; new and changed definitions wait for a decision |
+| `GET /api/mcp/servers/{id}/tools` | tools with their definition, the approved definition, hash, status, classification and why a tool is not usable |
+| `POST /api/mcp/servers/{id}/tools/{name}/decision` | approve with a classification (`read`, `write`, `destructive`) and the reviewed `expected_hash`, or reject |
+| `GET /api/mcp/events` | administration and policy events (no secrets, no tool arguments) |
+
+Approved tools appear in `GET /api/tools` with `kind: "mcp"`. Until per-call approval exists only `read` tools are
+usable. Tokens are sealed with the server's secret key (per tenant) or, on the desktop, with `NODESTRO_VAULT_KEY`
+from the operating system's keychain; without either they are kept for the session only. Servers need the operator's
+list `NODESTRO_MCP_ENDPOINTS`; unattended runs need `NODESTRO_MCP_UNATTENDED=1` (after the security acceptance).
 
 ## Published workflow APIs
 

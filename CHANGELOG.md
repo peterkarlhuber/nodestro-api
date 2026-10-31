@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+Connected MCP services (ADR-0007, WP-3):
+
+- New routes under `/api/mcp` (`api_mcp`): status, servers (add, change, remove; tokens write-only), discovery
+  (`POST /servers/{id}/discover`), tools with definitions, hashes and the reason a tool is unusable, decisions
+  (approve with classification and `expected_hash`, reject) and audit events. Listing needs `read`, everything else
+  `admin`; every route is tenant-scoped (other tenants get 404). Approved MCP tools appear in `GET /api/tools` with
+  `kind: "mcp"`. Tests cover the role matrix, tenant isolation, token sealing per tenant and the server's endpoint list.
+
 Sandbox gateway security fixes (runtime pin `8597544`):
 
 - Pin of `nodestro-runtime` at `8597544` (before: `b6b757b`) and `nodestro-examples` at `cf151e6` (before:
