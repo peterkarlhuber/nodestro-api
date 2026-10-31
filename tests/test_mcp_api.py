@@ -52,6 +52,7 @@ def test_the_status_describes_the_desktop_setup(make_app: MakeApp, monkeypatch: 
         "loopback_possible": True,
         "unattended_enabled": False,
         "write_tools_enabled": False,
+        "stdio_possible": False,
     }
 
 

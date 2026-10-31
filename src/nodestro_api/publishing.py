@@ -31,12 +31,15 @@ import unicodedata
 from nodestro_runtime import __version__ as runtime_version
 from nodestro_runtime.agent_builder import AgentBuilder
 from nodestro_runtime.engine import MAX_DEPTH, RunEnvironment, node_label
+from nodestro_runtime.mcp.pinned import PinnedMcp
+from nodestro_runtime.mcp_access import is_mcp_tool, unattended_mcp_enabled
 from nodestro_runtime.preflight import PROVIDER_CHECKS, preflight
 from nodestro_runtime.problems import CheckIssue, NodestroError
 from nodestro_runtime.providers import PROVIDERS, MissingApiKeyError
 from nodestro_runtime.python_envs import scope_of
 from nodestro_runtime.release import (
     KnowledgeRef,
+    McpToolRef,
     MemoryRef,
     PythonLock,
     ReleaseBundle,
@@ -449,6 +452,7 @@ class Publications:
                     tools=", ".join(sorted(server_tools)),
                 )
             )
+        problems.extend(self._mcp_issues(sorted(name for name in tools if is_mcp_tool(name))))
         result.knowledge = self._knowledge_refs(everything)
         result.memory = self._memory_refs(everything)
         if result.knowledge:
@@ -492,6 +496,39 @@ class Publications:
         result.warnings = sum(item.level == "warning" for item in problems)
         result.ok = result.errors == 0
         return result
+
+    def _mcp_issues(self, names: list[str]) -> list[CheckIssue]:
+        """MCP tools in a release (WP-9): each must be usable now (it is frozen at its approved definition), and runs
+        of published APIs are unattended, so they use MCP tools only after the operator's switch (D-7)."""
+        if not names:
+            return []
+        problems: list[CheckIssue] = []
+        for name in names:
+            try:
+                self.ctx.mcp.check(name)
+            except NodestroError as exc:
+                problems.append(_issue("api.mcp_tool_unusable", f"{name}: {exc}", tool=name, detail=exc.code))
+        listed = ", ".join(names)
+        problems.append(
+            _issue(
+                "api.mcp_tools",
+                f"Agents use tools of external MCP services ({listed}); they are frozen at their approved "
+                "definitions, and the services' costs are unknown to Nodestro",
+                level="info",
+                tools=listed,
+            )
+        )
+        if not unattended_mcp_enabled():
+            problems.append(
+                _issue(
+                    "api.mcp_unattended_off",
+                    "API runs use MCP tools only after the operator switches on unattended MCP use "
+                    "(NODESTRO_MCP_UNATTENDED, after the MCP security acceptance); until then such runs are refused",
+                    level="warning",
+                    tools=listed,
+                )
+            )
+        return problems
 
     @staticmethod
     def _child(children: list[SubworkflowSnapshot], workflow_id: str, version: int | None) -> Workflow:
@@ -562,6 +599,7 @@ class Publications:
         root, children, _ = self._pin_all(workflow)
         everything = [root, *(item.workflow for item in children)]
         tools: dict[str, dict[str, Any]] = {}
+        mcp_tools: dict[str, McpToolRef] = {}
         builtin: set[str] = set()
         server_tools: set[str] = set()
         models: set[str] = set()
@@ -574,7 +612,10 @@ class Publications:
                     models.add(node.agent.quality.judge_model)
                 server_tools.update(node.agent.server_tools)
                 for name in node.agent.tools:
-                    if name in self.ctx.tools.builtin:
+                    if is_mcp_tool(name):
+                        # Frozen as a safe reference (server id, hash, classification); never an address or token.
+                        mcp_tools.setdefault(name, self.ctx.mcp.pin(name))
+                    elif name in self.ctx.tools.builtin:
                         builtin.add(name)
                     elif name not in tools:
                         tools[name] = tool_record(self.ctx.tools.registry.record(name))
@@ -601,6 +642,7 @@ class Publications:
             tool_trust={name: self.ctx.tools.trust(name) for name in tools},
             builtin_tools=sorted(builtin),
             server_tools=sorted(server_tools),
+            mcp_tools=mcp_tools,
             models=sorted(models),
             python=python,
             knowledge=check.knowledge,
@@ -848,6 +890,9 @@ class Publications:
                 policy=self.ctx.sandbox_policy,
                 provenance=self.ctx.tools.linked_provenance(),
             )
+            if bundle.mcp_tools:
+                # Only the frozen MCP tools, revalidated against the tenant's approvals on every call (WP-9).
+                tools.mcp = PinnedMcp(self.ctx.mcp, bundle.mcp_tools)  # type: ignore[assignment]
             builder = AgentBuilder(tools, self.ctx.knowledge, self.ctx.memory)
             builder.declared = self.ctx.builder.declared
             locks = {item.workflow_id for item in bundle.python}

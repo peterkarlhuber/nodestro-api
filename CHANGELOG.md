@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+Local MCP servers and MCP tools in published APIs (ADR-0007, WP-8 and WP-9):
+
+- `GET /api/mcp/servers/{id}/environment` and `POST /api/mcp/servers/{id}/environment/plan` (admin): the packages of
+  a local stdio server, planned hash-pinned for review and approved with `POST /api/python/plans/{id}/approve`; it
+  runs only in the Docker sandbox's containers. `GET /api/mcp/status` reports `stdio_possible`.
+- Publishing freezes the MCP tools a workflow uses in the release (`bundle.mcp_tools`: server id and slug, approved
+  hash, classification; no address or token). The check reports `api.mcp_tools`, `api.mcp_unattended_off` (API runs
+  need the operator's `NODESTRO_MCP_UNATTENDED`) and blocks unusable tools (`api.mcp_tool_unusable`). A release's
+  runs use only the frozen tools and stop when an approval changed (`mcp.release_tool_changed`).
+- Exports refuse releases with MCP tools (`export.mcp_tools`): the standalone project has no connection to the
+  tenant's MCP servers.
+
 MCP OAuth 2.1 sign-in (ADR-0007, WP-6; needs runtime `82f2669` or later):
 
 - `POST /api/mcp/servers/{id}/oauth/start` (`admin`) returns the authorization URL of the server's authorization

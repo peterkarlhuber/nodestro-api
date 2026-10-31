@@ -11,6 +11,7 @@ events.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import Any
 
@@ -20,6 +21,7 @@ from nodestro_runtime.mcp.hub import sdk_available
 from nodestro_runtime.mcp.models import McpEvent, McpServerIn, McpServerView, McpTool, ToolAccess, ToolDefinition
 from nodestro_runtime.mcp_access import unattended_mcp_enabled
 from nodestro_runtime.problems import NodestroError
+from nodestro_runtime.python_envs import DependencyStatus, Plan
 from pydantic import BaseModel, Field
 
 from .api import Ctx
@@ -55,6 +57,8 @@ class McpStatus(BaseModel):
     unattended_enabled: bool
     #: Tools that change data can be used (per-call approval); until then only ``read`` tools are usable.
     write_tools_enabled: bool
+    #: Local servers over stdio can be added: they run only in the Docker sandbox's containers (WP-8).
+    stdio_possible: bool = False
 
 
 class McpToolView(BaseModel):
@@ -131,6 +135,7 @@ def mcp_status(ctx: Ctx) -> McpStatus:
         loopback_possible=policy.loopback_possible,
         unattended_enabled=unattended_mcp_enabled(),
         write_tools_enabled=bool(ctx.mcp.write_gate),
+        stdio_possible=ctx.python.containers(),
     )
 
 
@@ -172,6 +177,21 @@ async def discover_server(ctx: Ctx, server_id: str, request: Request) -> McpDisc
         tools=[_tool_view(ctx, tool) for tool in ctx.mcp.tools(server.id)],
         skipped=discovery.skipped,
     )
+
+
+@router.get("/servers/{server_id}/environment", dependencies=READ)
+def server_environment(ctx: Ctx, server_id: str) -> DependencyStatus:
+    """The state of a local (stdio) server's packages: approval needed, installing, ready, ... (WP-8)."""
+    _server(ctx, server_id)
+    return ctx.mcp.environment(server_id)  # type: ignore[no-any-return]
+
+
+@router.post("/servers/{server_id}/environment/plan", dependencies=ADMIN)
+async def plan_server_environment(ctx: Ctx, server_id: str) -> Plan:
+    """Resolve the hash-pinned versions of a stdio server's packages for review; an administrator approves the plan
+    with ``POST /api/python/plans/{plan_id}/approve``, which installs it as a sandbox image."""
+    _server(ctx, server_id)
+    return await asyncio.to_thread(ctx.mcp.plan_environment, server_id)
 
 
 @router.get("/servers/{server_id}/tools", dependencies=READ)
