@@ -2272,12 +2272,15 @@ def _drop_cycle_edges(workflow: WorkflowIn) -> list[Problem]:
     fixes: list[Problem] = []
     kept: list[Edge] = []
     for edge in workflow.edges:
+        if edge.loop is not None:
+            kept.append(edge)  # a loop connection leads back on purpose (checked by the engine)
+            continue
         reach = {edge.target}
         stack = [edge.target]
         while stack:
             current = stack.pop()
             for other in kept:
-                if other.source == current and other.target not in reach:
+                if other.loop is None and other.source == current and other.target not in reach:
                     reach.add(other.target)
                     stack.append(other.target)
         if edge.source in reach:

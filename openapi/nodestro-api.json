@@ -5147,6 +5147,16 @@
             "title": "Id",
             "type": "string"
           },
+          "loop": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EdgeLoop"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "source": {
             "title": "Source",
             "type": "string"
@@ -5172,6 +5182,31 @@
           "target"
         ],
         "title": "Edge",
+        "type": "object"
+      },
+      "EdgeLoop": {
+        "description": "Makes a connection a loop: following it runs the nodes from its target to its source again.\n\nA loop leaves a decision or approval node through one of its branches and leads back to a node\nbefore it. ``max_iterations`` is mandatory and counts the first run; ``on_exhausted`` says what\nhappens when the branch is taken once more: ``fail`` ends the run as failed\n(``run.loop_exhausted``), ``continue`` ignores the loop, so the node's other open branches decide.",
+        "properties": {
+          "max_iterations": {
+            "maximum": 20.0,
+            "minimum": 2.0,
+            "title": "Max Iterations",
+            "type": "integer"
+          },
+          "on_exhausted": {
+            "default": "fail",
+            "enum": [
+              "fail",
+              "continue"
+            ],
+            "title": "On Exhausted",
+            "type": "string"
+          }
+        },
+        "required": [
+          "max_iterations"
+        ],
+        "title": "EdgeLoop",
         "type": "object"
       },
       "EnableIn": {
@@ -7888,6 +7923,13 @@
               }
             ]
           },
+          "earlier": {
+            "items": {
+              "$ref": "#/components/schemas/NodeRun"
+            },
+            "title": "Earlier",
+            "type": "array"
+          },
           "error": {
             "anyOf": [
               {
@@ -7954,6 +7996,13 @@
               }
             ],
             "title": "Finished At"
+          },
+          "iteration": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Iteration",
+            "type": "array"
           },
           "memory": {
             "anyOf": [
@@ -11464,6 +11513,18 @@
             ],
             "title": "Finished At"
           },
+          "flow_state": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flow State"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -14109,6 +14170,11 @@
             ],
             "title": "Output"
           },
+          "provenance": {
+            "additionalProperties": true,
+            "title": "Provenance",
+            "type": "object"
+          },
           "started_at": {
             "format": "date-time",
             "title": "Started At",
@@ -14297,6 +14363,20 @@
       },
       "ToolInfo": {
         "properties": {
+          "capability": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capability"
+          },
           "code": {
             "anyOf": [
               {
@@ -14318,6 +14398,17 @@
               }
             ],
             "title": "Created At"
+          },
+          "definition_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Definition Hash"
           },
           "description": {
             "title": "Description",
@@ -14350,10 +14441,22 @@
             "enum": [
               "builtin",
               "custom",
-              "generated"
+              "generated",
+              "mcp"
             ],
             "title": "Kind",
             "type": "string"
+          },
+          "mcp_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mcp Name"
           },
           "name": {
             "title": "Name",
@@ -14369,6 +14472,28 @@
               }
             ],
             "title": "Requirement"
+          },
+          "server_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Id"
+          },
+          "server_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Name"
           },
           "tests": {
             "anyOf": [

@@ -12,7 +12,7 @@ from nodestro_runtime.agent_builder import ConfigIssue
 from nodestro_runtime.schemas import AgentConfig, Edge, Node, WorkflowIn
 import pytest
 
-from nodestro_api.architect import _fix_config, _layout, _structural_fixes
+from nodestro_api.architect import _drop_cycle_edges, _fix_config, _layout, _structural_fixes
 
 from architect_script import (
     AGENT,
@@ -563,3 +563,20 @@ def test_create_plans_decisions_approvals_and_a_form(make_app: Callable[..., Tes
     assert [spec["format"] for spec in output["output"]["files"]] == ["pdf", "csv"]
     blocking_codes = [item["code"] for item in job["check"]["problems"] if item["level"] == "error"]
     assert blocking_codes in ([], ["check.api_key_missing"])
+
+
+def test_cycle_fixes_keep_loop_connections() -> None:
+    workflow = WorkflowIn(
+        nodes=[
+            Node(id="a", agent=AgentConfig(name="A"), label="A"),
+            Node(id="b", agent=AgentConfig(name="B"), label="B"),
+        ],
+        edges=[
+            Edge(id="1", source="a", target="b"),
+            Edge(id="2", source="b", target="a", loop={"max_iterations": 3}),
+            Edge(id="3", source="b", target="a"),
+        ],
+    )
+    fixes = _drop_cycle_edges(workflow)
+    assert [edge.id for edge in workflow.edges] == ["1", "2"]
+    assert [fix.code for fix in fixes] == ["connect.edge_fixed"]
