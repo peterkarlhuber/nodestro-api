@@ -41,6 +41,7 @@ from .api_assistant import router as assistant_router
 from .api_automation import router as automation_router
 from .api_data import router as data_router
 from .api_inputs import router as inputs_router
+from .api_mcp import router as mcp_router
 from .api_pricing import router as pricing_router
 from .api_publish import router as publish_router
 from .api_python import router as python_router
@@ -178,6 +179,7 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
     app.include_router(assistant_router)
     app.include_router(inputs_router)
     app.include_router(pricing_router)
+    app.include_router(mcp_router)
     app.include_router(router)
     app.include_router(data_router)
     check_routes(app)
