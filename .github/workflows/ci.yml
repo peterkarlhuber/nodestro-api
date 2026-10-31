@@ -16,6 +16,22 @@ jobs:
       fail-fast: false
       matrix:
         python: ["3.10", "3.13"]
+    # Logins and tenant isolation (tests/test_identity.py) run against a real PostgreSQL; a missing one fails.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: nodestro-ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      NODESTRO_TEST_POSTGRES: host=127.0.0.1 port=5432 user=postgres password=nodestro-ci dbname=postgres
+      NODESTRO_REQUIRE_POSTGRES: "1"
     steps:
       - uses: actions/checkout@v7
         with:

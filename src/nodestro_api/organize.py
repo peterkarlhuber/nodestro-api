@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from nodestro_runtime.storage import Store
+from nodestro_runtime.storage import DocumentStore
 from pydantic import BaseModel, Field, field_validator
 
 Kind = Literal["workflow", "template", "tool"]
@@ -48,7 +48,7 @@ class OrganizeState(BaseModel):
 
 
 class Organizer:
-    def __init__(self, store: Store) -> None:
+    def __init__(self, store: DocumentStore) -> None:
         self.store = store
 
     def get(self, kind: Kind, item_id: str) -> Organize:

@@ -26,7 +26,7 @@ from .api_examples import ApiExamples, examples
 from .api_guide import ApiGuide
 from .api_keys import ApiKeyOut, NewApiKey
 from .network import NetworkConfig, NetworkStatus
-from .permissions import ADMIN, EDIT, READ, RUN
+from .permissions import ADMIN, EDIT, INSTALL, READ, RUN
 from .publishing import ApiCheck, Publication, Release, ReleaseSummary, api_runs
 from .serving import SCOPES, ApiLimits, KeyIdentity, ServedRelease, openapi_document
 
@@ -399,11 +399,11 @@ def delete_key(key_id: str, ctx: Ctx) -> Response:
 # ---- network -----------------------------------------------------------------------------
 
 
-@router.get("/api-network", dependencies=ADMIN)
+@router.get("/api-network", dependencies=INSTALL)
 def network_status(ctx: Ctx) -> NetworkStatus:
     return ctx.network.status()
 
 
-@router.put("/api-network", dependencies=ADMIN)
+@router.put("/api-network", dependencies=INSTALL)
 async def configure_network(body: NetworkConfig, ctx: Ctx) -> NetworkStatus:
     return await ctx.network.apply(body)

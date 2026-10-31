@@ -65,7 +65,9 @@ installed; `create_app(..., integrations=[...])` sets them explicitly.
 ## Two security models
 
 **The studio API has no login yet**, so it is offered only on this computer. Every route declares the permission it
-needs (`read`, `edit`, `run` or `admin`, see `nodestro_api.permissions`), and FastAPI checks it on every request. In
+needs (`read`, `edit`, `run`, `admin` or `install`, see `nodestro_api.permissions`), and FastAPI checks it on every
+request. `admin` covers a tenant's settings, keys and publishing; `install` covers the installation itself (backups
+and restore, diagnostics, the network listener). In
 the desktop profile the only principal is the local owner, who holds every permission, so nothing changes for the
 studio; without a principal a route answers `401 access.login_required`, without the permission `403
 access.forbidden`. The application refuses to start when a route declares no permission.
@@ -95,6 +97,27 @@ to the studio from the backend's own origin (the token is redacted in the access
 `401 access.launch_required`, except `/api/health` and the key-protected `/api/published` routes. This keeps other
 programs and users of the same computer and web pages in the browser out of the desktop's studio API. It is not a
 user login and does not lift the loopback-only rule. Without the variable (the `nodestro` command) nothing changes.
+
+**Server logins (preview, not startable yet).** `nodestro_api.server_app.create_tenant_app` builds the studio API
+for many tenants with logins; it is what the server profile will start once the workers, the container sandbox and
+the deployment exist (plan step PR-12). Until then no command line option or environment variable reaches it and
+`--profile server` stays refused. What it does (`nodestro_api.identity`, needs `pip install "nodestro-api[server]"`):
+
+- Login with OpenID Connect at the operator's identity provider: authorization code flow with PKCE (`S256`),
+  `state` (stored hashed, used once, expires after 10 minutes) and `nonce`. The ID token must be signed with an
+  asymmetric key of the provider (never `none` or a shared secret) and match issuer, audience, expiry and nonce.
+- A login alone grants nothing: a user needs a role in a tenant (`owner`, `admin`, `editor`, `operator`,
+  `viewer`). The first owner of a tenant logs in with a one-time setup link (`/api/auth/login?setup=<token>`) that
+  an operator creates; there is no default administrator and no password.
+- The session is a random token in a `__Host-` cookie (`HttpOnly`, `Secure`, `SameSite=Lax`); the database keeps
+  only its hash. It ends after 12 hours, after 2 hours without requests, at logout, and at once when the membership
+  is removed. Roles map to permissions: `viewer` reads, `operator` also runs, `editor` also edits, `admin` and
+  `owner` also administer the tenant; no role gets `install`.
+- Every request works on the context of its session's tenant: one context per tenant on that tenant's PostgreSQL
+  stores and its own file area. Resources of other tenants answer `404`, as if they did not exist.
+- Changing requests must carry the studio's own `Origin` (`403 access.cross_site` otherwise); this is protection
+  against cross-site requests, not a replacement for the login.
+- Not part of it yet: published workflow APIs with tenant-bound keys, schedules, the network listener and backups.
 
 Uploaded files are served with `X-Content-Type-Options: nosniff`; HTML, SVG and XML files are always downloaded, and
 everything except PDF carries a restrictive `Content-Security-Policy`, so an uploaded page cannot run scripts in the

@@ -66,7 +66,7 @@ from .assistants import language_rule
 from .docs_index import DocsIndex
 
 if TYPE_CHECKING:
-    from nodestro_runtime.storage import Store
+    from nodestro_runtime.storage import DocumentStore
 
     from .context import Nodestro
 
@@ -396,7 +396,7 @@ class Assistant:
         self._loop: asyncio.AbstractEventLoop | None = None
 
     @property
-    def store(self) -> Store:
+    def store(self) -> DocumentStore:
         return self.nodestro.store
 
     # ---- conversations ---------------------------------------------------------------

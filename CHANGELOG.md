@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+Server logins and tenants (desktop/server plan, PR-9, 2026-10-31). Nothing changes for the desktop:
+
+- New permission `install` for the installation itself: backups and restore, diagnostics and the network listener
+  (10 routes, before `admin`). The desktop's local owner holds every permission as before; on a server no tenant
+  role holds `install`.
+- `Principal` carries the tenant and role of a request. Routes reach the context of the principal's tenant only
+  (`app_context`); on the desktop there is one context as before.
+- `nodestro_api.identity`: OpenID Connect login (authorization code with PKCE, state, nonce, ID token checks with the
+  provider's asymmetric keys), server-side sessions in a `__Host-` cookie, roles per tenant, one-time setup links for
+  a tenant's first owner, `/api/auth/login`, `/callback`, `/me`, `/switch`, `/logout`, and a same-origin check for
+  changing requests.
+- `nodestro_api.server_app.create_tenant_app`: the studio API for many tenants on PostgreSQL. It is not startable
+  yet (the server profile stays refused until PR-12) and is built by the tests only.
+- Optional dependency `nodestro-api[server]` (psycopg, PyJWT, httpx). Generated HTML result pages also carry
+  `sandbox` in their `Content-Security-Policy`.
+- Pins: nodestro-runtime `8eea1ea` (PostgreSQL storage, tenant workspaces, identity records), nodestro-examples
+  `9b018da`. The api adapts to the runtime's `DocumentStore` typing: backups and diagnostics use
+  `Workspace.sqlite_store`.
+- Tests: `tests/test_identity.py` with a stub OIDC provider and PostgreSQL in CI: anonymous `401`, invalid ID tokens
+  (audience, issuer, expiry, nonce, forged signature, `none`), PKCE, replayed states, open redirects, cross-site
+  requests, setup links, the role matrix and cross-tenant `404` for workflows, runs (also event streams, exports,
+  files, inputs), knowledge content, input files and memory.
+
 Desktop launch secret (desktop/server plan, PR-6, 2026-10-31):
 
 - `NODESTRO_LAUNCH_SECRET` (`AppConfig.launch_secret`, module `nodestro_api.launch`): the desktop app's window

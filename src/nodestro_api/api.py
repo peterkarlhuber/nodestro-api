@@ -71,7 +71,17 @@ router = APIRouter(prefix="/api")
 
 
 def app_context(request: Request) -> Nodestro:
-    return request.app.state.nodestro  # type: ignore[no-any-return]
+    """The context a route works on: the desktop's one context, or the tenant of the request's principal.
+
+    On a server (``app.state.tenants``) the tenant comes only from the principal that the route's access
+    requirement resolved, so a route can never reach another tenant's data."""
+    tenants = getattr(request.app.state, "tenants", None)
+    if tenants is None:
+        return request.app.state.nodestro  # type: ignore[no-any-return]
+    principal = getattr(request.state, "principal", None)
+    if principal is None:
+        raise AccessError(401, "access.login_required", "Log in to use this part of Nodestro")
+    return tenants.get(principal.tenant_id)  # type: ignore[no-any-return]
 
 
 Ctx = Annotated[Nodestro, Depends(app_context)]
@@ -501,7 +511,7 @@ def download_result_file(run_id: str, file_id: str, ctx: Ctx, inline: bool = Fal
     headers = {"Content-Disposition": f"{disposition}; filename*=UTF-8''{_quote(entry.name)}", **_NOSNIFF}
     if entry.format == "html":
         # A generated page is shown without scripts or remote content.
-        headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
+        headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
     return Response(content=data, media_type=entry.media_type, headers=headers)
 
 

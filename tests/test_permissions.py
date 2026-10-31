@@ -133,8 +133,15 @@ def test_the_command_line_refuses_the_server_profile_before_touching_the_disk(
 
 def test_every_route_and_method_is_classified(app: FastAPI) -> None:
     found = check_routes(app)
-    studio = [item for item in found if item.access in {"read", "edit", "run", "admin", "public"}]
-    assert Counter(item.access for item in studio) == {"read": 82, "edit": 47, "run": 31, "admin": 26, "public": 1}
+    studio = [item for item in found if item.access in {"read", "edit", "run", "admin", "install", "public"}]
+    assert Counter(item.access for item in studio) == {
+        "read": 82,
+        "edit": 47,
+        "run": 31,
+        "admin": 16,
+        "install": 10,
+        "public": 1,
+    }
     assert all(item.path.startswith("/api/") for item in found if item.access != "generated")
     # Explicit exceptions: the health check, the key-protected published APIs, FastAPI's API reference.
     assert {item.path for item in found if item.access == "public"} == {"/api/health"}
@@ -150,12 +157,12 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
 
 SENSITIVE = {
     ("PUT", "/api/settings"): "admin",
-    ("POST", "/api/backup/restore"): "admin",
-    ("GET", "/api/backup"): "admin",
-    ("GET", "/api/diagnostics"): "admin",
+    ("POST", "/api/backup/restore"): "install",
+    ("GET", "/api/backup"): "install",
+    ("GET", "/api/diagnostics"): "install",
     ("POST", "/api/api-keys"): "admin",
     ("GET", "/api/api-keys"): "admin",
-    ("PUT", "/api/api-network"): "admin",
+    ("PUT", "/api/api-network"): "install",
     ("POST", "/api/workflows/{workflow_id}/api/publish"): "admin",
     ("POST", "/api/python/plans/{plan_id}/approve"): "admin",
     ("POST", "/api/tools/jobs/{job_id}/dependencies"): "admin",
@@ -316,7 +323,7 @@ def test_permissions_are_enforced_per_route(app: FastAPI, client: TestClient) ->
     for method, path, needed in (
         ("POST", "/api/workflows", "edit"),
         ("PUT", "/api/settings", "admin"),
-        ("POST", "/api/backup/restore", "admin"),
+        ("POST", "/api/backup/restore", "install"),
         ("POST", "/api/workflows/wf_missing/runs", "run"),
     ):
         answer = client.request(method, path, json={})

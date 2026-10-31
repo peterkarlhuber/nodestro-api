@@ -60,7 +60,7 @@ from nodestro_runtime.reports import ResultFiles
 from nodestro_runtime.run_views import approvals_of_tree
 from nodestro_runtime.sanitize import Sanitizer
 from nodestro_runtime.schemas import NodeRun, Run, RunEvent, RunIn, RunSummary, Usage, Workflow, now, total_cost
-from nodestro_runtime.storage import Store
+from nodestro_runtime.storage import DocumentStore
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
 logger = logging.getLogger(__name__)
@@ -243,8 +243,10 @@ class ServingHost(Protocol):
     """What Nodestro (:mod:`nodestro_api.publishing`) or an export (:mod:`nodestro_api.standalone`) provides."""
 
     runs: RunManager
-    store: Store
     files: ResultFiles
+
+    @property
+    def store(self) -> DocumentStore: ...
 
     def release(self, slug: str, number: int | None, *, channel: str) -> ServedRelease:
         """The active release of ``slug`` (or release ``number``); raises :class:`ApiError` 404."""
@@ -711,7 +713,7 @@ class _Window:
             return None
 
 
-def api_run_summaries(store: Store, publication_id: str) -> list[RunSummary]:
+def api_run_summaries(store: DocumentStore, publication_id: str) -> list[RunSummary]:
     """Every top-level run of a publication, newest first, however many runs are stored.
 
     Limits, the daily cost and waiting approvals are counted from these runs, so none may be

@@ -18,7 +18,7 @@ from nodestro_runtime.extensions import Integration
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.profile import ProfileKind, RuntimeProfile
 from nodestro_runtime.schemas import Run
-from nodestro_runtime.workspace import Workspace
+from nodestro_runtime.workspace import Workspace, WorkspaceStorage
 
 from . import exporter
 from .api_keys import ApiKeys
@@ -93,9 +93,11 @@ class Nodestro(Workspace):
         python_runner: Any | None = None,
         ocr_runner: Any | None = None,
         integrations: Iterable[Integration] | None = None,
+        storage: WorkspaceStorage | None = None,
     ) -> None:
         """``client_factory(provider)`` replaces the SDK clients, ``python_runner`` uv, ``ocr_runner`` the
-        OCR (tests); ``integrations`` replaces the installed integrations."""
+        OCR (tests); ``integrations`` replaces the installed integrations. ``storage`` runs the context on the
+        stores of one tenant (:mod:`nodestro_api.server_app`) instead of the data directory's database."""
         self.config = config
         super().__init__(
             profile=config.profile,
@@ -103,6 +105,7 @@ class Nodestro(Workspace):
             python_runner=python_runner,
             ocr_runner=ocr_runner,
             integrations=integrations,
+            storage=storage,
         )
 
     def compose(self) -> None:

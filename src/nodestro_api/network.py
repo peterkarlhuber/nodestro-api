@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field
 from .serving import ServingCore, build_router
 
 if TYPE_CHECKING:
-    from nodestro_runtime.storage import Store
+    from nodestro_runtime.storage import DocumentStore
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +149,7 @@ class _Server:
 
 
 class NetworkListener:
-    def __init__(self, store: Store, core: ServingCore) -> None:
+    def __init__(self, store: DocumentStore, core: ServingCore) -> None:
         self.store = store
         self.core = core
         self._server: _Server | None = None
