@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+Sandbox policy (desktop/server plan, M1 PR-4, ADR-0006, 2026-10-31): pins of `nodestro-runtime` at `d6e75b7` and
+`nodestro-examples` at `31b5714`. **Changed behavior on purpose:**
+
+- `ToolInfo.trust` (`trusted`, `user-authored`, `untrusted`) is part of every tool response (OpenAPI updated).
+- Without Docker, `POST /api/tools/jobs` answers `400 sandbox.isolation_required` and starts no job; testing and
+  approving tool drafts, running AI-generated tools and tools stored before this release report the same code and
+  run nothing; the workflow check shows it on the agent's `tools` field before a run. With the `docker` setting they
+  run in containers. AI-generated code with third-party libraries is refused (`sandbox.libraries_need_isolation`).
+- A restore makes every restored tool `untrusted` (its provenance is unknown).
+- Published releases record `tool_trust`; Nodestro's own API decides with the studio's provenance, not with that
+  claim. Exported projects read it and take `TOOL_SANDBOX=subprocess|docker` (README and `.env.example` of the
+  export): only user-authored tools run with `subprocess`.
+- Tests use `nodestro_runtime.testing.ContainerDouble` (`tests/conftest.py: isolate`) where a flow needs Docker, and
+  assert the refusal without it.
+
 Storage seams (desktop/server plan, PR-3 follow-up, 2026-10-31): pins of `nodestro-runtime` at `e90c205`
 (`DocumentStore`, schema version and migrations) and `nodestro-examples` at the same runtime pin.
 

@@ -30,6 +30,7 @@ from architect_script import (
     revision,
     tool_proposal,
 )
+from conftest import isolate
 from test_runs import agent_node, create
 
 
@@ -137,8 +138,14 @@ def test_accepting_creates_a_workflow_and_never_runs_it(make_app: Callable[..., 
     assert "config.tool_unapproved" in codes
     drafts = client.get("/api/tools/drafts").json()
     assert [draft["name"] for draft in drafts] == ["keyword_density"]
+    # Drafts are AI-generated: without isolation, approving runs nothing and registers nothing (ADR-0006).
+    refused = client.post(f"/api/tools/drafts/{drafts[0]['id']}/approve").json()
+    assert refused["tool"] is None and refused["draft"]["status"] == "draft"
+    assert [item["code"] for item in refused["draft"]["check"]["errors"]] == ["sandbox.isolation_required"]
+    container = isolate(client)
     decision = client.post(f"/api/tools/drafts/{drafts[0]['id']}/approve").json()
     assert decision["tool"]["kind"] == "generated", decision
+    assert decision["tool"]["trust"] == "untrusted" and ("validate", "keyword_density") in container.calls
     assert decision["draft"]["status"] == "approved" and decision["draft"]["check"]["ok"]
     assert client.get("/api/tools/drafts").json() == []
     check = client.post("/api/workflows/check", json=workflow).json()
@@ -149,6 +156,9 @@ def test_tool_drafts_are_tested_only_on_request_and_can_be_rejected(make_app: Ca
     client = make_app(create_script())
     job = wait_job(client, start(client)["id"])
     draft_id = job["tool_drafts"][0]["id"]
+    refused = client.post(f"/api/tools/drafts/{draft_id}/test").json()
+    assert [item["code"] for item in refused["check"]["errors"]] == ["sandbox.isolation_required"]
+    isolate(client)
     tested = client.post(f"/api/tools/drafts/{draft_id}/test").json()
     assert tested["check"]["ok"] and len(tested["check"]["tests"]) == 3
     assert tested["status"] == "draft"
@@ -164,10 +174,12 @@ def test_failing_tool_draft_is_not_registered(make_app: Callable[..., TestClient
     script = create_script()
     script[CODER] = [tool_proposal(tests=broken_tests)]
     client = make_app(script)
+    isolate(client)
     job = wait_job(client, start(client)["id"])
     decision = client.post(f"/api/tools/drafts/{job['tool_drafts'][0]['id']}/approve").json()
     assert decision["tool"] is None and decision["draft"]["status"] == "draft"
     assert not decision["draft"]["check"]["ok"]
+    assert decision["draft"]["check"]["tests"], "the tests ran (and failed) in the isolating sandbox"
     assert "keyword_density" not in {tool["name"] for tool in client.get("/api/tools").json()}
 
 

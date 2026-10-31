@@ -705,6 +705,9 @@ DATA_DIR              Where runs, approvals, files and memory are stored (defaul
 API_DOCS              local (default: /docs only from this computer), on, off.
 RUN_RETENTION_DAYS    Delete runs older than this many days at start (0: keep everything).
 TOOL_TIMEOUT_SECONDS  Time limit of one tool call (default 60).
+TOOL_SANDBOX          subprocess (default): only tools written by a person in the tool editor run, as a
+                      process of this server. docker: every own tool runs in an isolated container
+                      (needs Docker); AI-generated tools run only with docker.
 LIMIT_<NAME>          Override a limit published with the release, e.g. LIMIT_DAILY_BUDGET_USD=10,
                       LIMIT_MAX_CONCURRENT_RUNS=4, LIMIT_RUN_BUDGET_USD=0.5, LIMIT_SYNC_ENABLED=true.
 """
@@ -1282,6 +1285,11 @@ All settings come from environment variables or `.env` (see `app/config.py`):
 | `DATA_DIR` | Where runs, approvals, files and memory are stored (default `./data`). |
 | `API_DOCS` | `local` (default: `/docs` only from this computer), `on` or `off`. |
 | `RUN_RETENTION_DAYS` | Delete runs older than this many days at start (0 keeps everything). |
+| `TOOL_SANDBOX` | `subprocess` (default) or `docker`, see below. |
+
+`TOOL_SANDBOX=subprocess` runs only tools a person wrote in the tool editor, as a process of this server.
+`TOOL_SANDBOX=docker` runs every own tool in an isolated container (needs Docker and the `orkexa-sandbox`
+image). AI-generated tools run only with `docker`; without it, runs that use them are refused.
 
 ### API keys
 
@@ -1426,6 +1434,12 @@ Alle Einstellungen kommen aus Umgebungsvariablen oder `.env` (siehe `app/config.
 | `DATA_DIR` | Ablage für Läufe, Freigaben, Dateien und Memory (Standard `./data`). |
 | `API_DOCS` | `local` (Standard: `/docs` nur von diesem Rechner), `on` oder `off`. |
 | `RUN_RETENTION_DAYS` | Läufe, die älter sind, werden beim Start gelöscht (0 behält alles). |
+| `TOOL_SANDBOX` | `subprocess` (Standard) oder `docker`, siehe unten. |
+
+`TOOL_SANDBOX=subprocess` führt nur Tools aus, die eine Person im Tool-Editor geschrieben hat, als Prozess
+dieses Servers. `TOOL_SANDBOX=docker` führt jedes eigene Tool in einem isolierten Container aus (braucht Docker
+und das Image `orkexa-sandbox`). KI-generierte Tools laufen nur mit `docker`; ohne werden Läufe, die sie nutzen,
+abgelehnt.
 
 ### API-Schlüssel
 
@@ -1546,6 +1560,7 @@ API_KEYS=
 DATA_DIR=./data
 API_DOCS=local
 RUN_RETENTION_DAYS=0
+TOOL_SANDBOX=subprocess
 # LIMIT_DAILY_BUDGET_USD={publication.limits.daily_budget_usd}
 # LIMIT_MAX_CONCURRENT_RUNS={publication.limits.max_concurrent_runs}
 """
