@@ -91,6 +91,46 @@ def test_subworkflows_are_pinned_in_the_version(make_app: Callable[..., TestClie
     assert "CHANGED" not in json.dumps(client.fake.messages.calls)  # type: ignore[attr-defined]
 
 
+def test_orchestrator_teams_are_selected_and_pinned_in_the_version(make_app: Callable[..., TestClient]) -> None:
+    client = make_app({})
+
+    def team(name: str, prompt: str) -> str:
+        return save(
+            client,
+            [{"id": "start", "type": "start"}, agent_node("work", prompt), {"id": "out", "type": "output"}],
+            [edge("start", "work"), edge("work", "out")],
+            name=name,
+            capabilities=["research"],
+        )
+
+    explicit = team("Explicit", "EXPLICIT")
+    selected = team("Selected", "SELECTED")
+    boss_id = save(
+        client,
+        [
+            {"id": "start", "type": "start"},
+            {
+                "id": "lead",
+                "type": "orchestrator",
+                "label": "Lead",
+                "orchestrator": {"members": [{"workflow_id": explicit}], "select": {"capabilities": ["Research"]}},
+            },
+            {"id": "out", "type": "output"},
+        ],
+        [edge("start", "lead"), edge("lead", "out")],
+        name="Boss",
+    )
+    publication = publish(client, boss_id)["publication"]
+    bundle = client.get(f"/api/publications/{publication['id']}/releases/1").json()["bundle"]
+    assert sorted(item["workflow_id"] for item in bundle["subworkflows"]) == sorted([explicit, selected])
+    lead = bundle["workflow"]["nodes"][1]["orchestrator"]
+    assert [(item["workflow_id"], item["version"], item["matched"]) for item in lead["members"]] == [
+        (explicit, 1, []),
+        (selected, 1, ["Research"]),
+    ]
+    assert lead["select"]["done"] is True
+
+
 def test_failed_api_run_continues_with_its_version(make_app: Callable[..., TestClient]) -> None:
     script = {
         "ONE": [text("eins")],
