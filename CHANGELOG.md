@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+Nodestro Local Docker browser sessions (D1, D3 of the internal cross-check):
+
+- Browser sessions exist only under the installation's random host name `nodestro-<10 letters and digits>.localhost`,
+  which `nodestro-local serve` creates next to the access key (`browser-host`, mode 0600). Cookies are scoped by host
+  name, not port, so a session cookie for `localhost` or `127.0.0.1` also reached every other local web server.
+  `/api/launch` on any other name is refused with 403 `access.launch_host`, and a session cookie sent there is not
+  accepted. The bearer key still works under every loopback name. `NODESTRO_BROWSER_HOST` can replace the name with
+  another loopback name; `nodestro-local link` then warns. A local container without a browser host name is
+  refused (`access.browser_host_required`).
+- Sessions end after 8 hours without a request (`NODESTRO_SESSION_IDLE_HOURS`) and 24 hours after they were opened
+  (`NODESTRO_SESSION_MAX_HOURS`); the cookie carries that `Max-Age`.
+- Logout: `GET /api/logout` shows a sign-out form, `POST /api/logout` ends this browser's session and deletes the
+  cookie, and `POST /api/logout?all=1` with the bearer key (`nodestro-local logout`) ends every session.
+- Every answer carries `Referrer-Policy: no-referrer`, so the host name does not leave with a link.
+- D3: only the published port (`NODESTRO_HOST_PORT`, default 8765) and the container's port 8080 are answered in
+  `Host`; any other port gets 403 `request.port_not_allowed`.
+- `nodestro-local rotate-key` also replaces the host name; `link` uses it by default. The desktop app is unchanged.
+
 Connected MCP services (ADR-0007, WP-3):
 
 - New routes under `/api/mcp` (`api_mcp`): status, servers (add, change, remove; tokens write-only), discovery
