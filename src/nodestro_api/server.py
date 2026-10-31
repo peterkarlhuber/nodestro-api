@@ -257,17 +257,17 @@ def check(server: ServerEnvironment) -> list[str]:
     try:
         database = _database(server)
     except NodestroError as error:
-        return [str(error)]
+        return [f"{error.code}: {error}"]
     try:
         database.require_current_schema()
     except NodestroError as error:
-        problems.append(str(error))
+        problems.append(f"{error.code}: {error}")
     finally:
         database.close()
     try:
         _require_containers(server)
     except NodestroError as error:
-        problems.append(str(error))
+        problems.append(f"{error.code}: {error}")
     return problems
 
 

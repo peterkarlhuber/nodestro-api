@@ -122,7 +122,7 @@ def test_migrate_check_and_tenant_setup(schema: str, tmp_path: Path, monkeypatch
 def test_without_docker_the_server_is_not_ready(schema: str, tmp_path: Path) -> None:
     loaded = command.load(_environment(tmp_path, NODESTRO_DOCKER="/nonexistent/docker"))
     command.migrate(loaded, backup_dir=None, backup_taken=False)
-    assert [item for item in command.check(loaded) if "Docker is not reachable" in item]
+    assert [item for item in command.check(loaded) if item.startswith("sandbox.unavailable: Docker is not reachable")]
     with pytest.raises(NodestroError) as error:
         command._ready(loaded)
     assert error.value.code == "sandbox.unavailable"
