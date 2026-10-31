@@ -153,6 +153,10 @@ def test_discovery_approval_and_the_tool_list(make_app: MakeApp, loopback: Any) 
     listed = [tool for tool in client.get("/api/tools").json() if tool["kind"] == "mcp"]
     assert [tool["name"] for tool in listed] == [search["tool_name"]]
     assert listed[0]["server_id"] == server["id"] and listed[0]["definition_hash"] == search["hash"]
+    # The tool panel's test call goes through the same checks and reaches the service.
+    tried = client.post(f"/api/tools/{search['tool_name']}/run", json={"input": {"query": "nodes"}})
+    assert tried.status_code == 200, tried.text
+    assert tried.json()["is_error"] is False and "results for nodes" in tried.json()["output"]
     # A tool that changes data stays unusable until per-call approval exists (WP-5).
     write = client.post(
         f"/api/mcp/servers/{server['id']}/tools/delete_page/decision", json={"approve": True, "access": "write"}
