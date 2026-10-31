@@ -94,9 +94,11 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     assert "nodestro_api/standalone.py" in check["files"]
     # The 25 modules of Nodestro 0.1, the extension contract the knowledge base uses for OCR, the SQLite tables
     # module, and the sandbox policy with tool provenance and the operating profile it reads, and the built-in
-    # Linux sandbox the policy can choose (runtime 45e7774).
+    # Linux sandbox the policy can choose (runtime 45e7774), and the per-call tool approval rules the engine
+    # applies (tool_policy, tool_approvals; runtime 8597544).
     modules = check["runtime_modules"]
-    assert len(modules) == 36 and "nodestro_runtime.extensions" in modules
+    assert len(modules) == 38 and "nodestro_runtime.extensions" in modules
+    assert {"nodestro_runtime.tool_policy", "nodestro_runtime.tool_approvals"} <= set(modules)
     assert {"nodestro_runtime.builtin_sandbox", "nodestro_runtime.sandbox_confine"} <= set(modules)
     # Costs in an export are priced like in the studio (PRICING-1): the price catalog travels with the engine.
     assert {"nodestro_runtime.cost_tracking", "nodestro_runtime.pricing"} <= set(modules)
