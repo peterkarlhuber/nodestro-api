@@ -169,6 +169,8 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
         openapi_url="/api/openapi.json",
     )
     app.state.tenants = tenants
+    # The configured public origin (never a request's Host header): callbacks such as the MCP sign-in use it.
+    app.state.public_origin = composition.origin
     app.state.principal_resolver = SessionResolver(composition.identity)
     app.add_middleware(SameOriginMiddleware, origin=composition.origin, exempt=[PUBLISHED_PREFIX])
     install_error_handlers(app)

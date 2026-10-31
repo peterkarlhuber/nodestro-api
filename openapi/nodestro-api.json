@@ -7436,6 +7436,19 @@
         "title": "McpEvent",
         "type": "object"
       },
+      "McpOAuthStart": {
+        "properties": {
+          "authorization_url": {
+            "title": "Authorization Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "authorization_url"
+        ],
+        "title": "McpOAuthStart",
+        "type": "object"
+      },
       "McpServerIn": {
         "properties": {
           "allow_loopback": {
@@ -21194,6 +21207,85 @@
           }
         },
         "summary": "Discover Server"
+      }
+    },
+    "/api/mcp/servers/{server_id}/oauth/sign-out": {
+      "post": {
+        "operationId": "sign_out_oauth_api_mcp_servers__server_id__oauth_sign_out_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServerView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sign Out Oauth"
+      }
+    },
+    "/api/mcp/servers/{server_id}/oauth/start": {
+      "post": {
+        "description": "Discover the server's authorization server, register Nodestro and return the sign-in URL (PKCE S256).",
+        "operationId": "start_oauth_api_mcp_servers__server_id__oauth_start_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpOAuthStart"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Oauth"
       }
     },
     "/api/mcp/servers/{server_id}/tools": {

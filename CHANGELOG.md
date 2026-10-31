@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+MCP OAuth 2.1 sign-in (ADR-0007, WP-6; needs runtime `82f2669` or later):
+
+- `POST /api/mcp/servers/{id}/oauth/start` (`admin`) returns the authorization URL of the server's authorization
+  server (PKCE `S256`, `state`, `resource`); `GET /api/mcp/oauth/callback` (`admin`, the browser's return) exchanges
+  the code and continues at `/tools?tab=services&oauth=connected` or `&oauth_error=<code>` (no code or state in that
+  URL, `Referrer-Policy: no-referrer`); `POST /api/mcp/servers/{id}/oauth/sign-out` forgets the credentials.
+- The callback address is the server's configured public origin, or the desktop's loopback address; it is never
+  taken from a request's `Host` header (`mcp.oauth_redirect_invalid`).
+
 Per-call tool approvals (Evolution S-2b, decision D10; off unless `NODESTRO_TOOL_APPROVALS=1`):
 
 - New routes (`api_tool_approvals`): the approval inbox `GET /api/tool-approvals` and `GET

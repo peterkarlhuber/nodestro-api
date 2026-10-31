@@ -182,3 +182,82 @@ def test_an_unreachable_server_is_reported_with_a_stable_code(make_app: MakeApp)
     answer = client.post(f"/api/mcp/servers/{server['id']}/discover")
     assert answer.status_code == 400 and answer.json()["code"] == "mcp.unreachable", answer.text
     assert client.get(f"/api/mcp/servers/{server['id']}").json()["last_error_code"] == "mcp.unreachable"
+
+
+@pytest.fixture
+def oauth_servers() -> Iterator[tuple[Any, Any]]:
+    from mcp_oauth_test_server import serve_auth_server, serve_protected
+
+    auth, runner = serve_auth_server()
+    protected = serve_protected(auth)
+    yield auth, protected
+    protected.stop()
+    runner.should_exit = True
+
+
+@needs_sdk
+def test_an_oauth_server_is_signed_in_through_the_browser_callback(
+    make_app: MakeApp, oauth_servers: tuple[Any, Any]
+) -> None:
+    from urllib.parse import parse_qs, urlsplit
+
+    auth, protected = oauth_servers
+    client = make_app()
+    server = _add(client, protected.url, auth="oauth")
+    assert client.post(f"/api/mcp/servers/{server['id']}/discover").json()["code"] == "mcp.unauthorized"
+
+    started = client.post(f"/api/mcp/servers/{server['id']}/oauth/start")
+    assert started.status_code == 200, started.text
+    url = started.json()["authorization_url"]
+    query = {key: values[0] for key, values in parse_qs(urlsplit(url).query).items()}
+    assert query["redirect_uri"] == "http://127.0.0.1/api/mcp/oauth/callback"  # the desktop's own loopback address
+    assert query["code_challenge_method"] == "S256" and query["resource"] == protected.url
+
+    callback = auth.authorize(url)  # what the browser does at the authorization server
+    back = client.get("/api/mcp/oauth/callback", params=callback, follow_redirects=False)
+    assert back.status_code == 303
+    assert back.headers["location"] == f"/tools?tab=services&oauth=connected&server={server['id']}"
+    assert back.headers["referrer-policy"] == "no-referrer" and "code" not in back.headers["location"]
+    view = client.get(f"/api/mcp/servers/{server['id']}").json()
+    assert view["token_set"] is True and view["oauth"]["issuer"] == auth.issuer
+    access = next(iter(auth.access_tokens))
+    assert access not in str(view) and access not in client.get("/api/mcp/events").text
+    discovered = client.post(f"/api/mcp/servers/{server['id']}/discover")
+    assert discovered.status_code == 200 and {tool["name"] for tool in discovered.json()["tools"]} >= {"search"}
+
+    # A replayed or forged callback changes nothing and says why.
+    again = client.get("/api/mcp/oauth/callback", params=callback, follow_redirects=False)
+    assert again.headers["location"] == "/tools?tab=services&oauth_error=mcp.oauth_state_invalid"
+    denied = client.get("/api/mcp/oauth/callback", params={"error": "access_denied"}, follow_redirects=False)
+    assert denied.headers["location"] == "/tools?tab=services&oauth_error=mcp.oauth_denied"
+
+    signed_out = client.post(f"/api/mcp/servers/{server['id']}/oauth/sign-out").json()
+    assert signed_out["token_set"] is False and signed_out["oauth"] == {}
+
+
+def test_the_oauth_routes_refuse_what_they_must(make_app: MakeApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = make_app()
+    plain = _add(client, "http://127.0.0.1:9/mcp")
+    refused = client.post(f"/api/mcp/servers/{plain['id']}/oauth/start")
+    assert refused.status_code == 400 and refused.json()["code"] == "mcp.oauth_not_configured"
+    assert client.post("/api/mcp/servers/missing/oauth/start").status_code == 404
+    # On a desktop reached under another (allowed) host name, the sign-in is refused: the callback must be the
+    # loopback address, never one taken from a Host header.
+    monkeypatch.setenv("NODESTRO_ALLOWED_HOSTS", "nodestro.localhost")
+    foreign = make_app()
+    foreign.base_url = "http://nodestro.localhost"  # type: ignore[assignment]
+    server = _add(foreign, "http://127.0.0.1:9/mcp", auth="oauth")
+    answer = foreign.post(f"/api/mcp/servers/{server['id']}/oauth/start")
+    assert answer.status_code == 400 and answer.json()["code"] == "mcp.oauth_redirect_invalid"
+
+
+def test_a_server_signs_in_with_its_configured_origin_not_the_host_header() -> None:
+    from types import SimpleNamespace
+
+    from nodestro_api.api_mcp import _redirect_uri
+
+    request: Any = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(public_origin="https://nodestro.example.com")),
+        base_url=SimpleNamespace(hostname="evil.example", scheme="https", netloc="evil.example"),
+    )
+    assert _redirect_uri(request) == "https://nodestro.example.com/api/mcp/oauth/callback"
