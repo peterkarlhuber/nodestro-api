@@ -196,6 +196,12 @@ def _workflow_data(nodestro: Nodestro, workflow: WorkflowIn, workflow_id: str | 
             child = nodestro.store.get("workflows", node.subworkflow.workflow_id, Workflow)
             data["workflow_name"] = child.name if child is not None else None
             entry["subworkflow"] = data
+        if node.orchestrator is not None:
+            data = node.orchestrator.model_dump(mode="json")
+            for member in data["members"]:
+                team = nodestro.store.get("workflows", member["workflow_id"], Workflow)
+                member["workflow_name"] = team.name if team is not None else None
+            entry["orchestrator"] = data
         if node.output is not None and node.output.files:
             entry["result_files"] = node.output.model_dump(mode="json")["files"]
         nodes.append(entry)

@@ -26,6 +26,17 @@ Local MCP servers and MCP tools in published APIs (ADR-0007, WP-8 and WP-9):
 - Exports refuse releases with MCP tools (`export.mcp_tools`): the standalone project has no connection to the
   tenant's MCP servers.
 
+Teams, orchestrator and pool selection (Adaptive Orchestration M3–M5):
+
+- Pins `nodestro-runtime` at `40e04b4` (output contracts, capabilities, orchestrator node, pool selection by
+  capability, stdio MCP servers) and `nodestro-examples` at `df458e8`.
+- `GET /api/workflows` lists each workflow's `capabilities` and `contract` (the field names of its output contract).
+- Publishing pins and snapshots every workflow a node calls: sub-workflows and orchestrator teams, including teams
+  selected by capability (the selection is fixed in the release). The published schema of an orchestrator's result
+  is text; the assistant's workflow context names the teams.
+- OpenAPI regenerated (`OrchestratorConfig`, `OrchestratorMember`, `OrchestratorSelect`, `NodeRun.orchestration`,
+  `child_run_ids`, `decision_usage`, output contracts, capabilities, workflow limits).
+
 MCP OAuth 2.1 sign-in (ADR-0007, WP-6; needs runtime `82f2669` or later):
 
 - `POST /api/mcp/servers/{id}/oauth/start` (`admin`) returns the authorization URL of the server's authorization

@@ -15,6 +15,7 @@ from nodestro_examples import samples as library_samples
 from nodestro_runtime.agent_builder import ConfigIssue
 from nodestro_runtime.agent_test import AgentTestIn, AgentTestResult
 from nodestro_runtime.catalog import SERVER_TOOLS, ModelInfo, ServerToolInfo, models
+from nodestro_runtime.contracts import contract_of
 from nodestro_runtime.knowledge import KnowledgeFile
 from nodestro_runtime.launcher import launch
 from nodestro_runtime.memory_spaces import MemoryFile, MemorySpaceInfo, check_space_name
@@ -213,6 +214,8 @@ def list_workflows(ctx: Ctx) -> list[WorkflowSummary]:
             agents=sum(node.type == "agent" for node in w.nodes),
             updated_at=w.updated_at,
             last_run_status=last_status.get(w.id),
+            capabilities=w.capabilities,
+            contract=[field.name for field in contract_of(w)],
         )
         for w in ctx.store.list("workflows", Workflow)
     ]

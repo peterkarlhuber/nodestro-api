@@ -454,6 +454,8 @@ def _schema_of_source(node_id: str, workflow: Workflow, resolve: Callable[[str, 
             schema.pop("title", None)
             return schema
         return {"type": "string"}
+    if node.type == "orchestrator":
+        return {"type": "string"}  # the orchestrator's final answer
     if node.type == "subworkflow" and node.subworkflow is not None and resolve is not None:
         try:
             child = resolve(node.subworkflow.workflow_id, node.subworkflow.version)

@@ -4860,7 +4860,8 @@
           "kind": {
             "enum": [
               "workflow",
-              "tool"
+              "tool",
+              "mcp"
             ],
             "title": "Kind",
             "type": "string"
@@ -5310,7 +5311,8 @@
               {
                 "enum": [
                   "workflow",
-                  "tool"
+                  "tool",
+                  "mcp"
                 ],
                 "type": "string"
               },
@@ -7491,6 +7493,16 @@
             "title": "Name",
             "type": "string"
           },
+          "stdio": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StdioCommand"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "timeout_seconds": {
             "default": 60.0,
             "maximum": 300.0,
@@ -7510,16 +7522,24 @@
             ],
             "title": "Token"
           },
+          "transport": {
+            "default": "http",
+            "enum": [
+              "http",
+              "stdio"
+            ],
+            "title": "Transport",
+            "type": "string"
+          },
           "url": {
+            "default": "",
             "maxLength": 2000,
-            "minLength": 1,
             "title": "Url",
             "type": "string"
           }
         },
         "required": [
-          "name",
-          "url"
+          "name"
         ],
         "title": "McpServerIn",
         "type": "object"
@@ -7548,6 +7568,11 @@
           "enabled": {
             "title": "Enabled",
             "type": "boolean"
+          },
+          "environment_state": {
+            "default": "",
+            "title": "Environment State",
+            "type": "string"
           },
           "id": {
             "title": "Id",
@@ -7635,6 +7660,16 @@
             "title": "Slug",
             "type": "string"
           },
+          "stdio": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StdioCommand"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "timeout_seconds": {
             "title": "Timeout Seconds",
             "type": "number"
@@ -7666,6 +7701,15 @@
             "default": 0,
             "title": "Tools Total",
             "type": "integer"
+          },
+          "transport": {
+            "default": "http",
+            "enum": [
+              "http",
+              "stdio"
+            ],
+            "title": "Transport",
+            "type": "string"
           },
           "updated_at": {
             "format": "date-time",
@@ -8517,6 +8561,16 @@
             "title": "Label",
             "type": "string"
           },
+          "orchestrator": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrchestratorConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "output": {
             "anyOf": [
               {
@@ -8558,7 +8612,8 @@
               "output",
               "condition",
               "approval",
-              "subworkflow"
+              "subworkflow",
+              "orchestrator"
             ],
             "title": "Type",
             "type": "string"
@@ -8590,6 +8645,13 @@
             ],
             "title": "Child Run Id"
           },
+          "child_run_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Child Run Ids",
+            "type": "array"
+          },
           "child_version": {
             "anyOf": [
               {
@@ -8605,6 +8667,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/DecisionRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decision_usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Usage"
               },
               {
                 "type": "null"
@@ -8706,6 +8778,18 @@
             ],
             "title": "Memory"
           },
+          "orchestration": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Orchestration"
+          },
           "output": {
             "title": "Output"
           },
@@ -8788,6 +8872,123 @@
           }
         },
         "title": "NodeRun",
+        "type": "object"
+      },
+      "OrchestratorConfig": {
+        "description": "An AI model that delegates the task to teams of its pool until it can answer (AO M4).\n\nIt only selects: it creates no agents and no tools, and has no tools of its own. Each chosen team\nruns as a linked child run with its own budget, limits and tool approvals; the orchestrator's\ndecisions, reasons and the teams' results are recorded (``NodeRun.orchestration``).",
+        "properties": {
+          "instructions": {
+            "default": "",
+            "title": "Instructions",
+            "type": "string"
+          },
+          "max_decisions": {
+            "default": 8,
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Max Decisions",
+            "type": "integer"
+          },
+          "max_per_member": {
+            "anyOf": [
+              {
+                "maximum": 50.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Per Member"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/OrchestratorMember"
+            },
+            "maxItems": 20,
+            "title": "Members",
+            "type": "array"
+          },
+          "model": {
+            "default": "anthropic:claude-opus-5-5",
+            "title": "Model",
+            "type": "string"
+          },
+          "select": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrchestratorSelect"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "task_template": {
+            "default": "{{input}}",
+            "title": "Task Template",
+            "type": "string"
+          }
+        },
+        "title": "OrchestratorConfig",
+        "type": "object"
+      },
+      "OrchestratorMember": {
+        "description": "A team in an orchestrator's pool: a saved workflow, run as a sub-workflow when chosen.",
+        "properties": {
+          "matched": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Matched",
+            "type": "array"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "workflow_id": {
+            "default": "",
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "title": "OrchestratorMember",
+        "type": "object"
+      },
+      "OrchestratorSelect": {
+        "description": "Pool selection by capability (AO M5): saved workflows whose capabilities match join the pool.\n\nThe selection is made when a run (or a published release) pins its workflows, so it is fixed and\nvisible in the run's snapshot: every selected member names the tags it matched. Teams are ordered\nby the number of matching tags, then by name; no score is invented. Workflows with errors, with\napproval steps (not supported inside an orchestrator) and the workflow itself are left out.",
+        "properties": {
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "done": {
+            "default": false,
+            "title": "Done",
+            "type": "boolean"
+          },
+          "max_teams": {
+            "default": 5,
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Max Teams",
+            "type": "integer"
+          }
+        },
+        "title": "OrchestratorSelect",
         "type": "object"
       },
       "Organize": {
@@ -8898,6 +9099,14 @@
       },
       "OutputNodeConfig": {
         "properties": {
+          "contract": {
+            "items": {
+              "$ref": "#/components/schemas/OutputField"
+            },
+            "maxItems": 50,
+            "title": "Contract",
+            "type": "array"
+          },
           "files": {
             "items": {
               "$ref": "#/components/schemas/ResultFileSpec"
@@ -9276,7 +9485,8 @@
           "kind": {
             "enum": [
               "workflow",
-              "tool"
+              "tool",
+              "mcp"
             ],
             "title": "Kind",
             "type": "string"
@@ -10788,7 +10998,8 @@
           "kind": {
             "enum": [
               "workflow",
-              "tool"
+              "tool",
+              "mcp"
             ],
             "title": "Kind",
             "type": "string"
@@ -14049,6 +14260,47 @@
         "title": "StartConfig",
         "type": "object"
       },
+      "StdioCommand": {
+        "description": "A local MCP server started over stdio (WP-8): Python packages from PyPI, installed only after an administrator\napproved their hash-pinned versions, and run with ``python -m <module> <args>`` in a container of Nodestro's\nsandbox image: no network, read-only root file system, no capabilities, user ``nobody``, memory/CPU/process\nlimits. Never on the host.",
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Args",
+            "type": "array"
+          },
+          "memory_mb": {
+            "default": 512,
+            "maximum": 2048.0,
+            "minimum": 128.0,
+            "title": "Memory Mb",
+            "type": "integer"
+          },
+          "module": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Module",
+            "type": "string"
+          },
+          "requirements": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Requirements",
+            "type": "array"
+          }
+        },
+        "required": [
+          "requirements",
+          "module"
+        ],
+        "title": "StdioCommand",
+        "type": "object"
+      },
       "Step": {
         "description": "Something the assistant actually did while answering.",
         "properties": {
@@ -16817,6 +17069,14 @@
             ],
             "title": "Budget Usd"
           },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Capabilities",
+            "type": "array"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -16934,6 +17194,14 @@
             ],
             "title": "Budget Usd"
           },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Capabilities",
+            "type": "array"
+          },
           "description": {
             "default": "",
             "title": "Description",
@@ -16988,6 +17256,14 @@
               }
             ],
             "title": "Budget Usd"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Capabilities",
+            "type": "array"
           },
           "description": {
             "default": "",
@@ -17071,6 +17347,20 @@
           "agents": {
             "title": "Agents",
             "type": "integer"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "contract": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Contract",
+            "type": "array"
           },
           "description": {
             "title": "Description",
@@ -23788,7 +24078,8 @@
             "schema": {
               "enum": [
                 "workflow",
-                "tool"
+                "tool",
+                "mcp"
               ],
               "title": "Kind",
               "type": "string"
@@ -23841,7 +24132,8 @@
             "schema": {
               "enum": [
                 "workflow",
-                "tool"
+                "tool",
+                "mcp"
               ],
               "title": "Kind",
               "type": "string"
@@ -23894,7 +24186,8 @@
             "schema": {
               "enum": [
                 "workflow",
-                "tool"
+                "tool",
+                "mcp"
               ],
               "title": "Kind",
               "type": "string"
