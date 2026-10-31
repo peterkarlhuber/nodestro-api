@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+Opt-in release gate per publication (evolution plan Q-3, decisions D6 and D6a):
+
+- `Publication.gate` (`ReleaseGate`: `suite_ids`, `min_pass_rate`, `judge_min_score`), default `None`: without a gate
+  publishing is unchanged. `PUT /api/publications/{id}/gate` switches it on, changes it or switches it off (admin);
+  `POST /api/workflows/{id}/api/publish` accepts `gate` and `override`.
+- `POST /api/workflows/{id}/api/gate` (read) reports the gate for a saved version, evaluated on the server from the
+  stored test series, with the rules of the studio's test status: the latest finished run with the saved models must
+  have tested this exact version, and the suite must not have changed since.
+- Items come in three kinds. `critical`: the evidence is missing or does not belong to this version
+  (`gate.suite_missing`, `gate.suite_untested`, `gate.suite_variant_only`, `gate.suite_outdated`,
+  `gate.suite_changed`); it blocks the release (`gate.blocked`), and nothing in the UI or the API overrides it.
+  `deterministic`: the share of cases whose run succeeded and whose checks all passed (`gate.pass_rate`). `judge`:
+  the AI judge's mean score (`gate.judge_score`, `gate.judge_missing`), always marked `probabilistic` and never mixed
+  into the deterministic numbers.
+- A failed non-critical item needs a written reason (`override.reason`, 10 to 500 characters;
+  `gate.override_required` without one). Publishing needs the `admin` permission, so on a server only the roles
+  `owner` and `admin` can give an override. The reason, who gave it and the failed items are kept on the release
+  (`Release.gate`) and in the history (`gate_override`). `ReleaseSummary.gate` is `passed`, `overridden` or `None`.
+- Fix: saving an existing test series (`PUT /api/benchmarks/{id}`) failed because the updated cases were not
+  validated again.
+
 Assistant live events carry their payload unwrapped (fix, found by the studio's assistant e2e suite):
 
 - `Assistant._emit` took the payload as `**data`, and every caller passed `data=...`, so each live event of an answer

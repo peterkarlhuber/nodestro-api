@@ -50,6 +50,8 @@ from nodestro_runtime.tool_library import ToolLibrary, make_sandbox
 from orkexa import __version__ as library_version
 from pydantic import BaseModel, Field
 
+from .release_gate import GateOverride, GateRecord, GateReport, ReleaseGate, enforce, evaluate
+from .release_gate import validate as validate_gate
 from .serving import (
     SLUG,
     ApiError,
@@ -71,7 +73,19 @@ PUBLICATIONS = "publications"
 RELEASES = "api_releases"
 
 EventKind = Literal[
-    "published", "activated", "enabled", "disabled", "network_on", "network_off", "settings", "renamed", "exported"
+    "published",
+    "activated",
+    "enabled",
+    "disabled",
+    "network_on",
+    "network_off",
+    "settings",
+    "renamed",
+    "exported",
+    "gate_on",
+    "gate_changed",
+    "gate_off",
+    "gate_override",
 ]
 
 
@@ -94,6 +108,8 @@ class Publication(BaseModel):
     #: Reachable through the network listener (when that is switched on, see :mod:`nodestro_api.network`).
     network: bool = False
     limits: ApiLimits = Field(default_factory=ApiLimits)
+    #: The opt-in release gate (Q-3); ``None``: new releases need no test evidence (as before).
+    gate: ReleaseGate | None = None
     created_at: datetime = Field(default_factory=now)
     updated_at: datetime = Field(default_factory=now)
     history: list[PublicationEvent] = Field(default_factory=list)
@@ -115,6 +131,8 @@ class Release(BaseModel):
     created_at: datetime = Field(default_factory=now)
     digest: str
     check: ReleaseCheckSummary = Field(default_factory=ReleaseCheckSummary)
+    #: What the release gate said, and the override if one was given; ``None``: released without a gate.
+    gate: GateRecord | None = None
     bundle: ReleaseBundle
 
 
@@ -130,6 +148,8 @@ class ReleaseSummary(BaseModel):
     approvals: int
     tools: list[str]
     runs: int = 0
+    #: ``passed`` or ``overridden`` (Q-3); ``None``: released without a gate.
+    gate: Literal["passed", "overridden"] | None = None
 
 
 class ApiCheck(BaseModel):
@@ -241,6 +261,7 @@ class Publications:
                 approvals=item.bundle.approvals(),
                 tools=sorted([*item.bundle.tools, *item.bundle.builtin_tools]),
                 runs=counts.get(item.id, 0),
+                gate=None if item.gate is None else ("overridden" if item.gate.override_reason else "passed"),
             )
             for item in reversed(self.releases(publication.id))
         ]
@@ -531,12 +552,54 @@ class Publications:
         )
         return bundle, check
 
+    def gate_report(self, workflow_id: str, version: int | None, gate: ReleaseGate | None = None) -> GateReport:
+        """The release gate's verdict for a saved version: ``gate``, or else the publication's own gate."""
+        _, number = self._versioned(workflow_id, version)
+        if gate is None:
+            publication = self.for_workflow(workflow_id)
+            gate = publication.gate if publication else None
+        else:
+            validate_gate(self.ctx, workflow_id, gate)
+        return evaluate(self.ctx, workflow_id, number, gate)
+
+    def set_gate(self, publication_id: str, gate: ReleaseGate | None) -> Publication:
+        """Switch the release gate on, change it, or switch it off; every change is in the history."""
+        with self._lock:
+            publication = self.get(publication_id)
+            if gate is not None:
+                validate_gate(self.ctx, publication.workflow_id, gate)
+            if gate == publication.gate:
+                return publication
+            kind: EventKind = (
+                "gate_off" if gate is None else ("gate_on" if publication.gate is None else "gate_changed")
+            )
+            details = {} if gate is None else gate.model_dump()
+            publication.gate = gate
+            publication.history.append(PublicationEvent(kind=kind, details=details))
+            self._put(publication)
+            return publication
+
     def publish(
-        self, workflow_id: str, version: int | None, *, note: str = "", slug: str | None = None, activate: bool = True
+        self,
+        workflow_id: str,
+        version: int | None,
+        *,
+        note: str = "",
+        slug: str | None = None,
+        activate: bool = True,
+        gate: ReleaseGate | None = None,
+        override: GateOverride | None = None,
+        principal_id: str = "local",
     ) -> tuple[Publication, Release]:
+        """Create a release. ``gate`` switches the release gate on (or changes it) before it is evaluated."""
         with self._lock:
             bundle, check = self._bundle(workflow_id, version)
             publication = self.for_workflow(workflow_id)
+            wanted_gate = gate if gate is not None else (publication.gate if publication else None)
+            if gate is not None:
+                validate_gate(self.ctx, workflow_id, gate)
+            report = evaluate(self.ctx, workflow_id, bundle.workflow_version, wanted_gate)
+            record = enforce(report, override, principal_id)
             if publication is None:
                 wanted = slugify(slug or bundle.workflow.name)
                 publication = Publication(
@@ -562,13 +625,31 @@ class Publications:
                     warnings=check.warnings,
                     infos=sum(item.level == "info" for item in check.problems),
                 ),
+                gate=record,
                 bundle=bundle,
             )
+            if gate is not None and gate != publication.gate:
+                changed: EventKind = "gate_on" if publication.gate is None else "gate_changed"
+                publication.gate = gate
+                publication.history.append(PublicationEvent(kind=changed, details=gate.model_dump()))
             self.store.put(RELEASES, f"{publication.id}:{number:06d}", release)
             publication.name = bundle.workflow.name
             publication.history.append(
                 PublicationEvent(kind="published", details={"release": number, "version": bundle.workflow_version})
             )
+            if record is not None and record.override_reason:
+                failed = [item.code for item in record.report.items if not item.passed]
+                publication.history.append(
+                    PublicationEvent(
+                        kind="gate_override",
+                        details={
+                            "release": number,
+                            "reason": record.override_reason,
+                            "by": record.override_by,
+                            "failed": failed,
+                        },
+                    )
+                )
             if activate or publication.active_release is None:
                 publication.active_release = number
                 publication.history.append(PublicationEvent(kind="activated", details={"release": number}))

@@ -19,7 +19,7 @@ is [PLATFORM.md](https://github.com/peterkarlhuber/nodestro-studio/blob/master/d
 | --- | --- |
 | Application | `app` (`create_app`), `context` (`AppConfig`; `Nodestro` extends the runtime `Workspace`), `cli` (`nodestro-api`), `local_access` (Host/Origin guard) |
 | Studio REST API `/api` | `api`, `api_data`, `api_inputs`, `api_examples`, `api_python`, `api_architect`, `api_assistant`, `api_automation`, `api_guide`, `api_publish`, `api_pricing` (model prices, reconciliation) |
-| Published APIs `/api/published/{slug}` | `serving` (shared with exports), `publishing`, `api_keys`, `network` (separate listener for the local network) |
+| Published APIs `/api/published/{slug}` | `serving` (shared with exports), `publishing`, `release_gate` (opt-in release gate), `api_keys`, `network` (separate listener for the local network) |
 | Export | `exporter` (ZIP with runtime, lock file, tests; orkexa from Git or bundled), `standalone` |
 | Services | `pricing_setup` (price sync on desktop and server), `assistants`, `architect`, `assistant`, `assistant_context`, `docs_index`, `batches`, `benchmarks`, `schedules`, `backup`, `organize`, `search`, `diagnostics` |
 | Contract | `openapi` and `openapi/nodestro-api.json` |
