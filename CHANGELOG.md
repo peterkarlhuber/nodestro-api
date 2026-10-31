@@ -12,6 +12,8 @@ Comparing models in a test series (evolution plan Q-2, 2026-10-31):
   average (`based_on` 0) and bounds the cost by the limit. An unknown agent (`benchmark.model_node_unknown`), an
   empty model (`config.model_missing`) or a variant the pre-check rejects (`run.agents_invalid`, e.g. reasoning
   effort on a model without it) is refused before anything starts. Without `models` nothing changes.
+- Pins: nodestro-runtime `45e7774` (built-in Linux sandbox; before `272e2f6`) and nodestro-examples `786c453`
+  (before `e6d9619`). The OpenAPI snapshot gains `Settings.builtin_sandbox`; exports carry the two sandbox modules.
 
 Model prices and cost reconciliation (PRICING-1, phases N5, N6, N8 and N10, 2026-10-31):
 
