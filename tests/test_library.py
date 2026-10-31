@@ -191,12 +191,13 @@ def test_every_template_runs_end_to_end_with_a_fake_client(
             result = wait_run(client, run.json()["id"])
         assert result["status"] == "succeeded", (language, template_id, result.get("error"))
         agents = [node for node in workflow["nodes"] if node["type"] == "agent"]
-        # Agents that only run after a rejection are skipped when everything is approved.
-        rejected_only = {edge["target"] for edge in workflow["edges"] if edge.get("source_handle") == "rejected"}
-        # Agents behind a decision run or are skipped, depending on the branch the fake answers open.
         incoming: dict[str, list[Any]] = {}
         for edge in workflow["edges"]:
             incoming.setdefault(edge["target"], []).append(edge.get("source_handle"))
+        # Agents that only run after a rejection are skipped when everything is approved (an agent a rejection
+        # loops back to, e.g. the reply writer of customer-service, runs on its first way in as well).
+        rejected_only = {target for target, handles in incoming.items() if set(handles) == {"rejected"}}
+        # Agents behind a decision run or are skipped, depending on the branch the fake answers open.
         branch_only = {target for target, handles in incoming.items() if all(handles)} - rejected_only
         for node in agents:
             state = result["nodes"][node["id"]]

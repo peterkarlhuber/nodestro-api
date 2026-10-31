@@ -196,6 +196,15 @@ def test_the_api_queues_runs_and_a_worker_executes_them(server: Server, make_wor
     assert finished["output"] == "from the worker"
 
 
+def test_the_worker_holds_the_configured_runs_and_waiting_slots(make_worker: Callable[..., Background]) -> None:
+    default = make_worker().worker.runner
+    assert (default.max_runs, default.slots.max_waiting) == (2, 1)
+    wider = make_worker(max_runs=4, max_waiting=3).worker.runner
+    assert (wider.max_runs, wider.slots.max_waiting) == (4, 3)
+    with pytest.raises(ValueError):
+        make_worker(max_runs=1, max_waiting=1)
+
+
 def test_the_api_streams_the_events_of_a_run_in_a_worker(
     server: Server, make_worker: Callable[..., Background]
 ) -> None:

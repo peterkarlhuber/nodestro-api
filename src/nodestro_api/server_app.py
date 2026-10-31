@@ -45,6 +45,7 @@ from .api_mcp import router as mcp_router
 from .api_pricing import router as pricing_router
 from .api_publish import router as publish_router
 from .api_python import router as python_router
+from .api_tool_approvals import router as tool_approvals_router
 from .context import AppConfig, Nodestro
 from .identity import (
     OidcClient,
@@ -180,6 +181,7 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
     app.include_router(inputs_router)
     app.include_router(pricing_router)
     app.include_router(mcp_router)
+    app.include_router(tool_approvals_router)
     app.include_router(router)
     app.include_router(data_router)
     check_routes(app)

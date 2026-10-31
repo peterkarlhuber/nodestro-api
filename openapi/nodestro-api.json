@@ -7099,6 +7099,86 @@
         "title": "KnowledgeUpdate",
         "type": "object"
       },
+      "LegacyBinding": {
+        "properties": {
+          "bound_version": {
+            "title": "Bound Version",
+            "type": "integer"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "release": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          },
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Id"
+          },
+          "workflow_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Version"
+          }
+        },
+        "required": [
+          "node_id",
+          "tool",
+          "bound_version"
+        ],
+        "title": "LegacyBinding",
+        "type": "object"
+      },
+      "LegacyReport": {
+        "description": "What the activation step stamped (shown as *exceptions from before S-2*).",
+        "properties": {
+          "bindings": {
+            "items": {
+              "$ref": "#/components/schemas/LegacyBinding"
+            },
+            "title": "Bindings",
+            "type": "array"
+          },
+          "versions": {
+            "default": 0,
+            "title": "Versions",
+            "type": "integer"
+          },
+          "workflows": {
+            "default": 0,
+            "title": "Workflows",
+            "type": "integer"
+          }
+        },
+        "title": "LegacyReport",
+        "type": "object"
+      },
       "LibraryCopy": {
         "properties": {
           "language": {
@@ -7319,7 +7399,9 @@
               "tool_changed",
               "tool_removed",
               "call_refused",
+              "oauth_started",
               "oauth_connected",
+              "oauth_failed",
               "oauth_disconnected"
             ],
             "title": "Kind",
@@ -9347,6 +9429,50 @@
         "title": "Position",
         "type": "object"
       },
+      "PreGrantIn": {
+        "properties": {
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "scope": {
+            "enum": [
+              "schedule",
+              "batch",
+              "benchmark"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "scope_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Scope Id",
+            "type": "string"
+          },
+          "tool": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Tool",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tool",
+          "scope",
+          "scope_id"
+        ],
+        "title": "PreGrantIn",
+        "type": "object"
+      },
       "PreviewInput": {
         "properties": {
           "chars": {
@@ -10431,7 +10557,8 @@
               "gate_on",
               "gate_changed",
               "gate_off",
-              "gate_override"
+              "gate_override",
+              "legacy_stamped"
             ],
             "title": "Kind",
             "type": "string"
@@ -12044,6 +12171,11 @@
       },
       "Run": {
         "properties": {
+          "active_seconds": {
+            "default": 0.0,
+            "title": "Active Seconds",
+            "type": "number"
+          },
           "api_key_id": {
             "anyOf": [
               {
@@ -12054,6 +12186,28 @@
               }
             ],
             "title": "Api Key Id"
+          },
+          "budget_hard_maximum": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Hard Maximum"
+          },
+          "budget_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Usd"
           },
           "created_at": {
             "format": "date-time",
@@ -14695,6 +14849,308 @@
         "title": "TestResult",
         "type": "object"
       },
+      "ToolApprovalDecision": {
+        "properties": {
+          "arguments_hash": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Arguments Hash",
+            "type": "string"
+          },
+          "comment": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Comment",
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "approved",
+              "rejected"
+            ],
+            "title": "Decision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision",
+          "arguments_hash"
+        ],
+        "title": "ToolApprovalDecision",
+        "type": "object"
+      },
+      "ToolApprovalEvent": {
+        "description": "One entry of a tenant's approval audit trail: who decided, granted or revoked what, when; and every refused\ndecision with its problem code. Never holds the call's arguments (only their hash).",
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "arguments_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arguments Hash"
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "decided",
+              "decision_refused",
+              "pre_granted",
+              "pre_grant_revoked",
+              "legacy_stamped"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "pre_grant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pre Grant Id"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool"
+          }
+        },
+        "required": [
+          "kind",
+          "actor"
+        ],
+        "title": "ToolApprovalEvent",
+        "type": "object"
+      },
+      "ToolApprovalRequest": {
+        "properties": {
+          "arguments_hash": {
+            "title": "Arguments Hash",
+            "type": "string"
+          },
+          "call_id": {
+            "title": "Call Id",
+            "type": "string"
+          },
+          "capability": {
+            "$ref": "#/components/schemas/ToolCapability"
+          },
+          "closed_because": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed Because"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "deadline": {
+            "format": "date-time",
+            "title": "Deadline",
+            "type": "string"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By"
+          },
+          "definition_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Definition Hash"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "input": {
+            "additionalProperties": true,
+            "title": "Input",
+            "type": "object"
+          },
+          "iteration": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Iteration",
+            "type": "array"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "default": "pending",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "expired",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "run_id",
+          "node_id",
+          "call_id",
+          "tool",
+          "capability",
+          "arguments_hash",
+          "deadline"
+        ],
+        "title": "ToolApprovalRequest",
+        "type": "object"
+      },
+      "ToolApprovalsState": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "legacy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LegacyReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "ToolApprovalsState",
+        "type": "object"
+      },
       "ToolAttempt": {
         "properties": {
           "code": {
@@ -15549,6 +16005,97 @@
         "title": "ToolJob",
         "type": "object"
       },
+      "ToolPreGrant": {
+        "description": "A person's advance approval of one tool for one unattended scope (D10c): narrow, traceable, revocable.\n\nMatches only the tool name, its version (own and generated tools) and the scope; voided by a new tool version,\nby its expiry and by revocation. Never covers ``destructive`` or MCP tools.",
+        "properties": {
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "granted_at": {
+            "format": "date-time",
+            "title": "Granted At",
+            "type": "string"
+          },
+          "granted_by": {
+            "title": "Granted By",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "revoked_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked By"
+          },
+          "scope": {
+            "enum": [
+              "schedule",
+              "batch",
+              "benchmark"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "scope_id": {
+            "title": "Scope Id",
+            "type": "string"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "id",
+          "tool",
+          "scope",
+          "scope_id",
+          "granted_by",
+          "granted_at"
+        ],
+        "title": "ToolPreGrant",
+        "type": "object"
+      },
       "ToolRunRequest": {
         "properties": {
           "input": {
@@ -15759,6 +16306,11 @@
           "total_tokens": {
             "default": 0,
             "title": "Total Tokens",
+            "type": "integer"
+          },
+          "uncapped_requests": {
+            "default": 0,
+            "title": "Uncapped Requests",
             "type": "integer"
           },
           "unpriced_requests": {
@@ -16273,6 +16825,9 @@
             "title": "Id",
             "type": "string"
           },
+          "limits": {
+            "$ref": "#/components/schemas/WorkflowLimits"
+          },
           "name": {
             "default": "Neuer Workflow",
             "title": "Name",
@@ -16378,6 +16933,9 @@
             "title": "Edges",
             "type": "array"
           },
+          "limits": {
+            "$ref": "#/components/schemas/WorkflowLimits"
+          },
           "name": {
             "default": "Neuer Workflow",
             "title": "Name",
@@ -16430,6 +16988,9 @@
             "title": "Edges",
             "type": "array"
           },
+          "limits": {
+            "$ref": "#/components/schemas/WorkflowLimits"
+          },
           "name": {
             "default": "Neuer Workflow",
             "title": "Name",
@@ -16444,6 +17005,52 @@
           }
         },
         "title": "WorkflowIn",
+        "type": "object"
+      },
+      "WorkflowLimits": {
+        "description": "Execution limits of a workflow's runs (Adaptive Orchestration M2); ``None``: no limit of this kind.",
+        "properties": {
+          "max_duration_s": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 604800.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Duration S"
+          },
+          "max_parallel": {
+            "anyOf": [
+              {
+                "maximum": 32.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Parallel"
+          },
+          "max_steps": {
+            "anyOf": [
+              {
+                "maximum": 10000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Steps"
+          }
+        },
+        "title": "WorkflowLimits",
         "type": "object"
       },
       "WorkflowSummary": {
@@ -24289,6 +24896,108 @@
         "summary": "Propose Test Case"
       }
     },
+    "/api/runs/{run_id}/tool-approvals": {
+      "get": {
+        "operationId": "run_tool_approvals_api_runs__run_id__tool_approvals_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ToolApprovalRequest"
+                  },
+                  "title": "Response Run Tool Approvals Api Runs  Run Id  Tool Approvals Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Tool Approvals"
+      }
+    },
+    "/api/runs/{run_id}/tool-approvals/{request_id}": {
+      "post": {
+        "description": "Approve or reject one tool call; the waiting run continues at its next look (within about a second).",
+        "operationId": "decide_tool_approval_api_runs__run_id__tool_approvals__request_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToolApprovalDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolApprovalRequest"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decide Tool Approval"
+      }
+    },
     "/api/schedules": {
       "get": {
         "operationId": "list_schedules_api_schedules_get",
@@ -24712,6 +25421,231 @@
           }
         },
         "summary": "Put Settings"
+      }
+    },
+    "/api/tool-approvals": {
+      "get": {
+        "description": "Every question that waits for a person, oldest first (also after a restart).",
+        "operationId": "open_tool_approvals_api_tool_approvals_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ToolApprovalRequest"
+                  },
+                  "title": "Response Open Tool Approvals Api Tool Approvals Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Open Tool Approvals"
+      }
+    },
+    "/api/tool-approvals/audit": {
+      "get": {
+        "operationId": "tool_approval_audit_api_tool_approvals_audit_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ToolApprovalEvent"
+                  },
+                  "title": "Response Tool Approval Audit Api Tool Approvals Audit Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Tool Approval Audit"
+      }
+    },
+    "/api/tool-approvals/legacy": {
+      "get": {
+        "operationId": "tool_approvals_state_api_tool_approvals_legacy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolApprovalsState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Tool Approvals State"
+      },
+      "post": {
+        "description": "The activation step: stamp existing bindings of workflows, workflow versions and published releases as legacy\nexemptions (visible, bound to the tool version they run with). Idempotent; it does not switch approvals on.",
+        "operationId": "stamp_legacy_bindings_api_tool_approvals_legacy_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolApprovalsState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Stamp Legacy Bindings"
+      }
+    },
+    "/api/tool-pre-grants": {
+      "get": {
+        "description": "Every pre-grant of the tenant, newest first, revoked and expired ones included.",
+        "operationId": "list_pre_grants_api_tool_pre_grants_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ToolPreGrant"
+                  },
+                  "title": "Response List Pre Grants Api Tool Pre Grants Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Pre Grants"
+      },
+      "post": {
+        "description": "Approve one tool version in advance for one schedule, batch or test series (never MCP or destructive tools).",
+        "operationId": "create_pre_grant_api_tool_pre_grants_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreGrantIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolPreGrant"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Pre Grant"
+      }
+    },
+    "/api/tool-pre-grants/{scope}/{scope_id}/{grant_id}": {
+      "delete": {
+        "description": "Revoke a pre-grant; it no longer applies from the next call on (revoking twice changes nothing).",
+        "operationId": "revoke_pre_grant_api_tool_pre_grants__scope___scope_id___grant_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "enum": [
+                "schedule",
+                "batch",
+                "benchmark"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "scope_id",
+            "required": true,
+            "schema": {
+              "title": "Scope Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "grant_id",
+            "required": true,
+            "schema": {
+              "title": "Grant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolPreGrant"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Pre Grant"
       }
     },
     "/api/tools": {

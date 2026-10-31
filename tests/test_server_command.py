@@ -88,6 +88,25 @@ def test_model_endpoints_and_worker_timing_come_from_the_environment(tmp_path: P
     assert fields == ["NODESTRO_MODEL_ENDPOINTS", "NODESTRO_WORKER_POLL_SECONDS"]
 
 
+def test_worker_capacity_comes_from_the_environment_and_is_validated(tmp_path: Path) -> None:
+    from nodestro_api.worker import WorkerSettings
+
+    assert command.load(_environment(tmp_path)).capacity == {}
+    assert (WorkerSettings.max_runs, WorkerSettings.max_waiting) == (2, 1)
+    loaded = command.load(_environment(tmp_path, NODESTRO_WORKER_MAX_RUNS="4", NODESTRO_WORKER_MAX_WAITING="3"))
+    assert loaded.capacity == {"max_runs": 4, "max_waiting": 3}
+    for changes, field in (
+        ({"NODESTRO_WORKER_MAX_RUNS": "two"}, "NODESTRO_WORKER_MAX_RUNS"),
+        ({"NODESTRO_WORKER_MAX_RUNS": "0"}, "NODESTRO_WORKER_MAX_RUNS"),
+        # every held run waiting would leave no slot to execute in
+        ({"NODESTRO_WORKER_MAX_RUNS": "2", "NODESTRO_WORKER_MAX_WAITING": "2"}, "NODESTRO_WORKER_MAX_RUNS"),
+        ({"NODESTRO_WORKER_MAX_WAITING": "-1"}, "NODESTRO_WORKER_MAX_RUNS"),
+    ):
+        with pytest.raises(NodestroError) as error:
+            command.load(_environment(tmp_path, **changes))
+        assert [item["field"] for item in error.value.params["problems"]] == [field], changes
+
+
 def test_the_command_stops_with_one_sentence() -> None:
     environ = {key: value for key, value in os.environ.items() if not key.startswith("NODESTRO_")}
     stopped = subprocess.run(
