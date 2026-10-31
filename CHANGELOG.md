@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+Pins (2026-10-31): `nodestro-runtime` at `d2cb987` (before: `45e7774`; strict price-mode refusals get their own error
+codes) and `nodestro-examples` at `1c2f1e4` (before: `786c453`; same runtime). No API changes.
+
 Opt-in release gate per publication (evolution plan Q-3, decisions D6 and D6a):
 
 - `Publication.gate` (`ReleaseGate`: `suite_ids`, `min_pass_rate`, `judge_min_score`), default `None`: without a gate
