@@ -311,8 +311,12 @@ def test_authentication_and_permissions(published: Callable[..., Any]) -> None:
     assert stored["secret_hash"] and token.split("_", 2)[2] not in json.dumps(stored)
 
 
-def test_every_published_endpoint_refuses_requests_without_a_valid_key(published: Callable[..., Any]) -> None:
+def test_every_published_endpoint_refuses_requests_without_a_valid_key(
+    published: Callable[..., Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Walks every route the route check accepts under /api/published, so a new endpoint is tested automatically."""
+    # The MCP server endpoint (WP-11) answers 404 while it is off; switched on, it must refuse without a key as well.
+    monkeypatch.setenv("NODESTRO_MCP_SERVER", "1")
     client, publication, token = published()
     slug = publication["slug"]
     started = client.post(f"{PUBLISHED}/{slug}/runs", json={"values": {"customer": "ACME"}}, headers=auth(token))

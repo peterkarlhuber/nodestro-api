@@ -137,11 +137,11 @@ class McpServerEndpoint:
         client = request.client.host if request.client else ""
         if client not in _LOOPBACK:
             raise ApiError(403, "lan.not_enabled", "Nodestro's MCP server answers only this computer")
+        identity = self.core.authenticate(request)
         from nodestro_runtime.mcp.hub import sdk_available
 
         if not sdk_available():
             raise ApiError(503, "mcp.unavailable", "The MCP server needs Python 3.11 or later")
-        identity = self.core.authenticate(request)
         token = _IDENTITY.set(identity)
         try:
             return await self._serve(request)
