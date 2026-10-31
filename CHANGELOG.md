@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+Model choice from measured test series results (Adaptive Orchestration M6a):
+
+- `GET /api/benchmarks/{suite_id}/model-choice?node_id=…` (`read`) recommends a model for one agent from the
+  series' finished test runs, by a policy given in the request: `objective` (`cost`, `duration` or `quality`),
+  `min_pass_rate` (default: the configured model's measured pass rate, so no regression) and `no_new_failures`
+  (default on). Only measurements count: runs of the same workflow apart from its models, the same cases and judge,
+  the same models for every other agent, and a result for every case. An unknown cost is never treated as zero, so
+  such a model cannot win on cost. Without a measurement the answer keeps the configured model. Nothing changes on
+  its own; the answer names the policy, the test runs used and why other runs or models were left out.
+- Test runs record `agent_models`, `basis` (the workflow without models, names and positions) and `suite_basis`
+  (cases and judge) at the start. Test runs from before this change have neither and are never used.
+- OpenAPI regenerated (`ModelChoice`, `ModelPolicy`, `Measurement`, new `BenchmarkRun` fields).
+
 Teams, orchestrator and pool selection (Adaptive Orchestration M3–M5):
 
 - Pins `nodestro-runtime` at `40e04b4` (output contracts, capabilities, orchestrator node, pool selection by
