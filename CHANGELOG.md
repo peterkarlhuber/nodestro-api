@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+Desktop launch secret (desktop/server plan, PR-6, 2026-10-31):
+
+- `NODESTRO_LAUNCH_SECRET` (`AppConfig.launch_secret`, module `nodestro_api.launch`): the desktop app's window
+  exchanges it once at `GET /api/launch?token=…` for an `HttpOnly`, `SameSite=Strict` session cookie; afterwards
+  every request without the cookie answers `401 access.launch_required` (open: `/api/health`, `/api/published`).
+  A second launch answers `403 access.launch_used`, a wrong token `403 access.launch_invalid`.
+- The variable is removed from the process environment when it is read. Secrets shorter than 32 characters are
+  refused (`access.launch_secret_weak`), and so is `--reload` together with a secret.
+- Without the variable nothing changes. OpenAPI is unchanged (the launch route is handled by the middleware).
+
 Sandbox policy (desktop/server plan, M1 PR-4, ADR-0006, 2026-10-31): pins of `nodestro-runtime` at `d6e75b7` and
 `nodestro-examples` at `31b5714`. **Changed behavior on purpose:**
 

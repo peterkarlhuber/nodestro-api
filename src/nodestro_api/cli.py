@@ -54,12 +54,17 @@ def serve(factory: str, args: argparse.Namespace) -> None:
     import uvicorn
 
     from .context import AppConfig
+    from .launch import check_secret
     from .local_access import require_loopback_only
 
     try:
         config = AppConfig.from_env()
         if config.profile.validate().kind == "desktop":
             require_loopback_only(args.host, config.allowed_hosts)
+        check_secret(config.launch_secret)
+        if config.launch_secret is not None and args.reload:
+            # The reloading child process would start without the secret, i.e. unprotected.
+            raise NodestroError("access.launch_secret_reload", "--reload cannot be used with NODESTRO_LAUNCH_SECRET")
     except NodestroError as error:
         raise SystemExit(str(error)) from None
 
