@@ -31,8 +31,7 @@ published workflow APIs under ``/api/published``, which authenticate their calle
 
 In the desktop profile there is one principal, the local owner (:data:`LOCAL_OWNER`), who holds every
 permission: the studio API behaves as before. On a server, principals come from logins (OpenID Connect,
-:mod:`nodestro_api.identity`): one user in one tenant with one role. The server profile cannot be started
-yet (``profile.server_unavailable``).
+:mod:`nodestro_api.identity`): one user in one tenant with one role (``nodestro-server api``).
 """
 
 from __future__ import annotations

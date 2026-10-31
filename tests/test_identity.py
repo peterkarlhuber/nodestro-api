@@ -1,6 +1,6 @@
 """Logins, sessions, roles and tenant isolation of the multi-tenant studio API (needs PostgreSQL).
 
-The app is built by ``create_tenant_app`` (the server profile itself cannot be started yet) against a stub
+The app is built by ``create_tenant_app`` against a stub
 OpenID Connect provider (``stub_oidc``). The PostgreSQL cases need ``NODESTRO_TEST_POSTGRES``; with
 ``NODESTRO_REQUIRE_POSTGRES=1`` (CI) a missing database fails instead of skipping.
 """
@@ -236,6 +236,40 @@ def test_a_wrong_pkce_verifier_is_refused_by_the_provider(server: Server) -> Non
     code = callback.split("code=")[1].split("&")[0]
     server.provider.grants[code].challenge = "not-the-challenge"
     assert browser.get(callback).json()["code"] == "identity.login_failed"
+
+
+def _settings(issuer: str) -> OidcSettings:
+    return OidcSettings(issuer=issuer, client_id="c", client_secret="s", redirect_uri="https://studio.test/cb")
+
+
+@pytest.mark.parametrize("issuer", ["http://login.example", "ftp://login.example", "login.example"])
+def test_the_identity_provider_is_reached_over_https(issuer: str) -> None:
+    with pytest.raises(ValueError, match="https"):
+        OidcClient(_settings(issuer))
+
+
+def test_only_a_loopback_development_provider_may_use_http() -> None:
+    def metadata(issuer: str, endpoint: str) -> httpx.MockTransport:
+        def handle(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={
+                    "issuer": issuer,
+                    "authorization_endpoint": f"{endpoint}/auth",
+                    "token_endpoint": f"{endpoint}/token",
+                    "jwks_uri": f"{endpoint}/keys",
+                },
+            )
+
+        return httpx.MockTransport(handle)
+
+    local = "http://localhost:5556/dex"
+    client = OidcClient(_settings(local), http=httpx.Client(transport=metadata(local, local)))
+    assert client.metadata()["token_endpoint"] == f"{local}/token"
+    remote = "https://login.example"
+    downgraded = OidcClient(_settings(remote), http=httpx.Client(transport=metadata(remote, "http://localhost:5556")))
+    with pytest.raises(Exception, match="not an https URL"):
+        downgraded.metadata()
 
 
 @pytest.mark.parametrize(

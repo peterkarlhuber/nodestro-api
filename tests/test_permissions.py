@@ -76,7 +76,7 @@ def test_the_environment_chooses_the_profile(tmp_path: Path, monkeypatch: pytest
 
 
 @pytest.mark.parametrize(
-    ("kind", "code"), [("server", "profile.server_unavailable"), ("laptop", "profile.invalid")], ids=["server", "bad"]
+    ("kind", "code"), [("server", "profile.invalid"), ("laptop", "profile.invalid")], ids=["server", "bad"]
 )
 def test_create_app_refuses_profiles_before_anything_opens(tmp_path: Path, kind: Any, code: str) -> None:
     data = tmp_path / "data"
@@ -117,7 +117,7 @@ def command_line(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[..
 def test_the_command_line_refuses_the_server_profile_before_touching_the_disk(
     command_line: Callable[..., list[str]], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    with pytest.raises(SystemExit, match="server profile cannot be started"):
+    with pytest.raises(SystemExit, match="nodestro-server command"):
         command_line("--profile", "server")
     with pytest.raises(SystemExit, match="not a profile"):
         command_line("--profile", "cloud")

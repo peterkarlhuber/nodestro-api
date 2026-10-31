@@ -26,7 +26,7 @@ import logging
 import secrets
 import threading
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -65,6 +65,15 @@ class LoginError(Exception):
         self.code = code
 
 
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def secure_url(url: str) -> bool:
+    """Whether ``url`` is https, or http on this computer (loopback: development and tests only)."""
+    parts = urlsplit(url)
+    return parts.scheme == "https" or (parts.scheme == "http" and (parts.hostname or "") in _LOOPBACK_HOSTS)
+
+
 def _b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
@@ -101,8 +110,8 @@ class OidcClient:
     def __init__(self, settings: OidcSettings, http: Any | None = None) -> None:
         import httpx
 
-        if not settings.issuer.startswith("https://"):
-            raise ValueError("The identity provider must be reached over https")
+        if not secure_url(settings.issuer):
+            raise ValueError("The identity provider must be reached over https (http only on localhost)")
         self.settings = settings
         self.http = http or httpx.Client(timeout=10.0, follow_redirects=False)
         self._metadata: dict[str, Any] | None = None
@@ -117,7 +126,13 @@ class OidcClient:
                 if data.get("issuer") != self.settings.issuer:
                     raise LoginError("identity.provider", f"The provider names issuer {data.get('issuer')!r}")
                 for key in ("authorization_endpoint", "token_endpoint", "jwks_uri"):
-                    if not str(data.get(key) or "").startswith("https://"):
+                    endpoint = str(data.get(key) or "")
+                    # An https provider only names https endpoints; a loopback development provider may use http.
+                    if not (
+                        endpoint.startswith("https://")
+                        if self.settings.issuer.startswith("https://")
+                        else secure_url(endpoint)
+                    ):
                         raise LoginError("identity.provider", f"The provider's {key} is not an https URL")
                 self._metadata = data
             return self._metadata
