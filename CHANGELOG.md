@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+Assistant live events carry their payload unwrapped (fix, found by the studio's assistant e2e suite):
+
+- `Assistant._emit` took the payload as `**data`, and every caller passed `data=...`, so each live event of an answer
+  arrived as `{"data": {"data": {...}}}`. The interface reads `event.data.target`, `event.data.kind` and
+  `event.data.message`: a streamed handover card had no target (the panel crashed on its missing icon), steps had no
+  kind and `finished` never replaced the message. It went unnoticed while answers finished before the stream was
+  opened. `_emit` now takes `data` as a mapping; the handover test checks the payload of every event kind.
+
 Comparing models in a test series (evolution plan Q-2, 2026-10-31):
 
 - `POST /api/benchmarks/{id}/runs` and `/plan` accept `models` (agent node id -> model, e.g.

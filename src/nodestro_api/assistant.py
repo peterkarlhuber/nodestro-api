@@ -24,7 +24,7 @@ conversation as ``ref``, the message as ``request``), also when it fails or is c
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from datetime import datetime
 import json
@@ -745,10 +745,19 @@ class Assistant:
                 del self._subscribers[message_id]
 
     def _emit(
-        self, message: ChatMessage, kind: str, *, text: str = "", apply: Callable[[], None] | None = None, **data: Any
+        self,
+        message: ChatMessage,
+        kind: str,
+        *,
+        text: str = "",
+        apply: Callable[[], None] | None = None,
+        data: Mapping[str, Any] | None = None,
     ) -> None:
         """Record an event and publish it; ``apply`` changes the message in the same step, so a
-        subscriber's snapshot never contains a change whose event it receives again."""
+        subscriber's snapshot never contains a change whose event it receives again.
+
+        ``data`` is the event's payload as the interface reads it (``event.data.target`` of a handover,
+        ``event.data.message`` of ``finished``), not wrapped in another object."""
         with self._lock:
             if apply is not None:
                 apply()
@@ -756,7 +765,7 @@ class Assistant:
                 return
             events = self._events.setdefault(message.id, [])
             seq = events[-1].seq + 1 if events else 1
-            event = ReplyEvent(seq=seq, message_id=message.id, type=kind, text=text, data=data)
+            event = ReplyEvent(seq=seq, message_id=message.id, type=kind, text=text, data=dict(data or {}))
             # The snapshot of a subscriber carries the text, so old deltas can be dropped.
             if len(events) >= _MAX_EVENTS:
                 del events[: len(events) // 2]

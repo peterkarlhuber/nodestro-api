@@ -590,8 +590,23 @@ def test_handover_to_the_workflow_architect_is_only_a_proposal(make_app: Callabl
             "attachment": attachment_id,
         },
     )
+    recorded: list[Any] = []
+    service = client.app.state.nodestro.assistant  # type: ignore[attr-defined]
+    emit = service._emit
+
+    def record(message: Any, kind: str, **options: Any) -> None:
+        emit(message, kind, **options)
+        recorded.extend(service._events.get(message.id, [])[-1:])
+
+    service._emit = record
     detail = send(client, conversation_id, "Ja, setze das bitte um.")
     answer = detail["history"][3]
+    # The live events carry their payload as the interface reads it (``event.data.target``), not wrapped.
+    events = {event.type: event.data for event in recorded}
+    assert events["handover"]["target"] == "workflow_architect"
+    assert events["step"]["kind"] == "generate"
+    assert events["usage"]["usage"]["requests"] >= 1
+    assert events["finished"]["message"]["id"] == answer["id"]
     assert answer["status"] == "complete"
     assert [step["kind"] for step in answer["steps"]] == ["context", "generate", "handover", "generate"]
     [handover] = answer["handovers"]
