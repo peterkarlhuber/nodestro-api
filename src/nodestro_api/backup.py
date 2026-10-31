@@ -48,6 +48,7 @@ import zlib
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.providers import has_credentials
 from nodestro_runtime.schemas import AgentTemplate, Run, Workflow, now
+from nodestro_runtime.storage import SCHEMA_VERSION
 from orkexa import __version__ as library_version
 from pydantic import BaseModel, Field, ValidationError
 
@@ -180,10 +181,9 @@ def create_backup(nodestro: Nodestro, target: Path) -> BackupContents:
     """Write a complete backup of the current data to ``target`` (a .zip file)."""
     with tempfile.TemporaryDirectory(prefix="nodestro-backup-") as directory:
         database = Path(directory) / "nodestro.db"
+        nodestro.store.snapshot(database)
         snapshot = sqlite3.connect(database)
         try:
-            with nodestro.store._lock:
-                nodestro.store._connection.backup(snapshot)
             row = snapshot.execute(
                 "SELECT data FROM nodestro_documents WHERE collection = 'settings' AND id = 'app'"
             ).fetchone()
@@ -300,6 +300,14 @@ def _check_database(path: Path) -> None:
         result = connection.execute("PRAGMA integrity_check").fetchone()[0]
         if result != "ok":
             raise _fail("backup.database_invalid", f"The database is damaged: {result}")
+        version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+        if version > SCHEMA_VERSION:
+            raise _fail(
+                "backup.schema_too_new",
+                f"The backup was made by a newer Nodestro (schema version {version}; this one reads {SCHEMA_VERSION})",
+                found=version,
+                supported=SCHEMA_VERSION,
+            )
         columns = {row[1] for row in connection.execute("PRAGMA table_info(nodestro_documents)")}
         if not {"collection", "id", "data"} <= columns:
             raise _fail("backup.database_invalid", "The database has no Nodestro documents")
@@ -546,8 +554,8 @@ def _restore(nodestro: Nodestro, backup_id: str) -> RestoreResult:
         else:
             (staged_inputs / "blobs").mkdir(parents=True)
         keep = nodestro.store.get_raw("settings", "app") or {}
-        with nodestro.store._lock:
-            _copy_tables(nodestro.store._connection, source / "nodestro.db", keep)
+        with nodestro.store.maintenance() as connection:
+            _copy_tables(connection, source / "nodestro.db", keep)
     except BaseException:
         shutil.rmtree(staged, ignore_errors=True)
         shutil.rmtree(staged_inputs, ignore_errors=True)

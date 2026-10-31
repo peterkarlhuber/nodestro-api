@@ -729,3 +729,45 @@ def test_a_schedule_deleted_while_its_run_starts_stays_deleted(
     monkeypatch.setattr(schedules, "launch", launch_and_delete)
     assert len(client.portal.call(ctx.schedules.tick)) == 1  # type: ignore[attr-defined]
     assert client.get(f"/api/schedules/{created['id']}").status_code == 404
+
+
+def test_a_backup_of_a_newer_schema_is_refused(make_app: Callable[..., TestClient], tmp_path: Path) -> None:
+    """A backup written by a newer release (higher ``PRAGMA user_version``) is never restored into this one."""
+    import sqlite3
+
+    client = make_app({})
+    with zipfile.ZipFile(io.BytesIO(client.get("/api/backup").content)) as archive:
+        files = {name: archive.read(name) for name in archive.namelist()}
+    database = tmp_path / "nodestro.db"
+    database.write_bytes(files["nodestro.db"])
+    connection = sqlite3.connect(database)
+    connection.execute("PRAGMA user_version = 99")
+    connection.close()
+    files["nodestro.db"] = database.read_bytes()
+    manifest = json.loads(files["manifest.json"])
+    manifest["files"]["nodestro.db"] = hashlib.sha256(files["nodestro.db"]).hexdigest()
+    files["manifest.json"] = json.dumps(manifest).encode()
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name, content in files.items():
+            archive.writestr(name, content)
+    answer = client.post("/api/backup/inspect", files={"file": ("b.zip", buffer.getvalue(), "application/zip")})
+    assert answer.status_code == 400
+    assert answer.json()["code"] == "backup.schema_too_new"
+    assert answer.json()["params"] == {"found": 99, "supported": 0}
+
+
+def test_the_api_uses_no_private_storage_attributes() -> None:
+    """Backups and restores go through the runtime's public store methods (snapshot, maintenance)."""
+    import ast
+
+    import nodestro_api
+
+    offenders = []
+    for path in sorted(Path(nodestro_api.__file__).parent.rglob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Attribute) and node.attr in {"_connection", "_lock"}:
+                base = node.value
+                if isinstance(base, ast.Attribute) and base.attr in {"store", "index", "memory"}:
+                    offenders.append(f"{path.name}:{node.lineno}")
+    assert offenders == []
