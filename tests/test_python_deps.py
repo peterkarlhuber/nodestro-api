@@ -363,7 +363,8 @@ def test_docker_sandbox_and_missing_uv_are_reported(make_app: Callable[..., Test
     client = make_app(python_runner=uv)
     client.put("/api/settings", json={"sandbox": "docker"})
     status = client.post("/api/python/tools/join_cells/status", json={"code": TOOL, "tests": TESTS}).json()
-    assert status["state"] == "unsupported" and status["problem"]["code"] == "deps.docker_unsupported"
+    # With Docker, libraries are installed into a container image (ADR-0006 point 6), so they need an approval.
+    assert status["state"] == "approval_needed" and status["problem"] is None
     client.put("/api/settings", json={"sandbox": "subprocess"})
     uv.binary = None
     status = client.post("/api/python/tools/join_cells/status", json={"code": TOOL, "tests": TESTS}).json()
