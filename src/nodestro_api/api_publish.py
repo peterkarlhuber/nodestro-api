@@ -28,6 +28,7 @@ from .api_keys import ApiKeyOut, NewApiKey
 from .network import NetworkConfig, NetworkStatus
 from .permissions import ADMIN, EDIT, INSTALL, READ, RUN
 from .publishing import ApiCheck, Publication, Release, ReleaseSummary, api_runs
+from .release_gate import GateOverride, GateReport, ReleaseGate
 from .serving import SCOPES, ApiLimits, KeyIdentity, ServedRelease, openapi_document
 
 router = APIRouter(prefix="/api")
@@ -111,6 +112,10 @@ class PublishIn(BaseModel):
     slug: str | None = Field(default=None, max_length=48)
     #: Make the new version the one ``/runs`` uses (otherwise only ``/versions/{n}/runs`` reaches it).
     activate: bool = True
+    #: Switch the release gate on (or change it) with this release; ``None``: keep the publication's gate.
+    gate: ReleaseGate | None = None
+    #: The written reason for releasing although non-critical gate items failed (never for critical ones).
+    override: GateOverride | None = None
 
 
 class PublishOut(BaseModel):
@@ -118,10 +123,32 @@ class PublishOut(BaseModel):
     release: ReleaseSummary
 
 
+class GateCheckIn(BaseModel):
+    #: A saved version of the workflow; ``None``: the version the editor shows.
+    version: int | None = None
+    #: A gate to try before switching it on; ``None``: the publication's gate.
+    gate: ReleaseGate | None = None
+
+
+@router.post("/workflows/{workflow_id}/api/gate", dependencies=READ)
+def gate_report(workflow_id: str, body: GateCheckIn, ctx: Ctx) -> GateReport:
+    """What the release gate says about a saved version (``status="off"`` without a gate)."""
+    _workflow(ctx, workflow_id)
+    return ctx.publications.gate_report(workflow_id, body.version, body.gate)
+
+
 @router.post("/workflows/{workflow_id}/api/publish", status_code=201, dependencies=ADMIN)
-def publish(workflow_id: str, body: PublishIn, ctx: Ctx) -> PublishOut:
+def publish(workflow_id: str, body: PublishIn, request: Request, ctx: Ctx) -> PublishOut:
+    principal = getattr(request.state, "principal", None)
     publication, release = ctx.publications.publish(
-        workflow_id, body.version, note=body.note, slug=body.slug, activate=body.activate
+        workflow_id,
+        body.version,
+        note=body.note,
+        slug=body.slug,
+        activate=body.activate,
+        gate=body.gate,
+        override=body.override,
+        principal_id=principal.id if principal is not None else "local",
     )
     summary = next(item for item in ctx.publications.summaries(publication) if item.id == release.id)
     return PublishOut(publication=publication, release=summary)
@@ -171,6 +198,17 @@ class EnableIn(BaseModel):
 class EnableOut(BaseModel):
     publication: Publication
     cancelled: int
+
+
+class GateIn(BaseModel):
+    #: ``None`` switches the release gate off.
+    gate: ReleaseGate | None = None
+
+
+@router.put("/publications/{publication_id}/gate", dependencies=ADMIN)
+def set_gate(publication_id: str, body: GateIn, ctx: Ctx) -> Publication:
+    """Switch the release gate of a publication on, change it, or switch it off (recorded in the history)."""
+    return ctx.publications.set_gate(publication_id, body.gate)
 
 
 @router.post("/publications/{publication_id}/enabled", dependencies=ADMIN)

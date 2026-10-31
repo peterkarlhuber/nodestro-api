@@ -135,10 +135,10 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
     found = check_routes(app)
     studio = [item for item in found if item.access in {"read", "edit", "run", "admin", "install", "public"}]
     assert Counter(item.access for item in studio) == {
-        "read": 87,  # + the price catalog, its status, history and reviews (PRICING-1)
+        "read": 88,  # + the price catalog, its status, history and reviews (PRICING-1); the release gate report (Q-3)
         "edit": 47,
         "run": 31,
-        "admin": 26,  # + price sync, reviews, overrides, billing keys and reconciliation (PRICING-1)
+        "admin": 27,  # + price sync, reviews, overrides, billing keys and reconciliation (PRICING-1); gate (Q-3)
         "install": 10,
         "public": 1,
     }
@@ -169,6 +169,7 @@ SENSITIVE = {
     ("GET", "/api/api-keys"): "admin",
     ("PUT", "/api/api-network"): "install",
     ("POST", "/api/workflows/{workflow_id}/api/publish"): "admin",
+    ("PUT", "/api/publications/{publication_id}/gate"): "admin",
     ("POST", "/api/python/plans/{plan_id}/approve"): "admin",
     ("POST", "/api/tools/jobs/{job_id}/dependencies"): "admin",
     ("POST", "/api/workflows/{workflow_id}/runs"): "run",

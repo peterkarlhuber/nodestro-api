@@ -306,8 +306,10 @@ class Benchmarks:
         if suite_id is None:
             suite = Suite(**data.model_dump())
         else:
-            suite = self.suite(suite_id).model_copy(update=data.model_dump())
-            suite.updated_at = now()
+            # Validated again: ``model_copy(update=...)`` would keep the cases as plain dicts.
+            suite = Suite.model_validate(
+                {**self.suite(suite_id).model_dump(), **data.model_dump(), "updated_at": now()}
+            )
         for index, case in enumerate(suite.cases, start=1):
             if not case.name.strip():
                 case.name = f"#{index}"

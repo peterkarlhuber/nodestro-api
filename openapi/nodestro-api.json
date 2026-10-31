@@ -5709,6 +5709,240 @@
         "title": "FormatsInfo",
         "type": "object"
       },
+      "GateCheckIn": {
+        "properties": {
+          "gate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReleaseGate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "title": "GateCheckIn",
+        "type": "object"
+      },
+      "GateIn": {
+        "properties": {
+          "gate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReleaseGate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "GateIn",
+        "type": "object"
+      },
+      "GateItem": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "critical",
+              "deterministic",
+              "judge"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          },
+          "passed": {
+            "title": "Passed",
+            "type": "boolean"
+          },
+          "probabilistic": {
+            "default": false,
+            "title": "Probabilistic",
+            "type": "boolean"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "suite_id": {
+            "title": "Suite Id",
+            "type": "string"
+          },
+          "suite_name": {
+            "default": "",
+            "title": "Suite Name",
+            "type": "string"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "kind",
+          "code",
+          "passed",
+          "suite_id"
+        ],
+        "title": "GateItem",
+        "type": "object"
+      },
+      "GateOverride": {
+        "description": "The written reason for releasing despite failed non-critical gate items.",
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "minLength": 10,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "GateOverride",
+        "type": "object"
+      },
+      "GateRecord": {
+        "description": "What the gate said when a release was created, and the override if one was given.",
+        "properties": {
+          "override_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override At"
+          },
+          "override_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override By"
+          },
+          "override_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Reason"
+          },
+          "report": {
+            "$ref": "#/components/schemas/GateReport"
+          }
+        },
+        "required": [
+          "report"
+        ],
+        "title": "GateRecord",
+        "type": "object"
+      },
+      "GateReport": {
+        "properties": {
+          "gate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReleaseGate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GateItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "off",
+              "passed",
+              "overridable",
+              "blocked"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "workflow_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Version"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "GateReport",
+        "type": "object"
+      },
       "Guide": {
         "description": "What the gallery and the documentation explain about one example.",
         "properties": {
@@ -9367,6 +9601,16 @@
             "title": "Enabled",
             "type": "boolean"
           },
+          "gate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReleaseGate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "history": {
             "items": {
               "$ref": "#/components/schemas/PublicationEvent"
@@ -9434,7 +9678,11 @@
               "network_off",
               "settings",
               "renamed",
-              "exported"
+              "exported",
+              "gate_on",
+              "gate_changed",
+              "gate_off",
+              "gate_override"
             ],
             "title": "Kind",
             "type": "string"
@@ -9554,11 +9802,31 @@
             "title": "Activate",
             "type": "boolean"
           },
+          "gate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReleaseGate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "note": {
             "default": "",
             "maxLength": 200,
             "title": "Note",
             "type": "string"
+          },
+          "override": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GateOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "slug": {
             "anyOf": [
@@ -10175,6 +10443,16 @@
             "title": "Digest",
             "type": "string"
           },
+          "gate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GateRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -10362,6 +10640,45 @@
         "title": "ReleaseCheckSummary",
         "type": "object"
       },
+      "ReleaseGate": {
+        "description": "What a new release of a publication must show (opt-in per publication).",
+        "properties": {
+          "judge_min_score": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Judge Min Score"
+          },
+          "min_pass_rate": {
+            "default": 1.0,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Min Pass Rate",
+            "type": "number"
+          },
+          "suite_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Suite Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "suite_ids"
+        ],
+        "title": "ReleaseGate",
+        "type": "object"
+      },
       "ReleaseSummary": {
         "properties": {
           "active": {
@@ -10384,6 +10701,21 @@
           "digest": {
             "title": "Digest",
             "type": "string"
+          },
+          "gate": {
+            "anyOf": [
+              {
+                "enum": [
+                  "passed",
+                  "overridden"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gate"
           },
           "id": {
             "title": "Id",
@@ -20194,6 +20526,56 @@
         "summary": "Create Export"
       }
     },
+    "/api/publications/{publication_id}/gate": {
+      "put": {
+        "description": "Switch the release gate of a publication on, change it, or switch it off (recorded in the history).",
+        "operationId": "set_gate_api_publications__publication_id__gate_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "publication_id",
+            "required": true,
+            "schema": {
+              "title": "Publication Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Publication"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Gate"
+      }
+    },
     "/api/publications/{publication_id}/guide": {
       "post": {
         "description": "Costs one request of the assistant model (recorded in the usage ledger); only on request.",
@@ -23922,6 +24304,56 @@
           }
         },
         "summary": "Api Check"
+      }
+    },
+    "/api/workflows/{workflow_id}/api/gate": {
+      "post": {
+        "description": "What the release gate says about a saved version (``status=\"off\"`` without a gate).",
+        "operationId": "gate_report_api_workflows__workflow_id__api_gate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workflow_id",
+            "required": true,
+            "schema": {
+              "title": "Workflow Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GateCheckIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Gate Report"
       }
     },
     "/api/workflows/{workflow_id}/api/publish": {
