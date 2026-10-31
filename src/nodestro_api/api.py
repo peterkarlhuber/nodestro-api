@@ -652,9 +652,26 @@ class UsageBucket(BaseModel):
     total_tokens: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
+    #: The sum of the known costs (a lower bound when ``cost_state`` is ``partial``); kept for older clients.
     estimated_cost_usd: float = 0.0
-    #: Requests whose model has no known price (their cost is missing from the sum).
+    #: Requests whose cost is unknown or incomplete (their cost is missing from the sum).
     unpriced: int = 0
+    #: The same sum as ``estimated_cost_usd``, under the name of the price references (PRICING-1 N6).
+    known_cost_usd: float = 0.0
+    #: ``known``: every request was priced; ``partial``: some costs are missing (the sum is a lower bound);
+    #: ``unknown``: no request could be priced; ``none``: no requests.
+    cost_state: Literal["known", "partial", "unknown", "none"] = "none"
+    #: Requests priced with a price that had not been checked for longer than the warning threshold.
+    stale_price_requests: int = 0
+    #: Cost components that could not be priced (e.g. ``cache_write_1h``), over all requests.
+    missing_cost_components: list[str] = Field(default_factory=list)
+    #: The price snapshot versions, sources and the lowest quality the costs were calculated with.
+    pricing_versions: list[str] = Field(default_factory=list)
+    pricing_sources: list[str] = Field(default_factory=list)
+    pricing_quality: str | None = None
+
+
+_QUALITY_ORDER = ("estimated", "unverified", "contract", "verified")
 
 
 class UsageReport(BaseModel):
@@ -676,10 +693,34 @@ def _add(bucket: UsageBucket, usage: Any, *, run: bool = False) -> None:
     bucket.total_tokens += usage.total_tokens
     bucket.input_tokens += usage.input_tokens
     bucket.output_tokens += usage.output_tokens
-    if usage.estimated_cost_usd is None:
+    known = getattr(usage, "known_cost_usd", None)
+    if known is not None:  # priced with references (PRICING-1): the known part and what is missing
+        bucket.known_cost_usd += known
+        bucket.unpriced += usage.unpriced_requests
+    elif usage.estimated_cost_usd is None:  # stored before PRICING-1 without a known price
         bucket.unpriced += usage.requests
     else:
-        bucket.estimated_cost_usd += usage.estimated_cost_usd
+        bucket.known_cost_usd += usage.estimated_cost_usd
+    bucket.estimated_cost_usd = bucket.known_cost_usd
+    bucket.stale_price_requests += getattr(usage, "stale_price_requests", 0) or 0
+    for target, values in (
+        (bucket.missing_cost_components, getattr(usage, "missing_cost_components", None) or []),
+        (bucket.pricing_versions, getattr(usage, "pricing_versions", None) or []),
+        (bucket.pricing_sources, getattr(usage, "pricing_sources", None) or []),
+    ):
+        target.extend(value for value in values if value not in target)
+    quality = getattr(usage, "pricing_quality", None)
+    if quality in _QUALITY_ORDER and (
+        bucket.pricing_quality not in _QUALITY_ORDER
+        or _QUALITY_ORDER.index(quality) < _QUALITY_ORDER.index(bucket.pricing_quality or "")
+    ):
+        bucket.pricing_quality = quality
+    if not bucket.requests:
+        bucket.cost_state = "none"
+    elif not bucket.unpriced:
+        bucket.cost_state = "known"
+    else:
+        bucket.cost_state = "unknown" if bucket.unpriced >= bucket.requests and not bucket.known_cost_usd else "partial"
 
 
 @router.get("/usage", dependencies=READ)
@@ -765,7 +806,7 @@ class DesignRequest(BaseModel):
 def design_agent(body: DesignRequest, ctx: Ctx) -> AgentDraft:
     settings = ctx.settings()
     connection = ctx.connect_model(settings.assistant_model)
-    tracker = UsageTracker()
+    tracker = ctx.tracker()
     try:
         return ctx.assistants.design_agent(
             body.description,
@@ -778,7 +819,7 @@ def design_agent(body: DesignRequest, ctx: Ctx) -> AgentDraft:
             tracker=tracker,
         )
     finally:
-        ctx.usage_log.record("agent_design", tracker.records, label=body.description)
+        ctx.usage_log.record("agent_design", tracker.records, label=body.description, tracker=tracker)
 
 
 @router.post("/agents/test", dependencies=RUN)
@@ -799,7 +840,7 @@ async def test_agent(body: AgentTestIn, ctx: Ctx) -> AgentTestResult:
         models.add(body.agent.quality.judge_model)
     ctx.require_providers(models)  # fail fast: agent and judge need their providers
     result, tracker = await asyncio.to_thread(ctx.tester.run, body)
-    ctx.usage_log.record("agent_test", tracker.records, label=body.agent.name, ref=result.id)
+    ctx.usage_log.record("agent_test", tracker.records, label=body.agent.name, ref=result.id, tracker=tracker)
     return result
 
 
@@ -900,9 +941,11 @@ def start_job(body: JobRequest, ctx: Ctx) -> ToolJob:
     connection = ctx.connect_model(model)  # fail fast without provider settings
 
     def record(job: ToolJob, tracker: UsageTracker) -> None:
-        ctx.usage_log.record("tool_generation", tracker.records, label=job.requirement, ref=job.id)
+        ctx.usage_log.record("tool_generation", tracker.records, label=job.requirement, ref=job.id, tracker=tracker)
 
-    return ctx.tools.start_job(body.requirement, connection=connection, model=model, on_finished=record)
+    return ctx.tools.start_job(
+        body.requirement, connection=connection, model=model, usage_tracker=ctx.tracker(), on_finished=record
+    )
 
 
 @router.get("/tools/jobs/{job_id}", dependencies=READ)
@@ -1105,7 +1148,7 @@ def list_spaces(ctx: Ctx) -> list[MemorySpaceInfo]:
 def propose_memory(body: MemoryProposalRequest, ctx: Ctx) -> MemoryProposal:
     model = ctx.settings().assistant_model
     connection = ctx.connect_model(model)
-    tracker = UsageTracker()
+    tracker = ctx.tracker()
     try:
         seed, cost = ctx.assistants.propose_memory(
             role=body.role,
@@ -1116,7 +1159,7 @@ def propose_memory(body: MemoryProposalRequest, ctx: Ctx) -> MemoryProposal:
             tracker=tracker,
         )
     finally:
-        ctx.usage_log.record("memory_proposal", tracker.records, label=body.role or body.wishes)
+        ctx.usage_log.record("memory_proposal", tracker.records, label=body.role or body.wishes, tracker=tracker)
     return MemoryProposal(seed=seed, cost_usd=cost)
 
 

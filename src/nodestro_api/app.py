@@ -7,8 +7,9 @@ HTTP backend for scripts, the SDKs and published workflows.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Callable, Iterable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 import logging
 from typing import Any
 
@@ -23,6 +24,7 @@ from .api_assistant import router as assistant_router
 from .api_automation import router as automation_router
 from .api_data import router as data_router
 from .api_inputs import router as inputs_router
+from .api_pricing import router as pricing_router
 from .api_publish import router as publish_router
 from .api_python import router as python_router
 from .context import AppConfig, Nodestro
@@ -80,17 +82,26 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        stop_prices = asyncio.Event()
+        prices: asyncio.Task[None] | None = None
         try:
             if scheduler:
                 nodestro.schedules.start()
             # The network listener for published APIs runs only when the user switched it on.
             await nodestro.network.start()
+            # Reference prices: checked at start when due, then daily; offline the last valid prices stay.
+            if nodestro.price_sync is not None and nodestro.config.price_sync.enabled:
+                prices = asyncio.create_task(nodestro.price_sync.run(stop_prices), name="price-sync")
         except BaseException:
             await shutdown()
             raise
         try:
             yield
         finally:
+            stop_prices.set()
+            if prices is not None:
+                with suppress(Exception):
+                    await asyncio.wait_for(prices, timeout=5)
             await shutdown()
 
     # /docs belongs to the built-in user documentation; the API reference lives under /api.
@@ -131,6 +142,7 @@ def create_app(
     app.include_router(automation_router)
     app.include_router(assistant_router)
     app.include_router(inputs_router)
+    app.include_router(pricing_router)
     app.include_router(router)
     app.include_router(data_router)
     # Fail closed: an application with a route that declares no access requirement is not built.

@@ -18,10 +18,10 @@ is [PLATFORM.md](https://github.com/peterkarlhuber/nodestro-studio/blob/master/d
 | Area | Modules |
 | --- | --- |
 | Application | `app` (`create_app`), `context` (`AppConfig`; `Nodestro` extends the runtime `Workspace`), `cli` (`nodestro-api`), `local_access` (Host/Origin guard) |
-| Studio REST API `/api` | `api`, `api_data`, `api_inputs`, `api_examples`, `api_python`, `api_architect`, `api_assistant`, `api_automation`, `api_guide`, `api_publish` |
+| Studio REST API `/api` | `api`, `api_data`, `api_inputs`, `api_examples`, `api_python`, `api_architect`, `api_assistant`, `api_automation`, `api_guide`, `api_publish`, `api_pricing` (model prices, reconciliation) |
 | Published APIs `/api/published/{slug}` | `serving` (shared with exports), `publishing`, `api_keys`, `network` (separate listener for the local network) |
 | Export | `exporter` (ZIP with runtime, lock file, tests; orkexa from Git or bundled), `standalone` |
-| Services | `assistants`, `architect`, `assistant`, `assistant_context`, `docs_index`, `batches`, `benchmarks`, `schedules`, `backup`, `organize`, `search`, `diagnostics` |
+| Services | `pricing_setup` (price sync on desktop and server), `assistants`, `architect`, `assistant`, `assistant_context`, `docs_index`, `batches`, `benchmarks`, `schedules`, `backup`, `organize`, `search`, `diagnostics` |
 | Contract | `openapi` and `openapi/nodestro-api.json` |
 
 ## Installation and start
@@ -163,6 +163,7 @@ unsafe value is listed at once (`profile.invalid`), and nothing has a default th
 | `DOCKER_HOST` (optional), `NODESTRO_DOCKER` | the container runtime for tool code (local socket by default) |
 | `NODESTRO_MODEL_ENDPOINTS` | comma-separated origins tenants may use for OpenAI-compatible, Ollama and vLLM endpoints (none by default; others are refused, so tenants cannot make the server reach internal services) |
 | `NODESTRO_WORKER_LEASE_SECONDS`, `…_POLL_SECONDS`, `…_REAP_SECONDS` | worker timing (defaults 60, 1, 15) |
+| `NODESTRO_PRICE_SYNC`, `NODESTRO_PRICE_LITELLM`, `NODESTRO_PRICE_SNAPSHOT_FILE` | reference price sync of the workers (`on`/`off`, default `on`; LiteLLM's cost map `on`/`off`; a reviewed Orkexa snapshot file), see "Model prices" |
 
 Commands:
 
@@ -177,13 +178,40 @@ Commands:
 - `nodestro-server worker`: executes queued runs, reaps runs of dead workers and fires schedules. SIGTERM lets a
   running run finish first.
 - `nodestro-server create-tenant ID NAME` and `nodestro-server setup-link TENANT`: create a tenant and print a
-  one-time link (24 hours) that makes the person who logs in with it the tenant's first owner.
+  one-time link (24 hours) that makes the person who logs in with it the tenant's first owner. The id
+  `nodestro-price-reference` is reserved (the server's reference prices).
+- `nodestro-server pricing status|sync|approve VERSION|reject VERSION [--note …]`: the reference prices: their state
+  and open reviews, a sync now, and the decision on a review.
 
 API and worker processes start only when the database schema is current and Docker is reachable: on a server tool
 code runs only in containers (ADR-0006), so a server without a container runtime does not start
 (`sandbox.unavailable`). Containers need no bind mounts, so Docker may run on another host (`DOCKER_HOST`), which
 keeps the Docker daemon's privileges away from the API and worker containers. Images and the development
 deployment are in the `nodestro-server` repository.
+
+## Model prices
+
+Orkexa resolves prices and calculates every cost; Nodestro keeps the prices, syncs and validates them and shows
+them (`/api/pricing`, permission `read`; changes need `admin`):
+
+| Route | |
+| --- | --- |
+| `GET /api/pricing` | every effective price: rates, status (`current`, `stale`, `unknown`, `pending_review`, `custom`), quality, source, check date, version |
+| `GET /api/pricing/status`, `GET /api/pricing/history` | active version, last check and error, staleness, open reviews; the price history |
+| `POST /api/pricing/sync` | check the prices now (desktop) |
+| `GET /api/pricing/reviews`, `POST …/reviews/{version}/approve` / `reject` | changes held back (over 20 % without official confirmation, removals) |
+| `PUT` / `DELETE /api/pricing/overrides/{provider}/{model}` | an individual price (contract price or correction); it wins over the reference price |
+| `GET` / `PUT` / `DELETE /api/pricing/billing-keys/{provider}` | admin keys of the providers' billing APIs (stored encrypted, servers only) |
+| `GET` / `POST /api/pricing/reconciliation` | estimates against the providers' bills (OpenAI Costs API, Anthropic Cost API) |
+
+On the desktop the API process checks the prices at start when due and then daily (`NODESTRO_PRICE_SYNC`,
+`NODESTRO_PRICE_LITELLM`, `NODESTRO_PRICE_SNAPSHOT_FILE`). On a server the workers do, one at a time under an
+advisory lock; tenants read the server's reference prices and keep their own overrides, and `POST /sync` and
+review decisions answer 403 for them. Offline the last valid prices stay; prices without a check for 48 hours are
+`stale`, after seven days critical. The desktop never stores billing admin keys (it has no encrypted store): set
+`NODESTRO_OPENAI_ADMIN_KEY` / `NODESTRO_ANTHROPIC_ADMIN_KEY` or send the key with one `POST /reconciliation`.
+`GET /api/usage` separates known, partial and unknown costs (`cost_state`) and names the price versions, sources
+and the lowest quality used.
 
 ## Published workflow APIs
 

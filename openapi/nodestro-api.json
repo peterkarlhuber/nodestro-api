@@ -3377,6 +3377,73 @@
         "title": "BenchmarkSummary",
         "type": "object"
       },
+      "BillingKeyIn": {
+        "properties": {
+          "admin_key": {
+            "maxLength": 500,
+            "minLength": 8,
+            "title": "Admin Key",
+            "type": "string"
+          },
+          "scope_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Scope Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "admin_key"
+        ],
+        "title": "BillingKeyIn",
+        "type": "object"
+      },
+      "BillingKeyOut": {
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "origin": {
+            "enum": [
+              "stored",
+              "environment",
+              "none"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "provider": {
+            "enum": [
+              "openai",
+              "anthropic"
+            ],
+            "title": "Provider",
+            "type": "string"
+          },
+          "scope_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scope Ids",
+            "type": "array"
+          },
+          "storable": {
+            "title": "Storable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "provider",
+          "configured",
+          "origin",
+          "storable"
+        ],
+        "title": "BillingKeyOut",
+        "type": "object"
+      },
       "Body_inspect_api_backup_inspect_post": {
         "properties": {
           "file": {
@@ -7044,6 +7111,44 @@
             ],
             "title": "Output Usd Per Mtok"
           },
+          "price_quality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Quality"
+          },
+          "price_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Source"
+          },
+          "price_status": {
+            "default": "unknown",
+            "title": "Price Status",
+            "type": "string"
+          },
+          "price_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Version"
+          },
           "provider": {
             "title": "Provider",
             "type": "string"
@@ -7677,6 +7782,140 @@
         "title": "OutputNodeConfig",
         "type": "object"
       },
+      "OverrideIn": {
+        "description": "An individual price (USD per million tokens, as decimal strings): a contract price or a correction.",
+        "properties": {
+          "cache_read_usd_per_mtok": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Read Usd Per Mtok"
+          },
+          "cache_write_1h_usd_per_mtok": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Write 1H Usd Per Mtok"
+          },
+          "cache_write_5m_usd_per_mtok": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Write 5M Usd Per Mtok"
+          },
+          "input_usd_per_mtok": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Input Usd Per Mtok"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "output_usd_per_mtok": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Output Usd Per Mtok"
+          },
+          "quality": {
+            "default": "contract",
+            "enum": [
+              "contract",
+              "verified",
+              "estimated",
+              "unverified"
+            ],
+            "title": "Quality",
+            "type": "string"
+          },
+          "source": {
+            "default": "custom",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Source",
+            "type": "string"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "input_usd_per_mtok",
+          "output_usd_per_mtok"
+        ],
+        "title": "OverrideIn",
+        "type": "object"
+      },
       "PackageApproval": {
         "properties": {
           "approved_at": {
@@ -8181,6 +8420,504 @@
         "title": "PreviewRequest",
         "type": "object"
       },
+      "PriceChange": {
+        "description": "One difference between the active reference prices and a candidate.",
+        "properties": {
+          "field": {
+            "default": "",
+            "title": "Field",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "added",
+              "removed",
+              "changed"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "needs_review": {
+            "default": false,
+            "title": "Needs Review",
+            "type": "boolean"
+          },
+          "new": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New"
+          },
+          "old": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Old"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "ratio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ratio"
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "kind"
+        ],
+        "title": "PriceChange",
+        "type": "object"
+      },
+      "PriceEntry": {
+        "description": "The effective price of one model, with everything a user needs to judge it.",
+        "properties": {
+          "cache_read_usd_per_mtok": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Read Usd Per Mtok"
+          },
+          "cache_write_1h_usd_per_mtok": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Write 1H Usd Per Mtok"
+          },
+          "cache_write_5m_usd_per_mtok": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Write 5M Usd Per Mtok"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "has_long_context": {
+            "default": false,
+            "title": "Has Long Context",
+            "type": "boolean"
+          },
+          "input_usd_per_mtok": {
+            "title": "Input Usd Per Mtok",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "output_usd_per_mtok": {
+            "title": "Output Usd Per Mtok",
+            "type": "string"
+          },
+          "overridden": {
+            "default": false,
+            "title": "Overridden",
+            "type": "boolean"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "quality": {
+            "title": "Quality",
+            "type": "string"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PriceEntry"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url"
+          },
+          "staleness": {
+            "enum": [
+              "ok",
+              "warning",
+              "critical"
+            ],
+            "title": "Staleness",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "current",
+              "stale",
+              "unknown",
+              "pending_review",
+              "custom"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tariffs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tariffs",
+            "type": "array"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "currency",
+          "input_usd_per_mtok",
+          "output_usd_per_mtok",
+          "status",
+          "staleness",
+          "quality",
+          "source"
+        ],
+        "title": "PriceEntry",
+        "type": "object"
+      },
+      "PriceIssue": {
+        "description": "A finding of :func:`validate_snapshot`. ``error`` drops the price; ``warning`` keeps it.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "model": {
+            "default": "",
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "default": "",
+            "title": "Provider",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning"
+            ],
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "severity",
+          "code",
+          "message"
+        ],
+        "title": "PriceIssue",
+        "type": "object"
+      },
+      "PricingEvent": {
+        "description": "One entry of the price history (``price_events``).",
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/PriceChange"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "activated",
+              "unchanged",
+              "rejected",
+              "review_requested",
+              "review_approved",
+              "review_rejected",
+              "override_set",
+              "override_removed"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "recorded_ns": {
+            "title": "Recorded Ns",
+            "type": "integer"
+          },
+          "scope": {
+            "default": "reference",
+            "enum": [
+              "reference",
+              "workspace"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "PricingEvent",
+        "type": "object"
+      },
+      "PricingOverview": {
+        "description": "The catalog's state plus what the studio needs to explain it.",
+        "properties": {
+          "activated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activated At"
+          },
+          "active_version": {
+            "title": "Active Version",
+            "type": "string"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "critical_after_days": {
+            "title": "Critical After Days",
+            "type": "number"
+          },
+          "last_attempt_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Attempt At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_success_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Success At"
+          },
+          "overrides": {
+            "title": "Overrides",
+            "type": "integer"
+          },
+          "pending_reviews": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pending Reviews",
+            "type": "array"
+          },
+          "price_mode": {
+            "title": "Price Mode",
+            "type": "string"
+          },
+          "reference_read_only": {
+            "title": "Reference Read Only",
+            "type": "boolean"
+          },
+          "refresh_interval_hours": {
+            "title": "Refresh Interval Hours",
+            "type": "number"
+          },
+          "review_change_percent": {
+            "title": "Review Change Percent",
+            "type": "number"
+          },
+          "staleness": {
+            "enum": [
+              "ok",
+              "warning",
+              "critical"
+            ],
+            "title": "Staleness",
+            "type": "string"
+          },
+          "sync_enabled": {
+            "title": "Sync Enabled",
+            "type": "boolean"
+          },
+          "warn_after_hours": {
+            "title": "Warn After Hours",
+            "type": "number"
+          }
+        },
+        "required": [
+          "active_version",
+          "activated_at",
+          "last_attempt_at",
+          "last_success_at",
+          "last_error",
+          "staleness",
+          "counts",
+          "pending_reviews",
+          "overrides",
+          "reference_read_only",
+          "sync_enabled",
+          "price_mode",
+          "warn_after_hours",
+          "critical_after_days",
+          "review_change_percent",
+          "refresh_interval_hours"
+        ],
+        "title": "PricingOverview",
+        "type": "object"
+      },
       "Problem": {
         "properties": {
           "code": {
@@ -8382,6 +9119,47 @@
           "needs_key"
         ],
         "title": "ProviderInfo",
+        "type": "object"
+      },
+      "ProviderResult": {
+        "properties": {
+          "complete_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Complete Until"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "ok"
+        ],
+        "title": "ProviderResult",
         "type": "object"
       },
       "ProviderSettingsIn": {
@@ -8993,6 +9771,223 @@
           "description"
         ],
         "title": "QualityCriterion",
+        "type": "object"
+      },
+      "ReconciliationIn": {
+        "properties": {
+          "absolute_threshold_usd": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "default": "1",
+            "title": "Absolute Threshold Usd"
+          },
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "keys": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/BillingKeyIn"
+            },
+            "propertyNames": {
+              "enum": [
+                "openai",
+                "anthropic"
+              ]
+            },
+            "title": "Keys",
+            "type": "object"
+          },
+          "relative_threshold_percent": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 100.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "default": "5",
+            "title": "Relative Threshold Percent"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "ReconciliationIn",
+        "type": "object"
+      },
+      "ReconciliationReport": {
+        "properties": {
+          "absolute_threshold_usd": {
+            "title": "Absolute Threshold Usd",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderResult"
+            },
+            "title": "Providers",
+            "type": "array"
+          },
+          "relative_threshold": {
+            "title": "Relative Threshold",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ReconciliationRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          },
+          "warnings": {
+            "title": "Warnings",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "created_at",
+          "start",
+          "end",
+          "providers",
+          "rows",
+          "warnings",
+          "relative_threshold",
+          "absolute_threshold_usd"
+        ],
+        "title": "ReconciliationReport",
+        "type": "object"
+      },
+      "ReconciliationRow": {
+        "properties": {
+          "billed_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billed Usd"
+          },
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "difference_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difference Usd"
+          },
+          "estimated_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Usd"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "relative_difference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relative Difference"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "warning",
+              "incomplete",
+              "pending",
+              "not_comparable",
+              "unattributed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "day",
+          "provider",
+          "estimated_usd",
+          "billed_usd",
+          "status"
+        ],
+        "title": "ReconciliationRow",
         "type": "object"
       },
       "Reference": {
@@ -9835,6 +10830,24 @@
         "title": "RetryRequest",
         "type": "object"
       },
+      "ReviewDecision": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "title": "ReviewDecision",
+        "type": "object"
+      },
       "ReviewItem": {
         "properties": {
           "label": {
@@ -9854,6 +10867,49 @@
           "label"
         ],
         "title": "ReviewItem",
+        "type": "object"
+      },
+      "ReviewOut": {
+        "description": "A snapshot held back because some of its changes need a person's decision.",
+        "properties": {
+          "changes": {
+            "items": {},
+            "title": "Changes",
+            "type": "array"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "issues": {
+            "items": {},
+            "title": "Issues",
+            "type": "array"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "source",
+          "changes",
+          "issues"
+        ],
+        "title": "ReviewOut",
         "type": "object"
       },
       "Run": {
@@ -11292,6 +12348,15 @@
             "title": "Ocr Enabled",
             "type": "boolean"
           },
+          "price_mode": {
+            "default": "standard",
+            "enum": [
+              "standard",
+              "strict"
+            ],
+            "title": "Price Mode",
+            "type": "string"
+          },
           "providers": {
             "items": {
               "$ref": "#/components/schemas/ProviderStatus"
@@ -11413,6 +12478,21 @@
               }
             ],
             "title": "Ocr Enabled"
+          },
+          "price_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "standard",
+                  "strict"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Mode"
           },
           "providers": {
             "anyOf": [
@@ -11558,6 +12638,72 @@
         "title": "Snapshot",
         "type": "object"
       },
+      "SourceReport": {
+        "properties": {
+          "changes": {
+            "default": 0,
+            "title": "Changes",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "held_for_review": {
+            "default": 0,
+            "title": "Held For Review",
+            "type": "integer"
+          },
+          "invalid": {
+            "default": 0,
+            "title": "Invalid",
+            "type": "integer"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "source",
+          "ok"
+        ],
+        "title": "SourceReport",
+        "type": "object"
+      },
       "StartConfig": {
         "properties": {
           "default_input": {
@@ -11677,6 +12823,67 @@
           }
         },
         "title": "StorageInfo",
+        "type": "object"
+      },
+      "SubmitResult": {
+        "description": "What :meth:`PricingService.submit` did with a candidate.",
+        "properties": {
+          "active_version": {
+            "title": "Active Version",
+            "type": "string"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/PriceChange"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/PriceIssue"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "outcome": {
+            "enum": [
+              "activated",
+              "unchanged",
+              "pending_review",
+              "rejected"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "review_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Version"
+          }
+        },
+        "required": [
+          "outcome",
+          "active_version"
+        ],
+        "title": "SubmitResult",
         "type": "object"
       },
       "SubworkflowConfig": {
@@ -11832,6 +13039,54 @@
           "workflow_id"
         ],
         "title": "SuiteIn",
+        "type": "object"
+      },
+      "SyncReport": {
+        "properties": {
+          "active_version": {
+            "title": "Active Version",
+            "type": "string"
+          },
+          "finished_at": {
+            "format": "date-time",
+            "title": "Finished At",
+            "type": "string"
+          },
+          "ran": {
+            "title": "Ran",
+            "type": "boolean"
+          },
+          "skipped_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skipped Reason"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/SourceReport"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "started_at",
+          "finished_at",
+          "ran",
+          "active_version"
+        ],
+        "title": "SyncReport",
         "type": "object"
       },
       "TemplateAgent": {
@@ -12932,6 +14187,17 @@
             "title": "Cache Read Input Tokens",
             "type": "integer"
           },
+          "cost_complete": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Complete"
+          },
           "estimated_cost_usd": {
             "anyOf": [
               {
@@ -12949,14 +14215,62 @@
             "title": "Input Tokens",
             "type": "integer"
           },
+          "known_cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Known Cost Usd"
+          },
+          "missing_cost_components": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Cost Components",
+            "type": "array"
+          },
           "output_tokens": {
             "default": 0,
             "title": "Output Tokens",
             "type": "integer"
           },
+          "pricing_quality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pricing Quality"
+          },
+          "pricing_sources": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pricing Sources",
+            "type": "array"
+          },
+          "pricing_versions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pricing Versions",
+            "type": "array"
+          },
           "requests": {
             "default": 0,
             "title": "Requests",
+            "type": "integer"
+          },
+          "stale_price_requests": {
+            "default": 0,
+            "title": "Stale Price Requests",
             "type": "integer"
           },
           "thinking_tokens": {
@@ -12967,6 +14281,11 @@
           "total_tokens": {
             "default": 0,
             "title": "Total Tokens",
+            "type": "integer"
+          },
+          "unpriced_requests": {
+            "default": 0,
+            "title": "Unpriced Requests",
             "type": "integer"
           },
           "web_search_requests": {
@@ -12980,6 +14299,17 @@
       },
       "UsageBucket": {
         "properties": {
+          "cost_state": {
+            "default": "none",
+            "enum": [
+              "known",
+              "partial",
+              "unknown",
+              "none"
+            ],
+            "title": "Cost State",
+            "type": "string"
+          },
           "estimated_cost_usd": {
             "default": 0.0,
             "title": "Estimated Cost Usd",
@@ -12994,9 +14324,21 @@
             "title": "Key",
             "type": "string"
           },
+          "known_cost_usd": {
+            "default": 0.0,
+            "title": "Known Cost Usd",
+            "type": "number"
+          },
           "label": {
             "title": "Label",
             "type": "string"
+          },
+          "missing_cost_components": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Cost Components",
+            "type": "array"
           },
           "operations": {
             "default": 0,
@@ -13008,6 +14350,31 @@
             "title": "Output Tokens",
             "type": "integer"
           },
+          "pricing_quality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pricing Quality"
+          },
+          "pricing_sources": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pricing Sources",
+            "type": "array"
+          },
+          "pricing_versions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pricing Versions",
+            "type": "array"
+          },
           "requests": {
             "default": 0,
             "title": "Requests",
@@ -13016,6 +14383,11 @@
           "runs": {
             "default": 0,
             "title": "Runs",
+            "type": "integer"
+          },
+          "stale_price_requests": {
+            "default": 0,
+            "title": "Stale Price Requests",
             "type": "integer"
           },
           "total_tokens": {
@@ -17842,6 +19214,538 @@
           }
         },
         "summary": "Organize Item"
+      }
+    },
+    "/api/pricing": {
+      "get": {
+        "description": "Every effective price (reference prices and overrides) with status, quality, source and check date.",
+        "operationId": "list_prices_api_pricing_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PriceEntry"
+                  },
+                  "title": "Response List Prices Api Pricing Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Prices"
+      }
+    },
+    "/api/pricing/billing-keys": {
+      "get": {
+        "description": "Which providers' billing APIs can be asked (never the keys themselves).",
+        "operationId": "list_billing_keys_api_pricing_billing_keys_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BillingKeyOut"
+                  },
+                  "title": "Response List Billing Keys Api Pricing Billing Keys Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Billing Keys"
+      }
+    },
+    "/api/pricing/billing-keys/{provider}": {
+      "delete": {
+        "operationId": "remove_billing_key_api_pricing_billing_keys__provider__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "enum": [
+                "openai",
+                "anthropic"
+              ],
+              "title": "Provider",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Billing Key"
+      },
+      "put": {
+        "description": "Store an admin key of a provider's billing API, encrypted (servers only).",
+        "operationId": "set_billing_key_api_pricing_billing_keys__provider__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "enum": [
+                "openai",
+                "anthropic"
+              ],
+              "title": "Provider",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BillingKeyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingKeyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Billing Key"
+      }
+    },
+    "/api/pricing/history": {
+      "get": {
+        "description": "Price changes, syncs, reviews and overrides, newest first (a server shows its reference events too).",
+        "operationId": "pricing_history_api_pricing_history_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PricingEvent"
+                  },
+                  "title": "Response Pricing History Api Pricing History Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pricing History"
+      }
+    },
+    "/api/pricing/overrides/{provider}/{model}": {
+      "delete": {
+        "description": "Go back to the reference price.",
+        "operationId": "remove_override_api_pricing_overrides__provider___model__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "model",
+            "required": true,
+            "schema": {
+              "title": "Model",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Override"
+      },
+      "put": {
+        "description": "Store an individual price for one model; it wins over the reference price (history is kept).",
+        "operationId": "set_override_api_pricing_overrides__provider___model__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "model",
+            "required": true,
+            "schema": {
+              "title": "Model",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverrideIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceEntry"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Override"
+      }
+    },
+    "/api/pricing/reconciliation": {
+      "get": {
+        "description": "Compare Nodestro's estimates with the providers' bills (stored or environment keys; default: 30 days).",
+        "operationId": "get_reconciliation_api_pricing_reconciliation_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconciliationReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Reconciliation"
+      },
+      "post": {
+        "description": "Like ``GET``, with thresholds and, optionally, admin keys for this one request (never stored).",
+        "operationId": "post_reconciliation_api_pricing_reconciliation_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReconciliationIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconciliationReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Reconciliation"
+      }
+    },
+    "/api/pricing/reviews": {
+      "get": {
+        "operationId": "list_reviews_api_pricing_reviews_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ReviewOut"
+                  },
+                  "title": "Response List Reviews Api Pricing Reviews Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Reviews"
+      }
+    },
+    "/api/pricing/reviews/{version}/approve": {
+      "post": {
+        "operationId": "approve_review_api_pricing_reviews__version__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmitResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Review"
+      }
+    },
+    "/api/pricing/reviews/{version}/reject": {
+      "post": {
+        "operationId": "reject_review_api_pricing_reviews__version__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Review"
+      }
+    },
+    "/api/pricing/status": {
+      "get": {
+        "operationId": "pricing_status_api_pricing_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PricingOverview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Pricing Status"
+      }
+    },
+    "/api/pricing/sync": {
+      "post": {
+        "description": "Check the prices against their sources now (desktop; a server syncs in its worker).",
+        "operationId": "sync_prices_api_pricing_sync_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Sync Prices"
       }
     },
     "/api/publications": {

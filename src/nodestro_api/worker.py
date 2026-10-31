@@ -9,7 +9,9 @@ or more worker processes (:class:`ServerWorker`). Every worker:
   they are never executed again by themselves;
 - fires the tenants' schedules while it holds the scheduler lock (:class:`nodestro_runtime.jobs.LeaderLock`); the
   runs it starts are queued like any other, and each slot fires at most once
-  (:class:`nodestro_runtime.jobs.ScheduleFirings`).
+  (:class:`nodestro_runtime.jobs.ScheduleFirings`);
+- syncs the server's reference prices when they are due, under the price-sync lock: one worker at a time
+  (:mod:`nodestro_api.pricing_setup`; only with :attr:`WorkerSettings.price_sync` switched on).
 
 ``nodestro-server worker`` (:mod:`nodestro_api.server`) runs one. Only runs go through the queue so far; batches,
 test series, assistant drafts and Python environment installations still run in the API process that started them.
@@ -19,7 +21,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 import logging
 from typing import Any
@@ -29,6 +31,7 @@ from nodestro_runtime.jobs import JobQueue, LeaderLock, QueuedRuns, RunWorker, S
 
 from .context import Nodestro
 from .identity import TenantWorkspaces
+from .pricing_setup import PriceSyncConfig, server_sync
 from .schedules import TICK_SECONDS
 from .server_app import TenantFiles, close_tenant
 
@@ -47,6 +50,10 @@ class WorkerSettings:
     schedule_every: float = TICK_SECONDS
     #: This worker's name in the job table (default: host, process and a random part).
     name: str | None = None
+    #: The reference price sync (``nodestro-server worker`` takes it from ``NODESTRO_PRICE_*``; off by default).
+    price_sync: PriceSyncConfig = field(default_factory=lambda: PriceSyncConfig(enabled=False))
+    #: How often the worker looks whether the reference prices are due (seconds).
+    price_check_every: float = 3600.0
 
 
 class ServerWorker:
@@ -68,6 +75,7 @@ class ServerWorker:
         self.scheduling = TenantWorkspaces(self._open_scheduling, close_tenant)
         self.runner = RunWorker(self.queue, self.executing.get, name=self.name, poll=self.settings.poll)
         self.leader = LeaderLock(files.database)
+        self.price_sync = server_sync(files.database, self.settings.price_sync)
 
     def _open_scheduling(self, tenant_id: str) -> Nodestro:
         context = self.files.open(tenant_id)
@@ -107,6 +115,12 @@ class ServerWorker:
                 self._every(stop, self.settings.schedule_every, self.fire_schedules), name="worker-scheduler"
             ),
         ]
+        if self.settings.price_sync.enabled:
+            tasks.append(
+                asyncio.create_task(
+                    self._every(stop, self.settings.price_check_every, self.sync_prices), name="worker-prices"
+                )
+            )
         try:
             await stop.wait()
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -114,6 +128,13 @@ class ServerWorker:
             for task in tasks:
                 task.cancel()
             await self.aclose()
+
+    async def sync_prices(self) -> None:
+        """Sync the reference prices when they are due; another worker holding the lock means it syncs."""
+        if self.price_sync.due():
+            report = await asyncio.to_thread(self.price_sync.sync)
+            if report.ran:
+                logger.info("Reference prices checked; active version %s", report.active_version)
 
     async def _reap_once(self) -> list[Any]:
         return await asyncio.to_thread(self.reap)

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable, Iterable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import logging
 from pathlib import Path
 from typing import Any
@@ -41,6 +41,7 @@ from .api_assistant import router as assistant_router
 from .api_automation import router as automation_router
 from .api_data import router as data_router
 from .api_inputs import router as inputs_router
+from .api_pricing import router as pricing_router
 from .api_publish import router as publish_router
 from .api_python import router as python_router
 from .context import AppConfig, Nodestro
@@ -53,6 +54,7 @@ from .identity import (
     secure_url,
 )
 from .permissions import check_routes
+from .pricing_setup import PRICE_REFERENCE_TENANT
 from .serving import PREFIX as PUBLISHED_PREFIX
 
 logger = logging.getLogger(__name__)
@@ -106,7 +108,11 @@ class TenantFiles:
             python_runner=self.python_runner,
             ocr_runner=self.ocr_runner,
             integrations=self.integrations,
-            storage=tenant_storage(self.database, tenant_id, self.secrets, self.endpoints),
+            # Reference prices are the server's (read-only for tenants); overrides stay in the tenant's store.
+            storage=replace(
+                tenant_storage(self.database, tenant_id, self.secrets, self.endpoints),
+                price_reference=self.database.store(PRICE_REFERENCE_TENANT),
+            ),
         )
 
 
@@ -171,6 +177,7 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
     app.include_router(automation_router)
     app.include_router(assistant_router)
     app.include_router(inputs_router)
+    app.include_router(pricing_router)
     app.include_router(router)
     app.include_router(data_router)
     check_routes(app)

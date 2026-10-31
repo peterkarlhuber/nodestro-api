@@ -19,7 +19,7 @@ from nodestro_runtime.engine import usage_of
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.providers import MAX_RETRIES, model_id
 from nodestro_runtime.schemas import Usage, new_id, now
-from orkexa import Agent, UsageTracker
+from orkexa import Agent
 from pydantic import BaseModel, Field
 
 from .assistants import language_rule
@@ -81,7 +81,7 @@ def generate(
 ) -> ApiGuide:
     """Ask the assistant model for a guide (one request, recorded as ``api_docs``)."""
     model = ctx.settings().assistant_model
-    tracker = UsageTracker()
+    tracker = ctx.tracker()
     connection = ctx.connect_model(model)
     agent: Agent[_GuideText] = Agent(
         name="api-guide",
@@ -100,7 +100,7 @@ def generate(
     try:
         answer = agent.ask("Facts of the API:\n```json\n" + _facts(publication, release, samples) + "\n```")
     finally:
-        ctx.usage_log.record("api_docs", tracker.records, label=publication.name, ref=guide_id)
+        ctx.usage_log.record("api_docs", tracker.records, label=publication.name, ref=guide_id, tracker=tracker)
     text = answer.markdown if isinstance(answer, _GuideText) else str(answer)
     guide = ApiGuide(
         id=guide_id,
@@ -110,7 +110,7 @@ def generate(
         language=language,
         markdown=text.strip(),
         model=model,
-        usage=usage_of(tracker.usage),
+        usage=usage_of(tracker.usage, tracker.records, stale_requests=tracker.stale_requests()),
     )
     ctx.store.put(GUIDES, guide.id, guide)
     return guide
