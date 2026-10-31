@@ -12,7 +12,7 @@ import pytest
 from nodestro_api.app import create_app
 from nodestro_api.context import AppConfig
 
-from conftest import parsed, text
+from conftest import isolate, parsed, text
 
 
 def test_meta_lists_models_and_server_tools(make_app: Callable[..., TestClient]) -> None:
@@ -227,6 +227,11 @@ def test_generated_tool_waits_for_approval(make_app: Callable[..., TestClient]) 
         )
     )
     client = make_app({"expert Python developer": [proposal]})
+    # Without isolation, generating a tool does not start (ADR-0006): its tests would be untrusted code.
+    refused = client.post("/api/tools/jobs", json={"requirement": "Celsius in Fahrenheit umrechnen"})
+    assert refused.status_code == 400 and refused.json()["code"] == "sandbox.isolation_required"
+    assert client.get("/api/tools/jobs").json() == []
+    container = isolate(client)
     job = client.post("/api/tools/jobs", json={"requirement": "Celsius in Fahrenheit umrechnen"}).json()
     deadline = time.monotonic() + 20
     while job["status"] == "running" and time.monotonic() < deadline:
@@ -244,6 +249,14 @@ def test_generated_tool_waits_for_approval(make_app: Callable[..., TestClient]) 
     assert job["message_code"] == "job.approved" and job["message_params"] == {"name": "celsius_to_fahrenheit"}
     tool = client.get("/api/tools/celsius_to_fahrenheit").json()
     assert tool["kind"] == "generated" and tool["requirement"] == "Celsius in Fahrenheit umrechnen"
+    # Approved, but still AI-generated: it runs only in the isolating sandbox, never on the host.
+    assert tool["trust"] == "untrusted"
+    assert ("validate", "celsius_to_fahrenheit") in container.calls
+    ran = client.post("/api/tools/celsius_to_fahrenheit/run", json={"input": {"celsius": 0}}).json()
+    assert ran == {"output": "32.0", "is_error": False}
+    assert client.put("/api/settings", json={"sandbox": "subprocess"}).status_code == 200
+    refused = client.post("/api/tools/celsius_to_fahrenheit/run", json={"input": {"celsius": 0}})
+    assert refused.status_code == 400 and refused.json()["code"] == "sandbox.isolation_required"
 
 
 def test_design_agent_maps_the_spec(make_app: Callable[..., TestClient]) -> None:

@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 from nodestro_runtime.testing import (
+    ContainerDouble,
     FakeUv,
     Parsed,
     ScriptedClient,
@@ -58,4 +59,24 @@ def make_app(tmp_path: Path) -> Callable[..., TestClient]:
         test_client.__exit__(None, None, None)
 
 
-__all__ = ["FakeUv", "Parsed", "ScriptedClient", "ScriptedMessages", "_Stream", "message", "parsed", "text", "tool_use"]
+def isolate(client: TestClient) -> ContainerDouble:
+    """Let ``client``'s tools run in a stand-in for Docker (ADR-0006: untrusted code needs isolation).
+
+    The double counts as isolating for the policy but runs on the host: only for tests of flows that need Docker."""
+    double = ContainerDouble()
+    client.app.state.nodestro.tools.set_sandbox(double)  # type: ignore[attr-defined]
+    return double
+
+
+__all__ = [
+    "ContainerDouble",
+    "FakeUv",
+    "Parsed",
+    "ScriptedClient",
+    "ScriptedMessages",
+    "_Stream",
+    "message",
+    "parsed",
+    "text",
+    "tool_use",
+]

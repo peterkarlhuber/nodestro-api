@@ -43,6 +43,7 @@ def test_tools_are_frozen_with_the_version(make_app: Callable[..., TestClient]) 
     publication = publish(client, workflow_id)["publication"]
     release = client.get(f"/api/publications/{publication['id']}/releases/1").json()
     assert release["bundle"]["tools"]["celsius_to_fahrenheit"]["version"] == 1
+    assert release["bundle"]["tool_trust"] == {"celsius_to_fahrenheit": "user-authored"}
     # The studio's tool changes (a new version that answers differently) ...
     changed = CUSTOM_TOOL_TEMPLATE.replace("celsius * 9 / 5 + 32", "-1.0")
     assert changed != CUSTOM_TOOL_TEMPLATE
@@ -219,3 +220,32 @@ def test_api_runs_are_counted_once(make_app: Callable[..., TestClient]) -> None:
     assert report["recent"] == []
     runs = client.get("/api/runs").json()
     assert [item["trigger"] for item in runs] == ["api"]
+
+
+def test_a_release_runs_untrusted_tools_only_with_isolation(make_app: Callable[..., TestClient]) -> None:
+    """The studio's provenance decides, also for frozen copies: after a restore-like loss of provenance the
+    published tool is untrusted and the run fails before the tool runs (ADR-0006)."""
+    calls = [tool_use("celsius_to_fahrenheit", {"celsius": 100}), text("fertig")]
+    client = make_app({"CONVERT": calls * 2})
+    body = {"function_name": "celsius_to_fahrenheit", "code": CUSTOM_TOOL_TEMPLATE, "tests": CUSTOM_TESTS_TEMPLATE}
+    client.post("/api/tools", json=body)
+    workflow_id = save(
+        client,
+        [
+            {"id": "start", "type": "start"},
+            agent_node("convert", "CONVERT", tools=["celsius_to_fahrenheit"]),
+            {"id": "out", "type": "output"},
+        ],
+        [edge("start", "convert"), edge("convert", "out")],
+        name="Umrechner",
+    )
+    publication = publish(client, workflow_id)["publication"]
+    client.app.state.nodestro.tools.provenance.clear()  # type: ignore[attr-defined]
+    token = new_key(client, publication["id"])
+    run_id = client.post(f"{PUBLISHED}/umrechner/runs", json={"input": "100 Grad"}, headers=auth(token)).json()[
+        "run_id"
+    ]
+    assert finish(client, "umrechner", token, run_id)["status"] == "failed"
+    run = client.get(f"/api/runs/{run_id}").json()
+    assert run["nodes"]["convert"].get("tool_calls", []) == []
+    assert "sandbox.isolation_required" in json.dumps(run)

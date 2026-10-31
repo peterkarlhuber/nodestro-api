@@ -14,7 +14,7 @@ from nodestro_runtime.python_deps import analyze, parse_requirement
 from nodestro_runtime.python_envs import explain_uv_error, parse_lock
 import pytest
 
-from conftest import FakeUv, parsed, text, tool_use
+from conftest import FakeUv, isolate, parsed, text, tool_use
 from test_runs import agent_node, create, start
 
 
@@ -399,37 +399,40 @@ def _wait_job(client: TestClient, job_id: str, *states: str) -> dict[str, Any]:
     raise AssertionError(f"job stuck in {job['status']}")
 
 
-def test_generated_tool_asks_for_libraries_before_testing(make_app: Callable[..., TestClient], uv: FakeUv) -> None:
-    client = make_app({"expert Python developer": [_proposal(TOOL)]}, python_runner=uv)
-    job = client.post("/api/tools/jobs", json={"requirement": "Tabellenzellen verbinden"}).json()
-    job = _wait_job(client, job["id"], "awaiting_dependencies", "failed")
-    assert job["status"] == "awaiting_dependencies", job
-    plan = job["dependency_plan"]
-    assert [item["name"] for item in plan["packages"] if item["direct"]] == ["tabulate"]
-    assert uv.syncs == 0
-    client.post(f"/api/tools/jobs/{job['id']}/dependencies", json={"choice": "approve"})
-    job = _wait_job(client, job["id"], "awaiting_approval", "failed")
-    assert job["status"] == "awaiting_approval", job
-    # The code still needs its own approval: approving the library approved nothing else.
-    assert job["approval"]["dependencies"] == ["tabulate"] and "join_cells" not in client.get("/api/tools").text
-    client.post(f"/api/tools/jobs/{job['id']}/decision", json={"approved": True})
-    job = _wait_job(client, job["id"], "approved", "failed")
-    assert job["status"] == "approved", job
-
-
-def test_generated_tool_can_be_rewritten_without_libraries(make_app: Callable[..., TestClient], uv: FakeUv) -> None:
+def test_generated_tool_never_gets_libraries_and_is_rewritten_without_them(
+    make_app: Callable[..., TestClient], uv: FakeUv
+) -> None:
+    """Generated code is untrusted (ADR-0006) and the library environments are host processes: a tool job never
+    resolves, approves or installs libraries; the Coding Agent is asked for a standard-library version."""
     plain_tool = TOOL.split("import tabulate\n")[1].replace(
         'tabulate.tabulate(cells) + " v" + tabulate.VERSION', '" | ".join(cells)'
     )
     client = make_app({"expert Python developer": [_proposal(TOOL), _proposal(plain_tool)]}, python_runner=uv)
+    container = isolate(client)
     job = client.post("/api/tools/jobs", json={"requirement": "Zellen verbinden"}).json()
-    job = _wait_job(client, job["id"], "awaiting_dependencies", "failed")
-    client.post(f"/api/tools/jobs/{job['id']}/dependencies", json={"choice": "without"})
-    job = _wait_job(client, job["id"], "awaiting_approval", "failed")
+    job = _wait_job(client, job["id"], "awaiting_dependencies", "awaiting_approval", "failed")
     assert job["status"] == "awaiting_approval", job
+    assert job["dependency_plan"] is None and job["approval"]["dependencies"] == []
     feedback = client.fake.messages.calls[-1]["messages"][-1]["content"]  # type: ignore[attr-defined]
-    assert "did not approve the third-party packages (tabulate)" in feedback
-    assert uv.syncs == 0 and job["approval"]["dependencies"] == []
+    assert "Use only the standard library" in feedback
+    assert uv.syncs == 0 and uv.builds == []
+    assert container.calls == [("validate", "join_cells")]  # only the standard-library version ran
+    client.post(f"/api/tools/jobs/{job['id']}/decision", json={"approved": True})
+    assert _wait_job(client, job["id"], "approved", "failed")["status"] == "approved"
+
+
+def test_untrusted_code_with_libraries_is_refused_before_anything_is_installed(
+    make_app: Callable[..., TestClient], uv: FakeUv
+) -> None:
+    client = make_app(python_runner=uv)
+    isolate(client)
+    nodestro = client.app.state.nodestro  # type: ignore[attr-defined]
+    from nodestro_runtime.python_tools import check_with_dependencies
+
+    result = check_with_dependencies(nodestro.tools, nodestro.python, TOOL, TESTS, "join_cells", trust="untrusted")
+    assert not result.ok and result.errors[-1].code == "sandbox.libraries_need_isolation"
+    assert uv.syncs == 0 and uv.builds == []
+    assert client.get("/api/python").json()["environments"] == []
 
 
 def test_architect_drafts_may_use_libraries_without_installing(uv: FakeUv) -> None:

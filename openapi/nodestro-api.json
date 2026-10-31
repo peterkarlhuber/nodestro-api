@@ -9148,6 +9148,18 @@
             "title": "Subworkflows",
             "type": "array"
           },
+          "tool_trust": {
+            "additionalProperties": {
+              "enum": [
+                "trusted",
+                "user-authored",
+                "untrusted"
+              ],
+              "type": "string"
+            },
+            "title": "Tool Trust",
+            "type": "object"
+          },
           "tools": {
             "additionalProperties": {
               "additionalProperties": true,
@@ -12509,6 +12521,16 @@
               }
             ],
             "title": "Tests"
+          },
+          "trust": {
+            "default": "untrusted",
+            "enum": [
+              "trusted",
+              "user-authored",
+              "untrusted"
+            ],
+            "title": "Trust",
+            "type": "string"
           },
           "version": {
             "default": 1,

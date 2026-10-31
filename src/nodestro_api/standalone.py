@@ -46,7 +46,7 @@ from nodestro_runtime.schemas import Run, RunSummary, now
 from nodestro_runtime.storage import Store
 from nodestro_runtime.tool_library import ToolLibrary
 from orkexa import StoredFile
-from orkexa.dynamic import SubprocessSandbox
+from orkexa.dynamic import DockerSandbox, Sandbox, SubprocessSandbox
 from pydantic import BaseModel, Field
 
 from .serving import (
@@ -106,6 +106,10 @@ class StandaloneSettings(BaseModel):
     #: Delete runs (and their files) older than this many days at start; 0 keeps everything.
     run_retention_days: int = 0
     tool_timeout_seconds: float = 60.0
+    #: ``subprocess``: own tools run as a process of this server (only tools written by a person in the editor,
+    #: ``user-authored``); ``docker``: every own tool runs in an isolated container. AI-generated tools and tools
+    #: of unknown provenance run only with ``docker`` (ADR-0006), otherwise they are refused.
+    tool_sandbox: Literal["subprocess", "docker"] = "subprocess"
 
     @classmethod
     def from_env(cls, environ: dict[str, str] | None = None) -> StandaloneSettings:
@@ -123,6 +127,7 @@ class StandaloneSettings(BaseModel):
             limits=limits,
             run_retention_days=int(env.get("RUN_RETENTION_DAYS") or 0),
             tool_timeout_seconds=float(env.get("TOOL_TIMEOUT_SECONDS") or 60),
+            tool_sandbox=env.get("TOOL_SANDBOX") or "subprocess",  # type: ignore[arg-type]
         )
 
 
@@ -172,10 +177,16 @@ class StandaloneHost:
         self.store = Store(database)
         self.knowledge = KnowledgeBase(database)
         self.memory = MemorySpaces(database)
-        sandbox = SubprocessSandbox(
-            timeout=settings.tool_timeout_seconds, python=sys.executable, env=_TOOL_ENV, acknowledge_unsafe=True
+        sandbox: Sandbox
+        if settings.tool_sandbox == "docker":
+            sandbox = DockerSandbox(timeout=settings.tool_timeout_seconds)
+        else:
+            sandbox = SubprocessSandbox(
+                timeout=settings.tool_timeout_seconds, python=sys.executable, env=_TOOL_ENV, acknowledge_unsafe=True
+            )
+        tools = ToolLibrary(
+            materialize_tools(self.bundle, data_dir / "tools"), sandbox=sandbox, provenance=self.bundle.provenance()
         )
-        tools = ToolLibrary(materialize_tools(self.bundle, data_dir / "tools"), sandbox=sandbox)
         self.builtin = set(tools.builtin)
         builder = AgentBuilder(tools, self.knowledge, self.memory)
         builder.declared = lambda provider: dict(self.manifest.capabilities.get(provider) or {})

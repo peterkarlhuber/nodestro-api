@@ -92,8 +92,11 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     assert {item["kind"] for item in check["resources"]} == {"knowledge", "memory"}
     assert "nodestro_runtime/engine.py" in check["files"]
     assert "nodestro_api/standalone.py" in check["files"]
-    # The 25 modules of Nodestro 0.1 plus the extension contract the knowledge base now uses for OCR.
-    assert len(check["runtime_modules"]) == 27 and "nodestro_runtime.extensions" in check["runtime_modules"]
+    # The 25 modules of Nodestro 0.1, the extension contract the knowledge base uses for OCR, the SQLite tables
+    # module, and the sandbox policy with tool provenance and the operating profile it reads.
+    modules = check["runtime_modules"]
+    assert len(modules) == 30 and "nodestro_runtime.extensions" in modules
+    assert {"nodestro_runtime.sandbox_policy", "nodestro_runtime.tool_provenance"} <= set(modules)
     assert not any(path.startswith("workflow/knowledge/") for path in check["files"])
     included = client.post(
         f"/api/publications/{publication['id']}/export/check",
@@ -352,3 +355,14 @@ def test_a_local_orkexa_installation_exports_the_pinned_commit(monkeypatch: pyte
     pinned = next(line for line in exporter.metadata.requires("nodestro-runtime") or [] if line.startswith("orkexa"))
     line = exporter._orkexa_git()
     assert line.endswith(pinned.split(" @ ", 1)[1]) and "@v" not in line
+
+
+def test_the_exported_api_chooses_its_tool_sandbox_from_the_environment() -> None:
+    from pydantic import ValidationError
+
+    from nodestro_api.standalone import StandaloneSettings
+
+    assert StandaloneSettings.from_env({}).tool_sandbox == "subprocess"
+    assert StandaloneSettings.from_env({"TOOL_SANDBOX": "docker"}).tool_sandbox == "docker"
+    with pytest.raises(ValidationError):
+        StandaloneSettings.from_env({"TOOL_SANDBOX": "unsafe"})

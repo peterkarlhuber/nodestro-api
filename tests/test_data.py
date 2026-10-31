@@ -9,7 +9,7 @@ import zipfile
 
 from fastapi.testclient import TestClient
 
-from conftest import text, tool_use
+from conftest import isolate, text, tool_use
 from test_runs import agent_node, create, start
 
 # ---- 6. backups -----------------------------------------------------------------------
@@ -87,6 +87,13 @@ def test_backup_round_trip_restores_everything(make_app: Callable[..., TestClien
     assert client.get("/api/memory/Team/file", params={"path": "/memories/a.md"}).json()["content"] == "Wissen"
     assert [item["name"] for item in client.get("/api/knowledge").json()] == ["notiz.txt"]
     assert client.get("/api/knowledge/search", params={"q": "Suchen"}).json()[0]["source"]
+    # The tool is back, but a backup can come from anywhere: its provenance is unknown, so it is untrusted and
+    # runs only in an isolating sandbox (ADR-0006).
+    restored = client.get("/api/tools/double_it").json()
+    assert restored["trust"] == "untrusted" and "x * 2" in restored["code"]
+    refused = client.post("/api/tools/double_it/run", json={"input": {"x": 4}})
+    assert refused.status_code == 400 and refused.json()["code"] == "sandbox.isolation_required"
+    isolate(client)
     assert client.post("/api/tools/double_it/run", json={"input": {"x": 4}}).json() == {
         "output": "8",
         "is_error": False,

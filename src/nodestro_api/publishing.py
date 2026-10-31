@@ -519,6 +519,7 @@ class Publications:
             workflow=root,
             subworkflows=children,
             tools=tools,
+            tool_trust={name: self.ctx.tools.trust(name) for name in tools},
             builtin_tools=sorted(builtin),
             server_tools=sorted(server_tools),
             models=sorted(models),
@@ -701,9 +702,12 @@ class Publications:
             if release is None:
                 return None
             bundle = release.bundle
+            # The studio's provenance decides the trust class of the frozen tools, not the bundle's claim.
             tools = ToolLibrary(
                 materialize_tools(bundle, self._release_dir(release_id) / "tools"),
-                sandbox=make_sandbox(self.ctx._stored("sandbox") or "subprocess"),
+                sandbox=make_sandbox(self.ctx._stored("sandbox") or "subprocess", self.ctx.sandbox_policy),
+                policy=self.ctx.sandbox_policy,
+                provenance=self.ctx.tools.linked_provenance(),
             )
             builder = AgentBuilder(tools, self.ctx.knowledge, self.ctx.memory)
             builder.declared = self.ctx.builder.declared
