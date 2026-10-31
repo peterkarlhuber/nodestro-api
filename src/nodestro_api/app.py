@@ -32,8 +32,8 @@ from .api_tool_approvals import router as tool_approvals_router
 from .context import AppConfig, Nodestro
 from .launch import LOCAL_COOKIE, LaunchSecretMiddleware, check_secret
 from .local_access import LocalAccessMiddleware, allowed_hosts, listens_everywhere, require_loopback_only
+from .local_container import CONTAINER_PORT, loopback_hosts, require_safe_configuration
 from .local_container import REFUSAL as LOCAL_REFUSAL
-from .local_container import loopback_hosts, require_safe_configuration
 from .permissions import check_routes, resolver_for
 from .serving import build_router
 
@@ -63,7 +63,7 @@ def create_app(
     if profile.kind == "desktop":
         require_loopback_only(config.host, config.allowed_hosts)
     elif profile.kind == "local-container":
-        require_safe_configuration(config.access_key, config.allowed_hosts)
+        require_safe_configuration(config.access_key, config.allowed_hosts, config.browser_host)
     check_secret(config.launch_secret)
     check_secret(config.access_key)
     nodestro = Nodestro(
@@ -142,6 +142,9 @@ def create_app(
             bearer=True,
             cookie=LOCAL_COOKIE,
             refusal=LOCAL_REFUSAL,
+            session_host=config.browser_host,
+            idle=config.session_idle_hours * 3600,
+            max_age=config.session_max_hours * 3600,
         )
     elif config.launch_secret is not None:
         # The desktop app's window only (nodestro_api.launch); inside the host and origin checks.
@@ -152,6 +155,8 @@ def create_app(
         hosts=loopback_hosts(config.allowed_hosts) if local else allowed_hosts(config.host, config.allowed_hosts),
         ip_addresses=listens_everywhere(config.host) and not local,
         strict_origin=local,
+        # The published port, and the container's own port for the launcher's and health check's calls (D3).
+        ports=frozenset({config.host_port, CONTAINER_PORT}) if local else None,
     )
     install_error_handlers(app)
     # Before the main router: /api/tools/drafts must not be taken for a tool named "drafts".
