@@ -44,8 +44,10 @@ def test_the_launch_link_works_once_and_sets_a_strict_cookie(tmp_path: Path) -> 
         )
         assert client.get("/api/launch", follow_redirects=False).status_code == 403
         answer = client.get("/api/launch", params={"token": SECRET}, follow_redirects=False)
-        assert answer.status_code == 303
-        assert answer.headers["location"] == "/"
+        assert answer.status_code == 200
+        # Continues from the backend's own origin, so the strict cookie goes along (no cross-site redirect).
+        assert 'http-equiv="refresh" content="0;url=/"' in answer.text
+        assert answer.headers["referrer-policy"] == "no-referrer"
         cookie = answer.headers["set-cookie"]
         assert "HttpOnly" in cookie and "SameSite=Strict" in cookie and "Path=/" in cookie
         assert SECRET not in cookie
@@ -115,3 +117,34 @@ def test_reload_is_refused_with_a_secret(monkeypatch: pytest.MonkeyPatch, tmp_pa
     args.reload = False
     with pytest.raises(SystemExit, match="at least 32"):
         cli.serve("nodestro_api.app:create_app", args)
+
+
+def test_the_launch_token_never_reaches_the_access_log(tmp_path: Path) -> None:
+    import io
+    import logging
+
+    from uvicorn.logging import AccessFormatter
+
+    with client_for(tmp_path):
+        access = logging.getLogger("uvicorn.access")
+        uvicorn_format, plain = io.StringIO(), io.StringIO()
+        handlers = [logging.StreamHandler(uvicorn_format), logging.StreamHandler(plain)]
+        # uvicorn's own formatter unpacks the record's arguments (client, method, path, version, status).
+        handlers[0].setFormatter(AccessFormatter('%(client_addr)s - "%(request_line)s" %(status_code)s'))
+        level = access.level
+        access.setLevel(logging.INFO)
+        access.addHandler(handlers[0])
+        try:
+            access.info('%s - "%s %s HTTP/%s" %d', "127.0.0.1:5", "GET", f"/api/launch?token={SECRET}&x=1", "1.1", 200)
+        finally:
+            access.removeHandler(handlers[0])
+        access.addHandler(handlers[1])
+        try:
+            access.info("anything with %s", SECRET)
+            access.info(f"or in the message {SECRET}")
+        finally:
+            access.removeHandler(handlers[1])
+            access.setLevel(level)
+    assert '127.0.0.1:5 - "GET /api/launch?token=[redacted]&x=1 HTTP/1.1" 200' in uvicorn_format.getvalue()
+    assert plain.getvalue().count("[redacted]") == 2
+    assert SECRET not in uvicorn_format.getvalue() + plain.getvalue()
