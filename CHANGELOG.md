@@ -3,7 +3,7 @@
 ## Unreleased
 
 Operating profile and route permissions (desktop/server plan, PR-2, 2026-10-31): pins of `nodestro-runtime` at
-`8ea9a5c` (operating profiles) and `nodestro-examples` at `dfb28d5` (the same runtime pin; before: `ad75859` and
+`8ea9a5c` (operating profiles) and `nodestro-examples` at `f90d3a1` (the same runtime pin; before: `ad75859` and
 `520fa72`). No change of routes, fields or the OpenAPI document.
 
 - Profile: `AppConfig.profile`, `--profile desktop|server` and `NODESTRO_PROFILE`; `desktop` is the default and the
