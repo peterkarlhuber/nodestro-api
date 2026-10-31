@@ -26,7 +26,8 @@ from .api_inputs import router as inputs_router
 from .api_publish import router as publish_router
 from .api_python import router as python_router
 from .context import AppConfig, Nodestro
-from .local_access import LocalAccessMiddleware, allowed_hosts, listens_everywhere
+from .local_access import LocalAccessMiddleware, allowed_hosts, listens_everywhere, require_loopback_only
+from .permissions import check_routes, resolver_for
 from .serving import build_router
 
 logger = logging.getLogger(__name__)
@@ -42,8 +43,16 @@ def create_app(
     scheduler: bool = True,
 ) -> FastAPI:
     """Build the app; ``client_factory(provider)`` replaces a provider's SDK client, ``python_runner`` uv,
-    ``ocr_runner`` the local OCR (tests). ``scheduler=False`` leaves schedules to explicit ticks (tests)."""
+    ``ocr_runner`` the local OCR (tests). ``scheduler=False`` leaves schedules to explicit ticks (tests).
+
+    Before anything is opened, the configuration is checked as the command line checks it: the operating
+    profile must be one this version can start (``profile.invalid``, ``profile.server_unavailable``), and
+    the login-less studio API is only offered on this computer (``access.network_needs_login``).
+    Every route must declare who may call it (:mod:`nodestro_api.permissions`)."""
     config = config or AppConfig.from_env()
+    profile = config.profile.validate()
+    if profile.kind == "desktop":
+        require_loopback_only(config.host, config.allowed_hosts)
     nodestro = Nodestro(
         config,
         client_factory=client_factory,
@@ -91,6 +100,8 @@ def create_app(
         openapi_url="/api/openapi.json",
     )
     app.state.nodestro = nodestro
+    # Who sends a request: on the desktop always the local owner (every permission).
+    app.state.principal_resolver = resolver_for(profile)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -116,4 +127,6 @@ def create_app(
     app.include_router(inputs_router)
     app.include_router(router)
     app.include_router(data_router)
+    # Fail closed: an application with a route that declares no access requirement is not built.
+    check_routes(app)
     return app

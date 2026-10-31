@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from nodestro_runtime.problems import NodestroError
 import pytest
 from test_published_api import PUBLISHED, auth, finish, form_workflow, new_key, publish
 
@@ -73,102 +74,118 @@ def test_changes_from_a_foreign_web_page_are_refused(make_app: Callable[..., Tes
     assert client.get("/api/workflows", headers={"Origin": "https://evil.example"}).status_code == 200
 
 
-def test_configured_host_names_are_answered(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_loopback_host_names_can_be_added(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("NODESTRO_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("NODESTRO_ALLOWED_HOSTS", "studio.example")
+    monkeypatch.setenv("NODESTRO_ALLOWED_HOSTS", "studio.localhost")
     config = AppConfig.from_env()
-    assert config.allowed_hosts == ["studio.example"]
-    with TestClient(create_app(config, integrations=[], scheduler=False), base_url="https://studio.example") as client:
+    assert config.allowed_hosts == ["studio.localhost"]
+    with TestClient(create_app(config, integrations=[], scheduler=False), base_url="http://studio.localhost") as client:
         assert client.get("/api/workflows").status_code == 200
-        body = {"name": "Proxy", "nodes": [], "edges": []}
-        assert client.post("/api/workflows", json=body, headers={"Origin": "https://studio.example"}).status_code == 201
+        body = {"name": "Alias", "nodes": [], "edges": []}
+        headers = {"Origin": "http://studio.localhost"}
+        assert client.post("/api/workflows", json=body, headers=headers).status_code == 201
         assert client.get("/api/workflows", headers={"Host": "other.example"}).status_code == 403
 
 
-def lan_client(tmp_path: Path, host: str = "0.0.0.0", base_url: str = "http://192.168.1.20:8000") -> TestClient:
-    config = AppConfig(data_dir=tmp_path, host=host)
-    return TestClient(create_app(config, integrations=[], scheduler=False), base_url=base_url)
+# ---- no login, so never on the network ------------------------------------------------------------
+
+NETWORK_BINDINGS = ("0.0.0.0", "::", "", "192.168.1.20", "10.0.0.5", "fe80::1", "nodestro.example", "werkstatt")
 
 
-def test_listening_on_every_interface_refuses_foreign_host_names(tmp_path: Path, computer_name: str) -> None:
-    body = {"name": "Rebinding", "nodes": [], "edges": []}
-    with lan_client(tmp_path) as client:
-        # DNS rebinding against "nodestro --host 0.0.0.0": the page's name now points to this computer,
-        # and the page is same-origin with itself, so the origin check alone cannot help.
-        for host in ("evil.example:8000", "evil.example", "192.168.1.20.evil.example:8000", "localhost.evil.example"):
-            answer = client.get("/api/settings", headers={"Host": host})
-            assert answer.status_code == 403, host
-            assert answer.json()["code"] == "request.host_not_allowed"
-            origin = f"http://{host}"
-            answer = client.post("/api/workflows", json=body, headers={"Host": host, "Origin": origin})
-            assert answer.status_code == 403, host
-        # A request without a Host header is no browser request; it is not answered either.
-        assert client.get("/api/settings", headers={"Host": ""}).status_code == 403
-        assert client.get("/api/workflows").json() == []
+@pytest.mark.parametrize("host", NETWORK_BINDINGS)
+def test_the_studio_api_is_not_offered_to_the_network(tmp_path: Path, host: str) -> None:
+    """Host and Origin checks are no login: listening anywhere but loopback is refused before anything opens."""
+    data = tmp_path / "data"
+    with pytest.raises(NodestroError) as error:
+        create_app(AppConfig(data_dir=data, host=host), integrations=[], scheduler=False)
+    assert error.value.code == "access.network_needs_login"
+    assert error.value.params["host"] == host
+    assert not data.exists()
 
 
-def test_listening_on_every_interface_answers_the_network(tmp_path: Path, computer_name: str) -> None:
-    body = {"name": "LAN", "nodes": [], "edges": []}
-    with lan_client(tmp_path) as client:
-        # Other devices reach the studio under an address or this computer's name.
-        hosts = ("192.168.1.20:8000", "10.1.2.3", "[fe80::1]:8000", "werkstatt:8000", "Werkstatt.local:8000")
-        for host in (*hosts, "werkstatt.fritz.box", "127.0.0.1:8000", "localhost:8000", "[::1]:8000"):
-            assert client.get("/api/settings", headers={"Host": host}).status_code == 200, host
-        # The studio's own pages may change things, under whichever name or address it was opened.
-        for host in hosts:
-            answer = client.post("/api/workflows", json=body, headers={"Host": host, "Origin": f"http://{host}"})
-            assert answer.status_code == 201, host
-        # Clients without a browser send no Origin.
-        assert client.post("/api/workflows", json=body).status_code == 201
-        # A foreign page reaching the address directly is a cross-site request.
-        for origin in ("https://evil.example", "http://10.9.9.9:8000", "null", "http://192.168.1.20.evil.example:8000"):
-            answer = client.post("/api/workflows", json=body, headers={"Origin": origin})
-            assert answer.status_code == 403, origin
-            assert answer.json()["code"] == "request.origin_not_allowed"
-        assert len(client.get("/api/workflows").json()) == len(hosts) + 1
+@pytest.mark.parametrize("host", ("127.0.0.1", "127.0.0.2", "::1", "localhost", "LOCALHOST"))
+def test_loopback_addresses_are_accepted(tmp_path: Path, host: str) -> None:
+    create_app(AppConfig(data_dir=tmp_path, host=host), integrations=[], scheduler=False).state.nodestro.close()
 
 
-def test_listening_on_every_interface_with_configured_names(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, computer_name: str
-) -> None:
-    monkeypatch.setenv("NODESTRO_DATA_DIR", str(tmp_path))
+@pytest.mark.parametrize("names", (["studio.example"], ["*"], ["studio.localhost", "nodestro.home.arpa"], ["10.0.0.5"]))
+def test_reverse_proxy_host_names_are_refused(tmp_path: Path, names: list[str]) -> None:
+    """A proxy would pass the network through to the login-less API, whatever address it forwards to."""
+    data = tmp_path / "data"
+    with pytest.raises(NodestroError) as error:
+        create_app(AppConfig(data_dir=data, allowed_hosts=names), integrations=[], scheduler=False)
+    assert error.value.code == "access.network_needs_login"
+    assert error.value.params["hosts"] == [name for name in names if name != "studio.localhost"]
+    assert not data.exists()
+
+
+def test_the_environment_cannot_expose_the_studio_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NODESTRO_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("NODESTRO_HOST", "0.0.0.0")
-    monkeypatch.setenv("NODESTRO_ALLOWED_HOSTS", "nodestro.home.arpa")
-    with TestClient(
-        create_app(AppConfig.from_env(), integrations=[], scheduler=False), base_url="http://nodestro.home.arpa"
-    ) as client:
-        assert client.get("/api/settings").status_code == 200
-        body = {"name": "Heimnetz", "nodes": [], "edges": []}
-        assert (
-            client.post("/api/workflows", json=body, headers={"Origin": "http://nodestro.home.arpa"}).status_code == 201
-        )
-        assert client.get("/api/settings", headers={"Host": "evil.example"}).status_code == 403
+    with pytest.raises(NodestroError, match="no login"):
+        create_app(integrations=[], scheduler=False)
+    monkeypatch.setenv("NODESTRO_HOST", "127.0.0.1")
     monkeypatch.setenv("NODESTRO_ALLOWED_HOSTS", "*")
-    with TestClient(
-        create_app(AppConfig.from_env(), integrations=[], scheduler=False), base_url="http://any.example"
-    ) as client:
-        assert client.get("/api/settings").status_code == 200  # explicitly every host name
+    with pytest.raises(NodestroError, match="NODESTRO_ALLOWED_HOSTS"):
+        create_app(integrations=[], scheduler=False)
+    assert not (tmp_path / "data").exists()
 
 
-def test_a_single_address_answers_no_other_address(tmp_path: Path) -> None:
-    with lan_client(tmp_path, host="192.168.1.20") as client:
-        assert client.get("/api/settings").status_code == 200
-        assert client.get("/api/settings", headers={"Host": "10.1.2.3:8000"}).status_code == 403
-        assert client.get("/api/settings", headers={"Host": "evil.example:8000"}).status_code == 403
+def test_the_command_line_refuses_network_bindings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import uvicorn
+
+    from nodestro_api import cli
+
+    started: list[str] = []
+    monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: started.append("run"))
+    monkeypatch.delenv("NODESTRO_ALLOWED_HOSTS", raising=False)
+    # The command line writes these into the environment; monkeypatch restores them afterwards.
+    monkeypatch.setenv("NODESTRO_HOST", "127.0.0.1")
+    monkeypatch.setenv("NODESTRO_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    for host in ("0.0.0.0", "::", "192.168.1.20"):
+        with pytest.raises(SystemExit, match="no login"):
+            cli.main(["--host", host, "--data-dir", str(tmp_path / "data")])
+    assert started == []
+    cli.main(["--host", "127.0.0.1", "--data-dir", str(tmp_path / "data")])
+    assert started == ["run"]
 
 
-def test_published_workflow_apis_keep_working_on_every_interface(tmp_path: Path, computer_name: str) -> None:
+FORWARDED = (
+    {"X-Forwarded-For": "192.168.1.30"},
+    {"Forwarded": "for=192.168.1.30"},
+    {"X-Real-IP": "10.0.0.9"},
+    {"X-Forwarded-Host": "nodestro.example"},
+)
+
+
+def test_requests_forwarded_by_a_proxy_are_refused(make_app: Callable[..., TestClient]) -> None:
+    client = make_app()
+    for headers in FORWARDED:
+        answer = client.get("/api/settings", headers=headers)
+        assert answer.status_code == 403, headers
+        assert answer.json()["code"] == "request.forwarded_not_allowed"
+        answer = client.post("/api/workflows", json={"name": "Proxy", "nodes": [], "edges": []}, headers=headers)
+        assert answer.status_code == 403, headers
+    assert client.get("/api/workflows").json() == []
+
+
+def test_published_workflow_apis_stay_reachable_with_their_keys(tmp_path: Path) -> None:
+    """Published APIs authenticate with keys: also through a proxy on this computer (the network listener
+    serves them to other devices, see test_published_api)."""
     scripted = ScriptedClient({"WRITER": [text("Angebot für ACME")] * 3})
-    config = AppConfig(data_dir=tmp_path, host="0.0.0.0")
-    app = create_app(config, client_factory=lambda _provider: scripted, integrations=[], scheduler=False)
+    app = create_app(
+        AppConfig(data_dir=tmp_path), client_factory=lambda _provider: scripted, integrations=[], scheduler=False
+    )
     with TestClient(app, base_url="http://127.0.0.1:8000") as client:
         publication = publish(client, form_workflow(client))["publication"]
         token = new_key(client, publication["id"])
         slug = publication["slug"]
-        run = client.post(f"{PUBLISHED}/{slug}/runs", json={"values": {"customer": "ACME"}}, headers=auth(token))
+        proxied = {**auth(token), "X-Forwarded-For": "192.168.1.30"}
+        run = client.post(f"{PUBLISHED}/{slug}/runs", json={"values": {"customer": "ACME"}}, headers=proxied)
         assert run.status_code == 202, run.text
         assert finish(client, slug, token, run.json()["run_id"])["status"] == "succeeded"
-        assert client.get(f"{PUBLISHED}/{slug}", headers=auth(token)).status_code == 200
-        assert client.get(f"{PUBLISHED}/{slug}").status_code == 401
+        assert client.get(f"{PUBLISHED}/{slug}", headers=proxied).status_code == 200
+        assert client.get(f"{PUBLISHED}/{slug}", headers={"X-Forwarded-For": "192.168.1.30"}).status_code == 401
         rebound = client.get(f"{PUBLISHED}/{slug}", headers={**auth(token), "Host": "evil.example:8000"})
         assert rebound.status_code == 403

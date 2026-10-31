@@ -64,6 +64,7 @@ from . import __version__
 from .assistants import AgentDraft, MemorySeed
 from .benchmarks import SuiteIn, TestCase
 from .context import Nodestro
+from .permissions import ADMIN, EDIT, PUBLIC, READ, RUN, AccessError
 from .serving import ApiError
 
 router = APIRouter(prefix="/api")
@@ -107,8 +108,13 @@ def install_error_handlers(app: FastAPI) -> None:
         assert isinstance(exc, ApiError)
         return _error(exc.status, exc.code, exc.message, **exc.params)
 
+    async def access_error(_: Request, exc: Exception) -> JSONResponse:
+        assert isinstance(exc, AccessError)
+        return _error(exc.status, exc.code, str(exc), **exc.params)
+
     app.add_exception_handler(NodestroError, nodestro_error)
     app.add_exception_handler(ApiError, api_error)
+    app.add_exception_handler(AccessError, access_error)
     app.add_exception_handler(ValueError, bad_request)
     app.add_exception_handler(PermissionError, bad_request)
     app.add_exception_handler(KeyError, not_found)
@@ -131,12 +137,12 @@ class Meta(BaseModel):
     efforts: list[str] = ["low", "medium", "high", "xhigh", "max"]
 
 
-@router.get("/health")
+@router.get("/health", dependencies=PUBLIC)
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@router.get("/meta")
+@router.get("/meta", dependencies=READ)
 def meta() -> Meta:
     return Meta(
         version=__version__,
@@ -148,12 +154,12 @@ def meta() -> Meta:
     )
 
 
-@router.get("/settings")
+@router.get("/settings", dependencies=READ)
 def get_settings(ctx: Ctx) -> Settings:
     return ctx.settings()
 
 
-@router.put("/settings")
+@router.put("/settings", dependencies=ADMIN)
 def put_settings(update: SettingsIn, ctx: Ctx) -> Settings:
     return ctx.update_settings(update)
 
@@ -180,7 +186,7 @@ def request_language(request: Request) -> str:
     return "en"
 
 
-@router.get("/workflows")
+@router.get("/workflows", dependencies=READ)
 def list_workflows(ctx: Ctx) -> list[WorkflowSummary]:
     last_status: dict[str, Any] = {}
     for run in ctx.store.list("runs", RunSummary, limit=500):
@@ -199,7 +205,7 @@ def list_workflows(ctx: Ctx) -> list[WorkflowSummary]:
     ]
 
 
-@router.post("/workflows", status_code=201)
+@router.post("/workflows", status_code=201, dependencies=EDIT)
 def create_workflow(body: WorkflowIn, ctx: Ctx) -> Workflow:
     return ctx.save_workflow(body)
 
@@ -209,7 +215,7 @@ class WorkflowImport(WorkflowIn):
     python: ExportedDefinition | None = None
 
 
-@router.post("/workflows/import", status_code=201)
+@router.post("/workflows/import", status_code=201, dependencies=EDIT)
 def import_workflow(body: WorkflowImport, ctx: Ctx) -> Workflow:
     """Import an exported workflow as a new copy (new id)."""
     workflow = create_workflow(WorkflowIn(**body.model_dump(exclude={"python"})), ctx)
@@ -218,12 +224,12 @@ def import_workflow(body: WorkflowImport, ctx: Ctx) -> Workflow:
     return workflow
 
 
-@router.get("/workflows/{workflow_id}")
+@router.get("/workflows/{workflow_id}", dependencies=READ)
 def get_workflow(workflow_id: str, ctx: Ctx) -> Workflow:
     return _workflow(ctx, workflow_id)
 
 
-@router.put("/workflows/{workflow_id}")
+@router.put("/workflows/{workflow_id}", dependencies=EDIT)
 def update_workflow(workflow_id: str, body: WorkflowIn, ctx: Ctx, note: str = Query("", max_length=200)) -> Workflow:
     """Save a workflow; a changed workflow becomes the next version (``note`` describes it)."""
     current = _workflow(ctx, workflow_id)
@@ -233,7 +239,7 @@ def update_workflow(workflow_id: str, body: WorkflowIn, ctx: Ctx, note: str = Qu
     return workflow
 
 
-@router.delete("/workflows/{workflow_id}", status_code=204)
+@router.delete("/workflows/{workflow_id}", status_code=204, dependencies=EDIT)
 def delete_workflow(workflow_id: str, ctx: Ctx) -> Response:
     if not ctx.store.delete("workflows", workflow_id):
         raise KeyError(workflow_id)
@@ -259,24 +265,24 @@ class VersionNote(BaseModel):
     description: str = Field(default="", max_length=200)
 
 
-@router.get("/workflows/{workflow_id}/versions")
+@router.get("/workflows/{workflow_id}/versions", dependencies=READ)
 def list_versions(workflow_id: str, ctx: Ctx) -> list[VersionSummary]:
     return ctx.versions.summaries(_workflow(ctx, workflow_id))
 
 
-@router.get("/workflows/{workflow_id}/versions/{number}")
+@router.get("/workflows/{workflow_id}/versions/{number}", dependencies=READ)
 def get_version(workflow_id: str, number: int, ctx: Ctx) -> WorkflowVersion:
     _workflow(ctx, workflow_id)
     return ctx.versions.get(workflow_id, number)
 
 
-@router.patch("/workflows/{workflow_id}/versions/{number}")
+@router.patch("/workflows/{workflow_id}/versions/{number}", dependencies=EDIT)
 def describe_version(workflow_id: str, number: int, body: VersionNote, ctx: Ctx) -> WorkflowVersion:
     _workflow(ctx, workflow_id)
     return ctx.versions.describe(workflow_id, number, body.description)
 
 
-@router.post("/workflows/{workflow_id}/versions/{number}/restore")
+@router.post("/workflows/{workflow_id}/versions/{number}/restore", dependencies=EDIT)
 def restore_version(workflow_id: str, number: int, ctx: Ctx) -> Workflow:
     """Make a saved version current again; it is saved as a new version, nothing is lost."""
     current = _workflow(ctx, workflow_id)
@@ -290,7 +296,7 @@ def restore_version(workflow_id: str, number: int, ctx: Ctx) -> Workflow:
 _COPY = {"de": "Kopie", "en": "copy", "es": "copia", "fr": "copie", "pt-BR": "cópia", "it": "copia"}
 
 
-@router.post("/workflows/{workflow_id}/duplicate", status_code=201)
+@router.post("/workflows/{workflow_id}/duplicate", status_code=201, dependencies=EDIT)
 def duplicate_workflow(workflow_id: str, request: Request, ctx: Ctx) -> Workflow:
     source = _workflow(ctx, workflow_id)
     body = WorkflowIn(**source.model_dump(exclude={"id", "created_at", "updated_at"}))
@@ -305,13 +311,13 @@ def duplicate_workflow(workflow_id: str, request: Request, ctx: Ctx) -> Workflow
 # ---- example library ------------------------------------------------------------
 
 
-@router.get("/library")
+@router.get("/library", dependencies=READ)
 def list_library(request: Request, language: Language | None = None) -> list[library.TemplateSummary]:
     """The example templates in one language (default: the interface language); nothing is stored."""
     return library.summaries(language or request_language(request))
 
 
-@router.get("/library/{template_id}")
+@router.get("/library/{template_id}", dependencies=READ)
 def get_library_template(
     template_id: str, request: Request, language: Language | None = None
 ) -> library.TemplateDetail:
@@ -319,7 +325,7 @@ def get_library_template(
     return library.detail(template_id, language or request_language(request))
 
 
-@router.get("/library/{template_id}/samples/{sample_id}")
+@router.get("/library/{template_id}/samples/{sample_id}", dependencies=READ)
 def download_library_sample(
     template_id: str, sample_id: str, request: Request, language: Language | None = None
 ) -> Response:
@@ -339,7 +345,7 @@ class LibraryCopy(BaseModel):
     tests: bool = False
 
 
-@router.post("/library/{template_id}/copy", status_code=201)
+@router.post("/library/{template_id}/copy", status_code=201, dependencies=EDIT)
 def copy_library_template(template_id: str, body: LibraryCopy, request: Request, ctx: Ctx) -> Workflow:
     """Create an ordinary, independent workflow from a template; the template itself never changes.
 
@@ -372,7 +378,7 @@ def copy_library_template(template_id: str, body: LibraryCopy, request: Request,
     return copy
 
 
-@router.post("/workflows/check")
+@router.post("/workflows/check", dependencies=READ)
 def check(body: WorkflowIn, ctx: Ctx, workflow_id: str | None = None) -> WorkflowCheck:
     """Everything that blocks or affects a run; free, no request to the API.
 
@@ -384,7 +390,7 @@ def check(body: WorkflowIn, ctx: Ctx, workflow_id: str | None = None) -> Workflo
     return preflight(ctx, workflow)
 
 
-@router.post("/workflows/preview")
+@router.post("/workflows/preview", dependencies=READ)
 def preview(body: PreviewRequest, ctx: Ctx) -> ContextPreview:
     """What an agent would receive: prompt with filled placeholders, inputs and context."""
     workflow = Workflow(**body.workflow.model_dump(), id=body.workflow_id or "preview")
@@ -401,12 +407,12 @@ def preview(body: PreviewRequest, ctx: Ctx) -> ContextPreview:
 # ---- runs -----------------------------------------------------------------------
 
 
-@router.post("/workflows/{workflow_id}/runs", status_code=201)
+@router.post("/workflows/{workflow_id}/runs", status_code=201, dependencies=RUN)
 async def start_run(workflow_id: str, body: RunIn, ctx: Ctx) -> Run:
     return await launch(ctx, _workflow(ctx, workflow_id), body)
 
 
-@router.get("/runs")
+@router.get("/runs", dependencies=READ)
 def list_runs(
     ctx: Ctx,
     workflow_id: str | None = None,
@@ -431,7 +437,7 @@ class TraceImport(BaseModel):
     duplicate: bool
 
 
-@router.post("/runs/import")
+@router.post("/runs/import", dependencies=EDIT)
 async def import_run(request: Request, response: Response, ctx: Ctx) -> TraceImport:
     """Store an exported trace (the JSON of ``GET /runs/{id}``) for viewing; nothing runs."""
     length = request.headers.get("content-length")
@@ -442,7 +448,7 @@ async def import_run(request: Request, response: Response, ctx: Ctx) -> TraceImp
     return TraceImport(run=RunSummary.model_validate(run.model_dump()), duplicate=duplicate)
 
 
-@router.get("/runs/{run_id}")
+@router.get("/runs/{run_id}", dependencies=READ)
 def get_run(run_id: str, ctx: Ctx) -> Run:
     run = ctx.runs.get(run_id)
     if run is None:
@@ -450,7 +456,7 @@ def get_run(run_id: str, ctx: Ctx) -> Run:
     return run
 
 
-@router.get("/runs/{run_id}/export")
+@router.get("/runs/{run_id}/export", dependencies=READ)
 def export_run(
     run_id: str,
     ctx: Ctx,
@@ -469,7 +475,7 @@ def export_run(
     return JSONResponse(data, headers={"Content-Disposition": f'attachment; filename="run_{run.id}{suffix}.json"'})
 
 
-@router.get("/runs/{run_id}/files")
+@router.get("/runs/{run_id}/files", dependencies=READ)
 def list_result_files(run_id: str, ctx: Ctx) -> list[ResultFile]:
     """The result files of a run (written by its result nodes or created later)."""
     if ctx.runs.get(run_id) is None:
@@ -477,7 +483,7 @@ def list_result_files(run_id: str, ctx: Ctx) -> list[ResultFile]:
     return ctx.files.list(run_id)
 
 
-@router.post("/runs/{run_id}/files", status_code=201)
+@router.post("/runs/{run_id}/files", status_code=201, dependencies=EDIT)
 async def create_result_file(run_id: str, body: FileRequest, ctx: Ctx) -> ResultFile:
     """Write the run's result (or one result node's) as a file; the run must have finished."""
     run = ctx.runs.get(run_id)
@@ -488,7 +494,7 @@ async def create_result_file(run_id: str, body: FileRequest, ctx: Ctx) -> Result
     return await asyncio.to_thread(ctx.files.create, run, body)
 
 
-@router.get("/runs/{run_id}/files/{file_id}")
+@router.get("/runs/{run_id}/files/{file_id}", dependencies=READ)
 def download_result_file(run_id: str, file_id: str, ctx: Ctx, inline: bool = False) -> Response:
     entry, data = ctx.files.content(run_id, file_id)
     disposition = "inline" if inline and entry.format in ("html", "pdf", "md") else "attachment"
@@ -499,13 +505,13 @@ def download_result_file(run_id: str, file_id: str, ctx: Ctx, inline: bool = Fal
     return Response(content=data, media_type=entry.media_type, headers=headers)
 
 
-@router.delete("/runs/{run_id}/files/{file_id}", status_code=204)
+@router.delete("/runs/{run_id}/files/{file_id}", status_code=204, dependencies=EDIT)
 def delete_result_file(run_id: str, file_id: str, ctx: Ctx) -> Response:
     ctx.files.delete(run_id, file_id)
     return Response(status_code=204)
 
 
-@router.post("/runs/{run_id}/cancel")
+@router.post("/runs/{run_id}/cancel", dependencies=RUN)
 async def cancel_run(run_id: str, ctx: Ctx) -> dict[str, bool]:
     return {"cancelled": ctx.runs.cancel(run_id)}
 
@@ -522,31 +528,31 @@ class ResumeRequest(BaseModel):
     confirm_side_effects: bool = False
 
 
-@router.get("/runs/{run_id}/resume")
+@router.get("/runs/{run_id}/resume", dependencies=READ)
 def resume_plan(run_id: str, ctx: Ctx) -> ResumePlan:
     """What continuing a failed run would reuse and run again; nothing starts."""
     return plan_resume(ctx, run_id)
 
 
-@router.post("/runs/{run_id}/resume", status_code=201)
+@router.post("/runs/{run_id}/resume", status_code=201, dependencies=RUN)
 async def resume_run(run_id: str, body: ResumeRequest, ctx: Ctx) -> Run:
     """A new run linked to the failed one, reusing its safe results (the failed run stays as it was)."""
     return await resume_from(ctx, run_id, mode=body.mode, confirm=body.confirm_side_effects)
 
 
-@router.get("/approvals")
+@router.get("/approvals", dependencies=READ)
 def list_approvals(ctx: Ctx) -> list[PendingApproval]:
     """Every approval that waits for a person, oldest first (also after a restart)."""
     return pending_approvals(ctx)
 
 
-@router.post("/runs/{run_id}/approvals/{node_id}")
+@router.post("/runs/{run_id}/approvals/{node_id}", dependencies=RUN)
 async def decide_approval(run_id: str, node_id: str, body: ApprovalDecision, ctx: Ctx) -> Run:
     """Approve or reject at an approval node; the run (its top-level run) continues right away."""
     return ctx.runs.decide(run_id, node_id, body.decision, body.comment)
 
 
-@router.delete("/runs/{run_id}", status_code=204)
+@router.delete("/runs/{run_id}", status_code=204, dependencies=EDIT)
 def delete_run(run_id: str, ctx: Ctx) -> Response:
     if ctx.runs.is_live(run_id) or ctx.runs.get(run_id) in ctx.runs.live_runs():
         raise NodestroError("run.delete_running", "A running run cannot be deleted")
@@ -585,7 +591,7 @@ def _sse(kind: str, data: Any) -> str:
     return f"event: {kind}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
 
 
-@router.get("/runs/{run_id}/events")
+@router.get("/runs/{run_id}/events", dependencies=READ)
 async def run_events(run_id: str, request: Request, ctx: Ctx) -> StreamingResponse:
     """Server-Sent Events: a ``snapshot`` first, then every event until ``run_finished``."""
     run = ctx.runs.get(run_id)
@@ -665,7 +671,7 @@ def _add(bucket: UsageBucket, usage: Any, *, run: bool = False) -> None:
         bucket.estimated_cost_usd += usage.estimated_cost_usd
 
 
-@router.get("/usage")
+@router.get("/usage", dependencies=READ)
 def usage(ctx: Ctx, days: int = Query(30, ge=1, le=365)) -> UsageReport:
     """Tokens and cost of every AI request Nodestro made: workflow runs plus everything else.
 
@@ -732,7 +738,7 @@ def usage(ctx: Ctx, days: int = Query(30, ge=1, le=365)) -> UsageReport:
 # ---- agents ---------------------------------------------------------------------
 
 
-@router.post("/agents/validate")
+@router.post("/agents/validate", dependencies=READ)
 def validate_agent(config: AgentConfig, ctx: Ctx) -> list[ConfigIssue]:
     return ctx.builder.validate(config)
 
@@ -744,7 +750,7 @@ class DesignRequest(BaseModel):
     language: Language = "en"
 
 
-@router.post("/agents/design")
+@router.post("/agents/design", dependencies=RUN)
 def design_agent(body: DesignRequest, ctx: Ctx) -> AgentDraft:
     settings = ctx.settings()
     connection = ctx.connect_model(settings.assistant_model)
@@ -764,7 +770,7 @@ def design_agent(body: DesignRequest, ctx: Ctx) -> AgentDraft:
         ctx.usage_log.record("agent_design", tracker.records, label=body.description)
 
 
-@router.post("/agents/test")
+@router.post("/agents/test", dependencies=RUN)
 async def test_agent(body: AgentTestIn, ctx: Ctx) -> AgentTestResult:
     """Run one agent with its current configuration on a test task; not a workflow run.
 
@@ -786,19 +792,19 @@ async def test_agent(body: AgentTestIn, ctx: Ctx) -> AgentTestResult:
     return result
 
 
-@router.get("/agents/templates")
+@router.get("/agents/templates", dependencies=READ)
 def list_templates(ctx: Ctx) -> list[AgentTemplate]:
     return ctx.store.list("templates", AgentTemplate)
 
 
-@router.post("/agents/templates", status_code=201)
+@router.post("/agents/templates", status_code=201, dependencies=EDIT)
 def create_template(body: AgentTemplateIn, ctx: Ctx) -> AgentTemplate:
     template = AgentTemplate(agent=body.agent)
     ctx.store.put("templates", template.id, template)
     return template
 
 
-@router.put("/agents/templates/{template_id}")
+@router.put("/agents/templates/{template_id}", dependencies=EDIT)
 def update_template(template_id: str, body: AgentTemplateIn, ctx: Ctx) -> AgentTemplate:
     current = ctx.store.get("templates", template_id, AgentTemplate)
     if current is None:
@@ -808,7 +814,7 @@ def update_template(template_id: str, body: AgentTemplateIn, ctx: Ctx) -> AgentT
     return template
 
 
-@router.delete("/agents/templates/{template_id}", status_code=204)
+@router.delete("/agents/templates/{template_id}", status_code=204, dependencies=EDIT)
 def delete_template(template_id: str, ctx: Ctx) -> Response:
     if not ctx.store.delete("templates", template_id):
         raise KeyError(template_id)
@@ -847,24 +853,24 @@ class Decision(BaseModel):
     approved: bool
 
 
-@router.get("/tools")
+@router.get("/tools", dependencies=READ)
 def list_tools(ctx: Ctx) -> list[ToolInfo]:
     return ctx.tools.all()
 
 
-@router.get("/tools/template")
+@router.get("/tools/template", dependencies=READ)
 def tool_template() -> ToolSource:
     return ToolSource(function_name="celsius_to_fahrenheit", code=CUSTOM_TOOL_TEMPLATE, tests=CUSTOM_TESTS_TEMPLATE)
 
 
-@router.post("/tools/check")
+@router.post("/tools/check", dependencies=RUN)
 async def check_tool(body: ToolSource, ctx: Ctx) -> CheckResult:
     return await asyncio.to_thread(
         check_with_dependencies, ctx.tools, ctx.python, body.code, body.tests, body.function_name
     )
 
 
-@router.post("/tools")
+@router.post("/tools", dependencies=RUN)
 async def save_tool(body: ToolSource, ctx: Ctx) -> SaveResult:
     result, tool = await asyncio.to_thread(
         save_with_dependencies, ctx.tools, ctx.python, body.code, body.tests, body.function_name
@@ -872,12 +878,12 @@ async def save_tool(body: ToolSource, ctx: Ctx) -> SaveResult:
     return SaveResult(check=result, tool=tool)
 
 
-@router.get("/tools/jobs")
+@router.get("/tools/jobs", dependencies=READ)
 def list_jobs(ctx: Ctx) -> list[ToolJob]:
     return ctx.tools.list_jobs()
 
 
-@router.post("/tools/jobs", status_code=201)
+@router.post("/tools/jobs", status_code=201, dependencies=RUN)
 def start_job(body: JobRequest, ctx: Ctx) -> ToolJob:
     model = ctx.settings().assistant_model
     connection = ctx.connect_model(model)  # fail fast without provider settings
@@ -888,7 +894,7 @@ def start_job(body: JobRequest, ctx: Ctx) -> ToolJob:
     return ctx.tools.start_job(body.requirement, connection=connection, model=model, on_finished=record)
 
 
-@router.get("/tools/jobs/{job_id}")
+@router.get("/tools/jobs/{job_id}", dependencies=READ)
 def get_job(job_id: str, ctx: Ctx) -> ToolJob:
     job = ctx.tools.jobs.get(job_id)
     if job is None:
@@ -896,7 +902,7 @@ def get_job(job_id: str, ctx: Ctx) -> ToolJob:
     return job
 
 
-@router.post("/tools/jobs/{job_id}/decision")
+@router.post("/tools/jobs/{job_id}/decision", dependencies=EDIT)
 def decide_job(job_id: str, body: Decision, ctx: Ctx) -> ToolJob:
     return ctx.tools.decide(job_id, body.approved)
 
@@ -906,17 +912,17 @@ class DependencyDecision(BaseModel):
     choice: DependencyChoice
 
 
-@router.post("/tools/jobs/{job_id}/dependencies")
+@router.post("/tools/jobs/{job_id}/dependencies", dependencies=ADMIN)
 def decide_job_dependencies(job_id: str, body: DependencyDecision, ctx: Ctx) -> ToolJob:
     return ctx.tools.decide_dependencies(job_id, body.choice)
 
 
-@router.get("/tools/{name}")
+@router.get("/tools/{name}", dependencies=READ)
 def get_tool(name: str, ctx: Ctx) -> ToolInfo:
     return ctx.tools.get(name)
 
 
-@router.delete("/tools/{name}", status_code=204)
+@router.delete("/tools/{name}", status_code=204, dependencies=EDIT)
 def delete_tool(name: str, ctx: Ctx) -> Response:
     ctx.tools.delete(name)
     ctx.organize.forget("tool", name)
@@ -924,7 +930,7 @@ def delete_tool(name: str, ctx: Ctx) -> Response:
     return Response(status_code=204)
 
 
-@router.post("/tools/{name}/run")
+@router.post("/tools/{name}/run", dependencies=RUN)
 def run_tool(name: str, body: ToolRunRequest, ctx: Ctx) -> ToolRunResult:
     output, is_error = ctx.tools.run(name, body.input, sandbox=tool_run_sandbox(ctx.tools, ctx.python, name))
     return ToolRunResult(output=output, is_error=is_error)
@@ -947,12 +953,12 @@ class SearchHit(BaseModel):
     score: float
 
 
-@router.get("/knowledge")
+@router.get("/knowledge", dependencies=READ)
 def list_knowledge(ctx: Ctx, q: str | None = None) -> list[KnowledgeFile]:
     return ctx.knowledge.files(q)
 
 
-@router.post("/knowledge", status_code=201)
+@router.post("/knowledge", status_code=201, dependencies=EDIT)
 async def upload_knowledge(
     ctx: Ctx,
     files: Annotated[list[UploadFile], File()],
@@ -983,7 +989,7 @@ async def upload_knowledge(
     return added
 
 
-@router.get("/knowledge/search")
+@router.get("/knowledge/search", dependencies=READ)
 def search_knowledge(ctx: Ctx, q: str, file_ids: str | None = None, k: int = 8) -> list[SearchHit]:
     ids = [item for item in (file_ids or "").split(",") if item] or None
     return [
@@ -992,24 +998,24 @@ def search_knowledge(ctx: Ctx, q: str, file_ids: str | None = None, k: int = 8) 
     ]
 
 
-@router.patch("/knowledge/{file_id}")
+@router.patch("/knowledge/{file_id}", dependencies=EDIT)
 def update_knowledge(file_id: str, body: KnowledgeUpdate, ctx: Ctx) -> KnowledgeFile:
     return ctx.knowledge.update(file_id, description=body.description, collection=body.collection)
 
 
-@router.delete("/knowledge/{file_id}", status_code=204)
+@router.delete("/knowledge/{file_id}", status_code=204, dependencies=EDIT)
 def delete_knowledge(file_id: str, ctx: Ctx) -> Response:
     ctx.knowledge.delete(file_id)
     return Response(status_code=204)
 
 
-@router.post("/knowledge/{file_id}/ocr")
+@router.post("/knowledge/{file_id}/ocr", dependencies=EDIT)
 async def recognise_knowledge(file_id: str, ctx: Ctx) -> KnowledgeFile:
     """Recognise the text of a scanned PDF with local OCR (tesseract), now."""
     return await asyncio.to_thread(ctx.knowledge.recognise, file_id)
 
 
-@router.get("/knowledge/{file_id}/content")
+@router.get("/knowledge/{file_id}/content", dependencies=READ)
 def knowledge_content(file_id: str, ctx: Ctx) -> Response:
     # Documents and images open in the browser; active content (HTML, SVG, XML) is downloaded.
     entry = ctx.knowledge.store.info(file_id)
@@ -1068,12 +1074,12 @@ class MemoryProposal(BaseModel):
     cost_usd: float | None
 
 
-@router.get("/memory")
+@router.get("/memory", dependencies=READ)
 def list_spaces(ctx: Ctx) -> list[MemorySpaceInfo]:
     return ctx.memory.all()
 
 
-@router.post("/memory/propose")
+@router.post("/memory/propose", dependencies=RUN)
 def propose_memory(body: MemoryProposalRequest, ctx: Ctx) -> MemoryProposal:
     model = ctx.settings().assistant_model
     connection = ctx.connect_model(model)
@@ -1092,29 +1098,29 @@ def propose_memory(body: MemoryProposalRequest, ctx: Ctx) -> MemoryProposal:
     return MemoryProposal(seed=seed, cost_usd=cost)
 
 
-@router.get("/memory/{space}")
+@router.get("/memory/{space}", dependencies=READ)
 def list_memory(space: str, ctx: Ctx) -> list[MemoryFile]:
     return ctx.memory.open(check_space_name(space)).entries()
 
 
-@router.get("/memory/{space}/file")
+@router.get("/memory/{space}/file", dependencies=READ)
 def read_memory(space: str, path: str, ctx: Ctx) -> MemoryText:
     return MemoryText(path=path, content=ctx.memory.open(space).read(path))
 
 
-@router.put("/memory/{space}/file")
+@router.put("/memory/{space}/file", dependencies=EDIT)
 def write_memory(space: str, body: MemoryText, ctx: Ctx) -> MemoryText:
     ctx.memory.open(space).write(body.path, body.content)
     return body
 
 
-@router.delete("/memory/{space}/file", status_code=204)
+@router.delete("/memory/{space}/file", status_code=204, dependencies=EDIT)
 def delete_memory(space: str, path: str, ctx: Ctx) -> Response:
     ctx.memory.open(space).remove(path)
     return Response(status_code=204)
 
 
-@router.delete("/memory/{space}", status_code=204)
+@router.delete("/memory/{space}", status_code=204, dependencies=EDIT)
 def clear_memory(space: str, ctx: Ctx) -> Response:
     ctx.memory.open(space).clear()
     return Response(status_code=204)
