@@ -90,6 +90,19 @@ class BatchItem(BaseModel):
     output: Any = None
 
 
+def with_models(workflow: Workflow, models: dict[str, str]) -> Workflow:
+    """A copy of ``workflow`` whose agent nodes named in ``models`` use that model; the stored workflow is unchanged."""
+    if not models:
+        return workflow
+    nodes = [
+        node.model_copy(update={"agent": node.agent.model_copy(update={"model": models[node.id]})})
+        if node.agent is not None and node.id in models
+        else node
+        for node in workflow.nodes
+    ]
+    return workflow.model_copy(update={"nodes": nodes})
+
+
 class BatchIn(BaseModel):
     workflow_id: str
     name: str = ""
@@ -132,6 +145,8 @@ class Batch(BaseModel):
     concurrency: int = 2
     max_cost_usd: float | None = None
     max_failures: int | None = None
+    #: Agent node id -> model every run uses instead of the saved one (a test series comparing models, Q-2).
+    model_overrides: dict[str, str] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=now)
     finished_at: datetime | None = None
     cost_usd: float | None = 0.0
@@ -386,6 +401,7 @@ class Batches:
         kind: Literal["batch", "benchmark"] = "batch",
         ref: str | None = None,
         version: int | None = None,
+        models: dict[str, str] | None = None,
     ) -> Batch:
         workflow, version = self._workflow(request.workflow_id, version)
         if not request.rows:
@@ -412,6 +428,7 @@ class Batches:
             concurrency=request.concurrency,
             max_cost_usd=request.max_cost_usd,
             max_failures=request.max_failures,
+            model_overrides=dict(models or {}),
         )
         self._save(batch)
         self._start(batch)
@@ -552,15 +569,14 @@ class Batches:
         self._done.setdefault(batch.id, asyncio.Event()).set()
 
     def _pinned(self, batch: Batch) -> Workflow:
-        """The workflow every item runs: the saved version the batch started with."""
+        """The workflow every item runs: the saved version the batch started with, with its model overrides."""
+        workflow: Workflow | None = None
         if batch.workflow_version is not None:
-            try:
+            with contextlib.suppress(KeyError):
                 workflow, _ = self.ctx.resolve_workflow(batch.workflow_id, batch.workflow_version)
-                return workflow
-            except KeyError:
-                pass
-        workflow, _ = self._workflow(batch.workflow_id)
-        return workflow
+        if workflow is None:
+            workflow, _ = self._workflow(batch.workflow_id)
+        return with_models(workflow, batch.model_overrides)
 
     async def _launch(self, batch: Batch, workflow: Workflow, item: BatchItem) -> tuple[str, dict[str, Any]] | None:
         """Start one item; returns a reason to stop the whole batch (missing key, invalid workflow)."""

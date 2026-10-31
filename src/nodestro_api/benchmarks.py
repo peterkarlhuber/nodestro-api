@@ -19,6 +19,11 @@ After the runs, every case is evaluated:
 A case passes when its run succeeded, every check holds and, if judged, the judge
 passed it. The summary aggregates success, checks, judge quality, tokens, cost and time;
 two runs of a series (e.g. version 3 against version 4) can be compared case by case.
+
+**Comparing models** (Q-2): a run can replace the model of single agents (``BenchmarkStart.models``,
+agent node id -> model) with the same cases and the same judge. The saved workflow is not changed. Such a
+run needs a cost cap, since its cost cannot be estimated from earlier runs, and it records the
+replaced models (``BenchmarkRun.models``): it tests a variant, not the saved version itself.
 """
 
 from __future__ import annotations
@@ -32,7 +37,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from nodestro_runtime.conditions import evaluate, parse_result, rule_problems
 from nodestro_runtime.engine import usage_of
-from nodestro_runtime.launcher import CostEstimate, approval_steps, estimate_cost, external_tools
+from nodestro_runtime.launcher import CostEstimate, approval_steps, blocking_problems, estimate_cost, external_tools
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.providers import check_model, model_id
 from nodestro_runtime.schemas import ConditionRule, Usage, Workflow, new_id, now, total_cost
@@ -41,7 +46,7 @@ from orkexa.dynamic import BudgetTracker
 from orkexa.usage import summarize_usage
 from pydantic import BaseModel, Field
 
-from .batches import BatchIn, BatchRow
+from .batches import BatchIn, BatchRow, with_models
 
 if TYPE_CHECKING:
     from .context import Nodestro
@@ -51,6 +56,7 @@ logger = logging.getLogger(__name__)
 SUITES = "benchmark_suites"
 RUNS = "benchmark_runs"
 MAX_CASES = 200
+MAX_MODEL_OVERRIDES = 50
 
 
 class BenchmarkError(NodestroError):
@@ -97,6 +103,8 @@ class BenchmarkStart(BaseModel):
     max_failures: int | None = Field(default=None, ge=1)
     judge: bool = True
     confirm_external: bool = False
+    #: Agent node id -> model to use instead of the saved one, to compare models (Q-2). Needs ``max_cost_usd``.
+    models: dict[str, str] = Field(default_factory=dict, max_length=MAX_MODEL_OVERRIDES)
 
 
 class CheckResult(BaseModel):
@@ -166,6 +174,8 @@ class BenchmarkRun(BaseModel):
     status: Literal["running", "evaluating", "finished", "stopped", "cancelled", "interrupted"] = "running"
     stop_code: str | None = None
     judge: bool = True
+    #: Agent node id -> model this run used instead of the saved one (Q-2); empty for a run of the saved version.
+    models: dict[str, str] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=now)
     finished_at: datetime | None = None
     results: list[CaseResult] = Field(default_factory=list)
@@ -335,9 +345,30 @@ class Benchmarks:
             raise KeyError(suite.workflow_id)
         return stored
 
+    def _models(self, workflow: Workflow, start: BenchmarkStart) -> dict[str, str]:
+        """The checked model overrides of ``start``: agent nodes of ``workflow`` only, known providers, a cost cap,
+        and a variant the pre-check accepts (otherwise every case would fail the same way)."""
+        if not start.models:
+            return {}
+        agents = {node.id for node in workflow.nodes if node.agent is not None}
+        models = {}
+        for node_id, model in start.models.items():
+            if node_id not in agents:
+                raise BenchmarkError(
+                    "benchmark.model_node_unknown", f"The workflow has no agent {node_id!r}", node=node_id
+                )
+            models[node_id] = check_model(model)
+        if start.max_cost_usd is None:
+            raise BenchmarkError(
+                "benchmark.model_cost_cap", "Comparing models needs a cost limit, since earlier runs cannot estimate it"
+            )
+        blocking_problems(self.ctx, with_models(workflow, models))
+        return models
+
     def plan(self, suite_id: str, start: BenchmarkStart) -> BenchmarkPlan:
         suite = self.suite(suite_id)
         workflow = self._workflow(suite, start.version)
+        models = self._models(workflow, start)
         batch_plan = self.ctx.batches.plan(self._batch_request(suite, start))
         problems = [
             {"case": suite.cases[item.index].name, "errors": [error.model_dump() for error in item.errors]}
@@ -346,12 +377,20 @@ class Benchmarks:
         ]
         return BenchmarkPlan(
             cases=len(suite.cases),
-            estimate=estimate_cost(self.ctx, workflow.id, len(suite.cases)),
+            estimate=self._estimate(workflow, len(suite.cases), models, start.max_cost_usd),
             judged_cases=sum(bool(_criteria(case.judge_criteria)) for case in suite.cases) if start.judge else 0,
             external_tools=external_tools(self.ctx, workflow),
             approvals=approval_steps(self.ctx, workflow),
             problems=problems,
         )
+
+    def _estimate(self, workflow: Workflow, cases: int, models: dict[str, str], cap: float | None) -> CostEstimate:
+        estimate = estimate_cost(self.ctx, workflow.id, cases)
+        if models:
+            # Earlier runs used other models: their average says nothing; the cost limit bounds it.
+            bounds = [value for value in (estimate.max_total_usd, cap) if value is not None]
+            estimate = CostEstimate(runs=cases, based_on=0, max_total_usd=min(bounds) if bounds else None)
+        return estimate
 
     @staticmethod
     def _batch_request(suite: Suite, start: BenchmarkStart) -> BatchIn:
@@ -372,11 +411,12 @@ class Benchmarks:
         suite = self.suite(suite_id)
         if not suite.cases:
             raise BenchmarkError("benchmark.no_cases", "The test series has no test cases")
-        if start.version is not None:
-            self._workflow(suite, start.version)
-        bench = BenchmarkRun(suite_id=suite.id, suite_name=suite.name, workflow_id=suite.workflow_id, judge=start.judge)
+        models = self._models(self._workflow(suite, start.version), start)
+        bench = BenchmarkRun(
+            suite_id=suite.id, suite_name=suite.name, workflow_id=suite.workflow_id, judge=start.judge, models=models
+        )
         batch = self.ctx.batches.create(
-            self._batch_request(suite, start), kind="benchmark", ref=bench.id, version=start.version
+            self._batch_request(suite, start), kind="benchmark", ref=bench.id, version=start.version, models=models
         )
         bench.batch_id = batch.id
         bench.workflow_version = batch.workflow_version

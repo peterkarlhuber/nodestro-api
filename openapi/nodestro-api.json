@@ -2524,6 +2524,13 @@
             ],
             "title": "Max Failures"
           },
+          "model_overrides": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Model Overrides",
+            "type": "object"
+          },
           "name": {
             "default": "",
             "title": "Name",
@@ -3151,6 +3158,13 @@
           "judge_usage": {
             "$ref": "#/components/schemas/Usage"
           },
+          "models": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "object"
+          },
           "results": {
             "items": {
               "$ref": "#/components/schemas/CaseResult"
@@ -3259,6 +3273,14 @@
               }
             ],
             "title": "Max Failures"
+          },
+          "models": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 50,
+            "title": "Models",
+            "type": "object"
           },
           "version": {
             "anyOf": [
