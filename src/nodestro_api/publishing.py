@@ -31,6 +31,7 @@ import unicodedata
 from nodestro_runtime import __version__ as runtime_version
 from nodestro_runtime.agent_builder import AgentBuilder
 from nodestro_runtime.engine import MAX_DEPTH, RunEnvironment, node_label
+from nodestro_runtime.graph import workflow_refs
 from nodestro_runtime.preflight import PROVIDER_CHECKS, preflight
 from nodestro_runtime.problems import CheckIssue, NodestroError
 from nodestro_runtime.providers import PROVIDERS, MissingApiKeyError
@@ -286,10 +287,9 @@ class Publications:
 
         def pin(item: Workflow, depth: int) -> Workflow:
             pinned = self.ctx.runs.pin_subworkflows(item)
-            for node in pinned.nodes:
-                config = node.subworkflow
-                if node.type != "subworkflow" or config is None or not config.workflow_id:
-                    continue
+            # Sub-workflows and orchestrator teams (selected ones included: pinning selects them).
+            refs = [(node, ref) for node in pinned.nodes for ref in workflow_refs(node)]
+            for node, config in refs:
                 if config.version is None:
                     problems.append(
                         _issue(
