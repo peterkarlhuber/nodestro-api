@@ -13,8 +13,8 @@ The server starts (desktop/server plan, PR-12, 2026-10-31):
 - `NODESTRO_MODEL_ENDPOINTS` (`TenantComposition.endpoints`): the model endpoints tenants may use; others are
   refused (`provider.endpoint_not_allowed`). `NODESTRO_WORKER_*_SECONDS` set the worker's lease and intervals.
 - `create_tenant_app` accepts `http://localhost` origins for development (the cookie stays `Secure`).
-- Pins: `nodestro-runtime` at `51f0a6c` (server settings, tenant secrets, endpoint allowlist; before `4104176`),
-  `nodestro-examples` at `f13227c` (before `43e02f6`).
+- Pins: `nodestro-runtime` at `c6bc2e5` (server settings, tenant secrets, endpoint allowlist, runs stored as
+  running; before `4104176`), `nodestro-examples` at `86c58a1` (before `43e02f6`).
 - The desktop's `--profile server` is refused with `profile.invalid` (pointing to `nodestro-server`) instead of
   `profile.server_unavailable`.
 
