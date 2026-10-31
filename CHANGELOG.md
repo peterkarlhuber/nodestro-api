@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+Comparing models in a test series (evolution plan Q-2, 2026-10-31):
+
+- `POST /api/benchmarks/{id}/runs` and `/plan` accept `models` (agent node id -> model, e.g.
+  `{"worker": "anthropic:claude-haiku-4-5"}`). The run uses the same cases and the same judge with these models;
+  the saved workflow is not changed. The run records them in `BenchmarkRun.models` (empty for a run of the saved
+  version), and the batch in `Batch.model_overrides`. Two runs compare with the existing case comparison.
+- Such a run needs `max_cost_usd` (`benchmark.model_cost_cap`): earlier runs used other models, so the plan gives no
+  average (`based_on` 0) and bounds the cost by the limit. An unknown agent (`benchmark.model_node_unknown`), an
+  empty model (`config.model_missing`) or a variant the pre-check rejects (`run.agents_invalid`, e.g. reasoning
+  effort on a model without it) is refused before anything starts. Without `models` nothing changes.
+- Pins: nodestro-runtime `45e7774` (built-in Linux sandbox; before `272e2f6`) and nodestro-examples `786c453`
+  (before `e6d9619`). The OpenAPI snapshot gains `Settings.builtin_sandbox`; exports carry the two sandbox modules.
+
 Model prices and cost reconciliation (PRICING-1, phases N5, N6, N8 and N10, 2026-10-31):
 
 - Pins: `nodestro-runtime` 272e2f6 (price catalog, sync, costs priced with the catalog, strict price mode,

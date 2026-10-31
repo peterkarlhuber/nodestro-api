@@ -276,6 +276,57 @@ def test_a_test_series_checks_judges_and_compares_versions(make_app: Any) -> Non
     assert changes["Alpha"] == "worse" and changes["Beta"] == "same"
 
 
+def test_a_test_series_compares_models_without_changing_the_workflow(make_app: Any) -> None:
+    seen: list[str] = []
+
+    def by_model(request: dict[str, Any]) -> Any:
+        seen.append(request["model"])
+        return text('{"echo": "x", "ok": true}')
+
+    client = make_app({"WORKER": [by_model] * 4})
+    workflow_id = form_workflow(client)
+    saved_model = client.get(f"/api/workflows/{workflow_id}").json()["nodes"][1]["agent"]["model"]
+    cases = [{"name": "A", "values": {"kunde": "A"}}, {"name": "B", "values": {"kunde": "B"}}]
+    suite_id = client.post("/api/benchmarks", json={"workflow_id": workflow_id, "cases": cases}).json()["id"]
+    models = {"worker": "anthropic:claude-haiku-4-5"}
+    assert saved_model != models["worker"]
+
+    # A model comparison needs a cost limit, a known agent, a valid model and a variant the pre-check accepts.
+    def refused(path: str, body: dict[str, Any]) -> str:
+        response = client.post(f"/api/benchmarks/{suite_id}/{path}", json=body)
+        assert response.status_code == 400, response.text
+        return str(response.json()["code"])
+
+    assert refused("plan", {"models": models}) == "benchmark.model_cost_cap"
+    assert refused("runs", {"models": {"start": "anthropic:claude-haiku-4-5"}, "max_cost_usd": 1}) == (
+        "benchmark.model_node_unknown"
+    )
+    assert refused("runs", {"models": {"worker": " "}, "max_cost_usd": 1}) == "config.model_missing"
+    # The saved agent asks for reasoning effort, which this model does not support.
+    assert refused("runs", {"models": {"worker": "openai:gpt-4.1-mini"}, "max_cost_usd": 1}) == "run.agents_invalid"
+    assert client.get(f"/api/benchmarks/{suite_id}/runs").json() == []
+
+    baseline = client.post(f"/api/benchmarks/{suite_id}/runs", json={}).json()
+    baseline = poll(client, f"/api/benchmark-runs/{baseline['id']}", ("finished",))
+    assert baseline["models"] == {}
+
+    plan = client.post(f"/api/benchmarks/{suite_id}/plan", json={"models": models, "max_cost_usd": 0.5}).json()
+    # Earlier runs used another model: no average from them, the limit bounds the cost.
+    assert plan["estimate"]["based_on"] == 0 and plan["estimate"]["per_run_usd"] is None
+    assert plan["estimate"]["max_total_usd"] == 0.5
+
+    variant = client.post(f"/api/benchmarks/{suite_id}/runs", json={"models": models, "max_cost_usd": 0.5})
+    assert variant.status_code == 201, variant.text
+    variant = poll(client, f"/api/benchmark-runs/{variant.json()['id']}", ("finished",))
+    assert variant["models"] == models and variant["summary"]["passed"] == 2
+    assert set(seen[2:]) == {"claude-haiku-4-5"} and "claude-haiku-4-5" not in seen[:2]
+
+    # The saved workflow keeps its model; the two runs compare case by case.
+    assert client.get(f"/api/workflows/{workflow_id}").json()["nodes"][1]["agent"]["model"] == saved_model
+    comparison = client.get("/api/benchmark-runs/compare", params={"a": baseline["id"], "b": variant["id"]}).json()
+    assert {case["change"] for case in comparison["cases"]} == {"same"}
+
+
 def test_test_series_reject_invalid_checks(make_app: Any) -> None:
     client = make_app()
     workflow_id = form_workflow(client)

@@ -2524,6 +2524,13 @@
             ],
             "title": "Max Failures"
           },
+          "model_overrides": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Model Overrides",
+            "type": "object"
+          },
           "name": {
             "default": "",
             "title": "Name",
@@ -3151,6 +3158,13 @@
           "judge_usage": {
             "$ref": "#/components/schemas/Usage"
           },
+          "models": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "object"
+          },
           "results": {
             "items": {
               "$ref": "#/components/schemas/CaseResult"
@@ -3259,6 +3273,14 @@
               }
             ],
             "title": "Max Failures"
+          },
+          "models": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 50,
+            "title": "Models",
+            "type": "object"
           },
           "version": {
             "anyOf": [
@@ -3540,6 +3562,33 @@
           "files"
         ],
         "title": "Body_upload_knowledge_api_knowledge_post",
+        "type": "object"
+      },
+      "BuiltinSandboxStatus": {
+        "description": "Whether the built-in Linux sandbox isolates AI-generated code on this computer (desktop profile only).",
+        "properties": {
+          "available": {
+            "default": false,
+            "title": "Available",
+            "type": "boolean"
+          },
+          "detail": {
+            "default": "",
+            "title": "Detail",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          },
+          "system": {
+            "default": "",
+            "title": "System",
+            "type": "string"
+          }
+        },
+        "title": "BuiltinSandboxStatus",
         "type": "object"
       },
       "CaseComparison": {
@@ -12291,6 +12340,9 @@
             "default": "anthropic:claude-opus-5-5",
             "title": "Assistant Model",
             "type": "string"
+          },
+          "builtin_sandbox": {
+            "$ref": "#/components/schemas/BuiltinSandboxStatus"
           },
           "default_budget_usd": {
             "anyOf": [
