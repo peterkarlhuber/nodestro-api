@@ -24,6 +24,7 @@ Nodestro Local Docker (the `local-container` profile):
   access key with mode 0600 on first start), `link`, `rotate-key`, `backup` and `restore` (the studio's own complete
   backups, through the running API), `status`, `check` (health check) and `gateway` (the runtime's sandbox gateway).
 - No change to the OpenAPI document.
+- Pins `nodestro-runtime` at `78d2899` (before: `d2cb987`) and `nodestro-examples` at `6c88aa7` (before: `1c2f1e4`).
 
 Test cases from failed runs (evolution plan Q-4):
 
