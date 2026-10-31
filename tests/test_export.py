@@ -93,7 +93,7 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     assert "nodestro_runtime/engine.py" in check["files"]
     assert "nodestro_api/standalone.py" in check["files"]
     # The 25 modules of Nodestro 0.1 plus the extension contract the knowledge base now uses for OCR.
-    assert len(check["runtime_modules"]) == 26 and "nodestro_runtime.extensions" in check["runtime_modules"]
+    assert len(check["runtime_modules"]) == 27 and "nodestro_runtime.extensions" in check["runtime_modules"]
     assert not any(path.startswith("workflow/knowledge/") for path in check["files"])
     included = client.post(
         f"/api/publications/{publication['id']}/export/check",
