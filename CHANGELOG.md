@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+Nodestro Local Docker (the `local-container` profile):
+
+- `create_app` and `nodestro-api`/`nodestro` accept `NODESTRO_PROFILE=local-container`: the studio of one person on
+  SQLite that runs in a container and is used from the host's browser. It may listen on the container's interfaces
+  (`0.0.0.0`, published by Docker on the host's loopback only), but only with an access key
+  (`NODESTRO_ACCESS_KEY_FILE`, `access.key_required` without it) and only loopback names in
+  `NODESTRO_ALLOWED_HOSTS` (`access.network_needs_login`). The desktop profile still refuses every interface.
+- The access key reuses the desktop's launch middleware (`LaunchSecretMiddleware(reusable=True, bearer=True)`): the
+  link `/api/launch?token=<key>` opens any number of browser sessions, each with its own random `HttpOnly`,
+  `SameSite=Strict` cookie `nodestro_local_session` (not the desktop's name: cookies are shared across the ports of
+  `localhost`); scripts send `Authorization: Bearer <key>`. A browser without a session gets a short page that says
+  how to open Nodestro; the health check and the key-protected published APIs stay open.
+- Strict host and origin checks (`LocalAccessMiddleware(strict_origin=True)`): only loopback host names are answered
+  (not the container's addresses or name), and changing requests and WebSockets only from the exact origin they were
+  sent to, so a page of another program on `localhost` cannot use the studio. No CORS for development servers, and
+  network access for published APIs cannot be switched on (`lan.unavailable`).
+- One person holds every permission (`resolver_for`), and provider keys may come from the environment as on the
+  desktop.
+- New command `nodestro-local` (`nodestro_api.local_container`), run inside the container: `serve` (creates the
+  access key with mode 0600 on first start), `link`, `rotate-key`, `backup` and `restore` (the studio's own complete
+  backups, through the running API), `status`, `check` (health check) and `gateway` (the runtime's sandbox gateway).
+- No change to the OpenAPI document.
+
 Pins (2026-10-31): `nodestro-runtime` at `d2cb987` (before: `45e7774`; strict price-mode refusals get their own error
 codes) and `nodestro-examples` at `1c2f1e4` (before: `786c453`; same runtime). No API changes.
 

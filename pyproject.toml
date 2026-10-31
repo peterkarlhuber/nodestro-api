@@ -40,6 +40,7 @@ dev = [
 [project.scripts]
 nodestro-api = "nodestro_api.cli:main"
 nodestro-server = "nodestro_api.server:main"
+nodestro-local = "nodestro_api.local_container:main"
 
 [project.urls]
 Repository = "https://github.com/peterkarlhuber/nodestro-api"

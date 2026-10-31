@@ -29,6 +29,7 @@ from .batches import Batches
 from .benchmarks import Benchmarks
 from .docs_index import DocsIndex
 from .launch import launch_secret_from_env
+from .local_container import access_key_from_env
 from .network import NetworkListener
 from .organize import Organizer
 from .pricing_setup import PriceSyncConfig
@@ -50,11 +51,15 @@ class AppConfig:
     #: Host names answered besides this computer's (``NODESTRO_ALLOWED_HOSTS``; ``*``: all), see
     #: :mod:`nodestro_api.local_access`.
     allowed_hosts: list[str] = field(default_factory=list)
-    #: The operating profile (``NODESTRO_PROFILE``): ``desktop`` (default) or ``server``, see :attr:`profile`.
+    #: The operating profile (``NODESTRO_PROFILE``): ``desktop`` (default), ``local-container`` (Nodestro Local
+    #: Docker, :mod:`nodestro_api.local_container`) or ``server``, see :attr:`profile`.
     profile_kind: ProfileKind = "desktop"
     #: The desktop app's per-launch secret (``NODESTRO_LAUNCH_SECRET``); with it, only the window that
     #: opened ``/api/launch`` can use the studio API, see :mod:`nodestro_api.launch`. ``None``: not required.
     launch_secret: str | None = field(default=None, repr=False)
+    #: Nodestro Local Docker's persistent access key (``NODESTRO_ACCESS_KEY_FILE``); required in the
+    #: ``local-container`` profile, see :mod:`nodestro_api.local_container`.
+    access_key: str | None = field(default=None, repr=False)
     #: Where reference prices come from and whether they are synced in the background (``NODESTRO_PRICE_*``,
     #: see :mod:`nodestro_api.pricing_setup`). Off unless configured: tests and embedded uses never go online.
     price_sync: PriceSyncConfig = field(default_factory=lambda: PriceSyncConfig(enabled=False))
@@ -83,6 +88,7 @@ class AppConfig:
             allowed_hosts=[item.strip() for item in allowed.split(",") if item.strip()],
             profile_kind=profile.kind,
             launch_secret=launch_secret_from_env(),
+            access_key=access_key_from_env(),
             price_sync=PriceSyncConfig.from_env(),
         )
 
@@ -127,7 +133,14 @@ class Nodestro(Workspace):
         self.api_keys = ApiKeys(self.store)
         self.runs.environments = lambda run: self.publications.environment(run.release_id) if run.release_id else None
         self.serving = ServingCore(StudioHost(self))
-        self.network = NetworkListener(self.store, self.serving)
+        self.network = NetworkListener(
+            self.store,
+            self.serving,
+            unavailable="Nodestro Local Docker offers published APIs only on this computer (its port is on the "
+            "host's loopback); network access is not available"
+            if self.config.profile_kind == "local-container"
+            else None,
+        )
         self.published = _PublishedRuns(self)
         #: Syncs the reference prices; ``None`` on a server, whose worker syncs them (see :mod:`.pricing_setup`).
         self.price_sync = self.config.price_sync.service(self.pricing) if self.pricing.reference_writable else None
