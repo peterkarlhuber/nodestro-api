@@ -336,3 +336,15 @@ def test_the_worker_syncs_reference_prices_when_due(database: Any, tmp_path: Pat
     assert worker.price_sync.pricing.state().last_success_at is not None
     assert not worker.price_sync.due()
     asyncio.run(worker.aclose())
+
+
+def test_the_model_list_carries_the_workspaces_prices(make_app: MakeApp) -> None:
+    client = make_app()
+    sonnet = next(item for item in client.get("/api/meta").json()["models"] if item["model"] == "claude-sonnet-5-5")
+    assert sonnet["price_status"] in {"current", "stale"} and sonnet["price_quality"] == "verified"
+    client.put(
+        "/api/pricing/overrides/anthropic/claude-sonnet-5-5",
+        json={"input_usd_per_mtok": "1", "output_usd_per_mtok": "2"},
+    )
+    sonnet = next(item for item in client.get("/api/meta").json()["models"] if item["model"] == "claude-sonnet-5-5")
+    assert sonnet["price_status"] == "custom" and sonnet["input_usd_per_mtok"] == 1
