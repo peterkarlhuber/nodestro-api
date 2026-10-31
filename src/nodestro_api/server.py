@@ -66,6 +66,43 @@ class ServerEnvironment:
     worker: dict[str, float] = field(default_factory=dict)
     #: The reference price sync of the workers (``NODESTRO_PRICE_*``, see :mod:`nodestro_api.pricing_setup`).
     price_sync: PriceSyncConfig = field(default_factory=PriceSyncConfig)
+    #: Runs one worker holds and how many of them may wait for a tool approval (``NODESTRO_WORKER_MAX_RUNS``,
+    #: ``NODESTRO_WORKER_MAX_WAITING``; defaults 2 and 1, see :func:`nodestro_runtime.jobs.check_capacity`).
+    capacity: dict[str, int] = field(default_factory=dict)
+
+
+def _capacity(environ: Mapping[str, str], problems: list[dict[str, str]]) -> dict[str, int]:
+    from nodestro_runtime.jobs import DEFAULT_MAX_RUNS, DEFAULT_MAX_WAITING, check_capacity
+
+    found: dict[str, int] = {}
+    valid = True
+    for name, key in (("MAX_RUNS", "max_runs"), ("MAX_WAITING", "max_waiting")):
+        text = environ.get(f"NODESTRO_WORKER_{name}", "").strip()
+        if not text:
+            continue
+        try:
+            found[key] = int(text)
+        except ValueError:
+            valid = False
+            problems.append(
+                {
+                    "field": f"NODESTRO_WORKER_{name}",
+                    "value": text,
+                    "reason": f"NODESTRO_WORKER_{name} must be a whole number",
+                }
+            )
+    if valid:
+        try:
+            check_capacity(found.get("max_runs", DEFAULT_MAX_RUNS), found.get("max_waiting", DEFAULT_MAX_WAITING))
+        except ValueError as error:
+            problems.append(
+                {
+                    "field": "NODESTRO_WORKER_MAX_RUNS",
+                    "value": environ.get("NODESTRO_WORKER_MAX_RUNS", ""),
+                    "reason": f"NODESTRO_WORKER_MAX_RUNS / NODESTRO_WORKER_MAX_WAITING: {error}",
+                }
+            )
+    return found
 
 
 def load(environ: Mapping[str, str] | None = None) -> ServerEnvironment:
@@ -125,6 +162,7 @@ def load(environ: Mapping[str, str] | None = None) -> ServerEnvironment:
                     "reason": f"NODESTRO_WORKER_{name}_SECONDS must be a positive number of seconds",
                 }
             )
+    capacity = _capacity(environ, problems)
     price_sync = PriceSyncConfig()
     try:
         price_sync = PriceSyncConfig.from_env(environ)
@@ -147,6 +185,7 @@ def load(environ: Mapping[str, str] | None = None) -> ServerEnvironment:
         endpoints=endpoints,
         worker=worker,
         price_sync=price_sync,
+        capacity=capacity,
     )
 
 
@@ -246,6 +285,7 @@ async def run_worker(server: ServerEnvironment) -> None:
     settings = WorkerSettings(
         lease=timedelta(seconds=timing.pop("lease")) if "lease" in timing else WorkerSettings.lease,
         price_sync=server.price_sync,
+        **server.capacity,
         **timing,  # type: ignore[arg-type]
     )
     worker = ServerWorker(files, IdentityStore(database), settings)

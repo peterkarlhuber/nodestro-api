@@ -27,7 +27,17 @@ import logging
 from typing import Any
 
 from nodestro_runtime.identity_store import IdentityStore
-from nodestro_runtime.jobs import JobQueue, LeaderLock, QueuedRuns, RunWorker, ScheduleFirings, reap, worker_name
+from nodestro_runtime.jobs import (
+    DEFAULT_MAX_RUNS,
+    DEFAULT_MAX_WAITING,
+    JobQueue,
+    LeaderLock,
+    QueuedRuns,
+    RunWorker,
+    ScheduleFirings,
+    reap,
+    worker_name,
+)
 
 from .context import Nodestro
 from .identity import TenantWorkspaces
@@ -54,6 +64,10 @@ class WorkerSettings:
     price_sync: PriceSyncConfig = field(default_factory=lambda: PriceSyncConfig(enabled=False))
     #: How often the worker looks whether the reference prices are due (seconds).
     price_check_every: float = 3600.0
+    #: Runs this worker holds at once, and how many of them may wait for a person's tool approval (S-2, worker
+    #: concept option A): a waiting run keeps its slot, so at least one slot always executes.
+    max_runs: int = DEFAULT_MAX_RUNS
+    max_waiting: int = DEFAULT_MAX_WAITING
 
 
 class ServerWorker:
@@ -73,7 +87,14 @@ class ServerWorker:
         # Contexts that execute claimed runs here, and contexts the scheduler starts (queued) runs with.
         self.executing = TenantWorkspaces(files.open, close_tenant)
         self.scheduling = TenantWorkspaces(self._open_scheduling, close_tenant)
-        self.runner = RunWorker(self.queue, self.executing.get, name=self.name, poll=self.settings.poll)
+        self.runner = RunWorker(
+            self.queue,
+            self.executing.get,
+            name=self.name,
+            poll=self.settings.poll,
+            max_runs=self.settings.max_runs,
+            max_waiting=self.settings.max_waiting,
+        )
         self.leader = LeaderLock(files.database)
         self.price_sync = server_sync(files.database, self.settings.price_sync)
 

@@ -135,10 +135,13 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
     found = check_routes(app)
     studio = [item for item in found if item.access in {"read", "edit", "run", "admin", "install", "public"}]
     assert Counter(item.access for item in studio) == {
-        "read": 89,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4)
+        # + tool approval inbox, run questions, pre-grants, activation state (S-2b)
+        "read": 93,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4)
         "edit": 47,
-        "run": 31,
-        "admin": 27,  # + price sync, reviews, overrides, billing keys and reconciliation (PRICING-1); gate (Q-3)
+        "run": 32,  # + deciding a tool call (S-2b)
+        # + price sync, reviews, overrides, billing keys and reconciliation (PRICING-1); gate (Q-3);
+        # + granting and revoking pre-grants, the approval audit, the activation step (S-2b)
+        "admin": 31,
         "install": 10,
         "public": 1,
     }
@@ -174,6 +177,12 @@ SENSITIVE = {
     ("POST", "/api/tools/jobs/{job_id}/dependencies"): "admin",
     ("POST", "/api/workflows/{workflow_id}/runs"): "run",
     ("POST", "/api/runs/{run_id}/approvals/{node_id}"): "run",
+    ("POST", "/api/runs/{run_id}/tool-approvals/{request_id}"): "run",
+    ("POST", "/api/tool-pre-grants"): "admin",
+    ("DELETE", "/api/tool-pre-grants/{scope}/{scope_id}/{grant_id}"): "admin",
+    ("GET", "/api/tool-approvals/audit"): "admin",
+    ("POST", "/api/tool-approvals/legacy"): "admin",
+    ("GET", "/api/runs/{run_id}/tool-approvals"): "read",
     ("POST", "/api/tools/jobs"): "run",
     ("POST", "/api/tools/{name}/run"): "run",
     ("POST", "/api/tools/drafts/{draft_id}/test"): "run",

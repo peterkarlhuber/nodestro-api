@@ -27,6 +27,7 @@ from .api_inputs import router as inputs_router
 from .api_pricing import router as pricing_router
 from .api_publish import router as publish_router
 from .api_python import router as python_router
+from .api_tool_approvals import router as tool_approvals_router
 from .context import AppConfig, Nodestro
 from .launch import LOCAL_COOKIE, LaunchSecretMiddleware, check_secret
 from .local_access import LocalAccessMiddleware, allowed_hosts, listens_everywhere, require_loopback_only
@@ -163,6 +164,7 @@ def create_app(
     app.include_router(assistant_router)
     app.include_router(inputs_router)
     app.include_router(pricing_router)
+    app.include_router(tool_approvals_router)
     app.include_router(router)
     app.include_router(data_router)
     # Fail closed: an application with a route that declares no access requirement is not built.
