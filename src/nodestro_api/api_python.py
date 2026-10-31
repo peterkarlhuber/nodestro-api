@@ -25,6 +25,7 @@ from nodestro_runtime.schemas import WorkflowIn
 from pydantic import BaseModel
 
 from .api import Ctx, _workflow
+from .permissions import ADMIN, EDIT, READ
 
 router = APIRouter(prefix="/api/python")
 
@@ -39,7 +40,7 @@ class ToolDependencyRequest(BaseModel):
     tests: str = ""
 
 
-@router.get("")
+@router.get("", dependencies=READ)
 def python_status(ctx: Ctx) -> PythonStatus:
     """uv, the environments on disk (with owner and size) and the download cache."""
     return ctx.python.python_status()
@@ -50,13 +51,13 @@ def _workflow_needed(ctx: Ctx, workflow_id: str, body: WorkflowDependencyRequest
     return (body.workflow if body is not None and body.workflow is not None else stored), stored.name
 
 
-@router.post("/workflows/{workflow_id}/status")
+@router.post("/workflows/{workflow_id}/status", dependencies=READ)
 def workflow_status(workflow_id: str, ctx: Ctx, body: WorkflowDependencyRequest | None = None) -> DependencyStatus:
     workflow, name = _workflow_needed(ctx, workflow_id, body)
     return ctx.python.status("workflow", workflow_id, ctx.python.needed_for_workflow(workflow), label=name)
 
 
-@router.post("/workflows/{workflow_id}/plan")
+@router.post("/workflows/{workflow_id}/plan", dependencies=EDIT)
 async def workflow_plan(workflow_id: str, ctx: Ctx, body: WorkflowDependencyRequest | None = None) -> Plan:
     """The approval overview: resolves all versions (may download package metadata), installs nothing."""
     workflow, name = _workflow_needed(ctx, workflow_id, body)
@@ -64,31 +65,31 @@ async def workflow_plan(workflow_id: str, ctx: Ctx, body: WorkflowDependencyRequ
     return await asyncio.to_thread(ctx.python.plan, "workflow", workflow_id, needed, label=name)
 
 
-@router.get("/workflows/{workflow_id}/export")
+@router.get("/workflows/{workflow_id}/export", dependencies=READ)
 def workflow_export(workflow_id: str, ctx: Ctx) -> ExportedDefinition | None:
     """The dependency definition that goes into an exported workflow (without approvals)."""
     _workflow(ctx, workflow_id)
     return ctx.python.export(scope_of("workflow", workflow_id))
 
 
-@router.post("/tools/{name}/status")
+@router.post("/tools/{name}/status", dependencies=READ)
 def tool_status(name: str, body: ToolDependencyRequest, ctx: Ctx) -> DependencyStatus:
     return ToolEnvironment(ctx.python, name, body.code, body.tests).status
 
 
-@router.post("/tools/{name}/plan")
+@router.post("/tools/{name}/plan", dependencies=EDIT)
 async def tool_plan(name: str, body: ToolDependencyRequest, ctx: Ctx) -> Plan:
     needed = ctx.python.needed_for_sources([(name, body.code, body.tests)])
     return await asyncio.to_thread(ctx.python.plan, "tool", name, needed, label=name)
 
 
-@router.post("/plans/{plan_id}/approve")
+@router.post("/plans/{plan_id}/approve", dependencies=ADMIN)
 def approve_plan(plan_id: str, ctx: Ctx) -> PythonEnvironment:
     """The user's approval: store lock and approvals, then install in the background."""
     return ctx.python.approve(plan_id)
 
 
-@router.get("/environments/{kind}/{ref}")
+@router.get("/environments/{kind}/{ref}", dependencies=READ)
 def get_environment(kind: ScopeKind, ref: str, ctx: Ctx) -> PythonEnvironment:
     env = ctx.python.get(scope_of(kind, ref))
     if env is None:
@@ -96,7 +97,7 @@ def get_environment(kind: ScopeKind, ref: str, ctx: Ctx) -> PythonEnvironment:
     return env
 
 
-@router.post("/environments/{kind}/{ref}/install")
+@router.post("/environments/{kind}/{ref}/install", dependencies=ADMIN)
 def reinstall_environment(kind: ScopeKind, ref: str, ctx: Ctx) -> PythonEnvironment:
     """Rebuild the environment from the approved lock (same versions, no new approval)."""
     scope = scope_of(kind, ref)
@@ -106,7 +107,7 @@ def reinstall_environment(kind: ScopeKind, ref: str, ctx: Ctx) -> PythonEnvironm
     return ctx.python.install(scope, modules, wait=False)
 
 
-@router.delete("/environments/{kind}/{ref}", status_code=204)
+@router.delete("/environments/{kind}/{ref}", status_code=204, dependencies=ADMIN)
 def remove_environment(kind: ScopeKind, ref: str, ctx: Ctx, forget: bool = False) -> Response:
     """Delete the installed environment; ``forget`` also deletes the definition and approvals."""
     scope = scope_of(kind, ref)
@@ -123,7 +124,7 @@ class CleanupResult(BaseModel):
     removed: list[str]
 
 
-@router.post("/cleanup")
+@router.post("/cleanup", dependencies=ADMIN)
 async def cleanup(ctx: Ctx) -> CleanupResult:
     """Remove environments no workflow or tool owns any more and prune the download cache."""
     return CleanupResult(removed=await asyncio.to_thread(ctx.python.cleanup))

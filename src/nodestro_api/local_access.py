@@ -10,11 +10,20 @@ page the user visits can reach that address too, through the browser:
   The browser marks it with the page's ``Origin``; changing requests are only accepted from the
   studio's own origin or from this computer.
 
-``NODESTRO_ALLOWED_HOSTS`` (comma-separated) adds host names, e.g. of a reverse proxy;
-``*`` accepts every host name. Listening on every interface (``--host 0.0.0.0``) answers every
-IP address, since the addresses of this computer are not known in advance, and this computer's
-own name; other host names are refused there too, as DNS rebinding works with names only. The
-origin check stays. Published workflow APIs are protected by their keys and are checked the same way.
+These checks protect a studio API on loopback against the browser; they are **not authentication**.
+As long as the studio API has no login, it is never offered to the network
+(:func:`require_loopback_only`, checked by :func:`nodestro_api.app.create_app` and the command line):
+
+- it listens on a loopback address only (``127.0.0.1``, ``::1``, ``localhost``); ``0.0.0.0``, ``::``
+  and every other address are refused with ``access.network_needs_login``;
+- ``NODESTRO_ALLOWED_HOSTS`` may only add loopback names (``localhost``, ``*.localhost``, loopback
+  addresses); other names and ``*`` would let a reverse proxy pass the network through, and are refused;
+- a request that a proxy forwarded (``Forwarded``, ``X-Forwarded-For``, ``X-Forwarded-Host``,
+  ``X-Real-IP``) is refused with ``request.forwarded_not_allowed``. This catches common proxy setups;
+  a proxy that strips these headers is not detectable, which is why the configuration is refused too.
+
+Published workflow APIs (``/api/published``) are protected by their keys: forwarded requests to them are
+accepted, and the network listener (:mod:`nodestro_api.network`) serves them to other devices.
 """
 
 from __future__ import annotations
@@ -25,11 +34,16 @@ import json
 import socket
 from urllib.parse import urlsplit
 
+from nodestro_runtime.problems import NodestroError
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 #: Methods that change nothing; a cross-site page cannot read their answers (no CORS headers).
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 _WILDCARD_HOSTS = frozenset({"", "0.0.0.0", "::", "*"})
+#: Headers a reverse proxy adds to the requests it forwards.
+FORWARDING_HEADERS = ("forwarded", "x-forwarded-for", "x-forwarded-host", "x-real-ip")
+#: Key-protected routes that may be reached through a proxy (published workflow APIs).
+_KEY_PROTECTED_PREFIX = "/api/published"
 
 
 def is_loopback(host: str) -> bool:
@@ -88,6 +102,28 @@ def allowed_hosts(bind_host: str | None, extra: Iterable[str] = ()) -> frozenset
     return frozenset(names)
 
 
+def require_loopback_only(bind_host: str | None, extra_hosts: Iterable[str] = ()) -> None:
+    """Refuse a configuration that offers the login-less studio API to the network (``access.network_needs_login``).
+
+    Raised before anything is opened; the host and the host names that were refused are in the parameters."""
+    refused: list[str] = []
+    host = (bind_host or "").strip()
+    if not host or listens_everywhere(host) or not is_loopback(host):
+        refused.append(f"listening on {host or '(every interface)'!r}")
+    names = [item.strip() for item in extra_hosts if item.strip()]
+    others = [name for name in names if name == "*" or not is_loopback(split_host(name))]
+    if others:
+        refused.append(f"NODESTRO_ALLOWED_HOSTS={','.join(others)}")
+    if refused:
+        raise NodestroError(
+            "access.network_needs_login",
+            "The studio API has no login yet, so it is only offered on this computer (127.0.0.1, ::1, localhost); "
+            f"refused: {'; '.join(refused)}. Use the network listener for published workflow APIs",
+            host=host,
+            hosts=others,
+        )
+
+
 class LocalAccessMiddleware:
     """Refuse requests with a foreign ``Host`` (DNS rebinding) and changing requests with a foreign ``Origin``."""
 
@@ -125,6 +161,18 @@ class LocalAccessMiddleware:
                 f"Requests for the host name {split_host(host_header)!r} are not answered "
                 "(add it to NODESTRO_ALLOWED_HOSTS when Nodestro is reached under this name)",
                 host=split_host(host_header),
+            )
+            return
+        path = scope.get("path", "")
+        forwarded = [name for name in FORWARDING_HEADERS if name in headers]
+        if forwarded and path != _KEY_PROTECTED_PREFIX and not path.startswith(_KEY_PROTECTED_PREFIX + "/"):
+            await _refuse(
+                scope,
+                send,
+                "request.forwarded_not_allowed",
+                "Requests forwarded by a proxy are not answered: the studio API has no login yet "
+                f"(headers: {', '.join(forwarded)})",
+                headers=", ".join(forwarded),
             )
             return
         origin = headers.get("origin")

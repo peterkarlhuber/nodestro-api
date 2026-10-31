@@ -16,6 +16,7 @@ from typing import Any, Literal
 
 from nodestro_runtime.extensions import Integration
 from nodestro_runtime.problems import NodestroError
+from nodestro_runtime.profile import ProfileKind, RuntimeProfile
 from nodestro_runtime.schemas import Run
 from nodestro_runtime.workspace import Workspace
 
@@ -47,19 +48,32 @@ class AppConfig:
     #: Host names answered besides this computer's (``NODESTRO_ALLOWED_HOSTS``; ``*``: all), see
     #: :mod:`nodestro_api.local_access`.
     allowed_hosts: list[str] = field(default_factory=list)
+    #: The operating profile (``NODESTRO_PROFILE``): ``desktop`` (default) or ``server``, see :attr:`profile`.
+    profile_kind: ProfileKind = "desktop"
+
+    @property
+    def profile(self) -> RuntimeProfile:
+        """The operating profile on :attr:`data_dir` (built on each access, so the two never disagree).
+
+        Raises ``profile.invalid`` for an unknown :attr:`profile_kind`; :meth:`RuntimeProfile.validate` tells
+        whether it can be started."""
+        return RuntimeProfile(kind=self.profile_kind, data_dir=self.data_dir)
 
     @classmethod
     def from_env(cls) -> AppConfig:
-        data = Path(os.environ.get("NODESTRO_DATA_DIR", Path.home() / ".nodestro")).expanduser()
+        """The configuration from the environment; ``NODESTRO_PROFILE`` and ``NODESTRO_DATA_DIR`` follow
+        :meth:`RuntimeProfile.from_env` (unknown values are refused with ``profile.invalid``)."""
+        profile = RuntimeProfile.from_env(os.environ)
         static = os.environ.get("NODESTRO_STATIC_DIR")
         docs = os.environ.get("NODESTRO_DOCS_DIR")
         allowed = os.environ.get("NODESTRO_ALLOWED_HOSTS", "")
         return cls(
-            data_dir=data,
+            data_dir=profile.data_dir,
             static_dir=Path(static) if static else None,
             docs_dir=Path(docs) if docs else None,
             host=os.environ.get("NODESTRO_HOST", "127.0.0.1"),
             allowed_hosts=[item.strip() for item in allowed.split(",") if item.strip()],
+            profile_kind=profile.kind,
         )
 
 
@@ -79,7 +93,7 @@ class Nodestro(Workspace):
         OCR (tests); ``integrations`` replaces the installed integrations."""
         self.config = config
         super().__init__(
-            config.data_dir,
+            profile=config.profile,
             client_factory=client_factory,
             python_runner=python_runner,
             ocr_runner=ocr_runner,

@@ -25,6 +25,7 @@ from nodestro_runtime.problems import Problem
 from pydantic import BaseModel, Field
 
 from .api import Ctx, uploaded_file_headers
+from .permissions import EDIT, READ
 
 router = APIRouter(prefix="/api")
 _PREVIEW_CHARS = 20_000
@@ -67,7 +68,7 @@ class CleanupRequest(BaseModel):
     older_than_days: int | None = Field(default=None, ge=0, le=3650)
 
 
-@router.get("/inputs/formats")
+@router.get("/inputs/formats", dependencies=READ)
 def input_formats() -> FormatsInfo:
     return FormatsInfo(
         formats=formats_overview(),
@@ -82,7 +83,7 @@ def input_formats() -> FormatsInfo:
     )
 
 
-@router.post("/inputs", status_code=201)
+@router.post("/inputs", status_code=201, dependencies=EDIT)
 async def upload_inputs(
     ctx: Ctx,
     files: Annotated[list[UploadFile], File()],
@@ -123,22 +124,22 @@ async def upload_inputs(
     return results
 
 
-@router.get("/inputs")
+@router.get("/inputs", dependencies=READ)
 def input_storage(ctx: Ctx) -> StorageInfo:
     return ctx.inputs.storage()
 
 
-@router.post("/inputs/cleanup")
+@router.post("/inputs/cleanup", dependencies=EDIT)
 def cleanup_inputs(body: CleanupRequest, ctx: Ctx) -> CleanupResult:
     return ctx.inputs.cleanup(older_than_days=body.older_than_days)
 
 
-@router.get("/inputs/{file_id}")
+@router.get("/inputs/{file_id}", dependencies=READ)
 def input_file(file_id: str, ctx: Ctx) -> InputFileOut:
     return InputFileOut.of(ctx.inputs.get(file_id))
 
 
-@router.get("/inputs/{file_id}/content")
+@router.get("/inputs/{file_id}/content", dependencies=READ)
 def input_content(file_id: str, ctx: Ctx) -> Response:
     item = ctx.inputs.get(file_id)
     return Response(
@@ -148,7 +149,7 @@ def input_content(file_id: str, ctx: Ctx) -> Response:
     )
 
 
-@router.get("/inputs/{file_id}/text")
+@router.get("/inputs/{file_id}/text", dependencies=READ)
 def input_text(file_id: str, ctx: Ctx, path: str = "") -> FileText:
     """What Nodestro read from a file (or one file of an archive): the text the agents can get."""
     item = ctx.inputs.get(file_id)
@@ -176,13 +177,13 @@ def input_text(file_id: str, ctx: Ctx, path: str = "") -> FileText:
     )
 
 
-@router.delete("/inputs/{file_id}", status_code=204)
+@router.delete("/inputs/{file_id}", status_code=204, dependencies=EDIT)
 def delete_input(file_id: str, ctx: Ctx) -> Response:
     ctx.inputs.delete(file_id)
     return Response(status_code=204)
 
 
-@router.get("/runs/{run_id}/inputs")
+@router.get("/runs/{run_id}/inputs", dependencies=READ)
 def run_inputs(run_id: str, ctx: Ctx) -> list[RunInput]:
     """The files a run received, and whether they are still stored."""
     run = ctx.runs.get(run_id)
@@ -224,18 +225,18 @@ def run_inputs(run_id: str, ctx: Ctx) -> list[RunInput]:
 # ---- knowledge: collections and adoption -----------------------------------------------
 
 
-@router.get("/knowledge/collections")
+@router.get("/knowledge/collections", dependencies=READ)
 def knowledge_collections(ctx: Ctx) -> list[CollectionInfo]:
     return ctx.knowledge.collections()
 
 
-@router.post("/knowledge/adopt/check")
+@router.post("/knowledge/adopt/check", dependencies=READ)
 def adopt_check(body: AdoptRequest, ctx: Ctx) -> list[AdoptCheck]:
     """What the chosen items would become in knowledge; stores nothing."""
     return check(ctx, body)
 
 
-@router.post("/knowledge/adopt")
+@router.post("/knowledge/adopt", dependencies=EDIT)
 def adopt_confirm(body: AdoptConfirm, ctx: Ctx) -> AdoptOutcome:
     """Store the confirmed items in knowledge (only with the tokens of the check)."""
     return adopt(ctx, body)

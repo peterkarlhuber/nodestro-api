@@ -26,6 +26,7 @@ from .api_examples import ApiExamples, examples
 from .api_guide import ApiGuide
 from .api_keys import ApiKeyOut, NewApiKey
 from .network import NetworkConfig, NetworkStatus
+from .permissions import ADMIN, EDIT, READ, RUN
 from .publishing import ApiCheck, Publication, Release, ReleaseSummary, api_runs
 from .serving import SCOPES, ApiLimits, KeyIdentity, ServedRelease, openapi_document
 
@@ -70,7 +71,7 @@ class ApiOverview(BaseModel):
     missing_resources: list[str] = Field(default_factory=list)
 
 
-@router.get("/workflows/{workflow_id}/api")
+@router.get("/workflows/{workflow_id}/api", dependencies=READ)
 def api_overview(workflow_id: str, request: Request, ctx: Ctx) -> ApiOverview:
     workflow = _workflow(ctx, workflow_id)
     publication = ctx.publications.for_workflow(workflow_id)
@@ -99,7 +100,7 @@ class CheckIn(BaseModel):
     version: int | None = None
 
 
-@router.post("/workflows/{workflow_id}/api/check")
+@router.post("/workflows/{workflow_id}/api/check", dependencies=READ)
 def api_check(workflow_id: str, body: CheckIn, ctx: Ctx) -> ApiCheck:
     return ctx.publications.check(workflow_id, body.version)
 
@@ -117,7 +118,7 @@ class PublishOut(BaseModel):
     release: ReleaseSummary
 
 
-@router.post("/workflows/{workflow_id}/api/publish", status_code=201)
+@router.post("/workflows/{workflow_id}/api/publish", status_code=201, dependencies=ADMIN)
 def publish(workflow_id: str, body: PublishIn, ctx: Ctx) -> PublishOut:
     publication, release = ctx.publications.publish(
         workflow_id, body.version, note=body.note, slug=body.slug, activate=body.activate
@@ -139,7 +140,7 @@ class PublicationListItem(BaseModel):
     active_release: int | None
 
 
-@router.get("/publications")
+@router.get("/publications", dependencies=READ)
 def list_publications(ctx: Ctx) -> list[PublicationListItem]:
     return [
         PublicationListItem(**item.model_dump(include=set(PublicationListItem.model_fields)))
@@ -154,7 +155,7 @@ class PublicationPatch(BaseModel):
     network: bool | None = None
 
 
-@router.patch("/publications/{publication_id}")
+@router.patch("/publications/{publication_id}", dependencies=ADMIN)
 def update_publication(publication_id: str, body: PublicationPatch, ctx: Ctx) -> Publication:
     return ctx.publications.update(
         publication_id, slug=body.slug, description=body.description, limits=body.limits, network=body.network
@@ -172,7 +173,7 @@ class EnableOut(BaseModel):
     cancelled: int
 
 
-@router.post("/publications/{publication_id}/enabled")
+@router.post("/publications/{publication_id}/enabled", dependencies=ADMIN)
 def set_enabled(publication_id: str, body: EnableIn, ctx: Ctx) -> EnableOut:
     publication, cancelled = ctx.publications.set_enabled(
         publication_id, body.enabled, cancel_running=body.cancel_running
@@ -184,13 +185,13 @@ class ActivateIn(BaseModel):
     number: int
 
 
-@router.post("/publications/{publication_id}/activate")
+@router.post("/publications/{publication_id}/activate", dependencies=ADMIN)
 def activate(publication_id: str, body: ActivateIn, ctx: Ctx) -> Publication:
     """Make an earlier (or later) published version the active one: rollback without republishing."""
     return ctx.publications.activate(publication_id, body.number)
 
 
-@router.delete("/publications/{publication_id}", status_code=204)
+@router.delete("/publications/{publication_id}", status_code=204, dependencies=ADMIN)
 def delete_publication(publication_id: str, ctx: Ctx) -> Response:
     publication = ctx.publications.get(publication_id)
     live = [run for run in api_runs(ctx, publication.id, limit=None) if run.status in ("queued", "running", "paused")]
@@ -205,7 +206,7 @@ def delete_publication(publication_id: str, ctx: Ctx) -> Response:
     return Response(status_code=204)
 
 
-@router.get("/publications/{publication_id}/releases/{number}")
+@router.get("/publications/{publication_id}/releases/{number}", dependencies=READ)
 def get_release(publication_id: str, number: int, ctx: Ctx) -> Release:
     """The complete, immutable snapshot of a published version."""
     return ctx.publications.release(publication_id, number)
@@ -218,7 +219,7 @@ class ApiDocs(BaseModel):
     scopes: list[str]
 
 
-@router.get("/publications/{publication_id}/docs")
+@router.get("/publications/{publication_id}/docs", dependencies=READ)
 def api_docs(publication_id: str, request: Request, ctx: Ctx, number: int | None = None) -> ApiDocs:
     publication = ctx.publications.get(publication_id)
     release, served = _served(ctx, publication, number)
@@ -256,7 +257,7 @@ class ValidationOut(BaseModel):
     input_text: str = ""
 
 
-@router.post("/publications/{publication_id}/test")
+@router.post("/publications/{publication_id}/test", dependencies=RUN)
 async def test_api(publication_id: str, body: TestIn, ctx: Ctx) -> Any:
     """Validate a request body like the API does, or start a real run through the same path.
 
@@ -283,7 +284,7 @@ async def test_api(publication_id: str, body: TestIn, ctx: Ctx) -> Any:
     return await ctx.serving.launch(_studio_identity(publication), served, body.body)
 
 
-@router.get("/publications/{publication_id}/runs")
+@router.get("/publications/{publication_id}/runs", dependencies=READ)
 def publication_runs(publication_id: str, ctx: Ctx, limit: int = 50) -> list[RunSummary]:
     ctx.publications.get(publication_id)
     return api_runs(ctx, publication_id, limit=min(max(limit, 1), 500))
@@ -297,27 +298,27 @@ class ExportIn(BaseModel):
     options: exporter.ExportOptions = Field(default_factory=exporter.ExportOptions)
 
 
-@router.post("/publications/{publication_id}/export/check")
+@router.post("/publications/{publication_id}/export/check", dependencies=READ)
 def export_check(publication_id: str, body: ExportIn, ctx: Ctx) -> exporter.ExportCheck:
     publication = ctx.publications.get(publication_id)
     release, _ = _served(ctx, publication, body.number)
     return exporter.check(ctx, publication, release, body.options)
 
 
-@router.post("/publications/{publication_id}/exports", status_code=201)
+@router.post("/publications/{publication_id}/exports", status_code=201, dependencies=EDIT)
 def create_export(publication_id: str, body: ExportIn, ctx: Ctx) -> exporter.ExportRecord:
     publication = ctx.publications.get(publication_id)
     release, _ = _served(ctx, publication, body.number)
     return exporter.export(ctx, publication, release, body.options)
 
 
-@router.get("/publications/{publication_id}/exports")
+@router.get("/publications/{publication_id}/exports", dependencies=READ)
 def list_exports(publication_id: str, ctx: Ctx) -> list[exporter.ExportRecord]:
     ctx.publications.get(publication_id)
     return exporter.records(ctx, publication_id)
 
 
-@router.get("/exports/{export_id}/download")
+@router.get("/exports/{export_id}/download", dependencies=READ)
 def download_export(export_id: str, ctx: Ctx) -> Response:
     record, data = exporter.content(ctx, export_id)
     return Response(
@@ -335,7 +336,7 @@ class GuideIn(BaseModel):
     language: str = "en"
 
 
-@router.post("/publications/{publication_id}/guide", status_code=201)
+@router.post("/publications/{publication_id}/guide", status_code=201, dependencies=RUN)
 def create_guide(publication_id: str, body: GuideIn, request: Request, ctx: Ctx) -> ApiGuide:
     """Costs one request of the assistant model (recorded in the usage ledger); only on request."""
     if body.language not in LANGUAGES:
@@ -345,7 +346,7 @@ def create_guide(publication_id: str, body: GuideIn, request: Request, ctx: Ctx)
     return api_guide.generate(ctx, publication, release, examples(served, _base_url(request)), body.language)
 
 
-@router.get("/publications/{publication_id}/guides")
+@router.get("/publications/{publication_id}/guides", dependencies=READ)
 def list_guides(publication_id: str, ctx: Ctx) -> list[ApiGuide]:
     return api_guide.for_publication(ctx, publication_id)
 
@@ -354,7 +355,7 @@ class GuideDecision(BaseModel):
     decision: Literal["accept", "discard"]
 
 
-@router.post("/api-guides/{guide_id}/decision")
+@router.post("/api-guides/{guide_id}/decision", dependencies=EDIT)
 def decide_guide(guide_id: str, body: GuideDecision, ctx: Ctx) -> ApiGuide | None:
     return api_guide.decide(ctx, guide_id, body.decision)
 
@@ -368,28 +369,28 @@ class KeyIn(BaseModel):
     publications: list[str] = Field(min_length=1)
 
 
-@router.get("/api-keys")
+@router.get("/api-keys", dependencies=ADMIN)
 def list_keys(ctx: Ctx) -> list[ApiKeyOut]:
     return ctx.api_keys.all()
 
 
-@router.post("/api-keys", status_code=201)
+@router.post("/api-keys", status_code=201, dependencies=ADMIN)
 def create_key(body: KeyIn, ctx: Ctx) -> NewApiKey:
     return ctx.api_keys.create(body.name, list(body.scopes), body.publications)
 
 
-@router.post("/api-keys/{key_id}/revoke")
+@router.post("/api-keys/{key_id}/revoke", dependencies=ADMIN)
 def revoke_key(key_id: str, ctx: Ctx) -> ApiKeyOut:
     return ctx.api_keys.revoke(key_id)
 
 
-@router.post("/api-keys/{key_id}/rotate")
+@router.post("/api-keys/{key_id}/rotate", dependencies=ADMIN)
 def rotate_key(key_id: str, ctx: Ctx) -> NewApiKey:
     """A new key with the same name, permissions and APIs; the old one is revoked at once."""
     return ctx.api_keys.rotate(key_id)
 
 
-@router.delete("/api-keys/{key_id}", status_code=204)
+@router.delete("/api-keys/{key_id}", status_code=204, dependencies=ADMIN)
 def delete_key(key_id: str, ctx: Ctx) -> Response:
     ctx.api_keys.delete(key_id)
     return Response(status_code=204)
@@ -398,11 +399,11 @@ def delete_key(key_id: str, ctx: Ctx) -> Response:
 # ---- network -----------------------------------------------------------------------------
 
 
-@router.get("/api-network")
+@router.get("/api-network", dependencies=ADMIN)
 def network_status(ctx: Ctx) -> NetworkStatus:
     return ctx.network.status()
 
 
-@router.put("/api-network")
+@router.put("/api-network", dependencies=ADMIN)
 async def configure_network(body: NetworkConfig, ctx: Ctx) -> NetworkStatus:
     return await ctx.network.apply(body)

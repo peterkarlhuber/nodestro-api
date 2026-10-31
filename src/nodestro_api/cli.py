@@ -17,29 +17,65 @@ def parser(prog: str, description: str) -> argparse.ArgumentParser:
     found.add_argument("--host", default=os.environ.get("NODESTRO_HOST", "127.0.0.1"))
     found.add_argument("--port", type=int, default=int(os.environ.get("NODESTRO_PORT", "8000")))
     found.add_argument("--data-dir", help="Where workflows, runs and knowledge are stored (default ~/.nodestro)")
+    found.add_argument(
+        "--profile",
+        default=None,
+        help="Operating profile: desktop (default) or server (not available yet); also NODESTRO_PROFILE",
+    )
     found.add_argument("--reload", action="store_true", help="Restart on code changes (development)")
     return found
 
 
 def prepare(args: argparse.Namespace) -> str:
-    """Apply ``--data-dir`` and ``.env``; returns the URL the server will listen on.
+    """Apply ``--data-dir``, ``--profile`` and ``.env``; returns the URL the server will listen on.
 
-    Stops when another Nodestro process already uses the data directory.
+    Stops when the operating profile cannot be started (before anything is created on disk) and when
+    another Nodestro process already uses the data directory.
     """
     if args.data_dir:
         os.environ["NODESTRO_DATA_DIR"] = str(Path(args.data_dir).expanduser().resolve())
+    if getattr(args, "profile", None):
+        os.environ["NODESTRO_PROFILE"] = args.profile
     # The application answers only the host names it is reachable under (nodestro_api.local_access).
     os.environ["NODESTRO_HOST"] = args.host
     load_dotenv(Path.cwd() / ".env")
+    _refuse_an_unavailable_profile()
     _refuse_a_used_data_directory()
     return f"http://{'localhost' if args.host in ('127.0.0.1', '0.0.0.0') else args.host}:{args.port}"
 
 
 def serve(factory: str, args: argparse.Namespace) -> None:
-    """Run ``factory`` (``module:function`` returning the FastAPI app) with uvicorn."""
+    """Run ``factory`` (``module:function`` returning the FastAPI app) with uvicorn.
+
+    Stops with one sentence instead of a traceback when the studio API would be offered to the network
+    without a login (``create_app`` refuses it as well).
+    """
+    from nodestro_runtime.problems import NodestroError
     import uvicorn
 
+    from .context import AppConfig
+    from .local_access import require_loopback_only
+
+    try:
+        config = AppConfig.from_env()
+        if config.profile.validate().kind == "desktop":
+            require_loopback_only(args.host, config.allowed_hosts)
+    except NodestroError as error:
+        raise SystemExit(str(error)) from None
+
     uvicorn.run(factory, factory=True, host=args.host, port=args.port, reload=args.reload, log_level="info")
+
+
+def _refuse_an_unavailable_profile() -> None:
+    """Stop with one sentence when ``NODESTRO_PROFILE``/``NODESTRO_DATA_DIR`` name a profile that cannot start."""
+    from nodestro_runtime.problems import NodestroError
+
+    from .context import AppConfig
+
+    try:
+        AppConfig.from_env().profile.validate()
+    except NodestroError as error:
+        raise SystemExit(str(error)) from None
 
 
 def _refuse_a_used_data_directory() -> None:

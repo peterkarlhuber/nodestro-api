@@ -34,9 +34,16 @@ pip install "nodestro-api @ git+https://github.com/peterkarlhuber/nodestro-api.g
 nodestro-api                       # http://localhost:8000/api, reference under /api/docs
 ```
 
-Options: `--host`, `--port`, `--data-dir`, `--reload`, or the variables `NODESTRO_HOST`, `NODESTRO_PORT` and
-`NODESTRO_DATA_DIR`; a `.env` file in the current directory is read without overriding the environment. The default
-is `127.0.0.1:8000` with the data directory `~/.nodestro`, which the API shares with the studio.
+Options: `--host`, `--port`, `--data-dir`, `--profile`, `--reload`, or the variables `NODESTRO_HOST`,
+`NODESTRO_PORT`, `NODESTRO_DATA_DIR` and `NODESTRO_PROFILE`; a `.env` file in the current directory is read without
+overriding the environment. The default is `127.0.0.1:8000` with the data directory `~/.nodestro`, which the API
+shares with the studio. An empty `NODESTRO_DATA_DIR` means the default directory.
+
+**Operating profile.** `--profile desktop` (the default) is the behavior described here: one person, one data
+directory, the studio API on this computer only. `--profile server` is refused with `profile.server_unavailable`
+before any file is touched, because the server needs login, PostgreSQL, tenant isolation, workers and a container
+sandbox, which do not exist yet. An unknown profile name is refused with `profile.invalid`. `create_app` applies the
+same rules as the command line.
 
 The API needs neither the studio nor a built frontend. `NODESTRO_STATIC_DIR` names a built interface to serve next to
 it, and `NODESTRO_DOCS_DIR` the documentation chapters the Nodestro Assistant searches (without it, the documentation
@@ -57,8 +64,18 @@ installed; `create_app(..., integrations=[...])` sets them explicitly.
 
 ## Two security models
 
-**The studio API has no keys of its own.** It trusts whoever reaches it, so it is meant for this computer. To keep
-web pages in the user's browser from using it, it
+**The studio API has no login yet**, so it is offered only on this computer. Every route declares the permission it
+needs (`read`, `edit`, `run` or `admin`, see `nodestro_api.permissions`), and FastAPI checks it on every request. In
+the desktop profile the only principal is the local owner, who holds every permission, so nothing changes for the
+studio; without a principal a route answers `401 access.login_required`, without the permission `403
+access.forbidden`. The application refuses to start when a route declares no permission.
+
+Because there is no login, the studio API cannot be exposed to a network: `--host 0.0.0.0`, `::`, any address
+other than a loopback address, and `NODESTRO_ALLOWED_HOSTS` with names other than loopback names (or `*`) are
+refused at start with `access.network_needs_login`, on the command line, through the environment and in
+`create_app`. Requests carrying proxy headers (`Forwarded`, `X-Forwarded-For`, `X-Forwarded-Host`, `X-Real-IP`) are
+refused with `403 request.forwarded_not_allowed`, so a reverse proxy cannot pass network clients through. To keep
+web pages in the user's browser from using it, it also
 
 - answers only requests for `localhost`, loopback addresses and the address chosen with `--host` (protection
   against DNS rebinding; other host names get `403 request.host_not_allowed`),
@@ -66,10 +83,9 @@ web pages in the user's browser from using it, it
   (cross-site requests get `403 request.origin_not_allowed`),
 - allows CORS only for the studio's development server (`localhost:5173`).
 
-Behind a reverse proxy, `NODESTRO_ALLOWED_HOSTS` lists further host names (comma-separated, `*` for all). With
-`--host 0.0.0.0` (or `::`) the API answers every IP address and this computer's name (`name`, `name.local`), but no
-other host names, since DNS rebinding works with names only. The origin check does not replace authentication:
-whoever exposes the studio API in a network exposes it to every device of that network.
+`NODESTRO_ALLOWED_HOSTS` can add further names that point to this computer (comma-separated, for example
+`studio.localhost`). Host and origin checks do not replace authentication; the studio API becomes reachable from a
+network only with the server profile and its login (planned).
 
 Uploaded files are served with `X-Content-Type-Options: nosniff`; HTML, SVG and XML files are always downloaded, and
 everything except PDF carries a restrictive `Content-Security-Policy`, so an uploaded page cannot run scripts in the
@@ -181,7 +197,9 @@ Nodestro repositories).
   itself (`/api/openapi.json`) is served locally.
 - Without network access enabled, the published endpoints answer only this computer; with it, TLS is the
   operator's responsibility (certificate, key, or a reverse proxy).
-- The studio API is not an authenticated API; do not expose it to untrusted networks.
+- The studio API has no login yet and only listens on loopback addresses; the published workflow APIs (with API
+  keys) are the way to reach Nodestro from a network.
+- Proxy headers are detected by name; a proxy that forwards requests without any of them looks like a local client.
 - Nodestro provides technical means for traceability (immutable releases, recorded approvals, usage records,
   sanitized exports) and data minimization (secrets stay out of backups and exports). It does not by itself make an
   installation compliant with the GDPR, the EU AI Act or ISO/IEC 42001; these obligations remain with the operator.
