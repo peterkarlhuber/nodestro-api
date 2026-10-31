@@ -11,6 +11,9 @@ Nodestro as an MCP server for published workflows (ADR-0007 D-8, WP-11; off by d
   (`Publication.mcp_tool`, `PATCH /api/publications/{id}`; history events `mcp_tool_on` / `mcp_tool_off`).
   Otherwise `404 mcp_server.disabled` or no tools.
 
+`GET /api/mcp/stats` (`admin`, WP-7): MCP calls in flight, the operator's limits and each server's health (calls,
+failures, circuit breaker, last error code; no secrets, no arguments).
+
 Local MCP servers and MCP tools in published APIs (ADR-0007, WP-8 and WP-9):
 
 - `GET /api/mcp/servers/{id}/environment` and `POST /api/mcp/servers/{id}/environment/plan` (admin): the packages of

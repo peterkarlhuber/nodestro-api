@@ -44,6 +44,26 @@ def _server(ctx: Ctx, server_id: str) -> Any:
         raise
 
 
+class McpServerHealth(BaseModel):
+    """What this process knows about one server since it started (no secrets, no arguments)."""
+
+    calls: int
+    failures: int
+    consecutive_failures: int
+    #: Seconds until calls are tried again after repeated failures (circuit breaker); 0 while closed.
+    cooling_down_seconds: float
+    last_duration_ms: int | None = None
+    last_error_code: str | None = None
+
+
+class McpStats(BaseModel):
+    """Operational state for administrators (WP-7): calls in flight, the operator's limits, per-server health."""
+
+    active_calls: int
+    limits: dict[str, float]
+    servers: dict[str, McpServerHealth]
+
+
 class McpStatus(BaseModel):
     #: The MCP SDK is installed (Python 3.11+); without it servers can be configured but not reached.
     available: bool
@@ -217,6 +237,12 @@ def decide_tool(ctx: Ctx, server_id: str, name: str, decision: McpDecision, requ
             raise KeyError(name) from None
         raise
     return _tool_view(ctx, tool)
+
+
+@router.get("/stats", dependencies=ADMIN)
+def mcp_stats(ctx: Ctx) -> McpStats:
+    """Calls in flight, the operator's limits (``NODESTRO_MCP_*``) and each server's health since the start."""
+    return McpStats.model_validate(ctx.mcp.hub.stats())
 
 
 @router.get("/events", dependencies=ADMIN)

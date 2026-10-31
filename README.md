@@ -229,6 +229,7 @@ studio repository; the client lives in the runtime, `nodestro_runtime.mcp`). Rou
 | `GET /api/mcp/servers/{id}/tools` | tools with their definition, the approved definition, hash, status, classification and why a tool is not usable |
 | `POST /api/mcp/servers/{id}/tools/{name}/decision` | approve with a classification (`read`, `write`, `destructive`) and the reviewed `expected_hash`, or reject |
 | `GET /api/mcp/events` | administration and policy events (no secrets, no tool arguments) |
+| `GET /api/mcp/stats` | calls in flight, the operator's limits (`NODESTRO_MCP_*`) and each server's health since the start: calls, failures, circuit breaker, last error code |
 
 Approved tools appear in `GET /api/tools` with `kind: "mcp"`. Until per-call approval exists only `read` tools are
 usable. Tokens are sealed with the server's secret key (per tenant) or, on the desktop, with `NODESTRO_VAULT_KEY`

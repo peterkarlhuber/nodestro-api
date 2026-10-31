@@ -140,9 +140,9 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # MCP status, servers, server, tools (WP-3); tool approval inbox, run questions, pre-grants, state (S-2b)
         "edit": 47,
         "run": 32,  # + deciding a tool call (S-2b)
-        "admin": 41,  # + price sync, reviews, overrides, billing keys and reconciliation (PRICING-1); gate (Q-3);
+        "admin": 42,  # + price sync, reviews, overrides, billing keys and reconciliation (PRICING-1); gate (Q-3);
         # MCP add, change, remove, discover, decision, events (WP-3); pre-grants, audit, activation (S-2b);
-        # MCP OAuth start, callback, sign-out (WP-6); MCP stdio package plan (WP-8)
+        # MCP OAuth start, callback, sign-out (WP-6); MCP stdio package plan (WP-8); MCP stats (WP-7)
         "install": 10,
         "public": 1,
     }
