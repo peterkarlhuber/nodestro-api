@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import builtins
+from collections.abc import Callable
 import contextlib
 from datetime import date, datetime, time, timedelta, timezone
 import logging
@@ -207,6 +208,12 @@ class Schedules:
         self.ctx = ctx
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self._task: asyncio.Task[None] | None = None
+        #: Records that a slot fires, once across every process (``(schedule_id, slot)`` -> ``False`` when it
+        #: fired already); the server's :class:`~nodestro_runtime.jobs.ScheduleFirings`. ``None``: this process
+        #: alone fires schedules (the desktop).
+        self.claim_slot: Callable[[str, datetime], bool] | None = None
+        #: Records the run a claimed slot started (server).
+        self.record_slot: Callable[[str, datetime, str], None] | None = None
         self._lock = asyncio.Lock()
 
     # ---- storage -------------------------------------------------------------
@@ -418,7 +425,15 @@ class Schedules:
         self._save(schedule)
         if not run_now:
             return None
+        fired = (on_time or missed)[-1]
+        if self.claim_slot is not None and not self.claim_slot(schedule.id, fired):
+            return None  # another process fired this slot already
         run_id = await self._run(schedule, current)
+        if run_id and self.record_slot is not None:
+            try:
+                self.record_slot(schedule.id, fired, run_id)
+            except Exception:  # bookkeeping only; the slot is claimed either way
+                logger.exception("Recording the run of schedule %s failed", schedule.id)
         # Starting takes a moment: the user may have switched the schedule off, changed or deleted it
         # meanwhile. Only the outcome of this run is recorded on the stored schedule.
         latest = self.ctx.store.get(COLLECTION, schedule.id, Schedule)

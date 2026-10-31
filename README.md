@@ -117,7 +117,13 @@ the deployment exist (plan step PR-12). Until then no command line option or env
   stores and its own file area. Resources of other tenants answer `404`, as if they did not exist.
 - Changing requests must carry the studio's own `Origin` (`403 access.cross_site` otherwise); this is protection
   against cross-site requests, not a replacement for the login.
-- Not part of it yet: published workflow APIs with tenant-bound keys, schedules, the network listener and backups.
+- With a job queue (`TenantComposition.queue`) the API processes execute no runs: they store and queue them.
+  Worker processes (`nodestro_api.worker.ServerWorker`) claim the jobs with a lease they keep renewing, execute the
+  runs and write their events to the database, where every API process streams them from. A worker that dies
+  leaves its run `run.interrupted` (found by the reaper of another worker); it is never executed again by itself.
+  The worker that holds the scheduler lock fires the tenants' schedules, and each slot fires once.
+- Not part of it yet: published workflow APIs with tenant-bound keys, the network listener and backups. Batches,
+  test series, assistant drafts and Python environment installations still run in the API process.
 
 Uploaded files are served with `X-Content-Type-Options: nosniff`; HTML, SVG and XML files are always downloaded, and
 everything except PDF carries a restrictive `Content-Security-Policy`, so an uploaded page cannot run scripts in the

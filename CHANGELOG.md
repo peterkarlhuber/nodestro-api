@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+Jobs and workers (desktop/server plan, PR-10, 2026-10-31). Nothing changes for the desktop:
+
+- Pins `nodestro-runtime` 3a052d1 and `nodestro-examples` e591c48 (job queue, workers, run events).
+- `TenantComposition.queue`: with a `JobQueue`, the multi-tenant API queues runs instead of executing them; run
+  event streams and waits follow the worker through the database, and cancelling reaches the worker.
+- `nodestro_api.worker.ServerWorker`: claims and executes run jobs, reaps jobs of dead workers (their runs become
+  `run.interrupted` and are never executed again by themselves) and, while it holds the scheduler lock, fires the
+  tenants' schedules as queued runs. `server_app.TenantFiles` opens a tenant's context for API and worker alike.
+- `Schedules.claim_slot` and `record_slot`: on a server every schedule slot fires at most once
+  (`nodestro_runtime.jobs.ScheduleFirings`).
+- Like the rest of the server profile, the worker is not startable yet (PR-12). Batches, test series, assistant
+  drafts and Python environment installations still run in the API process.
+
 Server logins and tenants (desktop/server plan, PR-9, 2026-10-31). Nothing changes for the desktop:
 
 - New permission `install` for the installation itself: backups and restore, diagnostics and the network listener
