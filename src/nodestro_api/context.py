@@ -28,6 +28,7 @@ from .assistants import Assistants
 from .batches import Batches
 from .benchmarks import Benchmarks
 from .docs_index import DocsIndex
+from .launch import launch_secret_from_env
 from .network import NetworkListener
 from .organize import Organizer
 from .publishing import Publications, StudioHost
@@ -50,6 +51,9 @@ class AppConfig:
     allowed_hosts: list[str] = field(default_factory=list)
     #: The operating profile (``NODESTRO_PROFILE``): ``desktop`` (default) or ``server``, see :attr:`profile`.
     profile_kind: ProfileKind = "desktop"
+    #: The desktop app's per-launch secret (``NODESTRO_LAUNCH_SECRET``); with it, only the window that
+    #: opened ``/api/launch`` can use the studio API, see :mod:`nodestro_api.launch`. ``None``: not required.
+    launch_secret: str | None = field(default=None, repr=False)
 
     @property
     def profile(self) -> RuntimeProfile:
@@ -74,6 +78,7 @@ class AppConfig:
             host=os.environ.get("NODESTRO_HOST", "127.0.0.1"),
             allowed_hosts=[item.strip() for item in allowed.split(",") if item.strip()],
             profile_kind=profile.kind,
+            launch_secret=launch_secret_from_env(),
         )
 
 

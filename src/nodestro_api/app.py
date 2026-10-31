@@ -26,6 +26,7 @@ from .api_inputs import router as inputs_router
 from .api_publish import router as publish_router
 from .api_python import router as python_router
 from .context import AppConfig, Nodestro
+from .launch import LaunchSecretMiddleware, check_secret
 from .local_access import LocalAccessMiddleware, allowed_hosts, listens_everywhere, require_loopback_only
 from .permissions import check_routes, resolver_for
 from .serving import build_router
@@ -47,12 +48,14 @@ def create_app(
 
     Before anything is opened, the configuration is checked as the command line checks it: the operating
     profile must be one this version can start (``profile.invalid``, ``profile.server_unavailable``), and
-    the login-less studio API is only offered on this computer (``access.network_needs_login``).
+    the login-less studio API is only offered on this computer (``access.network_needs_login``), and a
+    launch secret must be long enough (``access.launch_secret_weak``).
     Every route must declare who may call it (:mod:`nodestro_api.permissions`)."""
     config = config or AppConfig.from_env()
     profile = config.profile.validate()
     if profile.kind == "desktop":
         require_loopback_only(config.host, config.allowed_hosts)
+    check_secret(config.launch_secret)
     nodestro = Nodestro(
         config,
         client_factory=client_factory,
@@ -108,6 +111,9 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # The desktop app's window only (nodestro_api.launch); inside the host and origin checks.
+    if config.launch_secret is not None:
+        app.add_middleware(LaunchSecretMiddleware, secret=config.launch_secret)
     # Outermost: web pages in the user's browser must not use the key-less studio API.
     app.add_middleware(
         LocalAccessMiddleware,
