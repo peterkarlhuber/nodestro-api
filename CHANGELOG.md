@@ -6,7 +6,8 @@ Flow kernel, loop connections and MCP provenance (runtime pin `b6b757b`):
 
 - Pin of `nodestro-runtime` at `b6b757b` (before: `78d2899`): the engine runs on the `orkexa.flow` kernel (Orkexa
   `456b92f`), workflows may contain loop connections with mandatory limits (Adaptive Orchestration M1-4), and MCP
-  tools carry their provenance. The export ships the two new runtime modules `flow_driver` and `mcp_access`.
+  tools carry their provenance. Pin of `nodestro-examples` at `8a5862e` (before: `6c88aa7`; same runtime pin). The
+  export ships the two new runtime modules `flow_driver` and `mcp_access`.
 - OpenAPI (additive): `Edge.loop` (`EdgeLoop`: `max_iterations`, `on_exhausted`), `NodeRun.iteration`,
   `NodeRun.earlier`, `Run.flow_state`, the MCP fields of `ToolInfo` and `ToolCallRecord.provenance`.
 - Published APIs stream the new `loop_iteration` event (`iteration`, `max_iterations`) and the `iteration` of
