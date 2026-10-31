@@ -7,12 +7,14 @@ is applied automatically: the editor shows the proposal and the user decides.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from nodestro_runtime.catalog import SERVER_TOOLS
 from nodestro_runtime.problems import NodestroError, Problem, problem
 from nodestro_runtime.providers import MAX_RETRIES, Connection, model_id, provider_of, qualify
-from nodestro_runtime.schemas import AgentConfig, MemoryConfig
+from nodestro_runtime.schemas import AgentConfig, MemoryConfig, QualityConfig
 from nodestro_runtime.tool_library import ToolLibrary
-from orkexa import Agent, UsageTracker
+from orkexa import Agent, ModelCapabilities, UsageTracker
 from orkexa.dynamic import AgentArchitect, AgentSpec, DynamicPolicy
 from orkexa.dynamic.policy import clamp_effort
 from pydantic import BaseModel, Field
@@ -109,8 +111,11 @@ def _cost(tracker: UsageTracker) -> float | None:
 
 
 class Assistants:
-    def __init__(self, tools: ToolLibrary) -> None:
+    def __init__(self, tools: ToolLibrary, capabilities: Callable[[str], ModelCapabilities] | None = None) -> None:
         self.tools = tools
+        #: What a model supports (with the capabilities declared for compatible endpoints); used to check that the
+        #: judge given to a designed agent can return the structured verdict of a quality check.
+        self.capabilities = capabilities
 
     def design_agent(
         self,
@@ -200,6 +205,7 @@ class Assistants:
             max_tokens=min(max(spec.max_tokens, 1024), policy.max_tokens),
             max_tool_rounds=min(max(spec.max_tool_rounds, 0), policy.max_tool_rounds),
             memory=MemoryConfig(),
+            quality=self.default_quality(default_model, notes),
         )
         return AgentDraft(
             config=config,
@@ -207,6 +213,25 @@ class Assistants:
             notes=notes,
             cost_usd=cost,
         )
+
+    def default_quality(self, default_model: str, notes: list[Problem]) -> QualityConfig:
+        """The quality check of a designed agent: off, judged by the configured default model.
+
+        Not the runtime's global default judge, so a designed agent brings no provider the user did not choose
+        (decision Q-0). When that model cannot return the structured verdict a check needs, a note says so; no
+        other model is chosen in its place.
+        """
+        judge = qualify(default_model)
+        if self.capabilities is not None and not self.capabilities(judge).supports("structured_output"):
+            notes.append(
+                problem(
+                    "draft.judge_unsupported",
+                    f"The default model {judge} cannot return the structured verdict of a quality check; "
+                    "choose another judge before switching the check on",
+                    model=judge,
+                )
+            )
+        return QualityConfig(judge_model=judge)
 
     def propose_memory(
         self,

@@ -89,6 +89,11 @@ def test_create_designs_a_complete_validated_draft(make_app: Callable[..., TestC
     # Parallel steps sit in one column; the system prompt comes from the Agent Architect.
     assert nodes["Recherche"]["position"]["x"] == nodes["SEO-Analyse"]["position"]["x"]
     assert nodes["Autor"]["agent"]["system_prompt"] == "Du bist ein sorgfältiger Spezialist."
+    # Q-0: designed agents are judged by the configured default model, not the runtime's global default.
+    default = client.get("/api/settings").json()["default_model"]
+    for label in ("Recherche", "SEO-Analyse", "Autor"):
+        quality = nodes[label]["agent"]["quality"]
+        assert quality["enabled"] is False and quality["judge_model"].endswith(default.split(":")[-1])
     # The new tool is a draft: named in the config, not registered, the run is blocked until approval.
     assert nodes["Autor"]["agent"]["tools"] == ["keyword_density"]
     assert [tool["name"] for tool in job["tool_drafts"]] == ["keyword_density"]
@@ -275,6 +280,8 @@ def test_revise_adds_a_critic_and_keeps_everything_else(make_app: Callable[..., 
     assert pairs == {("start", "a"), ("a", "b"), ("b", critic["id"]), (critic["id"], "out")}
     assert critic["agent"]["task_template"] == "Prüfe kritisch: {{B}}"
     assert nodes["a"]["agent"] == saved["nodes"][1]["agent"]
+    # A changed agent keeps the judge it had: explicit configurations are never rewritten.
+    assert nodes["b"]["agent"]["quality"] == saved["nodes"][2]["agent"]["quality"]
     assert nodes["b"]["agent"]["system_prompt"] == "Du analysierst und begründest jede Aussage."
     assert nodes["b"]["agent"]["task_template"] == "Analysiere {{A}}"
     # Kept edges keep their ids.

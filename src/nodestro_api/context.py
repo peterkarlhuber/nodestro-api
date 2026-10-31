@@ -110,7 +110,7 @@ class Nodestro(Workspace):
 
     def compose(self) -> None:
         self.organize = Organizer(self.store)
-        self.assistants = Assistants(self.tools)
+        self.assistants = Assistants(self.tools, capabilities=self.builder.capabilities)
         self.batches = Batches(self)
         self.benchmarks = Benchmarks(self)
         self.schedules = Schedules(self)

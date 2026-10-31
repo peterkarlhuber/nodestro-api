@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import json
 from pathlib import Path
 import time
 from typing import Any
@@ -285,6 +286,61 @@ def test_design_agent_maps_the_spec(make_app: Callable[..., TestClient]) -> None
     assert config["effort"] == "xhigh" and config["max_tokens"] == 32_000
     assert draft["missing_tools"] == [{"name": "iban_check", "requirement": "Prüft IBANs"}]
     assert {"code": "draft.unknown_tool", "params": {"name": "unknown_tool"}}.items() <= draft["notes"][0].items()
+
+
+def _design(client: TestClient, settings: dict[str, Any], model: str) -> dict[str, Any]:
+    assert client.put("/api/settings", json=settings).status_code == 200
+    body = {"description": "Ein Agent, der Kundenfragen beantwortet", "language": "de"}
+    return client.post("/api/agents/design", json=body).json()  # type: ignore[no-any-return]
+
+
+def _spec(model: str) -> Any:
+    return parsed(
+        lambda cls: cls(
+            name="Support",
+            description="Beantwortet Kundenfragen.",
+            system_prompt="Du beantwortest Kundenfragen.",
+            model=model,
+            effort="low",
+            tools=[],
+            missing_tools=[],
+            max_tokens=4000,
+            max_tool_rounds=2,
+        )
+    )
+
+
+def test_designed_agents_are_judged_by_the_default_model(make_app: Callable[..., TestClient]) -> None:
+    # Q-0: not the runtime's global default judge, so a designed agent brings no provider the user did not choose.
+    client = make_app({"multi-agent systems architect": [_spec("ollama:llama3.3")]})
+    settings = {"providers": {"ollama": {"base_url": "http://localhost:11434/v1/"}}, "default_model": "ollama:llama3.3"}
+    draft = _design(client, settings, "ollama:llama3.3")
+    config = draft["config"]
+    assert config["quality"]["judge_model"] == "ollama:llama3.3"
+    assert config["quality"]["enabled"] is False and config["quality"]["criteria"] == []
+    assert "anthropic" not in json.dumps(config)
+    assert all(note["code"] != "draft.judge_unsupported" for note in draft["notes"])
+
+
+def test_a_default_model_without_structured_output_is_reported_not_replaced(
+    make_app: Callable[..., TestClient],
+) -> None:
+    client = make_app({"multi-agent systems architect": [_spec("compatible:house-model")]})
+    settings = {
+        "providers": {
+            "compatible": {
+                "base_url": "https://llm.example.com/v1",
+                "capabilities": {"tools": "supported", "structured_output": "unsupported"},
+            }
+        },
+        "default_model": "compatible:house-model",
+    }
+    draft = _design(client, settings, "compatible:house-model")
+    # The judge stays the chosen model; a note says it cannot judge, nothing is swapped silently.
+    assert draft["config"]["quality"]["judge_model"] == "compatible:house-model"
+    note = next(note for note in draft["notes"] if note["code"] == "draft.judge_unsupported")
+    assert note["params"] == {"model": "compatible:house-model"}
+    assert "anthropic" not in json.dumps(draft["config"]["quality"])
 
 
 def test_memory_proposal(make_app: Callable[..., TestClient]) -> None:
