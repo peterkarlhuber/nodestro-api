@@ -285,7 +285,7 @@ async def run_worker(server: ServerEnvironment) -> None:
     settings = WorkerSettings(
         lease=timedelta(seconds=timing.pop("lease")) if "lease" in timing else WorkerSettings.lease,
         price_sync=server.price_sync,
-        **server.capacity,
+        **server.capacity,  # type: ignore[arg-type]
         **timing,  # type: ignore[arg-type]
     )
     worker = ServerWorker(files, IdentityStore(database), settings)

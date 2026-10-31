@@ -12,6 +12,7 @@ from nodestro_runtime.tool_approvals import ENABLE_ENV, ToolApprovals
 from nodestro_runtime.tool_library import CUSTOM_TESTS_TEMPLATE, CUSTOM_TOOL_TEMPLATE
 from nodestro_runtime.tool_policy import ToolCapability
 import pytest
+from test_worker import connect, schema, server  # noqa: F401  (PostgreSQL server fixtures)
 
 from nodestro_api.permissions import Permission, Principal
 
@@ -226,3 +227,28 @@ def test_without_the_switch_the_state_says_so(
     client = make_app()
     assert client.get("/api/tool-approvals/legacy").json() == {"enabled": False, "legacy": None}
     assert client.get("/api/tool-approvals").json() == []
+
+
+def test_questions_of_another_tenant_are_not_found(server: Any) -> None:  # noqa: F811
+    """On a server every route works on the request's tenant only (ADR-0003)."""
+    from test_worker import _start
+
+    alice = server.member("acme", "alice", "owner")
+    mallory = server.member("globex", "mallory", "owner")
+    run_id = _start(alice)
+    acme = server.app.state.tenants.get("acme")
+    request = ToolApprovals(acme.store).request(
+        run_id=run_id, node_id="a", call_id="c", tool=TOOL, arguments={"to": "x"}, capability=WRITE
+    )
+    body = {"decision": "approved", "arguments_hash": request.arguments_hash}
+    assert mallory.get("/api/tool-approvals").json() == []
+    assert mallory.get(f"/api/runs/{run_id}/tool-approvals").status_code == 404
+    assert mallory.post(f"/api/runs/{run_id}/tool-approvals/{request.id}", json=body).status_code == 404
+    assert ToolApprovals(acme.store).get(run_id, request.id).status == "pending"  # type: ignore[union-attr]
+    viewer = server.member("acme", "victor", "viewer")
+    assert [item["id"] for item in viewer.get("/api/tool-approvals").json()] == [request.id]
+    assert viewer.post(f"/api/runs/{run_id}/tool-approvals/{request.id}", json=body).status_code == 403
+    decided = alice.post(f"/api/runs/{run_id}/tool-approvals/{request.id}", json=body)
+    assert decided.status_code == 200, decided.text
+    alice_id = alice.get("/api/auth/me").json()["user_id"]
+    assert decided.json()["decided_by"] == alice_id

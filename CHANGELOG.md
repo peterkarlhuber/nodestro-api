@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+Per-call tool approvals (Evolution S-2b, decision D10; off unless `NODESTRO_TOOL_APPROVALS=1`):
+
+- New routes (`api_tool_approvals`): the approval inbox `GET /api/tool-approvals` and `GET
+  /api/runs/{run_id}/tool-approvals` (`read`); `POST /api/runs/{run_id}/tool-approvals/{request_id}` (`run`) approves or
+  rejects one call. The decision names the `arguments_hash` that was shown; other arguments or another tool definition
+  answer 409 `tool.approval_stale`, a late or repeated decision 409 `tool.approval_expired` / `tool.approval_decided`.
+  The decider is the request's principal.
+- Pre-grants for one schedule, batch or test series: `GET /api/tool-pre-grants` (`read`), `POST` and `DELETE
+  /api/tool-pre-grants/{scope}/{scope_id}/{grant_id}` (`admin`; refused for MCP and destructive tools, unknown scopes
+  answer 404).
+- `GET /api/tool-approvals/audit` (`admin`): decisions, refused decisions, pre-grants, revocations, activation.
+- `GET /api/tool-approvals/legacy` (state and activation report) and `POST /api/tool-approvals/legacy` (`admin`): the
+  activation step stamps existing bindings of workflows, workflow versions **and published releases** as visible
+  legacy exemptions, so activating approvals never changes a published API silently. A stamped release gets a new
+  digest and its publication records `legacy_stamped` with the old and new digest. Idempotent; it does not switch
+  approvals on.
+- Server workers: `NODESTRO_WORKER_MAX_RUNS` (default 2) and `NODESTRO_WORKER_MAX_WAITING` (default 1) set the runs a
+  worker holds and how many of them may wait for an approval; invalid combinations stop the server at start
+  (`profile.invalid`).
+- Every route is tenant-scoped (ids of other tenants answer 404); tests cover the role matrix, stale, late and
+  repeated decisions, pre-grant rules, release stamping and tenant isolation on PostgreSQL.
+
 Connected MCP services (ADR-0007, WP-3):
 
 - New routes under `/api/mcp` (`api_mcp`): status, servers (add, change, remove; tokens write-only), discovery
