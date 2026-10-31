@@ -24,6 +24,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Request
 from nodestro_runtime.problems import NodestroError
+from nodestro_runtime.schemas import now
 from nodestro_runtime.tool_approvals import (
     ToolApprovalEvent,
     ToolApprovalRequest,
@@ -175,7 +176,9 @@ def tool_approvals_state(ctx: Ctx) -> ToolApprovalsState:
 @router.post("/tool-approvals/legacy", dependencies=ADMIN)
 def stamp_legacy_bindings(ctx: Ctx, request: Request) -> ToolApprovalsState:
     """The activation step: stamp existing bindings of workflows, workflow versions and published releases as legacy
-    exemptions (visible, bound to the tool version they run with). Idempotent; it does not switch approvals on."""
+    exemptions (visible, bound to the tool version they run with). It runs once: a repeated call stamps nothing, so
+    an assignment or release made after the first call never becomes an exemption. It does not switch approvals on;
+    run it, review the report, and only then set ``NODESTRO_TOOL_APPROVALS=1``."""
 
     def version_of(name: str) -> int | None:
         try:
@@ -184,8 +187,12 @@ def stamp_legacy_bindings(ctx: Ctx, request: Request) -> ToolApprovalsState:
             return None
 
     ctx.stamp_legacy_tool_bindings(by=_actor(request))
-    released = ctx.publications.stamp_legacy_tool_bindings(version_of)
-    report = ctx.record_legacy_tool_bindings(LegacyReport(bindings=released))
+    report = ctx.legacy_tool_bindings()
+    assert report is not None  # written by the call above
+    if report.publications_stamped_at is None:
+        # Once, and only releases that existed when the workspace was stamped (also after an interrupted first call).
+        released = ctx.publications.stamp_legacy_tool_bindings(version_of, created_before=report.stamped_at)
+        report = ctx.record_legacy_tool_bindings(LegacyReport(bindings=released), publications_stamped_at=now())
     return ToolApprovalsState(enabled=approvals_enabled(), legacy=report)
 
 

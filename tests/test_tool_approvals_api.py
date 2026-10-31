@@ -252,3 +252,29 @@ def test_questions_of_another_tenant_are_not_found(server: Any) -> None:  # noqa
     assert decided.status_code == 200, decided.text
     alice_id = alice.get("/api/auth/me").json()["user_id"]
     assert decided.json()["decided_by"] == alice_id
+
+
+def test_repeating_the_activation_never_exempts_later_workflows_or_releases(gated: TestClient) -> None:
+    """Regression (security acceptance 2026-10-31): the step runs once, so what is created after the first call stays a
+    new binding; and an interrupted first call stamps only the releases that existed when the workspace was stamped."""
+    ctx = gated.app.state.nodestro  # type: ignore[attr-defined]
+    old = gated.post("/api/workflows", json=flow()).json()
+    old_pub = gated.post(f"/api/workflows/{old['id']}/api/publish", json={"slug": "before"}).json()["publication"]
+    ctx.stamp_legacy_tool_bindings(by="local")  # the first call stops after the workspace part (e.g. a crash)
+    later = gated.post("/api/workflows", json=flow()).json()
+    later_pub = gated.post(f"/api/workflows/{later['id']}/api/publish", json={"slug": "after"}).json()["publication"]
+
+    report = gated.post("/api/tool-approvals/legacy").json()["legacy"]
+    assert report["stamped_at"] is not None and report["publications_stamped_at"] is not None
+    released = {item["release"].split(":")[0] for item in report["bindings"] if item["release"]}
+    assert released == {old_pub["id"]}
+    [late] = ctx.publications.releases(later_pub["id"])
+    assert late.bundle.workflow.nodes[1].agent.tool_policies == {}
+    assert ctx.workflow(later["id"]).nodes[1].agent.tool_policies == {}
+
+    newest = gated.post("/api/workflows", json=flow()).json()
+    again = gated.post("/api/tool-approvals/legacy").json()["legacy"]
+    assert again == report  # nothing new
+    assert ctx.workflow(newest["id"]).nodes[1].agent.tool_policies == {}
+    repeated = [item for item in gated.get("/api/tool-approvals/audit").json() if item["details"].get("repeated")]
+    assert len(repeated) == 2  # the API call after the interrupted one, and the explicit repeat

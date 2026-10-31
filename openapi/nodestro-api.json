@@ -7167,6 +7167,41 @@
             "title": "Bindings",
             "type": "array"
           },
+          "publications_stamped_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publications Stamped At"
+          },
+          "stamped_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stamped At"
+          },
+          "stamped_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stamped By"
+          },
           "versions": {
             "default": 0,
             "title": "Versions",
@@ -7792,6 +7827,55 @@
           "write_tools_enabled"
         ],
         "title": "McpStatus",
+        "type": "object"
+      },
+      "McpToolRef": {
+        "description": "An MCP tool frozen in a release bundle (WP-9): the approved definition the release was published with.\n\nIt names the server by id and slug only: no address, no token, no credentials. A release run uses the tool only\nwhile the tenant still has the same server with this tool approved at exactly this hash and classification\n(``mcp.release_tool_changed`` otherwise). Defined here, not in :mod:`nodestro_runtime.mcp`, so a runtime copy\nwithout the MCP client (an exported project) can still read bundles.",
+        "properties": {
+          "access": {
+            "enum": [
+              "read",
+              "write",
+              "destructive"
+            ],
+            "title": "Access",
+            "type": "string"
+          },
+          "definition": {
+            "additionalProperties": true,
+            "title": "Definition",
+            "type": "object"
+          },
+          "hash": {
+            "title": "Hash",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "server_id": {
+            "title": "Server Id",
+            "type": "string"
+          },
+          "server_slug": {
+            "title": "Server Slug",
+            "type": "string"
+          },
+          "tool_name": {
+            "title": "Tool Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tool_name",
+          "server_id",
+          "server_slug",
+          "name",
+          "hash",
+          "access"
+        ],
+        "title": "McpToolRef",
         "type": "object"
       },
       "McpToolView": {
@@ -11625,6 +11709,13 @@
             },
             "title": "Knowledge",
             "type": "array"
+          },
+          "mcp_tools": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/McpToolRef"
+            },
+            "title": "Mcp Tools",
+            "type": "object"
           },
           "memory": {
             "items": {
@@ -25893,7 +25984,7 @@
         "summary": "Tool Approvals State"
       },
       "post": {
-        "description": "The activation step: stamp existing bindings of workflows, workflow versions and published releases as legacy\nexemptions (visible, bound to the tool version they run with). Idempotent; it does not switch approvals on.",
+        "description": "The activation step: stamp existing bindings of workflows, workflow versions and published releases as legacy\nexemptions (visible, bound to the tool version they run with). It runs once: a repeated call stamps nothing, so\nan assignment or release made after the first call never becomes an exemption. It does not switch approvals on;\nrun it, review the report, and only then set ``NODESTRO_TOOL_APPROVALS=1``.",
         "operationId": "stamp_legacy_bindings_api_tool_approvals_legacy_post",
         "responses": {
           "200": {
