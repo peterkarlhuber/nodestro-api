@@ -426,6 +426,14 @@ def test_no_tenant_sees_another_tenants_resources(server: Server) -> None:
         assert not any(value in listed.text for value in ids.values()), path
     assert bob.get("/api/knowledge").json() == []
     assert bob.get("/api/memory").json() == []
+    # "Used in" (UX-7) answers from the request's tenant only.
+    template = {"agent": {"name": "Alpha", "knowledge": {"file_ids": [ids["knowledge"]]}, "tools": ["calculator"]}}
+    assert alice.post("/api/agents/templates", json=template).status_code == 201
+    for kind in ("knowledge", "tool", "memory"):
+        assert bob.get("/api/used-by", params={"kind": kind}).json() == [], kind
+    assert bob.get("/api/used-by", params={"kind": "knowledge", "ref": ids["knowledge"]}).json() == []
+    used = alice.get("/api/used-by", params={"kind": "knowledge"}).json()
+    assert [(item["ref"], [user["name"] for user in item["users"]]) for item in used] == [(ids["knowledge"], ["Alpha"])]
     # And Alice's data is untouched by Bob's attempts.
     assert alice.get(f"/api/workflows/{ids['workflow']}").status_code == 200
     assert alice.get(f"/api/knowledge/{ids['knowledge']}/content").content == b"Alpha secret contract"

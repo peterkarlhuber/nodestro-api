@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+"Used in" for knowledge files, tools and memory spaces (evolution plan UX-7, 2026-10-31):
+
+- New read-only route `GET /api/used-by?kind=knowledge|tool|memory[&ref=…]` (permission `read`). It lists each
+  object that is used somewhere, with its users: the agents and start nodes of saved workflows, the agents in the
+  agent library, and the active release of a published API (knowledge files and memory spaces only, because a
+  release reads them live; tools are frozen into a release). With `ref`, only that object; an unused object gives
+  an empty list.
+- The answer comes from the request's context, so on a server it covers only the principal's tenant (tested on
+  SQLite and PostgreSQL). Deleting knowledge files, tools or memory spaces is unchanged.
+- OpenAPI: new path `/api/used-by` and the schemas `Reference` and `ReferenceUser`.
+
 Designed agents get the default model as their judge (evolution plan Q-0, 2026-10-31):
 
 - Agents designed by the Agent Architect (`POST /api/agents/design`) and by the Workflow Architect, including its

@@ -8995,6 +8995,109 @@
         "title": "QualityCriterion",
         "type": "object"
       },
+      "Reference": {
+        "description": "The users of one object.",
+        "properties": {
+          "ref": {
+            "title": "Ref",
+            "type": "string"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/ReferenceUser"
+            },
+            "title": "Users",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "title": "Reference",
+        "type": "object"
+      },
+      "ReferenceUser": {
+        "description": "One place that uses the object.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "workflow",
+              "template",
+              "publication"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Id"
+          },
+          "node_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Label"
+          },
+          "release": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release"
+          },
+          "role": {
+            "default": "agent",
+            "enum": [
+              "agent",
+              "start"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Id"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "name"
+        ],
+        "title": "ReferenceUser",
+        "type": "object"
+      },
       "Refresh": {
         "properties": {
           "workflow": {
@@ -21389,6 +21492,71 @@
           }
         },
         "summary": "Usage"
+      }
+    },
+    "/api/used-by": {
+      "get": {
+        "description": "Where knowledge files, tools or memory spaces are used: saved workflows, library agents and published APIs.\n\nOnly objects with at least one user are listed; with ``ref``, only that object. Read only.",
+        "operationId": "used_by_api_used_by_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "knowledge",
+                "tool",
+                "memory"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ref"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Reference"
+                  },
+                  "title": "Response Used By Api Used By Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Used By"
       }
     },
     "/api/workflows": {
