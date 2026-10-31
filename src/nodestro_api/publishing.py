@@ -47,6 +47,7 @@ from nodestro_runtime.release import (
     tool_record,
 )
 from nodestro_runtime.schemas import RunSummary, Workflow, new_id, now
+from nodestro_runtime.tool_legacy import LegacyBinding, VersionOf, stamp_workflow
 from nodestro_runtime.tool_library import ToolLibrary, make_sandbox
 from orkexa import __version__ as library_version
 from pydantic import BaseModel, Field
@@ -87,6 +88,7 @@ EventKind = Literal[
     "gate_changed",
     "gate_off",
     "gate_override",
+    "legacy_stamped",
 ]
 
 
@@ -231,6 +233,62 @@ class Publications:
                 release.digest = release.bundle.digest()
                 self.store.put(RELEASES, key, release)
         self.forget_environments()
+
+    def stamp_legacy_tool_bindings(self, version_of: VersionOf) -> list[LegacyBinding]:
+        """The activation step of per-call tool approvals for published releases (S-2, D10b/D10c): every tool binding
+        of every stored release becomes a visible legacy exemption bound to the tool version the release runs with,
+        so activating approvals never changes a published API silently. Each changed release gets a new digest, and
+        its publication records the change (``legacy_stamped``) with the old and the new digest. Idempotent."""
+        found: list[LegacyBinding] = []
+        with self._lock, self.store.transaction():
+            changed: dict[str, list[dict[str, Any]]] = {}
+            for key, release in self.store.items(RELEASES, Release):
+                bundle = release.bundle
+
+                def pinned(name: str, bundle: ReleaseBundle = bundle) -> int | None:
+                    record = bundle.tools.get(name)
+                    return int(record.get("version", 1)) if record is not None else version_of(name)
+
+                workflow, stamped = stamp_workflow(bundle.workflow, pinned)
+                subworkflows = []
+                for item in bundle.subworkflows:
+                    child, more = stamp_workflow(item.workflow, pinned)
+                    subworkflows.append(item.model_copy(update={"workflow": child}) if more else item)
+                    stamped += [entry.model_copy(update={"workflow_id": item.workflow_id}) for entry in more]
+                if not stamped:
+                    continue
+                before = release.digest
+                bundle.workflow = workflow  # type: ignore[assignment]
+                bundle.subworkflows = subworkflows
+                release.digest = bundle.digest()
+                self.store.put(RELEASES, key, release)
+                entries = [
+                    entry.model_copy(
+                        update={
+                            "workflow_id": entry.workflow_id or release.workflow_id,
+                            "workflow_version": entry.workflow_version or release.workflow_version,
+                            "release": f"{release.publication_id}:{release.number}",
+                        }
+                    )
+                    for entry in stamped
+                ]
+                found.extend(entries)
+                changed.setdefault(release.publication_id, []).append(
+                    {
+                        "release": release.number,
+                        "bindings": len(entries),
+                        "digest_before": before,
+                        "digest": release.digest,
+                    }
+                )
+            for publication_id, releases in changed.items():
+                publication = self.store.get(PUBLICATIONS, publication_id, Publication)
+                if publication is None:
+                    continue
+                publication.history.append(PublicationEvent(kind="legacy_stamped", details={"releases": releases}))
+                self._put(publication)
+        self.forget_environments()
+        return found
 
     def releases(self, publication_id: str) -> list[Release]:
         return self.store.list_prefix(RELEASES, f"{publication_id}:", Release)

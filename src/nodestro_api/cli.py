@@ -65,7 +65,7 @@ def serve(factory: str, args: argparse.Namespace) -> None:
         if kind == "desktop":
             require_loopback_only(args.host, config.allowed_hosts)
         elif kind == "local-container":
-            require_safe_configuration(config.access_key, config.allowed_hosts)
+            require_safe_configuration(config.access_key, config.allowed_hosts, config.browser_host)
         check_secret(config.launch_secret)
         check_secret(config.access_key)
         if config.launch_secret is not None and args.reload:

@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+Per-call tool approvals (Evolution S-2b, decision D10; off unless `NODESTRO_TOOL_APPROVALS=1`):
+
+- New routes (`api_tool_approvals`): the approval inbox `GET /api/tool-approvals` and `GET
+  /api/runs/{run_id}/tool-approvals` (`read`); `POST /api/runs/{run_id}/tool-approvals/{request_id}` (`run`) approves or
+  rejects one call. The decision names the `arguments_hash` that was shown; other arguments or another tool definition
+  answer 409 `tool.approval_stale`, a late or repeated decision 409 `tool.approval_expired` / `tool.approval_decided`.
+  The decider is the request's principal.
+- Pre-grants for one schedule, batch or test series: `GET /api/tool-pre-grants` (`read`), `POST` and `DELETE
+  /api/tool-pre-grants/{scope}/{scope_id}/{grant_id}` (`admin`; refused for MCP and destructive tools, unknown scopes
+  answer 404).
+- `GET /api/tool-approvals/audit` (`admin`): decisions, refused decisions, pre-grants, revocations, activation.
+- `GET /api/tool-approvals/legacy` (state and activation report) and `POST /api/tool-approvals/legacy` (`admin`): the
+  activation step stamps existing bindings of workflows, workflow versions **and published releases** as visible
+  legacy exemptions, so activating approvals never changes a published API silently. A stamped release gets a new
+  digest and its publication records `legacy_stamped` with the old and new digest. Idempotent; it does not switch
+  approvals on.
+- Server workers: `NODESTRO_WORKER_MAX_RUNS` (default 2) and `NODESTRO_WORKER_MAX_WAITING` (default 1) set the runs a
+  worker holds and how many of them may wait for an approval; invalid combinations stop the server at start
+  (`profile.invalid`).
+- Every route is tenant-scoped (ids of other tenants answer 404); tests cover the role matrix, stale, late and
+  repeated decisions, pre-grant rules, release stamping and tenant isolation on PostgreSQL.
+- Pin of `nodestro-runtime` at `0aee6a9` (before: `8597544`) and `nodestro-examples` at `9597421` (before: `cf151e6`):
+  per-call tool approvals with audit and inbox (S-2), MCP write gate (WP-5) and OAuth (WP-6), budget reservations
+  (Orkexa `b85133d`), run, time and step limits, and the customer-service approval loop. The OpenAPI contract is
+  regenerated (new `Run`/`Usage`/`WorkflowLimits` fields included); the template test now treats an agent that a
+  rejection loops back to as a normal step.
+
+Nodestro Local Docker browser sessions (D1, D3 of the internal cross-check):
+
+- Browser sessions exist only under the installation's random host name `nodestro-<10 letters and digits>.localhost`,
+  which `nodestro-local serve` creates next to the access key (`browser-host`, mode 0600). Cookies are scoped by host
+  name, not port, so a session cookie for `localhost` or `127.0.0.1` also reached every other local web server.
+  `/api/launch` on any other name is refused with 403 `access.launch_host`, and a session cookie sent there is not
+  accepted. The bearer key still works under every loopback name. `NODESTRO_BROWSER_HOST` can replace the name with
+  another loopback name; `nodestro-local link` then warns. A local container without a browser host name is
+  refused (`access.browser_host_required`).
+- Sessions end after 8 hours without a request (`NODESTRO_SESSION_IDLE_HOURS`) and 24 hours after they were opened
+  (`NODESTRO_SESSION_MAX_HOURS`); the cookie carries that `Max-Age`.
+- Logout: `GET /api/logout` shows a sign-out form, `POST /api/logout` ends this browser's session and deletes the
+  cookie, and `POST /api/logout?all=1` with the bearer key (`nodestro-local logout`) ends every session.
+- Every answer carries `Referrer-Policy: no-referrer`, so the host name does not leave with a link.
+- D3: only the published port (`NODESTRO_HOST_PORT`, default 8765) and the container's port 8080 are answered in
+  `Host`; any other port gets 403 `request.port_not_allowed`.
+- `nodestro-local rotate-key` also replaces the host name; `link` uses it by default. The desktop app is unchanged.
+
 Connected MCP services (ADR-0007, WP-3):
 
 - New routes under `/api/mcp` (`api_mcp`): status, servers (add, change, remove; tokens write-only), discovery

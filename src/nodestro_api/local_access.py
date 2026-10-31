@@ -29,8 +29,9 @@ Nodestro Local Docker (:mod:`nodestro_api.local_container`) listens on every int
 reached through a port the host publishes on its own loopback. There the checks are strict
 (``strict_origin``): only loopback host names are answered (not the container's addresses or name), and changing
 requests and WebSockets are accepted only from exactly the origin the request was sent to, so a page served by another
-program on ``localhost`` (same site, other port) cannot use the studio either. The access key
-(:mod:`nodestro_api.launch`) is the authentication.
+program on ``localhost`` (same site, other port) cannot use the studio either. Only the published port and the
+container's own port are answered in ``Host`` (``ports``). The access key (:mod:`nodestro_api.launch`) is the
+authentication.
 """
 
 from __future__ import annotations
@@ -72,6 +73,21 @@ def split_host(value: str) -> str:
     if value.count(":") == 1:
         return value.split(":", 1)[0]
     return value
+
+
+def split_port(value: str) -> int | None:
+    """The port of a ``Host`` header value; ``None`` without one, ``-1`` for one that is not a number."""
+    value = value.strip()
+    if value.startswith("["):
+        rest = value[value.find("]") + 1 :] if "]" in value else ""
+    elif value.count(":") == 1:
+        rest = value[value.find(":") :]
+    else:
+        return None
+    if not rest:
+        return None
+    digits = rest[1:] if rest.startswith(":") else ""
+    return int(digits) if digits.isdigit() and len(digits) <= 5 else -1
 
 
 def is_ip_address(host: str) -> bool:
@@ -135,15 +151,23 @@ class LocalAccessMiddleware:
     """Refuse requests with a foreign ``Host`` (DNS rebinding) and changing requests with a foreign ``Origin``."""
 
     def __init__(
-        self, app: ASGIApp, *, hosts: frozenset[str] | None, ip_addresses: bool = False, strict_origin: bool = False
+        self,
+        app: ASGIApp,
+        *,
+        hosts: frozenset[str] | None,
+        ip_addresses: bool = False,
+        strict_origin: bool = False,
+        ports: frozenset[int] | None = None,
     ) -> None:
         """``ip_addresses``: answer every IP address (listening on every interface); a page cannot
         rebind an address, only a name. ``strict_origin``: accept changes and WebSockets only from the exact origin
-        of the request (Nodestro Local Docker)."""
+        of the request (Nodestro Local Docker). ``ports``: answer only these ports in ``Host`` (a ``Host`` without a
+        port is port 80); ``None``: every port."""
         self.app = app
         self.hosts = hosts
         self.ip_addresses = ip_addresses
         self.strict_origin = strict_origin
+        self.ports = ports
 
     def _host_allowed(self, host: str) -> bool:
         if self.hosts is None or is_loopback(host) or host in self.hosts:
@@ -174,6 +198,17 @@ class LocalAccessMiddleware:
                 f"Requests for the host name {split_host(host_header)!r} are not answered "
                 "(add it to NODESTRO_ALLOWED_HOSTS when Nodestro is reached under this name)",
                 host=split_host(host_header),
+            )
+            return
+        port = split_port(host_header)
+        if self.ports is not None and (80 if port is None else port) not in self.ports:
+            await _refuse(
+                scope,
+                send,
+                "request.port_not_allowed",
+                f"Requests for the port {port if port is not None else 80} are not answered; "
+                "use the port that Nodestro is published on",
+                port=str(port if port is not None else 80),
             )
             return
         path = scope.get("path", "")
