@@ -52,6 +52,20 @@ def test_workflow_crud_duplicate_and_import(make_app: Callable[..., TestClient])
     assert client.get(f"/api/workflows/{created['id']}").status_code == 404
 
 
+def test_workflow_list_names_capabilities_and_contract(make_app: Callable[..., TestClient]) -> None:
+    client = make_app()
+    team = {
+        "name": "Team",
+        "capabilities": ["research", " Research "],
+        "nodes": [{"id": "out", "type": "output", "output": {"contract": [{"name": "summary"}, {"name": "score"}]}}],
+    }
+    client.post("/api/workflows", json=team)
+    client.post("/api/workflows", json={"name": "Plain"})
+    listed = {item["name"]: item for item in client.get("/api/workflows").json()}
+    assert listed["Team"]["capabilities"] == ["research"] and listed["Team"]["contract"] == ["summary", "score"]
+    assert listed["Plain"]["capabilities"] == [] and listed["Plain"]["contract"] == []
+
+
 def test_agent_templates(make_app: Callable[..., TestClient]) -> None:
     client = make_app()
     template = client.post("/api/agents/templates", json={"agent": {"name": "Lektor"}}).json()
