@@ -154,13 +154,15 @@ def health() -> dict[str, str]:
 
 
 @router.get("/meta", dependencies=READ)
-def meta() -> Meta:
+def meta(ctx: Ctx) -> Meta:
     return Meta(
         version=__version__,
         library_version=library_version,
         providers=list(PROVIDERS.values()),
         capabilities=list(CAPABILITY_NAMES),
-        models=models(),
+        # The suggested models with the workspace's prices and their status (PRICING-1): overrides and synced
+        # prices show in the model picker, and a model without a known price says so.
+        models=models(ctx.pricing),
         server_tools=list(SERVER_TOOLS.values()),
     )
 

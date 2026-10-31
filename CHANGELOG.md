@@ -35,6 +35,8 @@ Model prices and cost reconciliation (PRICING-1, phases N5, N6, N8 and N10, 2026
   refuses to store them (`pricing.billing_key_not_storable`) and reads `NODESTRO_OPENAI_ADMIN_KEY` /
   `NODESTRO_ANTHROPIC_ADMIN_KEY` or a key sent with one reconciliation request.
 - The standalone export carries the runtime's `pricing` and `cost_tracking` modules (32 runtime modules).
+- `GET /api/meta`: the suggested models carry the workspace's prices with `price_status`, `price_quality`,
+  `price_source` and `price_version` (overrides and synced prices included; before: Orkexa's built-in prices).
 
 "Used in" for knowledge files, tools and memory spaces (evolution plan UX-7, 2026-10-31):
 
