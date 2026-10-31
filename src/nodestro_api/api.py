@@ -65,6 +65,7 @@ from .assistants import AgentDraft, MemorySeed
 from .benchmarks import SuiteIn, TestCase
 from .context import Nodestro
 from .permissions import ADMIN, EDIT, PUBLIC, READ, RUN, AccessError
+from .references import Reference, ReferenceKind, references
 from .serving import ApiError
 
 router = APIRouter(prefix="/api")
@@ -944,6 +945,17 @@ def delete_tool(name: str, ctx: Ctx) -> Response:
 def run_tool(name: str, body: ToolRunRequest, ctx: Ctx) -> ToolRunResult:
     output, is_error = ctx.tools.run(name, body.input, sandbox=tool_run_sandbox(ctx.tools, ctx.python, name))
     return ToolRunResult(output=output, is_error=is_error)
+
+
+# ---- references -----------------------------------------------------------------
+
+
+@router.get("/used-by", dependencies=READ)
+def used_by(ctx: Ctx, kind: ReferenceKind, ref: str | None = None) -> list[Reference]:
+    """Where knowledge files, tools or memory spaces are used: saved workflows, library agents and published APIs.
+
+    Only objects with at least one user are listed; with ``ref``, only that object. Read only."""
+    return references(ctx, kind, ref)
 
 
 # ---- knowledge ------------------------------------------------------------------
