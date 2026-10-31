@@ -23,7 +23,17 @@ from .batches import (
     parse_table,
     suggest_mapping,
 )
-from .benchmarks import BenchmarkPlan, BenchmarkRun, BenchmarkStart, Comparison, Suite, SuiteIn, compare
+from .benchmarks import (
+    BenchmarkPlan,
+    BenchmarkRun,
+    BenchmarkStart,
+    CaseProposal,
+    CaseProposalIn,
+    Comparison,
+    Suite,
+    SuiteIn,
+    compare,
+)
 from .permissions import EDIT, READ, RUN
 from .schedules import Activation, Schedule, ScheduleIn, time_zones, upcoming
 
@@ -154,6 +164,12 @@ async def start_benchmark(suite_id: str, body: BenchmarkStart, ctx: Ctx) -> Benc
 @router.get("/benchmarks/{suite_id}/runs", dependencies=READ)
 def list_benchmark_runs(suite_id: str, ctx: Ctx) -> list[BenchmarkRun]:
     return ctx.benchmarks.runs(suite_id)
+
+
+@router.post("/runs/{run_id}/test-case", dependencies=READ)
+def propose_test_case(run_id: str, body: CaseProposalIn, ctx: Ctx) -> CaseProposal:
+    """A redacted test case from a failed run (Q-4). Nothing is stored; save it into a series to keep it."""
+    return ctx.benchmarks.propose_case(run_id, body)
 
 
 @router.get("/benchmark-runs/compare", dependencies=READ)

@@ -3634,6 +3634,113 @@
         "title": "CaseComparison",
         "type": "object"
       },
+      "CaseOrigin": {
+        "description": "Where a test case proposed from a run came from (Q-4).",
+        "properties": {
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "personal_data": {
+            "default": true,
+            "title": "Personal Data",
+            "type": "boolean"
+          },
+          "proposed_at": {
+            "format": "date-time",
+            "title": "Proposed At",
+            "type": "string"
+          },
+          "replaced": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Replaced",
+            "type": "object"
+          },
+          "run_at": {
+            "format": "date-time",
+            "title": "Run At",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "run_status": {
+            "title": "Run Status",
+            "type": "string"
+          },
+          "workflow_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Version"
+          }
+        },
+        "required": [
+          "run_id",
+          "run_status",
+          "run_at"
+        ],
+        "title": "CaseOrigin",
+        "type": "object"
+      },
+      "CaseProposal": {
+        "description": "A test case proposed from a failed run; stored only when it is saved into a series.",
+        "properties": {
+          "case": {
+            "$ref": "#/components/schemas/TestCase"
+          },
+          "missing_files": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Files",
+            "type": "array"
+          },
+          "problems": {
+            "items": {
+              "$ref": "#/components/schemas/FieldError"
+            },
+            "title": "Problems",
+            "type": "array"
+          },
+          "workflow_id": {
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workflow_id",
+          "case"
+        ],
+        "title": "CaseProposal",
+        "type": "object"
+      },
+      "CaseProposalIn": {
+        "properties": {
+          "personal_data": {
+            "default": true,
+            "title": "Personal Data",
+            "type": "boolean"
+          }
+        },
+        "title": "CaseProposalIn",
+        "type": "object"
+      },
       "CaseResult": {
         "properties": {
           "case_id": {
@@ -13851,6 +13958,16 @@
             "title": "Name",
             "type": "string"
           },
+          "origin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseOrigin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "values": {
             "additionalProperties": true,
             "title": "Values",
@@ -22763,6 +22880,56 @@
           }
         },
         "summary": "Resume Run"
+      }
+    },
+    "/api/runs/{run_id}/test-case": {
+      "post": {
+        "description": "A redacted test case from a failed run (Q-4). Nothing is stored; save it into a series to keep it.",
+        "operationId": "propose_test_case_api_runs__run_id__test_case_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseProposalIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Propose Test Case"
       }
     },
     "/api/schedules": {
