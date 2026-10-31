@@ -90,8 +90,8 @@ network only with the server profile and its login (planned).
 **Desktop app: per-launch secret.** The desktop app starts the API with a random secret in `NODESTRO_LAUNCH_SECRET`
 (at least 32 characters, refused otherwise with `access.launch_secret_weak`; `--reload` is refused with it). The
 backend removes the variable from its environment, so no process it starts inherits it. The app's window opens
-`/api/launch?token=<secret>` once; the answer sets a session cookie (`HttpOnly`, `SameSite=Strict`) and redirects to
-the studio. A second launch is refused (`403 access.launch_used`), and every other request without that cookie gets
+`/api/launch?token=<secret>` once; the answer sets a session cookie (`HttpOnly`, `SameSite=Strict`) and continues
+to the studio from the backend's own origin (the token is redacted in the access log). A second launch is refused (`403 access.launch_used`), and every other request without that cookie gets
 `401 access.launch_required`, except `/api/health` and the key-protected `/api/published` routes. This keeps other
 programs and users of the same computer and web pages in the browser out of the desktop's studio API. It is not a
 user login and does not lift the loopback-only rule. Without the variable (the `nodestro` command) nothing changes.

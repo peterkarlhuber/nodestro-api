@@ -2,8 +2,8 @@
 
 The desktop app (``nodestro-desktop``) starts the backend on a free loopback port with a random secret in
 ``NODESTRO_LAUNCH_SECRET`` and opens its window on ``/api/launch?token=<secret>``. That request is
-answered once: the backend sets a session cookie (``HttpOnly``, ``SameSite=Strict``) and redirects to the
-studio. From then on every request needs that cookie. Other programs and users of this computer, and
+answered once: the backend sets a session cookie (``HttpOnly``, ``SameSite=Strict``) and a small page
+moves on to the studio. From then on every request needs that cookie. Other programs and users of this computer, and
 web pages in the user's browser, reach the port too, but have neither the secret nor the cookie:
 
 - a second ``/api/launch`` is refused (``access.launch_used``), so a secret seen later (a process list, a
@@ -24,7 +24,9 @@ from __future__ import annotations
 import hmac
 from http.cookies import CookieError, SimpleCookie
 import json
+import logging
 import os
+import re
 import secrets
 from urllib.parse import parse_qs
 
@@ -38,6 +40,11 @@ LAUNCH_PATH = "/api/launch"
 MIN_LENGTH = 32
 _OPEN_PATHS = frozenset({"/api/health"})
 _OPEN_PREFIX = "/api/published"
+
+_TOKEN = re.compile(r"([?&]token=)[^&\s\"]*")
+
+#: The launch answer: continue to the studio from the backend's own origin (no script needed).
+_CONTINUE = b'<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/"><title>Nodestro</title>'
 
 _UNSET = object()
 _taken: object | str | None = _UNSET
@@ -63,11 +70,38 @@ def check_secret(secret: str | None) -> None:
         )
 
 
+class RedactLaunchToken(logging.Filter):
+    """Replace the launch token in log records (uvicorn's access log prints the full request line)."""
+
+    def __init__(self, secret: str) -> None:
+        super().__init__()
+        self.secret = secret
+
+    def _redact(self, text: str) -> str:
+        return _TOKEN.sub(r"\1[redacted]", text).replace(self.secret, "[redacted]")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            # Formatters such as uvicorn's AccessFormatter unpack the arguments: keep them, redacted.
+            record.args = tuple(self._redact(arg) if isinstance(arg, str) else arg for arg in record.args)
+        if isinstance(record.msg, str):
+            record.msg = self._redact(record.msg)
+        return True
+
+
+def redact_access_logs(secret: str) -> None:
+    """Keep the launch token out of the access log (``uvicorn.access``)."""
+    logger = logging.getLogger("uvicorn.access")
+    if not any(isinstance(item, RedactLaunchToken) and item.secret == secret for item in logger.filters):
+        logger.addFilter(RedactLaunchToken(secret))
+
+
 class LaunchSecretMiddleware:
     """Exchange the one-time launch secret for a session cookie and require that cookie afterwards."""
 
     def __init__(self, app: ASGIApp, *, secret: str) -> None:
         check_secret(secret)
+        redact_access_logs(secret)
         self.app = app
         self._secret = secret.encode()
         self._session: bytes | None = None
@@ -126,20 +160,24 @@ class LaunchSecretMiddleware:
             return
         self._session = secrets.token_urlsafe(32).encode()
         cookie = f"{COOKIE}={self._session.decode()}; HttpOnly; SameSite=Strict; Path=/"
+        # Not a redirect: the window's navigation to this URL starts on the app's own page (another site), and a
+        # browser does not send a SameSite=Strict cookie on a redirect that a cross-site navigation started.
+        # The page below moves on from the backend's own origin, so the cookie goes with the next request.
         await send(
             {
                 "type": "http.response.start",
-                "status": 303,
+                "status": 200,
                 "headers": [
-                    (b"location", b"/"),
+                    (b"content-type", b"text/html; charset=utf-8"),
                     (b"set-cookie", cookie.encode()),
                     (b"cache-control", b"no-store"),
                     (b"referrer-policy", b"no-referrer"),
-                    (b"content-length", b"0"),
+                    (b"content-security-policy", b"default-src 'none'"),
+                    (b"content-length", str(len(_CONTINUE)).encode()),
                 ],
             }
         )
-        await send({"type": "http.response.body", "body": b""})
+        await send({"type": "http.response.body", "body": _CONTINUE})
 
 
 async def _answer(scope: Scope, send: Send, status: int, code: str, detail: str) -> None:
