@@ -53,7 +53,6 @@ from orkexa import (
     Tool,
     ToolResultError,
     UsageRecord,
-    UsageTracker,
 )
 from orkexa.core.types import ReasoningDelta, TextDelta, TokenUsage, ToolCallDelta, ToolCallStarted
 from orkexa.usage import record_token_usage, summarize_usage
@@ -817,14 +816,16 @@ class Assistant:
             self._subscribers.pop(message.id, None)
         return True
 
-    def _record_usage(self, message: ChatMessage, records: list[UsageRecord], *, estimated: bool) -> None:
+    def _record_usage(
+        self, message: ChatMessage, records: list[UsageRecord], *, estimated: bool, tracker: object | None = None
+    ) -> None:
         """Count the requests of one attempt: in the usage ledger and on the message and conversation."""
         if not records:
             return
         with self._lock:
             conversation = self.store.get(_CONVERSATIONS, message.conversation_id, Conversation)
             if conversation is not None:
-                conversation.usage = _add_usage(conversation.usage, usage_of(summarize_usage(records)))
+                conversation.usage = _add_usage(conversation.usage, usage_of(summarize_usage(records), records))
                 self._save(conversation, touch=False)
         title = conversation.title if conversation else ""
         self.nodestro.usage_log.record(
@@ -835,8 +836,9 @@ class Assistant:
             detail="reply",
             request=message.id,
             estimated=estimated,
+            tracker=tracker,
         )
-        usage = usage_of(summarize_usage(records))
+        usage = usage_of(summarize_usage(records), records)
         with self._lock:
             message.usage = usage
             message.estimated = estimated
@@ -864,7 +866,7 @@ class _Reply:
         self.user = user
         self.cancelled = cancelled
         self.language = message.language or "en"
-        self.tracker = UsageTracker()
+        self.tracker = self.nodestro.tracker()
         self.agent: Agent[str] | None = None
         #: Whether the current request's answer started streaming (it then costs input tokens).
         self.streaming = False
@@ -1152,4 +1154,4 @@ class _Reply:
             )
             records.append(partial)
             estimated = True
-        self.service._record_usage(self.message, records, estimated=estimated)
+        self.service._record_usage(self.message, records, estimated=estimated, tracker=self.tracker)

@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+Model prices and cost reconciliation (PRICING-1, phases N5, N6, N8 and N10, 2026-10-31):
+
+- Pins: `nodestro-runtime` 272e2f6 (price catalog, sync, costs priced with the catalog, strict price mode,
+  reconciliation) and `nodestro-examples` e6d9619 (the same runtime).
+- New routes under `/api/pricing` (module `api_pricing`): the catalog, status and history, `POST /sync`, reviews
+  with approve and reject, overrides per provider and model (`PUT`/`DELETE`), billing admin keys and the
+  reconciliation (`GET`/`POST`). Reads need `read`, changes `admin`. OpenAPI: the new paths and schemas.
+- Every AI operation of the API is priced with the workspace's catalog and price mode (`Workspace.tracker`): agent
+  design, memory proposals, tool generation, the Workflow Architect, the Nodestro Assistant, API guides and
+  benchmark judges. Their usage carries price references (versions, sources, quality, stale prices).
+- `GET /api/usage`: each bucket has `known_cost_usd`, `cost_state` (`known`, `partial`, `unknown`, `none`),
+  `stale_price_requests`, `missing_cost_components`, `pricing_versions`, `pricing_sources` and `pricing_quality`.
+  `estimated_cost_usd` stays (the known sum) and `unpriced` now also counts requests with incomplete costs.
+- Desktop: the API process syncs the reference prices in the background (`NODESTRO_PRICE_SYNC`,
+  `NODESTRO_PRICE_LITELLM`, `NODESTRO_PRICE_SNAPSHOT_FILE`; off in `AppConfig()` built by code, so tests never go
+  online). Server: the reference prices live under the reserved document tenant `nodestro-price-reference`;
+  workers sync them under an advisory lock (`WorkerSettings.price_sync`), tenants read them and keep their own
+  overrides; new command `nodestro-server pricing status|sync|approve|reject`.
+- Billing admin keys are stored only with encryption at rest (servers, bound to tenant and field). The desktop
+  refuses to store them (`pricing.billing_key_not_storable`) and reads `NODESTRO_OPENAI_ADMIN_KEY` /
+  `NODESTRO_ANTHROPIC_ADMIN_KEY` or a key sent with one reconciliation request.
+- The standalone export carries the runtime's `pricing` and `cost_tracking` modules (32 runtime modules).
+
 "Used in" for knowledge files, tools and memory spaces (evolution plan UX-7, 2026-10-31):
 
 - New read-only route `GET /api/used-by?kind=knowledge|tool|memory[&ref=…]` (permission `read`). It lists each

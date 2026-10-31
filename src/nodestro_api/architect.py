@@ -40,9 +40,11 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from nodestro_runtime.agent_builder import ConfigIssue
 from nodestro_runtime.catalog import SERVER_TOOLS, models
+from nodestro_runtime.cost_tracking import PricedTracker, PriceMode
 from nodestro_runtime.engine import _PLACEHOLDER, node_label, usage_of
 from nodestro_runtime.memory_spaces import _SPACE
 from nodestro_runtime.preflight import PROVIDER_CHECKS, WorkflowCheck, preflight
+from nodestro_runtime.pricing import PricingService
 from nodestro_runtime.problems import NodestroError, Problem, library_problem, problem
 from nodestro_runtime.providers import MAX_RETRIES, Connection, model_id, qualify
 from nodestro_runtime.python_deps import analyze as analyze_dependencies
@@ -80,7 +82,7 @@ from nodestro_runtime.schemas import (
 from nodestro_runtime.tool_drafts import ToolDraft
 from nodestro_runtime.tool_library import CODING_PROMPT
 from orkexa import Agent, UsageRecord, UsageTracker
-from orkexa.dynamic import BudgetExceededError, BudgetTracker, CodingAgent, check_tool_source, check_tool_tests
+from orkexa.dynamic import BudgetExceededError, CodingAgent, check_tool_source, check_tool_tests
 from orkexa.dynamic.policy import RESERVED_TOOL_NAMES
 from orkexa.usage import summarize_usage
 from pydantic import BaseModel, Field
@@ -401,16 +403,26 @@ class JobCancelled(Exception):
     """The user cancelled the job."""
 
 
-class _JobTracker(BudgetTracker):
-    """The job's budget; also stops the job right after a response once it was cancelled."""
+class _JobTracker(PricedTracker):
+    """The job's budget, priced with the workspace's catalog; also stops the job right after a response once it
+    was cancelled."""
 
-    def __init__(self, limit: float | None, cancelled: threading.Event, on_add: Callable[[], None]) -> None:
-        super().__init__(Decimal(str(limit)) if limit is not None else None)
+    def __init__(
+        self,
+        limit: float | None,
+        cancelled: threading.Event,
+        on_add: Callable[[], None],
+        *,
+        pricing: PricingService | None = None,
+        mode: PriceMode = "standard",
+    ) -> None:
+        super().__init__(Decimal(str(limit)) if limit is not None else None, pricing=pricing, mode=mode)
         self.cancelled = cancelled
         self.on_add = on_add
         self.lock = threading.Lock()
 
     def add(self, record: UsageRecord) -> None:
+        self.note(record)
         with self.lock:
             UsageTracker.add(self, record)
         self.on_add()
@@ -640,7 +652,13 @@ class _Session:
         settings = self.nodestro.settings()
         self.model = settings.assistant_model
         self.default_model = settings.default_model
-        self.tracker = _JobTracker(job.budget_usd, cancelled, self._on_usage)
+        self.tracker = _JobTracker(
+            job.budget_usd,
+            cancelled,
+            self._on_usage,
+            pricing=self.nodestro.pricing,
+            mode=self.nodestro.price_mode(),
+        )
         self._flushed = 0
         self._flush_lock = threading.Lock()
         #: The connection of the assistant model's provider (set when the job starts).
@@ -663,7 +681,10 @@ class _Session:
             raise JobCancelled()
 
     def _on_usage(self) -> None:
-        self.job.usage = usage_of(summarize_usage(self.tracker.records))
+        records = self.tracker.records
+        self.job.usage = usage_of(
+            summarize_usage(records), records, stale_requests=self.tracker.stale_requests(records)
+        )
         self.service.emit(self.job, "usage", data={"usage": self.job.usage.model_dump()})
 
     def _hooks(self) -> dict[str, Any]:
@@ -690,7 +711,12 @@ class _Session:
             groups.setdefault(_DETAILS.get(record.agent, "plan"), []).append(record)
         for detail, group in groups.items():
             self.nodestro.usage_log.record(
-                "workflow_design", group, label=self.job.description, ref=self.job.id, detail=detail
+                "workflow_design",
+                group,
+                label=self.job.description,
+                ref=self.job.id,
+                detail=detail,
+                tracker=self.tracker,
             )
 
     def graph(self, workflow: WorkflowIn, removed: list[Node] | None = None) -> None:
