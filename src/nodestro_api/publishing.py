@@ -234,15 +234,22 @@ class Publications:
                 self.store.put(RELEASES, key, release)
         self.forget_environments()
 
-    def stamp_legacy_tool_bindings(self, version_of: VersionOf) -> list[LegacyBinding]:
+    def stamp_legacy_tool_bindings(
+        self, version_of: VersionOf, *, created_before: datetime | None = None
+    ) -> list[LegacyBinding]:
         """The activation step of per-call tool approvals for published releases (S-2, D10b/D10c): every tool binding
         of every stored release becomes a visible legacy exemption bound to the tool version the release runs with,
         so activating approvals never changes a published API silently. Each changed release gets a new digest, and
-        its publication records the change (``legacy_stamped``) with the old and the new digest. Idempotent."""
+        its publication records the change (``legacy_stamped``) with the old and the new digest. Idempotent.
+
+        ``created_before``: only releases created up to then (the moment the workspace was stamped); a release made
+        later comes from workflows that were already stamped, and a tool it adds is a new binding."""
         found: list[LegacyBinding] = []
         with self._lock, self.store.transaction():
             changed: dict[str, list[dict[str, Any]]] = {}
             for key, release in self.store.items(RELEASES, Release):
+                if created_before is not None and release.created_at > created_before:
+                    continue
                 bundle = release.bundle
 
                 def pinned(name: str, bundle: ReleaseBundle = bundle) -> int | None:
