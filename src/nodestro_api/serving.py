@@ -85,8 +85,10 @@ ApiStatus = Literal["queued", "running", "awaiting_approval", "succeeded", "fail
 #: Events an API client receives, and the fields it gets of each (prompts and tool data stay inside).
 _PUBLIC_EVENTS: dict[str, tuple[str, ...]] = {
     "run_started": ("status",),
-    "node_started": (),
-    "node_finished": ("status", "error_code", "error_params", "usage"),
+    "node_started": ("iteration",),
+    "node_finished": ("status", "error_code", "error_params", "usage", "iteration"),
+    # A loop connection was followed: its nodes run again (``iteration`` counts from 1).
+    "loop_iteration": ("iteration", "max_iterations"),
     "approval_requested": ("status",),
     # The reviewer's comment is internal: it stays in the run's approval record (studio, audit trail).
     "approval_decided": ("decision",),
