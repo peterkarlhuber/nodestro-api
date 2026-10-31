@@ -43,6 +43,8 @@ from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.profile import RuntimeProfile
 from nodestro_runtime.server_settings import ServerSettings
 
+from .pricing_setup import PRICE_REFERENCE_TENANT, PriceSyncConfig
+
 logger = logging.getLogger(__name__)
 
 #: The port the API listens on in its container (a reverse proxy in front of it terminates TLS).
@@ -62,6 +64,8 @@ class ServerEnvironment:
     endpoints: tuple[str, ...] = ()
     #: Worker timing: ``NODESTRO_WORKER_LEASE_SECONDS``, ``…_POLL_SECONDS``, ``…_REAP_SECONDS``.
     worker: dict[str, float] = field(default_factory=dict)
+    #: The reference price sync of the workers (``NODESTRO_PRICE_*``, see :mod:`nodestro_api.pricing_setup`).
+    price_sync: PriceSyncConfig = field(default_factory=PriceSyncConfig)
 
 
 def load(environ: Mapping[str, str] | None = None) -> ServerEnvironment:
@@ -121,6 +125,13 @@ def load(environ: Mapping[str, str] | None = None) -> ServerEnvironment:
                     "reason": f"NODESTRO_WORKER_{name}_SECONDS must be a positive number of seconds",
                 }
             )
+    price_sync = PriceSyncConfig()
+    try:
+        price_sync = PriceSyncConfig.from_env(environ)
+    except NodestroError as error:
+        problems.append(
+            {"field": error.params.get("field", ""), "value": error.params.get("value", ""), "reason": str(error)}
+        )
     if problems:
         raise NodestroError(
             "profile.invalid",
@@ -135,6 +146,7 @@ def load(environ: Mapping[str, str] | None = None) -> ServerEnvironment:
         docker=environ.get("NODESTRO_DOCKER", "").strip() or "docker",
         endpoints=endpoints,
         worker=worker,
+        price_sync=price_sync,
     )
 
 
@@ -233,6 +245,7 @@ async def run_worker(server: ServerEnvironment) -> None:
     timing = dict(server.worker)
     settings = WorkerSettings(
         lease=timedelta(seconds=timing.pop("lease")) if "lease" in timing else WorkerSettings.lease,
+        price_sync=server.price_sync,
         **timing,  # type: ignore[arg-type]
     )
     worker = ServerWorker(files, IdentityStore(database), settings)
@@ -341,10 +354,48 @@ def setup_link(server: ServerEnvironment, tenant_id: str) -> str:
 def create_tenant(server: ServerEnvironment, tenant_id: str, name: str) -> None:
     from nodestro_runtime.identity_store import IdentityStore
 
+    if tenant_id == PRICE_REFERENCE_TENANT:  # the server's reference prices live under this id
+        raise NodestroError("identity.tenant_id", f"The tenant id {tenant_id!r} is reserved", tenant=tenant_id)
     database = _database(server)
     try:
         database.require_current_schema()
         IdentityStore(database).create_tenant(tenant_id, name)
+    finally:
+        database.close()
+
+
+# ---- reference prices ------------------------------------------------------------------------
+
+
+def pricing(server: ServerEnvironment, command: str, version: str | None = None, note: str | None = None) -> str:
+    """``nodestro-server pricing status|sync|approve|reject``: the operator's side of the reference prices."""
+    from .pricing_setup import server_sync
+
+    database = _ready(server)
+    try:
+        sync = server_sync(database, server.price_sync)
+        service = sync.pricing
+        if command == "sync":
+            report = sync.sync(force=True)
+            if not report.ran:
+                return f"not run: {report.skipped_reason}"
+            lines = [f"active version: {report.active_version}"]
+            lines += [f"{item.source}: {item.outcome or ''} {item.error or ''}".rstrip() for item in report.sources]
+            return "\n".join(lines)
+        if command == "approve" and version:
+            return f"active version: {service.approve(version, note=note).active_version}"
+        if command == "reject" and version:
+            service.reject(version, note=note)
+            return f"rejected {version}"
+        status = service.status()
+        lines = [
+            f"active version: {status.active_version}",
+            f"last success: {status.last_success_at or 'never'}",
+            f"last error: {status.last_error or '-'}",
+            f"staleness: {status.staleness}",
+            f"open reviews: {', '.join(status.pending_reviews) or '-'}",
+        ]
+        return "\n".join(lines)
     finally:
         database.close()
 
@@ -371,6 +422,14 @@ def parser() -> argparse.ArgumentParser:
     tenant.add_argument("name")
     link = commands.add_parser("setup-link", help="Print a one-time link that binds the first owner of a tenant")
     link.add_argument("tenant_id")
+    pricing = commands.add_parser("pricing", help="Reference prices: status, sync, open reviews and their decisions")
+    pricing_commands = pricing.add_subparsers(dest="pricing_command", required=True)
+    pricing_commands.add_parser("status", help="Print the state of the reference prices and the open reviews")
+    pricing_commands.add_parser("sync", help="Check the reference prices against their sources now")
+    for action in ("approve", "reject"):
+        decision = pricing_commands.add_parser(action, help=f"{action.capitalize()} an open price review")
+        decision.add_argument("version")
+        decision.add_argument("--note")
     return found
 
 
@@ -411,6 +470,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             print(f"created tenant {args.tenant_id}")
         elif args.command == "setup-link":
             print(setup_link(server, args.tenant_id))
+        elif args.command == "pricing":
+            print(pricing(server, args.pricing_command, getattr(args, "version", None), getattr(args, "note", None)))
     except NodestroError as error:
         raise SystemExit(f"{error.code}: {error}") from None
 
@@ -429,6 +490,7 @@ __all__ = [
     "load",
     "main",
     "migrate",
+    "pricing",
     "run_worker",
     "setup_link",
 ]

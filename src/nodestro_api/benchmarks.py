@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
-from decimal import Decimal
 import json
 import logging
 from typing import TYPE_CHECKING, Any, Literal
@@ -443,7 +442,7 @@ class Benchmarks:
         self.ctx.store.put(RUNS, bench.id, bench)
         cases = {case.id: case for case in suite.cases}
         budget = self.ctx.settings().default_budget_usd
-        judge_tracker = BudgetTracker(Decimal(str(budget)) if budget is not None else None)
+        judge_tracker = self.ctx.tracker(budget)
         results = []
         for item in batch.items:
             case = cases.get(item.ref or "")
@@ -478,7 +477,9 @@ class Benchmarks:
             results.append(result)
         bench.results = results
         bench.summary = summarize(results)
-        bench.judge_usage = usage_of(judge_tracker.usage)
+        bench.judge_usage = usage_of(
+            judge_tracker.usage, judge_tracker.records, stale_requests=judge_tracker.stale_requests()
+        )
         ended: dict[str, Literal["cancelled", "stopped", "interrupted"]] = {
             "cancelled": "cancelled",
             "stopped": "stopped",
@@ -531,9 +532,14 @@ class Benchmarks:
             verdict.score = round(passed / len(criteria), 4) if criteria else 0.0
             verdict.summary = evaluation.summary
         records = tracker.records[before:]
-        verdict.cost_usd = usage_of(summarize_usage(records)).estimated_cost_usd
+        verdict.cost_usd = usage_of(summarize_usage(records), records).estimated_cost_usd
         if records:
             self.ctx.usage_log.record(
-                "benchmark_judge", records, label=f"{suite.name}: {case.name}", ref=bench.id, request=case.id
+                "benchmark_judge",
+                records,
+                label=f"{suite.name}: {case.name}",
+                ref=bench.id,
+                request=case.id,
+                tracker=tracker,
             )
         return verdict

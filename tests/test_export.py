@@ -95,7 +95,9 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     # The 25 modules of Nodestro 0.1, the extension contract the knowledge base uses for OCR, the SQLite tables
     # module, and the sandbox policy with tool provenance and the operating profile it reads.
     modules = check["runtime_modules"]
-    assert len(modules) == 30 and "nodestro_runtime.extensions" in modules
+    assert len(modules) == 32 and "nodestro_runtime.extensions" in modules
+    # Costs in an export are priced like in the studio (PRICING-1): the price catalog travels with the engine.
+    assert {"nodestro_runtime.cost_tracking", "nodestro_runtime.pricing"} <= set(modules)
     assert {"nodestro_runtime.sandbox_policy", "nodestro_runtime.tool_provenance"} <= set(modules)
     assert not any(path.startswith("workflow/knowledge/") for path in check["files"])
     included = client.post(

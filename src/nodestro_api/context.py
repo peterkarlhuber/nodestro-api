@@ -31,6 +31,7 @@ from .docs_index import DocsIndex
 from .launch import launch_secret_from_env
 from .network import NetworkListener
 from .organize import Organizer
+from .pricing_setup import PriceSyncConfig
 from .publishing import Publications, StudioHost
 from .schedules import Schedules
 from .serving import ApiError, KeyIdentity, ResumeIn, ServingCore
@@ -54,6 +55,9 @@ class AppConfig:
     #: The desktop app's per-launch secret (``NODESTRO_LAUNCH_SECRET``); with it, only the window that
     #: opened ``/api/launch`` can use the studio API, see :mod:`nodestro_api.launch`. ``None``: not required.
     launch_secret: str | None = field(default=None, repr=False)
+    #: Where reference prices come from and whether they are synced in the background (``NODESTRO_PRICE_*``,
+    #: see :mod:`nodestro_api.pricing_setup`). Off unless configured: tests and embedded uses never go online.
+    price_sync: PriceSyncConfig = field(default_factory=lambda: PriceSyncConfig(enabled=False))
 
     @property
     def profile(self) -> RuntimeProfile:
@@ -79,6 +83,7 @@ class AppConfig:
             allowed_hosts=[item.strip() for item in allowed.split(",") if item.strip()],
             profile_kind=profile.kind,
             launch_secret=launch_secret_from_env(),
+            price_sync=PriceSyncConfig.from_env(),
         )
 
 
@@ -124,6 +129,8 @@ class Nodestro(Workspace):
         self.serving = ServingCore(StudioHost(self))
         self.network = NetworkListener(self.store, self.serving)
         self.published = _PublishedRuns(self)
+        #: Syncs the reference prices; ``None`` on a server, whose worker syncs them (see :mod:`.pricing_setup`).
+        self.price_sync = self.config.price_sync.service(self.pricing) if self.pricing.reference_writable else None
 
     def _normalize_published(self) -> None:
         """Releases and export records in the current format, also after a restore (idempotent)."""
