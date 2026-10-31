@@ -135,7 +135,7 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
     found = check_routes(app)
     studio = [item for item in found if item.access in {"read", "edit", "run", "admin", "install", "public"}]
     assert Counter(item.access for item in studio) == {
-        "read": 88,  # + the price catalog, its status, history and reviews (PRICING-1); the release gate report (Q-3)
+        "read": 89,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4)
         "edit": 47,
         "run": 31,
         "admin": 27,  # + price sync, reviews, overrides, billing keys and reconciliation (PRICING-1); gate (Q-3)

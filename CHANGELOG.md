@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+Test cases from failed runs (evolution plan Q-4):
+
+- `POST /api/runs/{id}/test-case` (read) proposes a test case from the input of a failed run: form values, free text
+  and files as the run had them. Credentials are always replaced (`nodestro_runtime.sanitize`), personal data too
+  unless `personal_data` is `false`. Files are referenced, not copied; files that no longer exist are left out and
+  listed in `missing_files`, and values that no longer fit the current form are listed in `problems`.
+- Nothing is stored: the case is added only when it is saved into a test series with the existing
+  `POST`/`PUT /api/benchmarks` routes. `TestCase.origin` (`CaseOrigin`: run, status, version, error code, what was
+  replaced) records where it came from; it is `None` for cases written by hand, so existing series are unchanged.
+- Imported runs, sub-workflow runs and runs that did not fail are refused (`testcase.run_unsupported`,
+  `testcase.run_not_failed`).
+
 Pins (2026-10-31): `nodestro-runtime` at `d2cb987` (before: `45e7774`; strict price-mode refusals get their own error
 codes) and `nodestro-examples` at `1c2f1e4` (before: `786c453`; same runtime). No API changes.
 
