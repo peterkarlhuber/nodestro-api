@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+Nodestro as an MCP server for published workflows (ADR-0007 D-8, WP-11; off by default):
+
+- `/api/published/_mcp` (Streamable HTTP, official MCP SDK, stateless): lists the publications an API key may run as
+  tools and runs them through `ServingCore.launch` (same limits, budgets, approvals and run history as
+  `POST /api/published/{slug}/runs`). Answers only clients on this computer.
+- Needs both the operator's `NODESTRO_MCP_SERVER=1` and the administrator's per-publication offer
+  (`Publication.mcp_tool`, `PATCH /api/publications/{id}`; history events `mcp_tool_on` / `mcp_tool_off`).
+  Otherwise `404 mcp_server.disabled` or no tools.
+
 Local MCP servers and MCP tools in published APIs (ADR-0007, WP-8 and WP-9):
 
 - `GET /api/mcp/servers/{id}/environment` and `POST /api/mcp/servers/{id}/environment/plan` (admin): the packages of

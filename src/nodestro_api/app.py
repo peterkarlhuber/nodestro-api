@@ -34,6 +34,7 @@ from .launch import LOCAL_COOKIE, LaunchSecretMiddleware, check_secret
 from .local_access import LocalAccessMiddleware, allowed_hosts, listens_everywhere, require_loopback_only
 from .local_container import CONTAINER_PORT, loopback_hosts, require_safe_configuration
 from .local_container import REFUSAL as LOCAL_REFUSAL
+from .mcp_server import build_mcp_router
 from .permissions import check_routes, resolver_for
 from .serving import build_router
 
@@ -162,6 +163,8 @@ def create_app(
     # Before the main router: /api/tools/drafts must not be taken for a tool named "drafts".
     # Published workflows (``/api/published``): key-protected, answered only on this computer here;
     # the network listener (``nodestro_api.network``) serves them separately when switched on.
+    # Nodestro's MCP server (WP-11, off by default) before ``/{slug}``, which would also match ``_mcp``.
+    app.include_router(build_mcp_router(nodestro.mcp_server))
     app.include_router(build_router(nodestro.serving, channel="local"))
     app.include_router(publish_router)
     app.include_router(architect_router)

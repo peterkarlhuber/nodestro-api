@@ -220,7 +220,7 @@ def test_a_route_without_a_requirement_stops_the_application(app: FastAPI) -> No
 def test_the_published_prefix_exempts_only_the_key_authenticated_endpoints(app: FastAPI) -> None:
     keyed = {(item.method, item.path) for item in check_routes(app) if item.access == "api_key"}
     assert keyed == KEY_AUTHENTICATED_ROUTES
-    assert len(keyed) == 15
+    assert len(keyed) == 18  # the 15 published API routes and the MCP server endpoint (POST, GET, DELETE)
 
     # A route that merely lives under the prefix is not exempt ...
     @app.get("/api/published/{slug}/debug")

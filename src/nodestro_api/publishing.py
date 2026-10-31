@@ -91,6 +91,8 @@ EventKind = Literal[
     "gate_off",
     "gate_override",
     "legacy_stamped",
+    "mcp_tool_on",
+    "mcp_tool_off",
 ]
 
 
@@ -112,6 +114,9 @@ class Publication(BaseModel):
     active_release: int | None = None
     #: Reachable through the network listener (when that is switched on, see :mod:`nodestro_api.network`).
     network: bool = False
+    #: Offered as a tool of Nodestro's MCP server (WP-11); only an administrator switches it on, and the server
+    #: answers only while the operator also started it (``NODESTRO_MCP_SERVER=1``).
+    mcp_tool: bool = False
     limits: ApiLimits = Field(default_factory=ApiLimits)
     #: The opt-in release gate (Q-3); ``None``: new releases need no test evidence (as before).
     gate: ReleaseGate | None = None
@@ -807,9 +812,12 @@ class Publications:
         description: str | None = None,
         limits: ApiLimits | None = None,
         network: bool | None = None,
+        mcp_tool: bool | None = None,
     ) -> Publication:
         with self._lock:
-            return self._update(publication_id, slug=slug, description=description, limits=limits, network=network)
+            return self._update(
+                publication_id, slug=slug, description=description, limits=limits, network=network, mcp_tool=mcp_tool
+            )
 
     def _update(
         self,
@@ -819,6 +827,7 @@ class Publications:
         description: str | None,
         limits: ApiLimits | None,
         network: bool | None,
+        mcp_tool: bool | None = None,
     ) -> Publication:
         publication = self.get(publication_id)
         if slug is not None and slug != publication.slug:
@@ -840,6 +849,9 @@ class Publications:
         if network is not None and network != publication.network:
             publication.network = network
             publication.history.append(PublicationEvent(kind="network_on" if network else "network_off"))
+        if mcp_tool is not None and mcp_tool != publication.mcp_tool:
+            publication.mcp_tool = mcp_tool
+            publication.history.append(PublicationEvent(kind="mcp_tool_on" if mcp_tool else "mcp_tool_off"))
         self._put(publication)
         return publication
 
@@ -923,6 +935,7 @@ class Publications:
             enabled=publication.enabled,
             active=publication.active_release == release.number,
             network=publication.network,
+            mcp_tool=publication.mcp_tool,
             published_at=release.created_at,
             approvals=release.bundle.approvals(),
             output_schema=release.bundle.output_schema,

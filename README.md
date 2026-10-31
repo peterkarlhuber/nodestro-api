@@ -278,6 +278,17 @@ unencrypted; the studio says so before enabling it. When a new listener configur
 certificate unusable), the previous listener keeps running and the status reports the error. After a backup is
 restored, network access is off.
 
+**Nodestro as an MCP server** (ADR-0007 decision D-8, WP-11) is off by default and needs two deliberate switches:
+the operator starts Nodestro with `NODESTRO_MCP_SERVER=1`, and an administrator offers a publication with
+`PATCH /api/publications/{id}` `{"mcp_tool": true}` (recorded in its history as `mcp_tool_on`/`mcp_tool_off`). Then
+`/api/published/_mcp` answers the MCP protocol (Streamable HTTP, stateless, JSON answers) for clients on this computer
+only. An MCP client authenticates with an API key (`Authorization: Bearer`); it sees the offered, enabled publications
+of that key as tools (name = slug, input schema = the request schema) when the key has the `run` scope. A tool call is
+an ordinary run of the published API through the same code path: limits, budgets, approvals, the release's frozen
+tools and the run history apply unchanged. With synchronous calls enabled the call waits up to the API's sync timeout
+and answers with the output; otherwise, or for a run that stops at an approval step, it answers with the run id and
+status. While switched off the endpoint answers `404 mcp_server.disabled`.
+
 ## Standalone export
 
 A release can be exported as a FastAPI project that runs without Nodestro: the release snapshot, the runtime and the

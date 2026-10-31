@@ -233,6 +233,8 @@ class ServedRelease(BaseModel):
     active: bool = True
     #: Whether the release may be called over the network listener.
     network: bool = False
+    #: Offered as a tool of Nodestro's MCP server (WP-11, off by default).
+    mcp_tool: bool = False
     published_at: datetime = Field(default_factory=now)
     #: Approval nodes a run may stop at (sub-workflows included).
     approvals: int = 0
@@ -1371,6 +1373,10 @@ KEY_AUTHENTICATED_ROUTES = frozenset(
         ("GET", "/{slug}/runs/{run_id}/files/{file_id}"),
         ("GET", "/{slug}/usage"),
         ("GET", "/{slug}/openapi.json"),
+        # Nodestro's MCP server (WP-11, nodestro_api.mcp_server): same keys, off unless switched on.
+        ("POST", "/_mcp"),
+        ("GET", "/_mcp"),
+        ("DELETE", "/_mcp"),
     ]
 )
 
