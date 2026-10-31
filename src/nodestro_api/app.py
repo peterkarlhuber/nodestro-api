@@ -47,7 +47,7 @@ def create_app(
     ``ocr_runner`` the local OCR (tests). ``scheduler=False`` leaves schedules to explicit ticks (tests).
 
     Before anything is opened, the configuration is checked as the command line checks it: the operating
-    profile must be one this version can start (``profile.invalid``, ``profile.server_unavailable``), and
+    profile must be the desktop (``profile.invalid``; a server starts with ``nodestro-server``), and
     the login-less studio API is only offered on this computer (``access.network_needs_login``), and a
     launch secret must be long enough (``access.launch_secret_weak``).
     Every route must declare who may call it (:mod:`nodestro_api.permissions`)."""

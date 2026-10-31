@@ -40,10 +40,10 @@ overriding the environment. The default is `127.0.0.1:8000` with the data direct
 shares with the studio. An empty `NODESTRO_DATA_DIR` means the default directory.
 
 **Operating profile.** `--profile desktop` (the default) is the behavior described here: one person, one data
-directory, the studio API on this computer only. `--profile server` is refused with `profile.server_unavailable`
-before any file is touched, because the server needs login, PostgreSQL, tenant isolation, workers and a container
-sandbox, which do not exist yet. An unknown profile name is refused with `profile.invalid`. `create_app` applies the
-same rules as the command line.
+directory, the studio API on this computer only. `--profile server` is refused with `profile.invalid` before any
+file is touched: a server is started with `nodestro-server` (see [The server](#the-server-nodestro-server)), never
+with `nodestro-api`. An unknown profile name is refused with `profile.invalid`. `create_app` applies the same rules
+as the command line.
 
 The API needs neither the studio nor a built frontend. `NODESTRO_STATIC_DIR` names a built interface to serve next to
 it, and `NODESTRO_DOCS_DIR` the documentation chapters the Nodestro Assistant searches (without it, the documentation
@@ -86,8 +86,8 @@ web pages in the user's browser from using it, it also
 - allows CORS only for the studio's development server (`localhost:5173`).
 
 `NODESTRO_ALLOWED_HOSTS` can add further names that point to this computer (comma-separated, for example
-`studio.localhost`). Host and origin checks do not replace authentication; the studio API becomes reachable from a
-network only with the server profile and its login (planned).
+`studio.localhost`). Host and origin checks do not replace authentication; the studio API is reachable from a
+network only as a server, with its login (`nodestro-server`).
 
 **Desktop app: per-launch secret.** The desktop app starts the API with a random secret in `NODESTRO_LAUNCH_SECRET`
 (at least 32 characters, refused otherwise with `access.launch_secret_weak`; `--reload` is refused with it). The
@@ -98,10 +98,9 @@ to the studio from the backend's own origin (the token is redacted in the access
 programs and users of the same computer and web pages in the browser out of the desktop's studio API. It is not a
 user login and does not lift the loopback-only rule. Without the variable (the `nodestro` command) nothing changes.
 
-**Server logins (preview, not startable yet).** `nodestro_api.server_app.create_tenant_app` builds the studio API
-for many tenants with logins; it is what the server profile will start once the workers, the container sandbox and
-the deployment exist (plan step PR-12). Until then no command line option or environment variable reaches it and
-`--profile server` stays refused. What it does (`nodestro_api.identity`, needs `pip install "nodestro-api[server]"`):
+**Server logins.** `nodestro_api.server_app.create_tenant_app` builds the studio API for many tenants with logins;
+`nodestro-server api` starts it (see [The server](#the-server-nodestro-server)). What it does
+(`nodestro_api.identity`, needs `pip install "nodestro-api[server]"`):
 
 - Login with OpenID Connect at the operator's identity provider: authorization code flow with PKCE (`S256`),
   `state` (stored hashed, used once, expires after 10 minutes) and `nonce`. The ID token must be signed with an
@@ -122,8 +121,11 @@ the deployment exist (plan step PR-12). Until then no command line option or env
   runs and write their events to the database, where every API process streams them from. A worker that dies
   leaves its run `run.interrupted` (found by the reaper of another worker); it is never executed again by itself.
   The worker that holds the scheduler lock fires the tenants' schedules, and each slot fires once.
-- Not part of it yet: published workflow APIs with tenant-bound keys, the network listener and backups. Batches,
-  test series, assistant drafts and Python environment installations still run in the API process.
+- A tenant's provider keys are stored encrypted with the server's secret key (per-tenant key, AES-256-GCM); the
+  server's own environment variables such as `ANTHROPIC_API_KEY` are never used for any tenant.
+- Not part of it yet: published workflow APIs with tenant-bound keys, the network listener and backups in the studio
+  (operators use `pg_dump`). Batches, test series, assistant drafts and Python environment installations still run
+  in the API process.
 
 Uploaded files are served with `X-Content-Type-Options: nosniff`; HTML, SVG and XML files are always downloaded, and
 everything except PDF carries a restrictive `Content-Security-Policy`, so an uploaded page cannot run scripts in the
@@ -142,6 +144,46 @@ its permissions:
 A key never reaches other publications (they answer `404` as if they did not exist), runs of other publications or
 the studio API. Revoking a key takes effect at once; rotating creates a new key with the same name, permissions and
 publications and revokes the old one in the same step. Failed authentications are limited per client address.
+
+## The server (`nodestro-server`)
+
+`pip install "nodestro-api[server]"` adds the command `nodestro-server`, which runs the processes of the server
+profile. Its configuration comes only from the environment and is checked before anything starts; every missing or
+unsafe value is listed at once (`profile.invalid`), and nothing has a default that would weaken it:
+
+| Variable | Meaning |
+| --- | --- |
+| `NODESTRO_PROFILE` | `server` |
+| `NODESTRO_DATA_DIR` | the tenants' files (`<dir>/tenants/<tenant>`) |
+| `NODESTRO_DATABASE_URL` (or `_FILE`) | PostgreSQL connection string; `NODESTRO_DATABASE_SCHEMA` optionally names a schema |
+| `NODESTRO_PUBLIC_ORIGIN` | the studio's origin as browsers see it, `https://…` (`http://localhost…` for development) |
+| `NODESTRO_OIDC_ISSUER`, `NODESTRO_OIDC_CLIENT_ID`, `NODESTRO_OIDC_CLIENT_SECRET` (or `_FILE`) | the identity provider; the redirect URI to register is `<origin>/api/auth/callback` |
+| `NODESTRO_SECRET_KEY` (or `_FILE`) | 32 random bytes, base64 (`openssl rand -base64 32`): encrypts tenant secrets |
+| `NODESTRO_STATIC_DIR`, `NODESTRO_DOCS_DIR` | the built studio interface and its documentation (optional) |
+| `DOCKER_HOST` (optional), `NODESTRO_DOCKER` | the container runtime for tool code (local socket by default) |
+| `NODESTRO_MODEL_ENDPOINTS` | comma-separated origins tenants may use for OpenAI-compatible, Ollama and vLLM endpoints (none by default; others are refused, so tenants cannot make the server reach internal services) |
+| `NODESTRO_WORKER_LEASE_SECONDS`, `…_POLL_SECONDS`, `…_REAP_SECONDS` | worker timing (defaults 60, 1, 15) |
+
+Commands:
+
+- `nodestro-server check`: settings, database (reachable, schema current) and Docker; exit code 0 when ready.
+- `nodestro-server migrate`: applies the database migrations under an advisory lock. A database that already has
+  tables needs a backup first: `--backup-dir DIR` runs `pg_dump` (custom format; the password is passed in the
+  environment, never on the command line), `--backup-taken` states that the operator made one.
+- `nodestro-server backup DIR`: writes a `pg_dump` (custom format) of the database to `DIR/nodestro-<time>.dump`
+  and prints its path; restore it with `pg_restore` (the runbook in the `nodestro-server` repository).
+- `nodestro-server api [--host 0.0.0.0] [--port 8080]`: the studio with logins. Runs are queued for workers. Put a
+  TLS-terminating reverse proxy in front of it; the session cookie is `Secure`.
+- `nodestro-server worker`: executes queued runs, reaps runs of dead workers and fires schedules. SIGTERM lets a
+  running run finish first.
+- `nodestro-server create-tenant ID NAME` and `nodestro-server setup-link TENANT`: create a tenant and print a
+  one-time link (24 hours) that makes the person who logs in with it the tenant's first owner.
+
+API and worker processes start only when the database schema is current and Docker is reachable: on a server tool
+code runs only in containers (ADR-0006), so a server without a container runtime does not start
+(`sandbox.unavailable`). Containers need no bind mounts, so Docker may run on another host (`DOCKER_HOST`), which
+keeps the Docker daemon's privileges away from the API and worker containers. Images and the development
+deployment are in the `nodestro-server` repository.
 
 ## Published workflow APIs
 
@@ -235,8 +277,8 @@ Nodestro repositories).
   itself (`/api/openapi.json`) is served locally.
 - Without network access enabled, the published endpoints answer only this computer; with it, TLS is the
   operator's responsibility (certificate, key, or a reverse proxy).
-- The studio API has no login yet and only listens on loopback addresses; the published workflow APIs (with API
-  keys) are the way to reach Nodestro from a network.
+- The desktop's studio API has no login and only listens on loopback addresses; the published workflow APIs (with
+  API keys) are the way to reach a desktop from a network. A server (`nodestro-server`) has logins.
 - Proxy headers are detected by name; a proxy that forwards requests without any of them looks like a local client.
 - Nodestro provides technical means for traceability (immutable releases, recorded approvals, usage records,
   sanitized exports) and data minimization (secrets stay out of backups and exports). It does not by itself make an

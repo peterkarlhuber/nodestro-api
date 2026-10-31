@@ -11,9 +11,8 @@ or more worker processes (:class:`ServerWorker`). Every worker:
   runs it starts are queued like any other, and each slot fires at most once
   (:class:`nodestro_runtime.jobs.ScheduleFirings`).
 
-**Not startable yet**, like the rest of the server profile (``profile.server_unavailable`` until plan step PR-12):
-nothing but tests builds a :class:`ServerWorker`. Only runs go through the queue so far; batches, test series,
-assistant drafts and Python environment installations still run in the API process that started them.
+``nodestro-server worker`` (:mod:`nodestro_api.server`) runs one. Only runs go through the queue so far; batches,
+test series, assistant drafts and Python environment installations still run in the API process that started them.
 """
 
 from __future__ import annotations

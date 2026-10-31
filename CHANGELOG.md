@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+The server starts (desktop/server plan, PR-12, 2026-10-31):
+
+- New command `nodestro-server` (`nodestro_api.server`, extra `server`): `check`, `migrate` (with `pg_dump` backup
+  or `--backup-taken`), `backup`, `api`, `worker`, `create-tenant`, `setup-link`. Settings come from the environment and are
+  validated first (`ServerSettings`, `profile.invalid` listing every problem); API and worker start only with a
+  current database schema and a reachable Docker (`sandbox.unavailable`).
+- `TenantComposition.secrets` / `TenantFiles.secrets`: tenant provider keys are encrypted at rest; the server's
+  environment keys are never used for tenants. `TenantComposition.static_dir` serves the built studio.
+- `NODESTRO_MODEL_ENDPOINTS` (`TenantComposition.endpoints`): the model endpoints tenants may use; others are
+  refused (`provider.endpoint_not_allowed`). `NODESTRO_WORKER_*_SECONDS` set the worker's lease and intervals.
+- `create_tenant_app` accepts `http://localhost` origins for development (the cookie stays `Secure`).
+- Pins: `nodestro-runtime` at `51f0a6c` (server settings, tenant secrets, endpoint allowlist; before `4104176`),
+  `nodestro-examples` at `f13227c` (before `43e02f6`).
+- The desktop's `--profile server` is refused with `profile.invalid` (pointing to `nodestro-server`) instead of
+  `profile.server_unavailable`.
+
 Libraries in the Docker sandbox (desktop/server plan, PR-11, 2026-10-31):
 
 - Pins `nodestro-runtime` 4104176 and `nodestro-examples` 43e02f6. With the Docker sandbox, the Python

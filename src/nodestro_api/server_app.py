@@ -9,11 +9,10 @@ With a job queue (:attr:`TenantComposition.queue`, ADR-0004) the API processes e
 store and queue them, and worker processes (:mod:`nodestro_api.worker`) execute them; event streams and waits read
 the worker's events from the database. Without a queue, runs execute in the API process (tests).
 
-**Not startable yet.** No command line option or environment variable reaches this function, and the server
-profile stays refused (``profile.server_unavailable``) until the server integration (plan step PR-12) adds the
-container sandbox and the deployment. Until then it is built only by tests. Not part of it yet: the published
-workflow APIs (tenant-bound keys), the network listener and backups (``install``). Schedules fire in the worker
-process that holds the scheduler lock, not in the API.
+``nodestro-server api`` (:mod:`nodestro_api.server`) builds it from validated
+:class:`~nodestro_runtime.server_settings.ServerSettings`. Not part of it yet: the published workflow APIs
+(tenant-bound keys) and backups (``install``; operators use ``pg_dump``). Schedules fire in the worker process that
+holds the scheduler lock, not in the API.
 """
 
 from __future__ import annotations
@@ -26,10 +25,13 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from nodestro_runtime.extensions import Integration
 from nodestro_runtime.identity_store import IdentityStore
 from nodestro_runtime.jobs import JobQueue, QueuedRuns
 from nodestro_runtime.postgres_tables import tenant_storage
+from nodestro_runtime.server_settings import SecretBox
 from nodestro_runtime.storage_postgres import PostgresDatabase
 
 from . import __version__
@@ -42,7 +44,14 @@ from .api_inputs import router as inputs_router
 from .api_publish import router as publish_router
 from .api_python import router as python_router
 from .context import AppConfig, Nodestro
-from .identity import OidcClient, SameOriginMiddleware, SessionResolver, TenantWorkspaces, auth_router
+from .identity import (
+    OidcClient,
+    SameOriginMiddleware,
+    SessionResolver,
+    TenantWorkspaces,
+    auth_router,
+    secure_url,
+)
 from .permissions import check_routes
 from .serving import PREFIX as PUBLISHED_PREFIX
 
@@ -67,6 +76,12 @@ class TenantComposition:
     integrations: Iterable[Integration] | None = field(default=None)
     #: The job queue: runs are queued for worker processes instead of executing here (``None``: here).
     queue: JobQueue | None = None
+    #: Encrypts the tenants' provider keys at rest (``None`` only in tests).
+    secrets: SecretBox | None = None
+    #: The built studio interface, served for every path that is not an API route (``None``: API only).
+    static_dir: Path | None = None
+    #: Model endpoints (origins) tenants may use for the endpoint providers (none by default).
+    endpoints: tuple[str, ...] = ()
 
 
 @dataclass
@@ -81,6 +96,8 @@ class TenantFiles:
     python_runner: Any | None = None
     ocr_runner: Any | None = None
     integrations: Iterable[Integration] | None = field(default=None)
+    secrets: SecretBox | None = None
+    endpoints: tuple[str, ...] = ()
 
     def open(self, tenant_id: str) -> Nodestro:
         return Nodestro(
@@ -89,7 +106,7 @@ class TenantFiles:
             python_runner=self.python_runner,
             ocr_runner=self.ocr_runner,
             integrations=self.integrations,
-            storage=tenant_storage(self.database, tenant_id),
+            storage=tenant_storage(self.database, tenant_id, self.secrets, self.endpoints),
         )
 
 
@@ -105,8 +122,8 @@ async def close_tenant(context: Nodestro) -> None:
 
 def create_tenant_app(composition: TenantComposition) -> FastAPI:
     """The studio API with logins and one context per tenant (see the module documentation)."""
-    if not composition.origin.startswith("https://"):
-        raise ValueError("The studio of a server is reached over https (the session cookie is Secure)")
+    if not _secure_origin(composition.origin):
+        raise ValueError("The studio of a server is reached over https (http only on localhost for development)")
     files = TenantFiles(
         database=composition.database,
         data_root=composition.data_root,
@@ -115,6 +132,8 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
         python_runner=composition.python_runner,
         ocr_runner=composition.ocr_runner,
         integrations=composition.integrations,
+        secrets=composition.secrets,
+        endpoints=composition.endpoints,
     )
     queue = composition.queue
 
@@ -155,7 +174,31 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
     app.include_router(router)
     app.include_router(data_router)
     check_routes(app)
+    if composition.static_dir is not None and (composition.static_dir / "index.html").is_file():
+        mount_frontend(app, composition.static_dir)
     return app
 
 
-__all__ = ["TenantComposition", "TenantFiles", "close_tenant", "create_tenant_app"]
+def _secure_origin(origin: str) -> bool:
+    return secure_url(origin)
+
+
+def mount_frontend(app: FastAPI, static_dir: Path) -> None:
+    """Serve the built single-page studio: real files as they are, every other non-API path as ``index.html``."""
+    assets = static_dir / "assets"
+    if assets.is_dir():
+        app.mount("/assets", StaticFiles(directory=assets), name="assets")
+    index = static_dir / "index.html"
+    root = static_dir.resolve()
+
+    @app.get("/{path:path}", include_in_schema=False)
+    async def frontend(path: str) -> Any:
+        if path == "api" or path.startswith("api/"):
+            return JSONResponse({"detail": "Not found"}, status_code=404)
+        candidate = (static_dir / path).resolve()
+        if path and candidate.is_file() and root in candidate.parents:
+            return FileResponse(candidate)
+        return FileResponse(index)
+
+
+__all__ = ["TenantComposition", "TenantFiles", "close_tenant", "create_tenant_app", "mount_frontend"]

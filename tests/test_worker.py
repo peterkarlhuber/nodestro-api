@@ -1,7 +1,7 @@
 """Worker processes of a server: queued runs, event streams across processes, reaper, schedules (needs PostgreSQL).
 
 The API (``create_tenant_app`` with a job queue) and the worker (``ServerWorker``) use separate database
-connections and contexts, like separate processes. The server profile itself cannot be started yet.
+connections and contexts, like separate processes. `nodestro-server worker` runs the same class.
 """
 
 from __future__ import annotations
