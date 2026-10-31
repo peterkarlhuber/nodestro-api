@@ -31,6 +31,7 @@ from nodestro_api.permissions import (
     nobody,
     resolver_for,
 )
+from nodestro_api.serving import KEY_AUTHENTICATED_ROUTES, KeyAuthenticatedRoute
 
 WORKFLOW = {"name": "Rights", "nodes": [], "edges": []}
 
@@ -190,6 +191,43 @@ def test_a_route_without_a_requirement_stops_the_application(app: FastAPI) -> No
 
     with pytest.raises(RouteAccessError, match="GET /api/forgotten: no access requirement"):
         check_routes(app)
+
+
+def test_the_published_prefix_exempts_only_the_key_authenticated_endpoints(app: FastAPI) -> None:
+    keyed = {(item.method, item.path) for item in check_routes(app) if item.access == "api_key"}
+    assert keyed == KEY_AUTHENTICATED_ROUTES
+    assert len(keyed) == 15
+
+    # A route that merely lives under the prefix is not exempt ...
+    @app.get("/api/published/{slug}/debug")
+    def debug(slug: str) -> str:
+        return slug
+
+    with pytest.raises(RouteAccessError, match=r"GET /api/published/\{slug\}/debug: not a key-authenticated"):
+        check_routes(app)
+
+
+def test_a_published_route_class_alone_is_not_enough(tmp_path: Path) -> None:
+    app = _app(tmp_path)
+    try:
+        extra = APIRouter(prefix="/api/published/{slug}", route_class=KeyAuthenticatedRoute)
+
+        @extra.delete("/runs")
+        def wipe(slug: str) -> None:
+            return None
+
+        @extra.get("/runs")  # same path as a listed endpoint, other method: still listed per method
+        def duplicate(slug: str) -> None:
+            return None
+
+        app.include_router(extra)
+        _found, problems = classify(app)
+        assert problems == [
+            "DELETE /api/published/{slug}/runs: not a key-authenticated published endpoint "
+            "(nodestro_api.serving.KEY_AUTHENTICATED_ROUTES)"
+        ]
+    finally:
+        app.state.nodestro.close()
 
 
 def test_included_routers_websockets_and_double_declarations_are_checked() -> None:

@@ -13,6 +13,9 @@ from typing import Any
 from fastapi.testclient import TestClient
 import pytest
 
+from nodestro_api.permissions import check_routes
+from nodestro_api.serving import KEY_AUTHENTICATED_ROUTES
+
 from conftest import parsed, text
 from test_flow import edge, save
 from test_runs import agent_node
@@ -306,6 +309,29 @@ def test_authentication_and_permissions(published: Callable[..., Any]) -> None:
     assert all("token" not in item and "secret_hash" not in item for item in keys)
     stored = client.app.state.nodestro.store.get_raw("api_keys", key_id)  # type: ignore[attr-defined]
     assert stored["secret_hash"] and token.split("_", 2)[2] not in json.dumps(stored)
+
+
+def test_every_published_endpoint_refuses_requests_without_a_valid_key(published: Callable[..., Any]) -> None:
+    """Walks every route the route check accepts under /api/published, so a new endpoint is tested automatically."""
+    client, publication, token = published()
+    slug = publication["slug"]
+    started = client.post(f"{PUBLISHED}/{slug}/runs", json={"values": {"customer": "ACME"}}, headers=auth(token))
+    run_id = started.json()["run_id"]
+    finish(client, slug, token, run_id)
+    values = {"slug": slug, "number": "1", "run_id": run_id, "file_id": "file_missing"}
+    bodies = {"/runs": {"values": {"customer": "X"}}, "/approve": {"decision": "approved"}, "/resume": {}}
+    routes = [item for item in check_routes(client.app) if item.access == "api_key"]  # type: ignore[arg-type]
+    assert {(item.method, item.path) for item in routes} == KEY_AUTHENTICATED_ROUTES
+    runs_before = client.get("/api/runs").json()
+    for item in routes:
+        path = item.path.format(**values)
+        body = next((value for suffix, value in bodies.items() if item.path.endswith(suffix)), None)
+        for headers, code in (({}, "auth.missing"), (auth("ndk_000000000000_nope"), "auth.invalid")):
+            answer = client.request(item.method, path, json=body, headers=headers)
+            assert answer.status_code == 401, (item.method, item.path, answer.text)
+            assert answer.json()["error"]["code"] == code, (item.method, item.path)
+    # Nothing was started, cancelled or decided.
+    assert client.get("/api/runs").json() == runs_before
 
 
 def test_keys_are_scoped_to_their_publications(make_app: Callable[..., TestClient]) -> None:

@@ -1345,8 +1345,34 @@ class ServingCore:
 # ---- HTTP --------------------------------------------------------------------------------
 
 
-class _ApiRoute(APIRoute):
-    """Every error of a published endpoint, including FastAPI's own, in the API's error format."""
+#: Every endpoint of a published workflow API (method, full path). Each one authenticates its caller with a Nodestro
+#: API key (``ServingCore.access`` or ``ServingCore.authenticate``) before it reads or changes anything. The studio's
+#: route check (:mod:`nodestro_api.permissions`) accepts exactly these routes under :data:`PREFIX` without a
+#: permission, so a new endpoint must be added here, and to the test that calls every one without a key.
+KEY_AUTHENTICATED_ROUTES = frozenset(
+    (method, PREFIX + path)
+    for method, path in [
+        ("POST", "/{slug}/runs"),
+        ("POST", "/{slug}/versions/{number}/runs"),
+        ("GET", "/{slug}"),
+        ("GET", "/{slug}/runs"),
+        ("GET", "/{slug}/runs/{run_id}"),
+        ("GET", "/{slug}/runs/{run_id}/result"),
+        ("GET", "/{slug}/runs/{run_id}/events"),
+        ("POST", "/{slug}/runs/{run_id}/cancel"),
+        ("GET", "/{slug}/runs/{run_id}/approvals"),
+        ("POST", "/{slug}/runs/{run_id}/approve"),
+        ("POST", "/{slug}/runs/{run_id}/resume"),
+        ("GET", "/{slug}/runs/{run_id}/files"),
+        ("GET", "/{slug}/runs/{run_id}/files/{file_id}"),
+        ("GET", "/{slug}/usage"),
+        ("GET", "/{slug}/openapi.json"),
+    ]
+)
+
+
+class KeyAuthenticatedRoute(APIRoute):
+    """A published endpoint: authenticated by API key, every error (FastAPI's own too) in the API's error format."""
 
     def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
         handler = super().get_route_handler()
@@ -1387,7 +1413,7 @@ def build_router(
     ``release`` documents the request and result schemas of one release in the OpenAPI
     description (an export, or the per-API description in Nodestro).
     """
-    router = APIRouter(prefix=f"{PREFIX}/{{slug}}", route_class=_ApiRoute, tags=["published workflow"])
+    router = APIRouter(prefix=f"{PREFIX}/{{slug}}", route_class=KeyAuthenticatedRoute, tags=["published workflow"])
     doc = include_in_schema
     body_doc: dict[str, Any] = _BODY_DOC
     if release is not None:

@@ -13,7 +13,9 @@ Operating profile and route permissions (desktop/server plan, PR-2, 2026-10-31):
 - Permissions: every studio route declares `read`, `edit`, `run` or `admin`, checked on every request by a FastAPI
   dependency (`nodestro_api.permissions`). The desktop's local owner holds every permission. `/api/health` is
   declared public; `/api/published` keeps its API keys. `create_app` refuses to build an application with an
-  undeclared route.
+  undeclared route. The published prefix exempts only the endpoints listed in
+  `serving.KEY_AUTHENTICATED_ROUTES` (route class `KeyAuthenticatedRoute`); a test calls each of them without a key
+  and with an invalid one and expects `401`.
 - **Compatibility, security:** the studio API is no longer offered to a network, because it has no login.
   `--host 0.0.0.0`, `::` or another non-loopback address and `NODESTRO_ALLOWED_HOSTS` with non-loopback names or `*`
   now stop the start with `access.network_needs_login` (before: allowed, protected by host and origin checks only).

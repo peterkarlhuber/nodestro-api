@@ -21,8 +21,10 @@ Permissions (the strongest one that applies is declared):
 
 Two kinds of routes check no principal and say so explicitly: :data:`PUBLIC` routes (the health check) and the
 published workflow APIs under ``/api/published``, which authenticate their callers with Nodestro API keys
-(:mod:`nodestro_api.serving`). The API reference that FastAPI generates (``/api/docs``, ``/api/openapi.json``)
-is public as well.
+(:mod:`nodestro_api.serving`). The prefix alone exempts nothing: a route there passes only if it is a
+:class:`~nodestro_api.serving.KeyAuthenticatedRoute` listed in
+:data:`~nodestro_api.serving.KEY_AUTHENTICATED_ROUTES`. The API reference that FastAPI generates
+(``/api/docs``, ``/api/openapi.json``) is public as well.
 
 In the desktop profile there is one principal, the local owner (:data:`LOCAL_OWNER`), who holds every
 permission: the studio API behaves as before. The server profile will resolve principals from logins
@@ -43,6 +45,7 @@ from nodestro_runtime.profile import RuntimeProfile
 from starlette.requests import HTTPConnection
 from starlette.routing import BaseRoute, Mount, Route, WebSocketRoute
 
+from .serving import KEY_AUTHENTICATED_ROUTES, KeyAuthenticatedRoute
 from .serving import PREFIX as PUBLISHED_PREFIX
 
 
@@ -208,7 +211,15 @@ def classify(app: FastAPI) -> tuple[list[RouteAccess], list[str]]:
                 (reason for prefix, reason in SEPARATELY_AUTHENTICATED.items() if _under(path, prefix)), None
             )
             if separate is not None and not declared:
-                found += [RouteAccess(path, method, "api_key", separate) for method in methods]
+                unlisted = [method for method in methods if not _key_authenticated(route, path, method)]
+                if unlisted:
+                    problems.append(
+                        f"{'/'.join(unlisted)} {path}: not a key-authenticated published endpoint "
+                        "(nodestro_api.serving.KEY_AUTHENTICATED_ROUTES)"
+                    )
+                found += [
+                    RouteAccess(path, method, "api_key", separate) for method in methods if method not in unlisted
+                ]
             elif len(declared) == 1:
                 found += [RouteAccess(path, method, declared[0].label) for method in methods]
             else:
@@ -222,6 +233,10 @@ def classify(app: FastAPI) -> tuple[list[RouteAccess], list[str]]:
             kind = "mount" if isinstance(route, Mount) else type(route).__name__
             problems.append(f"{kind} {path}: not an API route with an access requirement")
     return found, problems
+
+
+def _key_authenticated(route: BaseRoute, path: str, method: str) -> bool:
+    return isinstance(route, KeyAuthenticatedRoute) and (method, path) in KEY_AUTHENTICATED_ROUTES
 
 
 def _under(path: str, prefix: str) -> bool:
