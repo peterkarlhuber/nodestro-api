@@ -129,7 +129,7 @@ def mcp_status(ctx: Ctx) -> McpStatus:
         endpoint_list=None if policy.allowlist is None else [f"{s}://{h}:{p}" for s, h, p in policy.allowlist],
         loopback_possible=policy.loopback_possible,
         unattended_enabled=unattended_mcp_enabled(),
-        write_tools_enabled=ctx.mcp.write_gate is not None,
+        write_tools_enabled=bool(ctx.mcp.write_gate),
     )
 
 

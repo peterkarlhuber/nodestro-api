@@ -20,7 +20,8 @@ def parser(prog: str, description: str) -> argparse.ArgumentParser:
     found.add_argument(
         "--profile",
         default=None,
-        help="Operating profile: desktop (default) or server (not available yet); also NODESTRO_PROFILE",
+        help="Operating profile: desktop (default) or local-container (Nodestro Local Docker, use nodestro-local); "
+        "a server starts with nodestro-server; also NODESTRO_PROFILE",
     )
     found.add_argument("--reload", action="store_true", help="Restart on code changes (development)")
     return found
@@ -56,12 +57,17 @@ def serve(factory: str, args: argparse.Namespace) -> None:
     from .context import AppConfig
     from .launch import check_secret
     from .local_access import require_loopback_only
+    from .local_container import require_safe_configuration
 
     try:
         config = AppConfig.from_env()
-        if config.profile.validate().kind == "desktop":
+        kind = config.profile.validate().kind
+        if kind == "desktop":
             require_loopback_only(args.host, config.allowed_hosts)
+        elif kind == "local-container":
+            require_safe_configuration(config.access_key, config.allowed_hosts)
         check_secret(config.launch_secret)
+        check_secret(config.access_key)
         if config.launch_secret is not None and args.reload:
             # The reloading child process would start without the secret, i.e. unprotected.
             raise NodestroError("access.launch_secret_reload", "--reload cannot be used with NODESTRO_LAUNCH_SECRET")

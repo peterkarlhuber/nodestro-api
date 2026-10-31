@@ -149,9 +149,12 @@ class _Server:
 
 
 class NetworkListener:
-    def __init__(self, store: DocumentStore, core: ServingCore) -> None:
+    def __init__(self, store: DocumentStore, core: ServingCore, *, unavailable: str | None = None) -> None:
+        """``unavailable``: why network access cannot be switched on here (Nodestro Local Docker: the listener's port
+        would be inside the container); it then never starts."""
         self.store = store
         self.core = core
+        self.unavailable = unavailable
         self._server: _Server | None = None
         self._error: tuple[str, str] | None = None
         #: One change at a time: starting and stopping wait for the server, other changes wait for them.
@@ -185,6 +188,8 @@ class NetworkListener:
 
     async def apply(self, config: NetworkConfig) -> NetworkStatus:
         """Store the configuration and start, restart or stop the listener accordingly."""
+        if self.unavailable and config.enabled:
+            raise NodestroError("lan.unavailable", self.unavailable)
         for path in (config.tls_certfile, config.tls_keyfile):
             if path and not Path(path).expanduser().is_file():
                 raise NodestroError("lan.tls_file_missing", f"File not found: {path}", path=path)
@@ -214,7 +219,7 @@ class NetworkListener:
 
     async def _start(self) -> None:
         config = self.config()
-        if not config.enabled or self._server is not None:
+        if not config.enabled or self._server is not None or self.unavailable:
             return
         self._error = None
         server = _Server(network_app(self.core), config)

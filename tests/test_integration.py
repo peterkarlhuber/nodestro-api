@@ -141,3 +141,30 @@ def test_the_public_event_of_a_decision_carries_no_comment() -> None:
     public = core.public_event(event, text=False)
     assert public is not None and public["decision"] == "approved"
     assert SECRET not in str(public)
+
+
+def test_loop_rounds_are_public_but_the_loop_internals_are_not() -> None:
+    from nodestro_runtime.schemas import RunEvent
+
+    from nodestro_api.serving import ServingCore
+
+    loop = RunEvent(
+        seq=4,
+        run_id="run_1",
+        type="loop_iteration",
+        node_id="draft",
+        data={"loop": "gate-draft@", "iteration": 1, "max_iterations": 3},
+    )
+    public = ServingCore.public_event(loop, text=False)
+    assert public is not None
+    assert {key: public[key] for key in ("type", "node_id", "iteration", "max_iterations")} == {
+        "type": "loop_iteration",
+        "node_id": "draft",
+        "iteration": 1,
+        "max_iterations": 3,
+    }
+    assert "loop" not in public
+    finished = RunEvent(
+        seq=5, run_id="run_1", type="node_finished", node_id="draft", data={"status": "succeeded", "iteration": [1]}
+    )
+    assert (ServingCore.public_event(finished, text=False) or {})["iteration"] == [1]

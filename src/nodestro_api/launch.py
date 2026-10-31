@@ -17,6 +17,12 @@ workflow APIs (``/api/published``, protected by their own keys).
 Without ``NODESTRO_LAUNCH_SECRET`` nothing changes (the ``nodestro`` command in a terminal). This is the
 desktop's protection against other local processes; it is not a user login and does not make the studio
 API fit for the network (:func:`nodestro_api.local_access.require_loopback_only` still applies).
+
+Nodestro Local Docker (the ``local-container`` profile, :mod:`nodestro_api.local_container`) uses the same
+middleware with a persistent *access key* instead of a one-time secret (``reusable``): the link
+``/api/launch?token=<key>`` that ``nodestro-local link`` prints can open any number of browser sessions (each gets
+its own random session cookie, under its own cookie name), and scripts send the key as ``Authorization: Bearer``.
+A request without a session in a browser gets a short page that says how to open Nodestro.
 """
 
 from __future__ import annotations
@@ -38,6 +44,11 @@ COOKIE = "nodestro_session"
 LAUNCH_PATH = "/api/launch"
 #: Shorter secrets are refused: the desktop app generates 256 bits.
 MIN_LENGTH = 32
+#: Cookie of the local container's browser sessions (another name than the desktop's: cookies are shared across
+#: the ports of ``localhost``).
+LOCAL_COOKIE = "nodestro_local_session"
+#: Browser sessions kept per process with a reusable key (the oldest is dropped beyond that).
+MAX_SESSIONS = 64
 _OPEN_PATHS = frozenset({"/api/health"})
 _OPEN_PREFIX = "/api/published"
 
@@ -96,31 +107,63 @@ def redact_access_logs(secret: str) -> None:
         logger.addFilter(RedactLaunchToken(secret))
 
 
-class LaunchSecretMiddleware:
-    """Exchange the one-time launch secret for a session cookie and require that cookie afterwards."""
+_SIGN_IN = """<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport"
+content="width=device-width,initial-scale=1"><title>Nodestro</title><style>body{{font:16px/1.5 system-ui,sans-serif;
+max-width:36rem;margin:4rem auto;padding:0 1rem;color:#222;background:#fff}}code{{background:#eee;padding:.1rem .3rem;
+border-radius:.2rem}}@media (prefers-color-scheme:dark){{body{{color:#ddd;background:#111}}code{{background:#333}}}}
+</style><h1>Nodestro</h1><p>{text}</p></html>"""
 
-    def __init__(self, app: ASGIApp, *, secret: str) -> None:
+
+class LaunchSecretMiddleware:
+    """Exchange the launch secret for a session cookie and require that cookie afterwards.
+
+    ``reusable``: the secret is a persistent access key (Nodestro Local Docker): every valid launch opens a new
+    session, and ``bearer`` additionally accepts ``Authorization: Bearer <key>``. ``cookie`` names the session
+    cookie and ``refusal`` is the sentence a refused request gets."""
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        secret: str,
+        reusable: bool = False,
+        bearer: bool = False,
+        cookie: str = COOKIE,
+        refusal: str = "This Nodestro belongs to the desktop app that started it; open Nodestro from the app",
+    ) -> None:
         check_secret(secret)
         redact_access_logs(secret)
         self.app = app
         self._secret = secret.encode()
         self._session: bytes | None = None
+        self._sessions: dict[bytes, None] = {}
+        self.reusable = reusable
+        self.bearer = bearer
+        self.cookie = cookie
+        self.refusal = refusal
 
     def _open(self, path: str) -> bool:
         return path in _OPEN_PATHS or path == _OPEN_PREFIX or path.startswith(_OPEN_PREFIX + "/")
 
+    def _valid(self, token: bytes) -> bool:
+        if self.reusable:
+            return any(hmac.compare_digest(token, session) for session in self._sessions)
+        return self._session is not None and hmac.compare_digest(token, self._session)
+
     def _has_session(self, scope: Scope) -> bool:
-        if self._session is None:
-            return False
         for key, value in scope["headers"]:
+            if key == b"authorization" and self.bearer:
+                scheme, _, token = value.decode("latin-1").partition(" ")
+                if scheme.lower() == "bearer" and hmac.compare_digest(token.strip().encode(), self._secret):
+                    return True
             if key != b"cookie":
                 continue
             try:
                 cookies = SimpleCookie(value.decode("latin-1"))
             except CookieError:
                 continue
-            morsel = cookies.get(COOKIE)
-            if morsel is not None and hmac.compare_digest(morsel.value.encode(), self._session):
+            morsel = cookies.get(self.cookie)
+            if morsel is not None and self._valid(morsel.value.encode()):
                 return True
         return False
 
@@ -135,13 +178,10 @@ class LaunchSecretMiddleware:
         if self._open(path) or self._has_session(scope):
             await self.app(scope, receive, send)
             return
-        await _answer(
-            scope,
-            send,
-            401,
-            "access.launch_required",
-            "This Nodestro belongs to the desktop app that started it; open Nodestro from the app",
-        )
+        if self.reusable and _wants_html(scope):
+            await _page(send, 401, self.refusal)
+            return
+        await _answer(scope, send, 401, "access.launch_required", self.refusal)
 
     async def _launch(self, scope: Scope, send: Send) -> None:
         query = parse_qs(scope.get("query_string", b"").decode("latin-1"))
@@ -149,7 +189,7 @@ class LaunchSecretMiddleware:
         if scope.get("method") != "GET" or not hmac.compare_digest(token, self._secret):
             await _answer(scope, send, 403, "access.launch_invalid", "The launch link is not valid")
             return
-        if self._session is not None:
+        if self._session is not None and not self.reusable:
             await _answer(
                 scope,
                 send,
@@ -158,8 +198,14 @@ class LaunchSecretMiddleware:
                 "The launch link was already used; restart the desktop app to open a new window",
             )
             return
-        self._session = secrets.token_urlsafe(32).encode()
-        cookie = f"{COOKIE}={self._session.decode()}; HttpOnly; SameSite=Strict; Path=/"
+        session = secrets.token_urlsafe(32).encode()
+        if self.reusable:
+            self._sessions[session] = None
+            while len(self._sessions) > MAX_SESSIONS:
+                self._sessions.pop(next(iter(self._sessions)))
+        else:
+            self._session = session
+        cookie = f"{self.cookie}={session.decode()}; HttpOnly; SameSite=Strict; Path=/"
         # Not a redirect: the window's navigation to this URL starts on the app's own page (another site), and a
         # browser does not send a SameSite=Strict cookie on a redirect that a cross-site navigation started.
         # The page below moves on from the backend's own origin, so the cookie goes with the next request.
@@ -178,6 +224,32 @@ class LaunchSecretMiddleware:
             }
         )
         await send({"type": "http.response.body", "body": _CONTINUE})
+
+
+def _wants_html(scope: Scope) -> bool:
+    if scope["type"] != "http" or scope.get("method") != "GET":
+        return False
+    accept = dict(scope["headers"]).get(b"accept", b"").decode("latin-1")
+    return "text/html" in accept
+
+
+async def _page(send: Send, status: int, text: str) -> None:
+    from html import escape
+
+    body = _SIGN_IN.format(text=escape(text)).encode()
+    await send(
+        {
+            "type": "http.response.start",
+            "status": status,
+            "headers": [
+                (b"content-type", b"text/html; charset=utf-8"),
+                (b"content-length", str(len(body)).encode()),
+                (b"cache-control", b"no-store"),
+                (b"content-security-policy", b"default-src 'none'; style-src 'unsafe-inline'"),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": body})
 
 
 async def _answer(scope: Scope, send: Send, status: int, code: str, detail: str) -> None:

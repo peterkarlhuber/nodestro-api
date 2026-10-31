@@ -5147,6 +5147,16 @@
             "title": "Id",
             "type": "string"
           },
+          "loop": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EdgeLoop"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "source": {
             "title": "Source",
             "type": "string"
@@ -5172,6 +5182,31 @@
           "target"
         ],
         "title": "Edge",
+        "type": "object"
+      },
+      "EdgeLoop": {
+        "description": "Makes a connection a loop: following it runs the nodes from its target to its source again.\n\nA loop leaves a decision or approval node through one of its branches and leads back to a node\nbefore it. ``max_iterations`` is mandatory and counts the first run; ``on_exhausted`` says what\nhappens when the branch is taken once more: ``fail`` ends the run as failed\n(``run.loop_exhausted``), ``continue`` ignores the loop, so the node's other open branches decide.",
+        "properties": {
+          "max_iterations": {
+            "maximum": 20.0,
+            "minimum": 2.0,
+            "title": "Max Iterations",
+            "type": "integer"
+          },
+          "on_exhausted": {
+            "default": "fail",
+            "enum": [
+              "fail",
+              "continue"
+            ],
+            "title": "On Exhausted",
+            "type": "string"
+          }
+        },
+        "required": [
+          "max_iterations"
+        ],
+        "title": "EdgeLoop",
         "type": "object"
       },
       "EnableIn": {
@@ -7156,6 +7191,592 @@
         "title": "LockedPackage",
         "type": "object"
       },
+      "McpDecision": {
+        "properties": {
+          "access": {
+            "anyOf": [
+              {
+                "enum": [
+                  "read",
+                  "write",
+                  "destructive"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Access"
+          },
+          "approve": {
+            "title": "Approve",
+            "type": "boolean"
+          },
+          "expected_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Hash"
+          }
+        },
+        "required": [
+          "approve"
+        ],
+        "title": "McpDecision",
+        "type": "object"
+      },
+      "McpDiscovery": {
+        "properties": {
+          "protocol_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol Version"
+          },
+          "server": {
+            "$ref": "#/components/schemas/McpServerView"
+          },
+          "skipped": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Skipped",
+            "type": "array"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/McpToolView"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "server",
+          "protocol_version",
+          "tools"
+        ],
+        "title": "McpDiscovery",
+        "type": "object"
+      },
+      "McpEvent": {
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "server_added",
+              "server_changed",
+              "server_removed",
+              "token_changed",
+              "tools_discovered",
+              "tool_approved",
+              "tool_rejected",
+              "tool_changed",
+              "tool_removed",
+              "call_refused",
+              "oauth_connected",
+              "oauth_disconnected"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "server_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Id"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "McpEvent",
+        "type": "object"
+      },
+      "McpServerIn": {
+        "properties": {
+          "allow_loopback": {
+            "default": false,
+            "title": "Allow Loopback",
+            "type": "boolean"
+          },
+          "auth": {
+            "default": "none",
+            "enum": [
+              "none",
+              "bearer",
+              "oauth"
+            ],
+            "title": "Auth",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "max_output_chars": {
+            "default": 20000,
+            "maximum": 200000.0,
+            "minimum": 1000.0,
+            "title": "Max Output Chars",
+            "type": "integer"
+          },
+          "max_parallel_calls": {
+            "default": 4,
+            "maximum": 16.0,
+            "minimum": 1.0,
+            "title": "Max Parallel Calls",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "default": 60.0,
+            "maximum": 300.0,
+            "minimum": 1.0,
+            "title": "Timeout Seconds",
+            "type": "number"
+          },
+          "token": {
+            "anyOf": [
+              {
+                "maxLength": 8192,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token"
+          },
+          "url": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "url"
+        ],
+        "title": "McpServerIn",
+        "type": "object"
+      },
+      "McpServerView": {
+        "description": "A server as the API shows it: without its token.",
+        "properties": {
+          "allow_loopback": {
+            "title": "Allow Loopback",
+            "type": "boolean"
+          },
+          "auth": {
+            "enum": [
+              "none",
+              "bearer",
+              "oauth"
+            ],
+            "title": "Auth",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked At"
+          },
+          "last_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Code"
+          },
+          "last_error_params": {
+            "additionalProperties": true,
+            "title": "Last Error Params",
+            "type": "object"
+          },
+          "max_output_chars": {
+            "title": "Max Output Chars",
+            "type": "integer"
+          },
+          "max_parallel_calls": {
+            "title": "Max Parallel Calls",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "oauth": {
+            "additionalProperties": true,
+            "title": "Oauth",
+            "type": "object"
+          },
+          "protocol_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol Version"
+          },
+          "server_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Name"
+          },
+          "server_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Version"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "title": "Timeout Seconds",
+            "type": "number"
+          },
+          "token_set": {
+            "title": "Token Set",
+            "type": "boolean"
+          },
+          "token_storage": {
+            "enum": [
+              "none",
+              "vault",
+              "session"
+            ],
+            "title": "Token Storage",
+            "type": "string"
+          },
+          "tools_approved": {
+            "default": 0,
+            "title": "Tools Approved",
+            "type": "integer"
+          },
+          "tools_pending": {
+            "default": 0,
+            "title": "Tools Pending",
+            "type": "integer"
+          },
+          "tools_total": {
+            "default": 0,
+            "title": "Tools Total",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "url",
+          "enabled",
+          "allow_loopback",
+          "auth",
+          "token_set",
+          "token_storage",
+          "timeout_seconds",
+          "max_output_chars",
+          "max_parallel_calls",
+          "protocol_version",
+          "server_name",
+          "server_version",
+          "last_checked_at",
+          "last_error_code",
+          "last_error_params",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "McpServerView",
+        "type": "object"
+      },
+      "McpStatus": {
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "endpoint_list": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint List"
+          },
+          "loopback_possible": {
+            "title": "Loopback Possible",
+            "type": "boolean"
+          },
+          "token_vault": {
+            "title": "Token Vault",
+            "type": "boolean"
+          },
+          "unattended_enabled": {
+            "title": "Unattended Enabled",
+            "type": "boolean"
+          },
+          "write_tools_enabled": {
+            "title": "Write Tools Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "available",
+          "token_vault",
+          "endpoint_list",
+          "loopback_possible",
+          "unattended_enabled",
+          "write_tools_enabled"
+        ],
+        "title": "McpStatus",
+        "type": "object"
+      },
+      "McpToolView": {
+        "properties": {
+          "access": {
+            "enum": [
+              "read",
+              "write",
+              "destructive"
+            ],
+            "title": "Access",
+            "type": "string"
+          },
+          "approved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "approved_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved By"
+          },
+          "approved_definition": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolDefinition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "approved_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved Hash"
+          },
+          "definition": {
+            "$ref": "#/components/schemas/ToolDefinition"
+          },
+          "discovered_at": {
+            "format": "date-time",
+            "title": "Discovered At",
+            "type": "string"
+          },
+          "hash": {
+            "title": "Hash",
+            "type": "string"
+          },
+          "last_seen_at": {
+            "format": "date-time",
+            "title": "Last Seen At",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "refusal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refusal"
+          },
+          "server_id": {
+            "title": "Server Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "suggested_access": {
+            "enum": [
+              "read",
+              "write",
+              "destructive"
+            ],
+            "title": "Suggested Access",
+            "type": "string"
+          },
+          "tool_name": {
+            "title": "Tool Name",
+            "type": "string"
+          },
+          "usable": {
+            "title": "Usable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "server_id",
+          "name",
+          "tool_name",
+          "status",
+          "access",
+          "suggested_access",
+          "hash",
+          "definition",
+          "discovered_at",
+          "last_seen_at",
+          "usable"
+        ],
+        "title": "McpToolView",
+        "type": "object"
+      },
       "MemoryConfig": {
         "description": "``run`` keeps memory for one workflow run, ``persistent`` in a named space.",
         "properties": {
@@ -7888,6 +8509,13 @@
               }
             ]
           },
+          "earlier": {
+            "items": {
+              "$ref": "#/components/schemas/NodeRun"
+            },
+            "title": "Earlier",
+            "type": "array"
+          },
           "error": {
             "anyOf": [
               {
@@ -7954,6 +8582,13 @@
               }
             ],
             "title": "Finished At"
+          },
+          "iteration": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Iteration",
+            "type": "array"
           },
           "memory": {
             "anyOf": [
@@ -11464,6 +12099,18 @@
             ],
             "title": "Finished At"
           },
+          "flow_state": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flow State"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -14109,6 +14756,11 @@
             ],
             "title": "Output"
           },
+          "provenance": {
+            "additionalProperties": true,
+            "title": "Provenance",
+            "type": "object"
+          },
           "started_at": {
             "format": "date-time",
             "title": "Started At",
@@ -14148,6 +14800,58 @@
           }
         },
         "title": "ToolChoice",
+        "type": "object"
+      },
+      "ToolDefinition": {
+        "description": "What a server says about a tool: the part whose hash pins an approval.",
+        "properties": {
+          "annotations": {
+            "additionalProperties": true,
+            "title": "Annotations",
+            "type": "object"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "input_schema": {
+            "additionalProperties": true,
+            "title": "Input Schema",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "output_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Schema"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ToolDefinition",
         "type": "object"
       },
       "ToolDependencyRequest": {
@@ -14297,6 +15001,20 @@
       },
       "ToolInfo": {
         "properties": {
+          "capability": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capability"
+          },
           "code": {
             "anyOf": [
               {
@@ -14318,6 +15036,17 @@
               }
             ],
             "title": "Created At"
+          },
+          "definition_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Definition Hash"
           },
           "description": {
             "title": "Description",
@@ -14350,10 +15079,22 @@
             "enum": [
               "builtin",
               "custom",
-              "generated"
+              "generated",
+              "mcp"
             ],
             "title": "Kind",
             "type": "string"
+          },
+          "mcp_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mcp Name"
           },
           "name": {
             "title": "Name",
@@ -14369,6 +15110,28 @@
               }
             ],
             "title": "Requirement"
+          },
+          "server_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Id"
+          },
+          "server_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Name"
           },
           "tests": {
             "anyOf": [
@@ -19349,6 +20112,386 @@
           }
         },
         "summary": "Download Library Sample"
+      }
+    },
+    "/api/mcp/events": {
+      "get": {
+        "description": "Administration and policy events, newest first (no secrets, no tool arguments).",
+        "operationId": "list_events_api_mcp_events_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/McpEvent"
+                  },
+                  "title": "Response List Events Api Mcp Events Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Events"
+      }
+    },
+    "/api/mcp/servers": {
+      "get": {
+        "operationId": "list_servers_api_mcp_servers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/McpServerView"
+                  },
+                  "title": "Response List Servers Api Mcp Servers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Servers"
+      },
+      "post": {
+        "operationId": "add_server_api_mcp_servers_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpServerIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServerView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Server"
+      }
+    },
+    "/api/mcp/servers/{server_id}": {
+      "delete": {
+        "operationId": "remove_server_api_mcp_servers__server_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Server"
+      },
+      "get": {
+        "operationId": "get_server_api_mcp_servers__server_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServerView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Server"
+      },
+      "put": {
+        "operationId": "update_server_api_mcp_servers__server_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpServerIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServerView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Server"
+      }
+    },
+    "/api/mcp/servers/{server_id}/discover": {
+      "post": {
+        "description": "Connect, negotiate the protocol version and list the tools (the \"test connection\" of the studio).",
+        "operationId": "discover_server_api_mcp_servers__server_id__discover_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpDiscovery"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discover Server"
+      }
+    },
+    "/api/mcp/servers/{server_id}/tools": {
+      "get": {
+        "operationId": "list_tools_api_mcp_servers__server_id__tools_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/McpToolView"
+                  },
+                  "title": "Response List Tools Api Mcp Servers  Server Id  Tools Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Tools"
+      }
+    },
+    "/api/mcp/servers/{server_id}/tools/{name}/decision": {
+      "post": {
+        "operationId": "decide_tool_api_mcp_servers__server_id__tools__name__decision_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpToolView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decide Tool"
+      }
+    },
+    "/api/mcp/status": {
+      "get": {
+        "operationId": "mcp_status_api_mcp_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Mcp Status"
       }
     },
     "/api/memory": {

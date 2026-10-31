@@ -24,6 +24,13 @@ As long as the studio API has no login, it is never offered to the network
 
 Published workflow APIs (``/api/published``) are protected by their keys: forwarded requests to them are
 accepted, and the network listener (:mod:`nodestro_api.network`) serves them to other devices.
+
+Nodestro Local Docker (:mod:`nodestro_api.local_container`) listens on every interface *of its container* and is
+reached through a port the host publishes on its own loopback. There the checks are strict
+(``strict_origin``): only loopback host names are answered (not the container's addresses or name), and changing
+requests and WebSockets are accepted only from exactly the origin the request was sent to, so a page served by another
+program on ``localhost`` (same site, other port) cannot use the studio either. The access key
+(:mod:`nodestro_api.launch`) is the authentication.
 """
 
 from __future__ import annotations
@@ -127,12 +134,16 @@ def require_loopback_only(bind_host: str | None, extra_hosts: Iterable[str] = ()
 class LocalAccessMiddleware:
     """Refuse requests with a foreign ``Host`` (DNS rebinding) and changing requests with a foreign ``Origin``."""
 
-    def __init__(self, app: ASGIApp, *, hosts: frozenset[str] | None, ip_addresses: bool = False) -> None:
+    def __init__(
+        self, app: ASGIApp, *, hosts: frozenset[str] | None, ip_addresses: bool = False, strict_origin: bool = False
+    ) -> None:
         """``ip_addresses``: answer every IP address (listening on every interface); a page cannot
-        rebind an address, only a name."""
+        rebind an address, only a name. ``strict_origin``: accept changes and WebSockets only from the exact origin
+        of the request (Nodestro Local Docker)."""
         self.app = app
         self.hosts = hosts
         self.ip_addresses = ip_addresses
+        self.strict_origin = strict_origin
 
     def _host_allowed(self, host: str) -> bool:
         if self.hosts is None or is_loopback(host) or host in self.hosts:
@@ -145,6 +156,8 @@ class LocalAccessMiddleware:
             return False  # "null" (sandboxed frames, files) and other schemes
         if parts.netloc.lower() == host_header.strip().lower():
             return True  # the studio's own pages
+        if self.strict_origin:
+            return False
         return is_loopback(parts.hostname) or (self.hosts is not None and parts.hostname in self.hosts)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -176,7 +189,9 @@ class LocalAccessMiddleware:
             )
             return
         origin = headers.get("origin")
-        changing = scope.get("method", "GET") not in SAFE_METHODS
+        changing = scope.get("method", "GET") not in SAFE_METHODS or (
+            self.strict_origin and scope["type"] == "websocket"
+        )
         if origin is not None and changing and not self._origin_allowed(origin, host_header):
             await _refuse(
                 scope,
