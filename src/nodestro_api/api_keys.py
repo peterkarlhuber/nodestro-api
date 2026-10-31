@@ -14,7 +14,7 @@ import threading
 
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.schemas import now
-from nodestro_runtime.storage import Store
+from nodestro_runtime.storage import DocumentStore
 from pydantic import BaseModel, Field
 
 from .serving import SCOPES, KeyIdentity, hash_secret, new_key, secret_matches
@@ -68,7 +68,7 @@ class ApiKeys:
     lock, a verification that read a key before it was revoked could store it back unrevoked.
     """
 
-    def __init__(self, store: Store) -> None:
+    def __init__(self, store: DocumentStore) -> None:
         self.store = store
         self._lock = threading.RLock()
 

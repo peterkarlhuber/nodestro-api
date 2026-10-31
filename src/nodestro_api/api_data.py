@@ -28,7 +28,7 @@ from .backup import (
 )
 from .diagnostics import DiagnosticCheck, Diagnostics, check_connection, run_diagnostics
 from .organize import Kind, Organize, OrganizeState
-from .permissions import ADMIN, EDIT, READ
+from .permissions import EDIT, INSTALL, READ
 from .search import SearchResult, search
 
 router = APIRouter(prefix="/api")
@@ -60,13 +60,13 @@ def organize_item(kind: Kind, item_id: str, body: Organize, ctx: Ctx) -> Organiz
 # ---- diagnosis ------------------------------------------------------------------
 
 
-@router.get("/diagnostics", dependencies=ADMIN)
+@router.get("/diagnostics", dependencies=INSTALL)
 async def diagnostics(ctx: Ctx) -> Diagnostics:
     """Local checks only: free, no network (the sandbox check runs a tiny test tool)."""
     return await asyncio.to_thread(run_diagnostics, ctx)
 
 
-@router.post("/diagnostics/connection", dependencies=ADMIN)
+@router.post("/diagnostics/connection", dependencies=INSTALL)
 async def diagnostics_connection(ctx: Ctx, provider: str | None = None) -> DiagnosticCheck:
     """Reach a provider's API (default: the default model's) by listing its models; no tokens, no cost."""
     return await asyncio.to_thread(check_connection, ctx, provider)
@@ -85,7 +85,7 @@ def _remove(path: Path) -> None:
     shutil.rmtree(path, ignore_errors=True)
 
 
-@router.get("/backup", dependencies=ADMIN)
+@router.get("/backup", dependencies=INSTALL)
 async def download_backup(ctx: Ctx) -> FileResponse:
     """A complete backup as a ZIP file (without the API key)."""
     directory = Path(tempfile.mkdtemp(prefix="nodestro-export-"))
@@ -96,7 +96,7 @@ async def download_backup(ctx: Ctx) -> FileResponse:
     )
 
 
-@router.post("/backup/inspect", dependencies=ADMIN)
+@router.post("/backup/inspect", dependencies=INSTALL)
 async def inspect(ctx: Ctx, file: Annotated[UploadFile, File()]) -> BackupInfo:
     """Check an uploaded backup completely; nothing is changed yet."""
     directory = Path(tempfile.mkdtemp(prefix="nodestro-upload-"))
@@ -109,7 +109,7 @@ async def inspect(ctx: Ctx, file: Annotated[UploadFile, File()]) -> BackupInfo:
         _remove(directory)
 
 
-@router.post("/backup/restore", dependencies=ADMIN)
+@router.post("/backup/restore", dependencies=INSTALL)
 async def restore(body: RestoreRequest, ctx: Ctx) -> RestoreResult:
     """Replace all data with a checked backup; the current state is saved as a safety backup first."""
     if not body.confirm:
@@ -120,17 +120,17 @@ async def restore(body: RestoreRequest, ctx: Ctx) -> RestoreResult:
     return result
 
 
-@router.get("/backup/local", dependencies=ADMIN)
+@router.get("/backup/local", dependencies=INSTALL)
 def list_local_backups(ctx: Ctx) -> list[LocalBackup]:
     return local_backups(ctx)
 
 
-@router.get("/backup/local/{name}", dependencies=ADMIN)
+@router.get("/backup/local/{name}", dependencies=INSTALL)
 def download_local_backup(name: str, ctx: Ctx) -> FileResponse:
     return FileResponse(local_backup_path(ctx, name), media_type="application/zip", filename=name)
 
 
-@router.post("/backup/local/{name}/inspect", dependencies=ADMIN)
+@router.post("/backup/local/{name}/inspect", dependencies=INSTALL)
 async def inspect_local(name: str, ctx: Ctx) -> BackupInfo:
     """Check a backup kept in the data directory, e.g. the safety copy of a restore."""
     path = local_backup_path(ctx, name)

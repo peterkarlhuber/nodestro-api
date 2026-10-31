@@ -108,7 +108,7 @@ def _providers(nodestro: Nodestro) -> DiagnosticCheck:
 
 
 def _database(nodestro: Nodestro) -> DiagnosticCheck:
-    path = Path(nodestro.store.database)
+    path = Path(nodestro.sqlite_store.database)
     try:
         connection = sqlite3.connect(path, timeout=10)
         try:

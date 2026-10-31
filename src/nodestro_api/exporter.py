@@ -60,7 +60,7 @@ from .publishing import Publication, PublicationEvent, Release
 from .serving import ApiLimits, ServedRelease
 
 if TYPE_CHECKING:
-    from nodestro_runtime.storage import Store
+    from nodestro_runtime.storage import DocumentStore
 
     from .context import Nodestro
 
@@ -1885,7 +1885,7 @@ def records(ctx: Nodestro, publication_id: str) -> list[ExportRecord]:
     return sorted(found, key=lambda item: item.created_at, reverse=True)
 
 
-def normalize_records(store: Store) -> None:
+def normalize_records(store: DocumentStore) -> None:
     """Bring stored export records to the current format (idempotent).
 
     Options keep only the fields of :class:`ExportOptions`; an unknown field holding the library

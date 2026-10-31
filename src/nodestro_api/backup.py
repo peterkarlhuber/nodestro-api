@@ -162,7 +162,7 @@ def _count(connection: sqlite3.Connection) -> BackupContents:
 
 
 def current_contents(nodestro: Nodestro) -> BackupContents:
-    connection = sqlite3.connect(nodestro.store.database, timeout=30)
+    connection = sqlite3.connect(nodestro.sqlite_store.database, timeout=30)
     try:
         contents = _count(connection)
     finally:
@@ -181,7 +181,7 @@ def create_backup(nodestro: Nodestro, target: Path) -> BackupContents:
     """Write a complete backup of the current data to ``target`` (a .zip file)."""
     with tempfile.TemporaryDirectory(prefix="nodestro-backup-") as directory:
         database = Path(directory) / "nodestro.db"
-        nodestro.store.snapshot(database)
+        nodestro.sqlite_store.snapshot(database)
         snapshot = sqlite3.connect(database)
         try:
             row = snapshot.execute(
@@ -554,7 +554,7 @@ def _restore(nodestro: Nodestro, backup_id: str) -> RestoreResult:
         else:
             (staged_inputs / "blobs").mkdir(parents=True)
         keep = nodestro.store.get_raw("settings", "app") or {}
-        with nodestro.store.maintenance() as connection:
+        with nodestro.sqlite_store.maintenance() as connection:
             _copy_tables(connection, source / "nodestro.db", keep)
     except BaseException:
         shutil.rmtree(staged, ignore_errors=True)
@@ -564,7 +564,7 @@ def _restore(nodestro: Nodestro, backup_id: str) -> RestoreResult:
     _swap(staged, tools, data_dir / f".tools-old-{backup_id}")
     _swap(staged_inputs, data_dir / "inputs", data_dir / f".inputs-old-{backup_id}")
     nodestro.reload_after_restore()
-    connection = sqlite3.connect(nodestro.store.database, timeout=30)
+    connection = sqlite3.connect(nodestro.sqlite_store.database, timeout=30)
     try:
         contents = _count(connection)
     finally:

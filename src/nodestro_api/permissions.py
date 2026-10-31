@@ -16,8 +16,11 @@ Permissions (the strongest one that applies is declared):
 - ``edit``: create, change and delete definitions and stored data (workflows, agents, knowledge, memory, files).
 - ``run``: everything that executes something or costs money: runs, approvals, batches, test series,
   schedules, tool code (checks, tests, tool generation) and requests to model providers (assistant, architect).
-- ``admin``: the installation: settings, provider keys, API keys and publishing, the network listener,
-  Python package installations, backups and restore, diagnostics.
+- ``admin``: the settings of a tenant (on the desktop: of the installation): settings, provider keys, API keys
+  and publishing, Python package installations.
+- ``install``: the installation itself, which only its operator may change: backups and restore, diagnostics,
+  the network listener. The desktop's local owner holds it; on a server no tenant role does (operators work
+  through the deployment, ADR-0003).
 
 Two kinds of routes check no principal and say so explicitly: :data:`PUBLIC` routes (the health check) and the
 published workflow APIs under ``/api/published``, which authenticate their callers with Nodestro API keys
@@ -27,8 +30,9 @@ published workflow APIs under ``/api/published``, which authenticate their calle
 (``/api/docs``, ``/api/openapi.json``) is public as well.
 
 In the desktop profile there is one principal, the local owner (:data:`LOCAL_OWNER`), who holds every
-permission: the studio API behaves as before. The server profile will resolve principals from logins
-(OpenID Connect) and tenants; until then it cannot be started (``profile.server_unavailable``).
+permission: the studio API behaves as before. On a server, principals come from logins (OpenID Connect,
+:mod:`nodestro_api.identity`): one user in one tenant with one role. The server profile cannot be started
+yet (``profile.server_unavailable``).
 """
 
 from __future__ import annotations
@@ -54,6 +58,7 @@ class Permission(str, Enum):
     EDIT = "edit"
     RUN = "run"
     ADMIN = "admin"
+    INSTALL = "install"
 
 
 #: Every permission (the local owner holds all of them).
@@ -62,10 +67,14 @@ ALL_PERMISSIONS = frozenset(Permission)
 
 @dataclass(frozen=True)
 class Principal:
-    """Who sends a request: an id and the permissions granted to it."""
+    """Who sends a request: an id, the permissions granted to it, and the tenant whose data it works on."""
 
     id: str
     permissions: frozenset[Permission]
+    #: The tenant of the request (``local``: the desktop's own data).
+    tenant_id: str = "local"
+    #: The role in the tenant the permissions come from (``None``: not a tenant member, e.g. the local owner).
+    role: str | None = None
 
     def allows(self, permission: Permission) -> bool:
         return permission in self.permissions
@@ -144,6 +153,7 @@ READ = _requirement(Access(Permission.READ))
 EDIT = _requirement(Access(Permission.EDIT))
 RUN = _requirement(Access(Permission.RUN))
 ADMIN = _requirement(Access(Permission.ADMIN))
+INSTALL = _requirement(Access(Permission.INSTALL))
 PUBLIC = _requirement(Access(None, public=True))
 
 #: Routes authenticated by something other than a principal, with the reason (checked by :func:`check_routes`).
@@ -160,7 +170,7 @@ class RouteAccess:
 
     path: str
     method: str
-    access: str  # "read", "edit", "run", "admin", "public", "api_key" or "generated"
+    access: str  # "read", "edit", "run", "admin", "install", "public", "api_key" or "generated"
     reason: str = ""
 
 
@@ -255,6 +265,7 @@ __all__ = [
     "ADMIN",
     "ALL_PERMISSIONS",
     "EDIT",
+    "INSTALL",
     "LOCAL_OWNER",
     "PUBLIC",
     "READ",
