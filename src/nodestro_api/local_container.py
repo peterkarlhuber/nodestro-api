@@ -9,7 +9,10 @@ not switched off but replaced by stricter ones:
 - **An access key** (256 bits, ``NODESTRO_ACCESS_KEY_FILE``, created on first start with mode ``0600``) is required
   for every request except the health check and the key-protected published APIs. The browser exchanges it once per
   session through the link ``nodestro-local link`` prints (``/api/launch?token=...``) for an ``HttpOnly``,
-  ``SameSite=Strict`` session cookie; scripts send it as ``Authorization: Bearer``. Other users and programs of the
+  ``SameSite=Strict`` session cookie; scripts send it as ``Authorization: Bearer``. Browser sessions exist only under
+  the installation's random host name ``nodestro-<random>.localhost`` (cookies are scoped by host name, not by port,
+  so a cookie for ``localhost`` would also reach every other local web server), end after 8 hours without a request
+  or 24 hours at most, and end with ``/api/logout``. Other users and programs of the
   host, other containers and (on Linux) other hosts that can route to the container's address have no key.
 - **Host and Origin checks without exceptions**: only loopback host names are answered (``localhost``,
   ``127.0.0.1``, ``[::1]``; not the container's addresses or name, so DNS rebinding and requests to the container's
@@ -22,9 +25,9 @@ not switched off but replaced by stricter ones:
 
 The ``nodestro-local`` command runs inside the container (the launcher on the host calls it with
 ``docker compose exec``): ``serve`` starts the studio, ``link`` prints the browser link, ``rotate-key`` replaces the
-access key, ``backup`` and ``restore`` use the studio's own complete backups (:mod:`nodestro_api.backup`) through
-the running API, ``status`` and ``check`` report readiness, and ``gateway`` runs the sandbox gateway (the same image,
-another container).
+access key and the browser host name, ``logout`` ends every browser session, ``backup`` and ``restore`` use the
+studio's own complete backups (:mod:`nodestro_api.backup`) through the running API, ``status`` and ``check`` report
+readiness, and ``gateway`` runs the sandbox gateway (the same image, another container).
 """
 
 from __future__ import annotations
@@ -34,6 +37,7 @@ from collections.abc import Iterable, Sequence
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import stat
 import sys
@@ -50,6 +54,21 @@ from .local_access import is_loopback, split_host
 #: Where the access key is read from (and created on first start by ``nodestro-local serve``).
 ENV_KEY_FILE = "NODESTRO_ACCESS_KEY_FILE"
 DEFAULT_KEY_FILE = "/var/lib/nodestro/secrets/access-key"
+#: The browser's host name: a random ``*.localhost`` name per installation, in a file next to the access key
+#: (``docs/SESSIONS.md`` in nodestro-local-docker). ``NODESTRO_BROWSER_HOST`` replaces it with another loopback
+#: name, which gives up its protection.
+BROWSER_HOST_FILE = "browser-host"
+ENV_BROWSER_HOST = "NODESTRO_BROWSER_HOST"
+_BROWSER_HOST = re.compile(r"nodestro-[a-z0-9]{10}\.localhost")
+_HOST_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789"
+#: The port Docker publishes on the host's loopback (set by compose.yaml).
+ENV_HOST_PORT = "NODESTRO_HOST_PORT"
+DEFAULT_HOST_PORT = 8765
+#: How long a browser session lasts: hours without a request, and hours after it was opened.
+ENV_SESSION_IDLE = "NODESTRO_SESSION_IDLE_HOURS"
+ENV_SESSION_MAX = "NODESTRO_SESSION_MAX_HOURS"
+DEFAULT_SESSION_IDLE_HOURS = 8.0
+DEFAULT_SESSION_MAX_HOURS = 24.0
 #: Where the studio listens inside the container.
 CONTAINER_PORT = 8080
 _BASE = f"http://127.0.0.1:{CONTAINER_PORT}"
@@ -85,6 +104,15 @@ def read_access_key(path: Path) -> str:
     return text
 
 
+def _write_private(path: Path, text: str) -> None:
+    """Write ``text`` to ``path`` with mode 0600, replacing it atomically."""
+    staging = path.with_name(f".{path.name}.{uuid.uuid4().hex}")
+    descriptor = os.open(staging, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "w", encoding="ascii") as handle:
+        handle.write(text + "\n")
+    os.replace(staging, path)
+
+
 def create_access_key(path: Path, *, replace: bool = False) -> str:
     """Write a new random key (256 bits) with mode 0600; keeps an existing one unless ``replace``."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -92,11 +120,7 @@ def create_access_key(path: Path, *, replace: bool = False) -> str:
     if path.exists() and not replace:
         return read_access_key(path)
     key = secrets.token_urlsafe(32)
-    staging = path.with_name(f".{path.name}.{uuid.uuid4().hex}")
-    descriptor = os.open(staging, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(descriptor, "w", encoding="ascii") as handle:
-        handle.write(key + "\n")
-    os.replace(staging, path)
+    _write_private(path, key)
     return key
 
 
@@ -107,16 +131,117 @@ def access_key_from_env() -> str | None:
     return read_access_key(key_file())
 
 
+# ---- the browser's host name ----------------------------------------------------------------------------------
+
+
+def browser_host_file(environ: dict[str, str] | None = None) -> Path:
+    """The file with the browser's host name: next to the access key."""
+    return key_file(environ).with_name(BROWSER_HOST_FILE)
+
+
+def read_browser_host(path: Path) -> str:
+    """The host name in ``path``; refuses a missing, malformed or group/world-readable file
+    (``access.browser_host_invalid``)."""
+    try:
+        info = path.stat()
+        text = path.read_text(encoding="ascii").strip()
+    except (OSError, UnicodeDecodeError) as exc:
+        raise NodestroError(
+            "access.browser_host_invalid", f"The host name file {path} cannot be read: {exc}", path=str(path)
+        ) from None
+    if stat.S_IMODE(info.st_mode) & 0o077:
+        raise NodestroError(
+            "access.browser_host_invalid",
+            f"The host name file {path} must be readable by its owner only (mode 0600)",
+            path=str(path),
+        )
+    if not _BROWSER_HOST.fullmatch(text):
+        raise NodestroError(
+            "access.browser_host_invalid", f"The host name in {path} is not a Nodestro host name", path=str(path)
+        )
+    return text
+
+
+def create_browser_host(path: Path, *, replace: bool = False) -> str:
+    """Write a new random ``nodestro-<10 letters and digits>.localhost`` (about 51 bits) with mode 0600; keeps an
+    existing one unless ``replace``."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() and not replace:
+        return read_browser_host(path)
+    name = "nodestro-" + "".join(secrets.choice(_HOST_ALPHABET) for _ in range(10)) + ".localhost"
+    _write_private(path, name)
+    return name
+
+
+def is_private_host(host: str) -> bool:
+    """Whether ``host`` is a random Nodestro host name (and not a name other local programs share)."""
+    return _BROWSER_HOST.fullmatch(host) is not None
+
+
+def browser_host_from_env(environ: dict[str, str] | None = None) -> str | None:
+    """The browser's host name: ``NODESTRO_BROWSER_HOST`` when set (a loopback name or address), otherwise the file
+    next to ``NODESTRO_ACCESS_KEY_FILE``; ``None`` when neither exists."""
+    environ = dict(os.environ) if environ is None else environ
+    override = environ.get(ENV_BROWSER_HOST, "").strip().lower().strip("[]")
+    if override:
+        if override.count(":") == 1 or not is_loopback(override):
+            raise NodestroError(
+                "access.network_needs_login",
+                f"{ENV_BROWSER_HOST} must be a loopback name or address without a port; refused: {override}",
+                host=override,
+                hosts=[override],
+            )
+        return override
+    if not environ.get(ENV_KEY_FILE, "").strip():
+        return None
+    path = browser_host_file(environ)
+    return read_browser_host(path) if path.exists() else None
+
+
+def _number_from_env(environ: dict[str, str], name: str, default: float, *, integer: bool = False) -> float:
+    raw = environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw) if integer else float(raw)
+    except ValueError:
+        value = 0
+    if value <= 0 or (integer and value > 65535):
+        raise NodestroError("config.invalid", f"{name} must be a positive number; got {raw!r}", name=name)
+    return value
+
+
+def host_port_from_env(environ: dict[str, str] | None = None) -> int:
+    """The port Docker publishes on the host (``NODESTRO_HOST_PORT``, default 8765)."""
+    environ = dict(os.environ) if environ is None else environ
+    return int(_number_from_env(environ, ENV_HOST_PORT, DEFAULT_HOST_PORT, integer=True))
+
+
+def session_hours_from_env(environ: dict[str, str] | None = None) -> tuple[float, float]:
+    """The idle and maximum hours of a browser session (``NODESTRO_SESSION_IDLE_HOURS``, ``_MAX_HOURS``)."""
+    environ = dict(os.environ) if environ is None else environ
+    return (
+        _number_from_env(environ, ENV_SESSION_IDLE, DEFAULT_SESSION_IDLE_HOURS),
+        _number_from_env(environ, ENV_SESSION_MAX, DEFAULT_SESSION_MAX_HOURS),
+    )
+
+
 # ---- the configuration ------------------------------------------------------------------------------------------
 
 
-def require_safe_configuration(access_key: str | None, extra_hosts: Iterable[str]) -> None:
-    """Refuse a local container without access key or with non-loopback host names (``access.key_required``,
-    ``access.network_needs_login``)."""
+def require_safe_configuration(access_key: str | None, extra_hosts: Iterable[str], browser_host: str | None) -> None:
+    """Refuse a local container without access key or browser host name, or with non-loopback host names
+    (``access.key_required``, ``access.browser_host_required``, ``access.network_needs_login``)."""
     if access_key is None:
         raise NodestroError(
             "access.key_required",
             f"Nodestro Local Docker needs an access key ({ENV_KEY_FILE}); start it with nodestro-local serve",
+        )
+    if browser_host is None or not is_loopback(browser_host):
+        raise NodestroError(
+            "access.browser_host_required",
+            "Nodestro Local Docker needs its browser host name (a loopback name next to the access key, or "
+            f"{ENV_BROWSER_HOST}); start it with nodestro-local serve",
         )
     others = [item.strip() for item in extra_hosts if item.strip() and not is_loopback(split_host(item.strip()))]
     if others:
@@ -232,6 +357,28 @@ def status_report(key: str) -> dict[str, Any]:
     return report
 
 
+def launch_link(key: str, *, host: str | None = None, port: int | None = None) -> str:
+    """The browser link; warns on standard error when the host name is one that other local programs share."""
+    try:
+        name = host if host is not None else browser_host_from_env({**os.environ, ENV_KEY_FILE: str(key_file())})
+        port = port if port is not None else host_port_from_env()
+    except NodestroError as error:
+        raise SystemExit(str(error)) from None
+    if name is None:
+        raise SystemExit("Nodestro has not created its browser host name yet; start it with nodestro-local serve")
+    name = name.strip("[]").lower()
+    if not is_loopback(name):
+        raise SystemExit("Nodestro Local Docker is only reachable through the host's loopback")
+    if not is_private_host(name):
+        print(
+            f"Warning: the host name {name} is shared with other programs on this computer, which can then receive "
+            "the session cookie. Leave NODESTRO_BROWSER_HOST unset unless the browser cannot open *.localhost names.",
+            file=sys.stderr,
+        )
+    shown = f"[{name}]" if ":" in name else name
+    return f"http://{shown}:{port}{LAUNCH_PATH}?token={key}"
+
+
 # ---- the command ------------------------------------------------------------------------------------------------
 
 
@@ -240,6 +387,7 @@ def _serve(args: argparse.Namespace) -> None:
 
     path = key_file()
     create_access_key(path)
+    create_browser_host(browser_host_file())
     os.environ[ENV_KEY_FILE] = str(path)
     os.environ["NODESTRO_PROFILE"] = "local-container"
     os.environ["NODESTRO_HOST"] = "0.0.0.0"  # the container's interfaces; published on loopback
@@ -258,9 +406,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("serve", help="Start the studio (the container's main process)")
     link = commands.add_parser("link", help="Print the link that opens Nodestro in the browser")
-    link.add_argument("--port", type=int, default=int(os.environ.get("NODESTRO_HOST_PORT", "8765")))
-    link.add_argument("--host", default="127.0.0.1", help="The host's loopback name or address")
-    commands.add_parser("rotate-key", help="Replace the access key (restart the container afterwards)")
+    link.add_argument("--port", type=int, default=None, help=f"The published port (default: {ENV_HOST_PORT} or 8765)")
+    link.add_argument("--host", default=None, help="The host's loopback name or address (default: the browser host)")
+    commands.add_parser(
+        "rotate-key", help="Replace the access key and the browser host name (restart the container afterwards)"
+    )
+    commands.add_parser("logout", help="End every browser session of the running studio")
     make = commands.add_parser("backup", help="Write a complete backup (ZIP) of the running studio")
     make.add_argument("output", nargs="?", default="-", help="File, or - for standard output (default)")
     back = commands.add_parser("restore", help="Restore a backup (ZIP) into the running studio")
@@ -281,17 +432,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         return sandbox_gateway.main(["--listen", args.listen, "--docker", args.docker])
     if args.command == "rotate-key":
         create_access_key(key_file(), replace=True)
-        print("A new access key was created. Restart Nodestro; open it with the new link afterwards.")
+        create_browser_host(browser_host_file(), replace=True)
+        print(
+            "A new access key and browser host name were created. Restart Nodestro; open it with the new link "
+            "afterwards."
+        )
         return 0
     try:
         key = read_access_key(key_file())
     except NodestroError as error:
         raise SystemExit(str(error)) from None
     if args.command == "link":
-        if not is_loopback(args.host):
-            raise SystemExit("Nodestro Local Docker is only reachable through the host's loopback")
-        host = f"[{args.host}]" if ":" in args.host else args.host
-        print(f"http://{host}:{args.port}{LAUNCH_PATH}?token={key}")
+        print(launch_link(key, host=args.host, port=args.port))
+        return 0
+    if args.command == "logout":
+        code, body = _request("POST", "/api/logout?all=1", key, timeout=30)
+        if code != 200:
+            raise SystemExit(f"Signing out failed (HTTP {code}): {_detail(body)}")
+        print(f"Every browser session was ended ({json.loads(body).get('ended', 0)}).")
         return 0
     if args.command == "backup":
         written = backup(key, args.output)
@@ -312,15 +470,26 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 __all__ = [
     "CONTAINER_PORT",
+    "DEFAULT_HOST_PORT",
+    "ENV_BROWSER_HOST",
+    "ENV_HOST_PORT",
     "ENV_KEY_FILE",
     "REFUSAL",
     "access_key_from_env",
+    "browser_host_file",
+    "browser_host_from_env",
     "create_access_key",
+    "create_browser_host",
+    "host_port_from_env",
+    "is_private_host",
     "key_file",
+    "launch_link",
     "loopback_hosts",
     "main",
     "read_access_key",
+    "read_browser_host",
     "require_safe_configuration",
+    "session_hours_from_env",
 ]
 
 
