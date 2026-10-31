@@ -28,8 +28,10 @@ from .api_pricing import router as pricing_router
 from .api_publish import router as publish_router
 from .api_python import router as python_router
 from .context import AppConfig, Nodestro
-from .launch import LaunchSecretMiddleware, check_secret
+from .launch import LOCAL_COOKIE, LaunchSecretMiddleware, check_secret
 from .local_access import LocalAccessMiddleware, allowed_hosts, listens_everywhere, require_loopback_only
+from .local_container import REFUSAL as LOCAL_REFUSAL
+from .local_container import loopback_hosts, require_safe_configuration
 from .permissions import check_routes, resolver_for
 from .serving import build_router
 
@@ -49,15 +51,19 @@ def create_app(
     ``ocr_runner`` the local OCR (tests). ``scheduler=False`` leaves schedules to explicit ticks (tests).
 
     Before anything is opened, the configuration is checked as the command line checks it: the operating
-    profile must be the desktop (``profile.invalid``; a server starts with ``nodestro-server``), and
-    the login-less studio API is only offered on this computer (``access.network_needs_login``), and a
-    launch secret must be long enough (``access.launch_secret_weak``).
+    profile must be the desktop or Nodestro Local Docker (``profile.invalid``; a server starts with
+    ``nodestro-server``), the login-less studio API is only offered on this computer
+    (``access.network_needs_login``), a local container needs its access key (``access.key_required``), and a
+    launch secret or access key must be long enough (``access.launch_secret_weak``).
     Every route must declare who may call it (:mod:`nodestro_api.permissions`)."""
     config = config or AppConfig.from_env()
     profile = config.profile.validate()
     if profile.kind == "desktop":
         require_loopback_only(config.host, config.allowed_hosts)
+    elif profile.kind == "local-container":
+        require_safe_configuration(config.access_key, config.allowed_hosts)
     check_secret(config.launch_secret)
+    check_secret(config.access_key)
     nodestro = Nodestro(
         config,
         client_factory=client_factory,
@@ -116,20 +122,34 @@ def create_app(
     app.state.nodestro = nodestro
     # Who sends a request: on the desktop always the local owner (every permission).
     app.state.principal_resolver = resolver_for(profile)
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-    # The desktop app's window only (nodestro_api.launch); inside the host and origin checks.
-    if config.launch_secret is not None:
+    local = profile.kind == "local-container"
+    if not local:  # the frontend's development server (npm run dev); never in a container
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+    if local:
+        # Nodestro Local Docker: the access key, for every browser session and script (nodestro_api.local_container).
+        assert config.access_key is not None  # checked above
+        app.add_middleware(
+            LaunchSecretMiddleware,
+            secret=config.access_key,
+            reusable=True,
+            bearer=True,
+            cookie=LOCAL_COOKIE,
+            refusal=LOCAL_REFUSAL,
+        )
+    elif config.launch_secret is not None:
+        # The desktop app's window only (nodestro_api.launch); inside the host and origin checks.
         app.add_middleware(LaunchSecretMiddleware, secret=config.launch_secret)
     # Outermost: web pages in the user's browser must not use the key-less studio API.
     app.add_middleware(
         LocalAccessMiddleware,
-        hosts=allowed_hosts(config.host, config.allowed_hosts),
-        ip_addresses=listens_everywhere(config.host),
+        hosts=loopback_hosts(config.allowed_hosts) if local else allowed_hosts(config.host, config.allowed_hosts),
+        ip_addresses=listens_everywhere(config.host) and not local,
+        strict_origin=local,
     )
     install_error_handlers(app)
     # Before the main router: /api/tools/drafts must not be taken for a tool named "drafts".

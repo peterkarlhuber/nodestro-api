@@ -33,6 +33,7 @@ from fastapi import APIRouter, Query, Response
 from nodestro_runtime.pricing import PriceEntry, PricingEvent, PricingStatus, StoredSnapshot, SubmitResult
 from nodestro_runtime.pricing_sync import SyncReport
 from nodestro_runtime.problems import NodestroError
+from nodestro_runtime.profile import SINGLE_USER_PROFILES
 from nodestro_runtime.reconciliation import (
     AnthropicCostAdapter,
     CostAdapter,
@@ -261,7 +262,7 @@ def _key(ctx: Nodestro, provider: str) -> tuple[str | None, list[str], Literal["
     stored, scope = _stored_key(ctx, provider)
     if stored:
         return stored, scope, "stored"
-    env = os.environ.get(_ENV_KEYS[provider], "").strip() if ctx.config.profile_kind == "desktop" else ""
+    env = os.environ.get(_ENV_KEYS[provider], "").strip() if ctx.config.profile_kind in SINGLE_USER_PROFILES else ""
     if env:
         return env, scope, "environment"
     return None, scope, "none"

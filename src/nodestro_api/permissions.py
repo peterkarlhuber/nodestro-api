@@ -44,7 +44,7 @@ from typing import Any, cast
 from fastapi import FastAPI, params
 import fastapi.routing
 from fastapi.routing import APIRoute, APIWebSocketRoute
-from nodestro_runtime.profile import RuntimeProfile
+from nodestro_runtime.profile import SINGLE_USER_PROFILES, RuntimeProfile
 from starlette.requests import HTTPConnection
 from starlette.routing import BaseRoute, Mount, Route, WebSocketRoute
 
@@ -95,8 +95,9 @@ def nobody(_connection: HTTPConnection) -> None:
 
 
 def resolver_for(profile: RuntimeProfile) -> PrincipalResolver:
-    """The principals of a profile: the local owner on the desktop, nobody otherwise (until logins exist)."""
-    return local_owner if profile.kind == "desktop" else nobody
+    """The principals of a profile: the local owner on the desktop and in Nodestro Local Docker (one person each),
+    nobody otherwise (a server resolves its logins itself)."""
+    return local_owner if profile.kind in SINGLE_USER_PROFILES else nobody
 
 
 class AccessError(Exception):
