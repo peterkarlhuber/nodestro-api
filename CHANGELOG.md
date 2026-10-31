@@ -23,6 +23,11 @@ Per-call tool approvals (Evolution S-2b, decision D10; off unless `NODESTRO_TOOL
   (`profile.invalid`).
 - Every route is tenant-scoped (ids of other tenants answer 404); tests cover the role matrix, stale, late and
   repeated decisions, pre-grant rules, release stamping and tenant isolation on PostgreSQL.
+- Pin of `nodestro-runtime` at `0aee6a9` (before: `8597544`) and `nodestro-examples` at `9597421` (before: `cf151e6`):
+  per-call tool approvals with audit and inbox (S-2), MCP write gate (WP-5) and OAuth (WP-6), budget reservations
+  (Orkexa `b85133d`), run, time and step limits, and the customer-service approval loop. The OpenAPI contract is
+  regenerated (new `Run`/`Usage`/`WorkflowLimits` fields included); the template test now treats an agent that a
+  rejection loops back to as a normal step.
 
 Nodestro Local Docker browser sessions (D1, D3 of the internal cross-check):
 

@@ -7399,7 +7399,9 @@
               "tool_changed",
               "tool_removed",
               "call_refused",
+              "oauth_started",
               "oauth_connected",
+              "oauth_failed",
               "oauth_disconnected"
             ],
             "title": "Kind",
@@ -17033,6 +17035,19 @@
               }
             ],
             "title": "Max Parallel"
+          },
+          "max_steps": {
+            "anyOf": [
+              {
+                "maximum": 10000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Steps"
           }
         },
         "title": "WorkflowLimits",
