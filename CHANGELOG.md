@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+Storage seams (desktop/server plan, PR-3 follow-up, 2026-10-31): pins of `nodestro-runtime` at `e90c205`
+(`DocumentStore`, schema version and migrations) and `nodestro-examples` at the same runtime pin.
+
+- Backup and restore use the runtime's public storage methods (`DocumentStore.snapshot` and
+  `DocumentStore.maintenance`) instead of private connection and lock attributes; a test checks that the API reads
+  no private storage attribute.
+- A backup whose database has a newer schema version (`PRAGMA user_version`) than this runtime supports is refused
+  with `400 backup.schema_too_new` (`found`, `supported`) before anything is replaced.
+- The export of a workflow as a Python project lists 27 runtime modules (new: `sqlite_tables`).
+
 Operating profile and route permissions (desktop/server plan, PR-2, 2026-10-31): pins of `nodestro-runtime` at
 `8ea9a5c` (operating profiles) and `nodestro-examples` at `f90d3a1` (the same runtime pin; before: `ad75859` and
 `520fa72`). No change of routes, fields or the OpenAPI document.
