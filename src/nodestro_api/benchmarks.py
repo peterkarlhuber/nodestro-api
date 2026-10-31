@@ -24,6 +24,11 @@ two runs of a series (e.g. version 3 against version 4) can be compared case by 
 agent node id -> model) with the same cases and the same judge. The saved workflow is not changed. Such a
 run needs a cost cap, since its cost cannot be estimated from earlier runs, and it records the
 replaced models (``BenchmarkRun.models``): it tests a variant, not the saved version itself.
+
+**Test cases from failed runs** (Q-4): :meth:`Benchmarks.propose_case` turns the input of a failed run into a
+proposed test case. Credentials are always replaced, personal data by default (:mod:`nodestro_runtime.sanitize`);
+files are referenced, not copied. Nothing is stored: the case is added only when the person saves it into a series,
+and it keeps where it came from (``TestCase.origin``).
 """
 
 from __future__ import annotations
@@ -35,10 +40,12 @@ import logging
 from typing import TYPE_CHECKING, Any, Literal
 
 from nodestro_runtime.conditions import evaluate, parse_result, rule_problems
-from nodestro_runtime.engine import usage_of
+from nodestro_runtime.engine import start_fields, usage_of
+from nodestro_runtime.forms import FieldError, check_values
 from nodestro_runtime.launcher import CostEstimate, approval_steps, blocking_problems, estimate_cost, external_tools
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.providers import check_model, model_id
+from nodestro_runtime.sanitize import Sanitizer
 from nodestro_runtime.schemas import ConditionRule, Usage, Workflow, new_id, now, total_cost
 from orkexa import Criterion, Evaluator
 from orkexa.dynamic import BudgetTracker
@@ -62,6 +69,21 @@ class BenchmarkError(NodestroError):
     """A test series cannot be saved or run."""
 
 
+class CaseOrigin(BaseModel):
+    """Where a test case proposed from a run came from (Q-4)."""
+
+    run_id: str
+    run_status: str
+    run_at: datetime
+    workflow_version: int | None = None
+    error_code: str | None = None
+    #: Whether personal data was replaced as well (credentials always are).
+    personal_data: bool = True
+    #: Number of replacements per category (api_key, secret, email, ...).
+    replaced: dict[str, int] = Field(default_factory=dict)
+    proposed_at: datetime = Field(default_factory=now)
+
+
 class TestCase(BaseModel):
     __test__ = False  # not a pytest class
 
@@ -75,6 +97,8 @@ class TestCase(BaseModel):
     judge_criteria: str = ""
     #: A reference answer the judge compares with (optional).
     expected: str = ""
+    #: Set for a case proposed from a run (Q-4); ``None`` for cases written by hand.
+    origin: CaseOrigin | None = None
 
 
 class SuiteIn(BaseModel):
@@ -84,6 +108,22 @@ class SuiteIn(BaseModel):
     cases: list[TestCase] = Field(default_factory=list, max_length=MAX_CASES)
     #: The judge model (``None``: the assistant model of the settings).
     judge_model: str | None = None
+
+
+class CaseProposalIn(BaseModel):
+    #: Replace personal data (e-mail addresses, phone numbers, IBANs, ...) too; credentials are always replaced.
+    personal_data: bool = True
+
+
+class CaseProposal(BaseModel):
+    """A test case proposed from a failed run; stored only when it is saved into a series."""
+
+    workflow_id: str
+    case: TestCase
+    #: Files of the run that no longer exist; they were left out.
+    missing_files: list[str] = Field(default_factory=list)
+    #: Problems of the proposed values with the current input form (e.g. a replaced e-mail address).
+    problems: list[FieldError] = Field(default_factory=list)
 
 
 class Suite(SuiteIn):
@@ -315,6 +355,50 @@ class Benchmarks:
                 case.name = f"#{index}"
         self.ctx.store.put(SUITES, suite.id, suite)
         return suite
+
+    def propose_case(self, run_id: str, request: CaseProposalIn) -> CaseProposal:
+        """A redacted test case from the input of a failed run (Q-4); nothing is stored."""
+        run = self.ctx.runs.get(run_id)
+        if run is None:
+            raise KeyError(run_id)
+        if run.imported_at is not None or run.parent_run_id is not None:
+            raise BenchmarkError(
+                "testcase.run_unsupported", "Only runs started here can become a test case, not imported or sub-runs"
+            )
+        if run.status != "failed":
+            raise BenchmarkError("testcase.run_not_failed", "Only a failed run can be proposed as a test case")
+        workflow = self.ctx.store.get("workflows", run.workflow_id, Workflow)
+        if workflow is None:
+            raise KeyError(run.workflow_id)
+        sanitizer = Sanitizer(personal_data=request.personal_data)
+        text = (run.text_input if run.values else run.input) or ""
+        values = sanitizer.known(sanitizer.value(run.values))
+        text = sanitizer.known(sanitizer.text(text))
+        # A second pass: a credential found only in the values is replaced in the text as well.
+        values = sanitizer.known(values)
+        known = self.ctx.file_catalog()
+        form_files = {str(item) for value in run.values.values() if isinstance(value, list) for item in value}
+        files = [item for item in run.file_ids if item not in form_files]
+        missing = [item for item in dict.fromkeys([*files, *form_files]) if item not in known]
+        fields = start_fields(workflow)
+        problems: list[FieldError] = []
+        if fields:
+            _, problems = check_values(fields, values, known_files=known)
+        case = TestCase(
+            input=text,
+            values=values,
+            file_ids=[item for item in files if item in known],
+            origin=CaseOrigin(
+                run_id=run.id,
+                run_status=run.status,
+                run_at=run.created_at,
+                workflow_version=run.workflow_version,
+                error_code=run.error_code,
+                personal_data=request.personal_data,
+                replaced=dict(sorted(sanitizer.counts.items())),
+            ),
+        )
+        return CaseProposal(workflow_id=run.workflow_id, case=case, missing_files=missing, problems=problems)
 
     def delete_suite(self, suite_id: str) -> None:
         if not self.ctx.store.delete(SUITES, suite_id):
