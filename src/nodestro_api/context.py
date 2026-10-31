@@ -29,7 +29,7 @@ from .batches import Batches
 from .benchmarks import Benchmarks
 from .docs_index import DocsIndex
 from .launch import launch_secret_from_env
-from .local_container import access_key_from_env
+from .local_container import access_key_from_env, browser_host_from_env, host_port_from_env, session_hours_from_env
 from .network import NetworkListener
 from .organize import Organizer
 from .pricing_setup import PriceSyncConfig
@@ -60,6 +60,15 @@ class AppConfig:
     #: Nodestro Local Docker's persistent access key (``NODESTRO_ACCESS_KEY_FILE``); required in the
     #: ``local-container`` profile, see :mod:`nodestro_api.local_container`.
     access_key: str | None = field(default=None, repr=False)
+    #: Nodestro Local Docker's browser host name (``nodestro-<random>.localhost``, or ``NODESTRO_BROWSER_HOST``):
+    #: browser sessions exist only under this name. Required in the ``local-container`` profile.
+    browser_host: str | None = field(default=None, repr=False)
+    #: The port Docker publishes on the host (``NODESTRO_HOST_PORT``); Nodestro Local Docker answers only it and
+    #: the container's own port.
+    host_port: int = 8765
+    #: Hours a browser session lasts without a request, and at most (Nodestro Local Docker).
+    session_idle_hours: float = 8.0
+    session_max_hours: float = 24.0
     #: Where reference prices come from and whether they are synced in the background (``NODESTRO_PRICE_*``,
     #: see :mod:`nodestro_api.pricing_setup`). Off unless configured: tests and embedded uses never go online.
     price_sync: PriceSyncConfig = field(default_factory=lambda: PriceSyncConfig(enabled=False))
@@ -80,6 +89,8 @@ class AppConfig:
         static = os.environ.get("NODESTRO_STATIC_DIR")
         docs = os.environ.get("NODESTRO_DOCS_DIR")
         allowed = os.environ.get("NODESTRO_ALLOWED_HOSTS", "")
+        local = profile.kind == "local-container"
+        idle, longest = session_hours_from_env() if local else (8.0, 24.0)
         return cls(
             data_dir=profile.data_dir,
             static_dir=Path(static) if static else None,
@@ -89,6 +100,10 @@ class AppConfig:
             profile_kind=profile.kind,
             launch_secret=launch_secret_from_env(),
             access_key=access_key_from_env(),
+            browser_host=browser_host_from_env() if local else None,
+            host_port=host_port_from_env() if local else 8765,
+            session_idle_hours=idle,
+            session_max_hours=longest,
             price_sync=PriceSyncConfig.from_env(),
         )
 

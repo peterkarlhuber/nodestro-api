@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+import re
 import stat
 
 from fastapi.testclient import TestClient
@@ -23,7 +24,8 @@ from nodestro_api.launch import LOCAL_COOKIE
 from nodestro_api.permissions import LOCAL_OWNER, resolver_for
 
 KEY = "k" * 43
-ORIGIN = "http://localhost:8765"
+BROWSER_HOST = "nodestro-0123456789.localhost"
+ORIGIN = f"http://{BROWSER_HOST}:8765"
 
 
 def config_for(tmp_path: Path, **changes: object) -> AppConfig:
@@ -32,6 +34,8 @@ def config_for(tmp_path: Path, **changes: object) -> AppConfig:
         "host": "0.0.0.0",
         "profile_kind": "local-container",
         "access_key": KEY,
+        "browser_host": BROWSER_HOST,
+        "host_port": 8765,
     }
     values.update(changes)
     return AppConfig(**values)  # type: ignore[arg-type]
@@ -205,6 +209,151 @@ def test_tool_code_runs_only_in_containers(tmp_path: Path) -> None:
         assert answer.json()["code"] == "sandbox.unavailable"
 
 
+# ---- browser sessions (D1) and ports (D3) -------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("base_url", ["http://localhost:8765", "http://127.0.0.1:8765", "http://[::1]:8765"])
+def test_browser_sessions_exist_only_under_the_browser_host(tmp_path: Path, base_url: str) -> None:
+    with client_for(tmp_path) as client:
+        signed_in(client)
+        session = client.cookies[LOCAL_COOKIE]
+        # A shared name gets no session: a cookie set there would reach every other web server on that name.
+        shared = TestClient(client.app, base_url=base_url)
+        answer = shared.get("/api/launch", params={"token": KEY}, follow_redirects=False)
+        assert answer.status_code == 403 and answer.json()["code"] == "access.launch_host"
+        assert "set-cookie" not in answer.headers
+        # A valid session cookie, sent to a shared name (by the browser or anyone who collected it), is not accepted.
+        shared.cookies.set(LOCAL_COOKIE, session)
+        assert shared.get("/api/workflows").status_code == 401
+        # The bearer key still works under every loopback name.
+        assert shared.get("/api/workflows", headers={"Authorization": f"Bearer {KEY}"}).status_code == 200
+        assert client.get("/api/workflows").status_code == 200
+
+
+def test_every_answer_keeps_the_host_name_out_of_referrers(tmp_path: Path) -> None:
+    with client_for(tmp_path) as client:
+        assert client.get("/api/health").headers["referrer-policy"] == "no-referrer"
+        assert client.get("/api/workflows").headers["referrer-policy"] == "no-referrer"  # refused
+        signed_in(client)
+        assert client.get("/api/workflows").headers["referrer-policy"] == "no-referrer"
+        assert client.get("/").headers.get_list("referrer-policy") == ["no-referrer"]
+
+
+def test_the_session_cookie_has_the_maximum_lifetime(tmp_path: Path) -> None:
+    with client_for(tmp_path, session_max_hours=2.0) as client:
+        cookie = client.get("/api/launch", params={"token": KEY}, follow_redirects=False).headers["set-cookie"]
+        assert "Max-Age=7200" in cookie and "Domain" not in cookie
+
+
+class Clock:
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def session_app(clock: Clock) -> TestClient:
+    from starlette.applications import Starlette
+    from starlette.responses import PlainTextResponse
+    from starlette.routing import Route
+
+    from nodestro_api.launch import LaunchSecretMiddleware
+
+    app = Starlette(routes=[Route("/api/data", lambda request: PlainTextResponse("ok"))])
+    app.add_middleware(
+        LaunchSecretMiddleware,
+        secret=KEY,
+        reusable=True,
+        bearer=True,
+        cookie=LOCAL_COOKIE,
+        session_host=BROWSER_HOST,
+        idle=8 * 3600,
+        max_age=24 * 3600,
+        clock=clock,
+    )
+    client = TestClient(app, base_url=ORIGIN)
+    assert client.get("/api/launch", params={"token": KEY}).status_code == 200
+    return client
+
+
+def test_a_session_ends_after_eight_idle_hours() -> None:
+    clock = Clock()
+    client = session_app(clock)
+    clock.now += 7.9 * 3600
+    assert client.get("/api/data").status_code == 200  # each request keeps it alive
+    clock.now += 7.9 * 3600
+    assert client.get("/api/data").status_code == 200
+    clock.now += 8.1 * 3600
+    assert client.get("/api/data").status_code == 401
+    clock.now -= 8.1 * 3600  # an ended session does not come back
+    assert client.get("/api/data").status_code == 401
+
+
+def test_a_session_ends_24_hours_after_it_was_opened() -> None:
+    clock = Clock()
+    client = session_app(clock)
+    for _ in range(4):
+        clock.now += 6 * 3600
+        assert client.get("/api/data").status_code == 200
+    clock.now += 60
+    assert client.get("/api/data").status_code == 401
+    assert client.get("/api/data", headers={"Authorization": f"Bearer {KEY}"}).status_code == 200  # scripts
+
+
+def test_logout_ends_this_browser_s_session_only(tmp_path: Path) -> None:
+    with client_for(tmp_path) as client:
+        page = client.get("/api/logout")
+        assert page.status_code == 200 and 'method="post" action="/api/logout"' in page.text
+        assert "form-action 'self'" in page.headers["content-security-policy"]
+        signed_in(client)
+        other = signed_in(TestClient(client.app, base_url=ORIGIN))
+        # Another page cannot sign the person out.
+        refused = client.post("/api/logout", headers={"Origin": "http://localhost:3000"})
+        assert refused.json()["code"] == "request.origin_not_allowed"
+        assert client.get("/api/workflows").status_code == 200
+        answer = client.post("/api/logout", headers={"Origin": ORIGIN})
+        assert answer.status_code == 200 and "signed out" in answer.text
+        cookie = answer.headers["set-cookie"]
+        assert cookie.startswith(f"{LOCAL_COOKIE}=;") and "Max-Age=0" in cookie
+        assert client.get("/api/workflows").status_code == 401
+        assert other.get("/api/workflows").status_code == 200
+
+
+def test_logout_of_every_session_needs_the_key(tmp_path: Path) -> None:
+    with client_for(tmp_path) as client:
+        signed_in(client)
+        assert client.post("/api/logout?all=1", headers={"Origin": ORIGIN}).status_code == 401
+        assert client.get("/api/workflows").status_code == 200
+        script = TestClient(client.app, base_url="http://127.0.0.1:8080")  # nodestro-local logout, in the container
+        answer = script.post("/api/logout?all=1", headers={"Authorization": f"Bearer {KEY}"})
+        assert answer.status_code == 200 and answer.json() == {"ended": 1}
+        assert client.get("/api/workflows").status_code == 401
+
+
+@pytest.mark.parametrize("base_url", ["http://localhost:3000", f"http://{BROWSER_HOST}:9999", "http://127.0.0.1"])
+def test_only_the_published_and_the_container_port_are_answered(tmp_path: Path, base_url: str) -> None:
+    with client_for(tmp_path, base_url=base_url) as client:
+        answer = client.get("/api/workflows", headers={"Authorization": f"Bearer {KEY}"})
+        assert answer.status_code == 403 and answer.json()["code"] == "request.port_not_allowed"
+        assert client.get("/api/health").status_code == 403
+
+
+@pytest.mark.parametrize("base_url", ["http://127.0.0.1:8080", "http://localhost:9000"])
+def test_the_container_port_and_another_published_port_are_answered(tmp_path: Path, base_url: str) -> None:
+    with client_for(tmp_path, base_url=base_url, host_port=9000) as client:
+        assert client.get("/api/workflows", headers={"Authorization": f"Bearer {KEY}"}).status_code == 200
+
+
+def test_ports_in_host_headers() -> None:
+    from nodestro_api.local_access import split_port
+
+    assert split_port("localhost:8765") == 8765 and split_port("[::1]:80") == 80
+    assert split_port("localhost") is None and split_port("[::1]") is None
+    assert split_port("localhost:") == -1 and split_port("localhost:x") == -1 and split_port("[::1]x") == -1
+    assert split_port("localhost:9999999") == -1
+
+
 # ---- the key file and the command ---------------------------------------------------------------------------------
 
 
@@ -225,18 +374,96 @@ def test_the_key_file_is_created_once_with_owner_only_access(tmp_path: Path) -> 
         local_container.read_access_key(path)
 
 
-def test_the_link_names_the_host_loopback_and_the_key(
+def test_the_link_names_the_browser_host_and_the_key(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     path = tmp_path / "access-key"
     monkeypatch.setenv(local_container.ENV_KEY_FILE, str(path))
+    monkeypatch.delenv(local_container.ENV_BROWSER_HOST, raising=False)
+    monkeypatch.delenv(local_container.ENV_HOST_PORT, raising=False)
     key = local_container.create_access_key(path)
+    with pytest.raises(SystemExit, match="nodestro-local serve"):  # no host name yet
+        local_container.main(["link"])
+    host = local_container.create_browser_host(local_container.browser_host_file())
     assert local_container.main(["link", "--port", "9123"]) == 0
-    assert capsys.readouterr().out.strip() == f"http://127.0.0.1:9123/api/launch?token={key}"
+    captured = capsys.readouterr()
+    assert captured.out.strip() == f"http://{host}:9123/api/launch?token={key}" and not captured.err
+    monkeypatch.setenv(local_container.ENV_HOST_PORT, "9000")
+    assert local_container.main(["link"]) == 0
+    assert capsys.readouterr().out.strip() == f"http://{host}:9000/api/launch?token={key}"
+    # A shared name works, with a warning.
+    assert local_container.main(["link", "--host", "127.0.0.1"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out.startswith("http://127.0.0.1:9000/") and "Warning" in captured.err
     with pytest.raises(SystemExit, match="loopback"):
         local_container.main(["link", "--host", "192.168.1.10"])
     assert local_container.main(["rotate-key"]) == 0
     assert local_container.read_access_key(path) != key
+    assert local_container.read_browser_host(local_container.browser_host_file()) != host
+
+
+def test_the_browser_host_is_random_private_and_kept(tmp_path: Path) -> None:
+    path = tmp_path / "secrets" / "browser-host"
+    host = local_container.create_browser_host(path)
+    assert re.fullmatch(r"nodestro-[a-z0-9]{10}\.localhost", host)
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert local_container.create_browser_host(path) == host  # kept
+    assert local_container.create_browser_host(tmp_path / "other") != host
+    assert local_container.create_browser_host(path, replace=True) != host
+    os.chmod(path, 0o644)
+    with pytest.raises(NodestroError, match="0600"):
+        local_container.read_browser_host(path)
+    path.write_text("localhost\n")
+    os.chmod(path, 0o600)
+    with pytest.raises(NodestroError, match="not a Nodestro host name"):
+        local_container.read_browser_host(path)
+
+
+@pytest.mark.parametrize("value", ["nodestro.example.com", "192.168.1.10", "localhost:9000"])
+def test_the_browser_host_can_only_be_replaced_by_loopback_names(value: str) -> None:
+    with pytest.raises(NodestroError) as error:
+        local_container.browser_host_from_env({local_container.ENV_BROWSER_HOST: value})
+    assert error.value.code == "access.network_needs_login"
+    assert local_container.browser_host_from_env({local_container.ENV_BROWSER_HOST: "[::1]"}) == "::1"
+    assert local_container.browser_host_from_env({local_container.ENV_BROWSER_HOST: "LocalHost"}) == "localhost"
+
+
+def test_a_local_container_without_browser_host_is_refused(tmp_path: Path) -> None:
+    with pytest.raises(NodestroError) as error:
+        create_app(config_for(tmp_path, browser_host=None), integrations=[], scheduler=False)
+    assert error.value.code == "access.browser_host_required"
+
+
+@pytest.mark.parametrize(
+    ("environ", "message"),
+    [
+        ({local_container.ENV_HOST_PORT: "0"}, "positive"),
+        ({local_container.ENV_HOST_PORT: "http"}, "positive"),
+        ({local_container.ENV_HOST_PORT: "70000"}, "positive"),
+        ({local_container.ENV_SESSION_IDLE: "-1"}, "positive"),
+        ({local_container.ENV_SESSION_MAX: "forever"}, "positive"),
+    ],
+)
+def test_wrong_numbers_are_refused(environ: dict[str, str], message: str) -> None:
+    with pytest.raises(NodestroError, match=message):
+        local_container.host_port_from_env(environ)
+        local_container.session_hours_from_env(environ)
+
+
+def test_the_logout_command_ends_every_session(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "access-key"
+    monkeypatch.setenv(local_container.ENV_KEY_FILE, str(path))
+    key = local_container.create_access_key(path)
+    calls: list[tuple[str, str]] = []
+
+    def answer(method: str, target: str, given: str, **_: object) -> tuple[int, bytes]:
+        assert given == key
+        calls.append((method, target))
+        return 200, b'{"ended": 2}'
+
+    monkeypatch.setattr(local_container, "_request", answer)
+    assert local_container.main(["logout"]) == 0
+    assert calls == [("POST", "/api/logout?all=1")]
 
 
 def test_the_app_reads_the_key_file_from_the_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -245,5 +472,13 @@ def test_the_app_reads_the_key_file_from_the_environment(tmp_path: Path, monkeyp
     monkeypatch.setenv(local_container.ENV_KEY_FILE, str(path))
     monkeypatch.setenv("NODESTRO_PROFILE", "local-container")
     monkeypatch.setenv("NODESTRO_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.delenv(local_container.ENV_BROWSER_HOST, raising=False)
+    monkeypatch.setenv(local_container.ENV_HOST_PORT, "9001")
+    monkeypatch.setenv(local_container.ENV_SESSION_IDLE, "2")
     config = AppConfig.from_env()
     assert config.access_key == key and config.profile_kind == "local-container"
+    assert config.browser_host is None  # not created yet: refused by create_app
+    host = local_container.create_browser_host(local_container.browser_host_file())
+    config = AppConfig.from_env()
+    assert config.browser_host == host and config.host_port == 9001
+    assert (config.session_idle_hours, config.session_max_hours) == (2.0, 24.0)

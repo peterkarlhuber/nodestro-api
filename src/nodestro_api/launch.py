@@ -27,6 +27,7 @@ A request without a session in a browser gets a short page that says how to open
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import hmac
 from http.cookies import CookieError, SimpleCookie
 import json
@@ -34,14 +35,19 @@ import logging
 import os
 import re
 import secrets
+import time
 from urllib.parse import parse_qs
 
 from nodestro_runtime.problems import NodestroError
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+from .local_access import split_host
 
 ENV_VAR = "NODESTRO_LAUNCH_SECRET"
 COOKIE = "nodestro_session"
 LAUNCH_PATH = "/api/launch"
+#: Signing out of a browser session (reusable access key only).
+LOGOUT_PATH = "/api/logout"
 #: Shorter secrets are refused: the desktop app generates 256 bits.
 MIN_LENGTH = 32
 #: Cookie of the local container's browser sessions (another name than the desktop's: cookies are shared across
@@ -113,13 +119,31 @@ max-width:36rem;margin:4rem auto;padding:0 1rem;color:#222;background:#fff}}code
 border-radius:.2rem}}@media (prefers-color-scheme:dark){{body{{color:#ddd;background:#111}}code{{background:#333}}}}
 </style><h1>Nodestro</h1><p>{text}</p></html>"""
 
+#: The sign-out page (``GET /api/logout``): a form, no script; its post carries this origin.
+_SIGN_OUT_FORM = (
+    'Sign out of Nodestro in this browser.</p><form method="post" action="/api/logout">'
+    '<button type="submit">Sign out</button></form><p>'
+)
+
 
 class LaunchSecretMiddleware:
     """Exchange the launch secret for a session cookie and require that cookie afterwards.
 
     ``reusable``: the secret is a persistent access key (Nodestro Local Docker): every valid launch opens a new
     session, and ``bearer`` additionally accepts ``Authorization: Bearer <key>``. ``cookie`` names the session
-    cookie and ``refusal`` is the sentence a refused request gets."""
+    cookie and ``refusal`` is the sentence a refused request gets.
+
+    With a reusable key there is more (Nodestro Local Docker, ``docs/SESSIONS.md`` there):
+
+    - ``session_host``: the launch and session cookies are accepted only for requests to this host name (the
+      installation's random ``nodestro-<random>.localhost``), so the cookie is never set for, or sent to, a name that
+      other local programs share. The bearer key works under every name the outer checks allow.
+    - ``idle`` and ``max_age`` (seconds): a session ends after that long without a request, and at the latest that
+      long after it was opened.
+    - ``/api/logout``: ``GET`` shows a page with a sign-out button, ``POST`` ends this browser's session and deletes
+      its cookie; ``POST /api/logout?all=1`` with the bearer key ends every session.
+    - Every response carries ``Referrer-Policy: no-referrer``, so the host name does not leave with a link.
+    """
 
     def __init__(
         self,
@@ -130,32 +154,70 @@ class LaunchSecretMiddleware:
         bearer: bool = False,
         cookie: str = COOKIE,
         refusal: str = "This Nodestro belongs to the desktop app that started it; open Nodestro from the app",
+        session_host: str | None = None,
+        idle: float | None = None,
+        max_age: float | None = None,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         check_secret(secret)
         redact_access_logs(secret)
         self.app = app
         self._secret = secret.encode()
         self._session: bytes | None = None
-        self._sessions: dict[bytes, None] = {}
+        #: Reusable key: session -> (opened, last request), by :attr:`clock`.
+        self._sessions: dict[bytes, tuple[float, float]] = {}
         self.reusable = reusable
         self.bearer = bearer
         self.cookie = cookie
         self.refusal = refusal
+        self.session_host = session_host.strip("[]").lower() if session_host else None
+        self.idle = idle
+        self.max_age = max_age
+        self.clock = clock
 
     def _open(self, path: str) -> bool:
         return path in _OPEN_PATHS or path == _OPEN_PREFIX or path.startswith(_OPEN_PREFIX + "/")
 
+    def _session_for(self, token: bytes) -> bytes | None:
+        """The stored session ``token`` names; an expired one is removed and not returned."""
+        found = next((session for session in self._sessions if hmac.compare_digest(token, session)), None)
+        if found is None:
+            return None
+        opened, last = self._sessions[found]
+        now = self.clock()
+        if (self.idle is not None and now - last > self.idle) or (
+            self.max_age is not None and now - opened > self.max_age
+        ):
+            del self._sessions[found]
+            return None
+        self._sessions[found] = (opened, now)
+        return found
+
     def _valid(self, token: bytes) -> bool:
         if self.reusable:
-            return any(hmac.compare_digest(token, session) for session in self._sessions)
+            return self._session_for(token) is not None
         return self._session is not None and hmac.compare_digest(token, self._session)
 
-    def _has_session(self, scope: Scope) -> bool:
+    def _on_session_host(self, scope: Scope) -> bool:
+        if self.session_host is None:
+            return True
+        return split_host(_header(scope, b"host")) == self.session_host
+
+    def _has_bearer(self, scope: Scope) -> bool:
+        if not self.bearer:
+            return False
         for key, value in scope["headers"]:
-            if key == b"authorization" and self.bearer:
+            if key == b"authorization":
                 scheme, _, token = value.decode("latin-1").partition(" ")
                 if scheme.lower() == "bearer" and hmac.compare_digest(token.strip().encode(), self._secret):
                     return True
+        return False
+
+    def _cookie_session(self, scope: Scope) -> bytes | None:
+        """The session token of this request's cookie, when it is a valid session (not refreshed otherwise)."""
+        if not self._on_session_host(scope):
+            return None
+        for key, value in scope["headers"]:
             if key != b"cookie":
                 continue
             try:
@@ -164,16 +226,24 @@ class LaunchSecretMiddleware:
                 continue
             morsel = cookies.get(self.cookie)
             if morsel is not None and self._valid(morsel.value.encode()):
-                return True
-        return False
+                return morsel.value.encode()
+        return None
+
+    def _has_session(self, scope: Scope) -> bool:
+        return self._has_bearer(scope) or self._cookie_session(scope) is not None
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] not in ("http", "websocket"):
             await self.app(scope, receive, send)
             return
+        if self.reusable:
+            send = _with_referrer_policy(send)
         path = scope.get("path", "")
         if path == LAUNCH_PATH and scope["type"] == "http":
             await self._launch(scope, send)
+            return
+        if path == LOGOUT_PATH and self.reusable and scope["type"] == "http":
+            await self._logout(scope, send)
             return
         if self._open(path) or self._has_session(scope):
             await self.app(scope, receive, send)
@@ -189,6 +259,10 @@ class LaunchSecretMiddleware:
         if scope.get("method") != "GET" or not hmac.compare_digest(token, self._secret):
             await _answer(scope, send, 403, "access.launch_invalid", "The launch link is not valid")
             return
+        if not self._on_session_host(scope):
+            # A session cookie for any other name would also reach the other programs on that name.
+            await _answer(scope, send, 403, "access.launch_host", self.refusal)
+            return
         if self._session is not None and not self.reusable:
             await _answer(
                 scope,
@@ -200,12 +274,15 @@ class LaunchSecretMiddleware:
             return
         session = secrets.token_urlsafe(32).encode()
         if self.reusable:
-            self._sessions[session] = None
+            now = self.clock()
+            self._sessions[session] = (now, now)
             while len(self._sessions) > MAX_SESSIONS:
                 self._sessions.pop(next(iter(self._sessions)))
         else:
             self._session = session
         cookie = f"{self.cookie}={session.decode()}; HttpOnly; SameSite=Strict; Path=/"
+        if self.reusable and self.max_age is not None:
+            cookie += f"; Max-Age={int(self.max_age)}"
         # Not a redirect: the window's navigation to this URL starts on the app's own page (another site), and a
         # browser does not send a SameSite=Strict cookie on a redirect that a cross-site navigation started.
         # The page below moves on from the backend's own origin, so the cookie goes with the next request.
@@ -225,6 +302,50 @@ class LaunchSecretMiddleware:
         )
         await send({"type": "http.response.body", "body": _CONTINUE})
 
+    async def _logout(self, scope: Scope, send: Send) -> None:
+        method = scope.get("method")
+        if method == "GET":
+            await _page(send, 200, _SIGN_OUT_FORM, raw=True)
+            return
+        if method != "POST":
+            await _answer(scope, send, 405, "access.logout_method", "Sign out with POST /api/logout")
+            return
+        query = parse_qs(scope.get("query_string", b"").decode("latin-1"))
+        if (query.get("all") or [""])[0] in ("1", "true"):
+            if not self._has_bearer(scope):
+                await _answer(scope, send, 401, "access.launch_required", self.refusal)
+                return
+            ended = len(self._sessions)
+            self._sessions.clear()
+            await _json(send, 200, {"ended": ended})
+            return
+        session = self._cookie_session(scope)
+        if session is not None:
+            self._sessions.pop(session, None)
+        await _page(
+            send,
+            200,
+            "You are signed out. Open Nodestro again with the link that the launcher shows.",
+            cookie=f"{self.cookie}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0",
+        )
+
+
+def _header(scope: Scope, name: bytes) -> str:
+    for key, value in scope["headers"]:
+        if key == name:
+            return str(value.decode("latin-1"))
+    return ""
+
+
+def _with_referrer_policy(send: Send) -> Send:
+    async def sending(message: Message) -> None:
+        if message["type"] == "http.response.start":
+            headers = [item for item in message.get("headers", []) if item[0].lower() != b"referrer-policy"]
+            message = {**message, "headers": [*headers, (b"referrer-policy", b"no-referrer")]}
+        await send(message)
+
+    return sending
+
 
 def _wants_html(scope: Scope) -> bool:
     if scope["type"] != "http" or scope.get("method") != "GET":
@@ -233,19 +354,32 @@ def _wants_html(scope: Scope) -> bool:
     return "text/html" in accept
 
 
-async def _page(send: Send, status: int, text: str) -> None:
+async def _page(send: Send, status: int, text: str, *, raw: bool = False, cookie: str | None = None) -> None:
     from html import escape
 
-    body = _SIGN_IN.format(text=escape(text)).encode()
+    body = _SIGN_IN.format(text=text if raw else escape(text)).encode()
+    headers = [
+        (b"content-type", b"text/html; charset=utf-8"),
+        (b"content-length", str(len(body)).encode()),
+        (b"cache-control", b"no-store"),
+        (b"content-security-policy", b"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'"),
+    ]
+    if cookie is not None:
+        headers.append((b"set-cookie", cookie.encode()))
+    await send({"type": "http.response.start", "status": status, "headers": headers})
+    await send({"type": "http.response.body", "body": body})
+
+
+async def _json(send: Send, status: int, payload: dict[str, object]) -> None:
+    body = json.dumps(payload).encode()
     await send(
         {
             "type": "http.response.start",
             "status": status,
             "headers": [
-                (b"content-type", b"text/html; charset=utf-8"),
+                (b"content-type", b"application/json"),
                 (b"content-length", str(len(body)).encode()),
                 (b"cache-control", b"no-store"),
-                (b"content-security-policy", b"default-src 'none'; style-src 'unsafe-inline'"),
             ],
         }
     )
