@@ -671,6 +671,14 @@ class _Session:
 
         return {"on_request": on_request}
 
+    def _finish(self, job: ArchitectJob, status: JobStatus, error: Problem | None = None) -> bool:
+        """End the job after its usage is in the ledger, so whoever sees it finished also sees all of its usage."""
+        try:
+            self.flush_usage()
+        except Exception:  # recording usage must never break the job
+            logger.exception("Recording the usage of architect job %s failed", job.id)
+        return self.service.finish(job, status, error)
+
     def flush_usage(self) -> None:
         """Record the requests since the last flush in the usage ledger, by kind of request."""
         with self._flush_lock:
@@ -733,18 +741,18 @@ class _Session:
                 return
             self.build(plan)
         except JobCancelled:
-            self.service.finish(job, "cancelled")
+            self._finish(job, "cancelled")
         except BudgetExceededError as exc:
-            self.service.finish(
+            self._finish(
                 job,
                 "failed",
                 problem("architect.budget_exceeded", str(exc), budget=job.budget_usd),
             )
         except NodestroError as exc:
-            self.service.finish(job, "failed", exc.problem)
+            self._finish(job, "failed", exc.problem)
         except Exception as exc:  # every failure is reported to the UI
             logger.exception("Architect job %s failed", job.id)
-            self.service.finish(job, "failed", library_problem(exc, code="architect.failed"))
+            self._finish(job, "failed", library_problem(exc, code="architect.failed"))
         finally:
             try:
                 self.flush_usage()
@@ -820,7 +828,7 @@ class _Session:
         if analysis.question and not self.request.skip_questions and not self.request.clarifications:
             job.question = analysis.question
             self.log("analyze.question", "An essential detail is missing; a question for you", level="warning")
-            self.service.finish(job, "needs_input")
+            self._finish(job, "needs_input")
             return None
 
         self.phase("plan")
@@ -864,7 +872,7 @@ class _Session:
         if plan.question and not self.request.skip_questions and not self.request.clarifications:
             job.question = plan.question
             self.log("analyze.question", "An essential detail is missing; a question for you", level="warning")
-            self.service.finish(job, "needs_input")
+            self._finish(job, "needs_input")
             return None
         return plan
 
@@ -927,7 +935,7 @@ class _Session:
         for tool in job.tool_drafts:
             self.nodestro.tool_drafts.add(tool)
         self.log("present.ready", "The draft is ready for your review", level="success")
-        if not self.service.finish(job, "ready"):
+        if not self._finish(job, "ready"):
             self.nodestro.tool_drafts.discard_job(job.id)
 
     def clean_plan(self, plan: WorkflowPlan, existing: dict[str, Node]) -> tuple[list[PlannedAgent], set[str]]:

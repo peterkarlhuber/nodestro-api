@@ -9,6 +9,8 @@ Libraries in the Docker sandbox (desktop/server plan, PR-11, 2026-10-31):
   and tools (also AI-generated ones) run with their libraries in a container without network. New error codes
   `deps.lock_without_hashes`, `deps.wheels_required`, `deps.hash_mismatch` and `deps.image_failed`; new approval
   reason `hashes` (an environment approved before this release needs a new approval for the Docker sandbox).
+- Fix: the workflow architect writes a job's usage to the ledger before it marks the job finished, so the usage
+  report never misses requests of a job that is already shown as finished (seen as a flaky test on Python 3.10).
 
 Jobs and workers (desktop/server plan, PR-10, 2026-10-31). Nothing changes for the desktop:
 
