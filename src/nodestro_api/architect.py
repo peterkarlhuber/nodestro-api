@@ -68,6 +68,7 @@ from nodestro_runtime.schemas import (
     OutputFieldType,
     OutputNodeConfig,
     Position,
+    QualityConfig,
     ResultFileSpec,
     StartConfig,
     ToolChoice,
@@ -1384,7 +1385,11 @@ class _Session:
                     config = original.agent.model_copy(deep=True)
                 else:
                     config = AgentConfig(
-                        name=item.name, description=item.purpose, icon=item.icon, model=self.default_model
+                        name=item.name,
+                        description=item.purpose,
+                        icon=item.icon,
+                        model=self.default_model,
+                        quality=QualityConfig(judge_model=qualify(self.default_model)),
                     )
                 self.marks.setdefault(node_id, "kept" if item.action == "keep" else "pending")
             agent_nodes.append(

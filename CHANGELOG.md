@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+Designed agents get the default model as their judge (evolution plan Q-0, 2026-10-31):
+
+- Agents designed by the Agent Architect (`POST /api/agents/design`) and by the Workflow Architect, including its
+  fallback agent, now carry `quality.judge_model` set to the configured default model (`settings.default_model`).
+  Before, they got the runtime's global default judge (`anthropic:claude-opus-5-5`), so a workspace on Ollama or
+  another provider had a hidden Anthropic dependency once the check was switched on. The check stays off. The
+  runtime's global default is unchanged.
+- When the default model cannot return the structured verdict a quality check needs, the draft carries the note
+  `draft.judge_unsupported` (with `model`). The judge is not swapped for another model.
+- Unchanged: existing agents, stored workflows, templates, agents the Workflow Architect keeps or revises, and
+  explicitly configured judges. No schema or OpenAPI change.
+
 The server starts (desktop/server plan, PR-12, 2026-10-31):
 
 - New command `nodestro-server` (`nodestro_api.server`, extra `server`): `check`, `migrate` (with `pg_dump` backup
