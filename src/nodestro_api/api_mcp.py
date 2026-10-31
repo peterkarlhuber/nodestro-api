@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
+from fastapi.responses import RedirectResponse
 from nodestro_runtime.mcp.hub import sdk_available
 from nodestro_runtime.mcp.models import McpEvent, McpServerIn, McpServerView, McpTool, ToolAccess, ToolDefinition
 from nodestro_runtime.mcp_access import unattended_mcp_enabled
@@ -202,3 +203,75 @@ def decide_tool(ctx: Ctx, server_id: str, name: str, decision: McpDecision, requ
 def list_events(ctx: Ctx, limit: int = Query(200, ge=1, le=1000)) -> list[McpEvent]:
     """Administration and policy events, newest first (no secrets, no tool arguments)."""
     return ctx.mcp.events(limit=limit)
+
+
+# ---- OAuth 2.1 (WP-6) -------------------------------------------------------------------------
+
+_CALLBACK = "/api/mcp/oauth/callback"
+_LOOPBACK = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+class McpOAuthStart(BaseModel):
+    #: Open this URL in the browser to sign in at the server's authorization server.
+    authorization_url: str
+
+
+def _redirect_uri(request: Request) -> str:
+    """Nodestro's own callback: the server's configured public origin, or the desktop's loopback address.
+
+    Never taken from a ``Host`` header on a server: the callback must be the address registered with the
+    authorization server, and a forged header must not redirect the code elsewhere."""
+    origin = getattr(request.app.state, "public_origin", None)
+    if origin:
+        return f"{str(origin).rstrip('/')}{_CALLBACK}"
+    url = request.base_url
+    if url.hostname not in _LOOPBACK:
+        raise NodestroError(
+            "mcp.oauth_redirect_invalid", "Signing in to an MCP server needs the desktop's loopback address"
+        )
+    return f"{url.scheme}://{url.netloc}{_CALLBACK}"
+
+
+@router.post("/servers/{server_id}/oauth/start", dependencies=ADMIN)
+async def start_oauth(ctx: Ctx, server_id: str, request: Request) -> McpOAuthStart:
+    """Discover the server's authorization server, register Nodestro and return the sign-in URL (PKCE S256)."""
+    _server(ctx, server_id)
+    url = await ctx.mcp.abegin_oauth(server_id, _redirect_uri(request), actor=_actor(request))
+    return McpOAuthStart(authorization_url=url)
+
+
+@router.post("/servers/{server_id}/oauth/sign-out", dependencies=ADMIN)
+def sign_out_oauth(ctx: Ctx, server_id: str, request: Request) -> McpServerView:
+    _server(ctx, server_id)
+    return ctx.mcp.view(ctx.mcp.sign_out(server_id, actor=_actor(request)))
+
+
+@router.get("/oauth/callback", dependencies=ADMIN, include_in_schema=False)
+async def oauth_callback(
+    ctx: Ctx,
+    request: Request,
+    state: str = Query("", max_length=512),
+    code: str = Query("", max_length=4096),
+    iss: str | None = Query(None, max_length=2000),
+    error: str | None = Query(None, max_length=200),
+) -> RedirectResponse:
+    """Where the authorization server sends the browser back; continues on the studio's services page.
+
+    The result is shown by the studio (``oauth=connected`` or ``oauth_error=<code>``); no token, code or state is
+    put in the URL."""
+    target = "/tools?tab=services"
+    if error or not state or not code:
+        # The started sign-in stays unused and expires (runtime: 10 minutes).
+        reason = "mcp.oauth_denied" if error else "mcp.oauth_state_invalid"
+        return _back(f"{target}&oauth_error={reason}")
+    try:
+        server = await ctx.mcp.acomplete_oauth(state, code, iss, actor=_actor(request))
+    except NodestroError as exc:
+        return _back(f"{target}&oauth_error={exc.code}")
+    return _back(f"{target}&oauth=connected&server={server.id}")
+
+
+def _back(url: str) -> RedirectResponse:
+    return RedirectResponse(
+        url, status_code=303, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+    )
