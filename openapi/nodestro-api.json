@@ -568,6 +568,13 @@
           "tool_choice": {
             "$ref": "#/components/schemas/ToolChoice"
           },
+          "tool_policies": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ToolBinding"
+            },
+            "title": "Tool Policies",
+            "type": "object"
+          },
           "tools": {
             "items": {
               "type": "string"
@@ -13376,6 +13383,14 @@
       "ServerToolInfo": {
         "description": "A tool run by the provider itself; these are Anthropic's server tools.",
         "properties": {
+          "capability": {
+            "$ref": "#/components/schemas/ToolCapability",
+            "default": {
+              "access": "write",
+              "reach": "external",
+              "source": "default"
+            }
+          },
           "definition": {
             "additionalProperties": true,
             "title": "Definition",
@@ -14713,8 +14728,173 @@
         "title": "ToolAttempt",
         "type": "object"
       },
+      "ToolBinding": {
+        "description": "When an agent asks before calling one of its tools.\n\n- ``auto`` (every new binding): ask when the tool does more than read.\n- ``always``: ask for every call.\n- ``never``: do not ask. Counts only for ``read`` tools, for ``write`` tools with a ``reason`` and for legacy\n  exemptions; never for ``destructive`` tools. Otherwise it is treated as ``auto``.\n\nA **legacy exemption** (``legacy``) is a binding that existed before S-2; it holds only for the tool version it\nwas bound to (``bound_version``): a new version of the tool ends it.",
+        "properties": {
+          "ask": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "always",
+              "never"
+            ],
+            "title": "Ask",
+            "type": "string"
+          },
+          "bound_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bound Version"
+          },
+          "legacy": {
+            "default": false,
+            "title": "Legacy",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 10,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "ToolBinding",
+        "type": "object"
+      },
+      "ToolCallApproval": {
+        "description": "What the per-call approval rules did with one call.",
+        "properties": {
+          "capability": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Capability",
+            "type": "object"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "deadline": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadline"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By"
+          },
+          "pre_grant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pre Grant Id"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "status": {
+            "enum": [
+              "allowed",
+              "pending",
+              "approved",
+              "rejected",
+              "expired",
+              "cancelled",
+              "denied"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ToolCallApproval",
+        "type": "object"
+      },
       "ToolCallRecord": {
         "properties": {
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolCallApproval"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "finished_at": {
             "anyOf": [
               {
@@ -14772,6 +14952,46 @@
           "name"
         ],
         "title": "ToolCallRecord",
+        "type": "object"
+      },
+      "ToolCapability": {
+        "description": "What a tool may do (see the module documentation).",
+        "properties": {
+          "access": {
+            "enum": [
+              "read",
+              "write",
+              "destructive"
+            ],
+            "title": "Access",
+            "type": "string"
+          },
+          "reach": {
+            "enum": [
+              "internal",
+              "external"
+            ],
+            "title": "Reach",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "nodestro",
+              "author",
+              "admin",
+              "derived",
+              "default"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access",
+          "reach",
+          "source"
+        ],
+        "title": "ToolCapability",
         "type": "object"
       },
       "ToolChoice": {
@@ -15002,18 +15222,12 @@
       "ToolInfo": {
         "properties": {
           "capability": {
-            "anyOf": [
-              {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Capability"
+            "$ref": "#/components/schemas/ToolCapability",
+            "default": {
+              "access": "write",
+              "reach": "external",
+              "source": "default"
+            }
           },
           "code": {
             "anyOf": [
