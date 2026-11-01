@@ -35,6 +35,20 @@
   `public, max-age=31536000, immutable` for content-hashed `/assets` and `no-cache` for `index.html` and the
   single-page fallback. API responses and event streams are unchanged. `mount_frontend` moved to
   `nodestro_api.frontend` and is still importable from `nodestro_api.server_app`.
+- UX follow-ups:
+  - AD-07: `PUT /api/workflows/{id}` accepts `If-Match: <updated_at>` and refuses a save based on an older revision
+    with 409 `workflow.conflict` (`params.updated_at`, `params.name`); without the header, saves work as before. The
+    workflow and its version are written in one transaction under `store.lock`.
+  - AD-08: imports without a `nodes` list are refused (`workflow.import_invalid`); creating, saving or importing a
+    workflow with a dangling connection or a duplicate node id is refused with the codes `/workflows/check` uses.
+    Workflows created without a name are named in the interface language.
+  - AD-05: `/api/meta` reports `profile` (`desktop`, `local-container`, `server`). Server tenants are opened with the
+    server profile, so they no longer fall back to the operator's billing keys from the environment.
+  - AD-15: validation errors of published APIs name each field once (`{field, code, message}`, `number_parsing` for a
+    value that is not a number).
+  - AX-25: `GET /api/runs` pages with `before` and the `X-Has-More` / `X-Next-Before` response headers.
+  - Run and run summaries carry `warnings` from the runtime.
+  - `/api/health` on a server uses `PostgresDatabase.ping`; `architect.py` uses the runtime's public names (D-14).
 - CI: the read token is scoped per step, dependencies are audited, and PostgreSQL 17 is tested.
 
 ### Example library format 2: teams, knowledge files, integrations, model tiers (2026-11-01)
