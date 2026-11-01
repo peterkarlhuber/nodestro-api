@@ -341,6 +341,8 @@ Python 3.10 and 3.13, builds the wheel and the source distribution, installs the
 calls the started server over HTTP. It needs the repository secret `NODESTRO_READ` (read access to orkexa and the
 Nodestro repositories).
 
+Open work (known bugs, follow-ups and planned improvements) is listed in [docs/TODO.md](docs/TODO.md).
+
 ## Limitations
 
 - One process per data directory: limits, idempotency and key changes are synchronized within the process, not
