@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Run deletion removes orchestrator team runs (2026-11-01)
+
+- `DELETE /api/runs/{id}` also deletes the team runs an orchestrator node started (`child_run_ids`), at any depth,
+  with their files and tool waits. Before, only sub-workflow runs (`child_run_id`) went with the deleted run, and team
+  runs holding copies of its inputs and results stayed behind (backend audit, reported by the Live Run Chat thread).
+
 ### Pins: PostgreSQL read performance (2026-11-01)
 
 - Pins `nodestro-runtime` `d141b8f` (before `6eacec1`) and `nodestro-examples` `660e9a9` (before `1ead26c`). The
