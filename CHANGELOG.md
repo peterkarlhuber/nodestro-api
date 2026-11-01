@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Runs paused at a tool approval (AO M6b, behind a switch), pin: nodestro-runtime 26c86ef (2026-11-01)
+
+- Pin of `nodestro-runtime` at `26c86ef` (before: `6ac4ae3`) and `nodestro-examples` at `EXAMPLES` (before:
+  `1da29b7`, same examples on the new runtime). With `NODESTRO_TOOL_APPROVALS=1` and the new switch
+  `NODESTRO_TOOL_APPROVAL_CHECKPOINTS=1` (default off), a tool call that waits for a person pauses the run and
+  frees its worker; nothing changes while the switch is off.
+- `POST /api/runs/{run_id}/tool-approvals/{request_id}` (decide) continues a run paused at that call once none of
+  its calls waits any more (`RunManager.decide_tool_call`); the rules and the at-most-once check run again when the
+  call resumes. Deleting a run closes its open questions and deletes its checkpoints.
+- A background task (API process every 15 s, server worker once before serving and then periodically) runs the
+  runtime's deadline sweep: overdue questions expire, decided runs continue, checkpoints of runs that are gone are
+  dropped.
+- OpenAPI: `ToolApprovalRequest` gains `checkpointed`, `use` and `executed_at`; audit kinds `suspended`, `resumed`,
+  `executed`, `stale`, `result_lost` and `switch_off`.
+
 ### Security fix: stale tools in server workers (S-2 pilot finding F1), pin: nodestro-runtime 6ac4ae3 (2026-11-01)
 
 - Pin of `nodestro-runtime` at `6ac4ae3` (before: `081705d`) and `nodestro-examples` at `1da29b7` (before:
