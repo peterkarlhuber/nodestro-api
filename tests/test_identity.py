@@ -558,6 +558,22 @@ def test_the_server_health_check_reports_the_database(server: Server, monkeypatc
     assert browser.get("/api/health").status_code == 200
 
 
+def test_meta_names_the_server_profile(server: Server) -> None:
+    """AD-05: the studio can tell a server from the desktop and adapt its local-only copy."""
+    viewer = server.member("acme", "victor", "viewer")
+    assert viewer.get("/api/meta").json()["profile"] == "server"
+
+
+def test_a_tenant_never_uses_the_servers_environment_billing_keys(
+    server: Server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The desktop falls back to admin keys from the environment; a server's tenants must not see the operator's."""
+    monkeypatch.setenv("NODESTRO_ANTHROPIC_ADMIN_KEY", "sk-ant-admin-12345678")
+    admin = server.member("acme", "ada", "admin")
+    keys = {item["provider"]: item for item in admin.get("/api/pricing/billing-keys").json()}
+    assert keys["anthropic"]["configured"] is False and keys["anthropic"]["origin"] == "none"
+
+
 def test_the_api_reference_needs_a_login_on_a_server(server: Server) -> None:
     """A-09: the OpenAPI document and the reference page are not anonymous on a server."""
     anonymous = server.browser()

@@ -1,6 +1,7 @@
 """Backend fixes requested by the UX audit.
 
 - A save based on a stale revision is refused with 409 ``workflow.conflict`` (AD-07).
+- ``/api/meta`` names the profile (AD-05).
 """
 
 from __future__ import annotations
@@ -126,3 +127,10 @@ def test_a_save_cannot_create_a_legacy_tool_exemption(make_app: Any) -> None:
     saved = client.put(f"/api/workflows/{workflow_id}", json=forged).json()
     agent = next(node for node in saved["nodes"] if node["id"] == "a")["agent"]
     assert "send_mail" not in agent["tool_policies"]
+
+
+# ---- AD-05: the profile in meta -------------------------------------------------------------------------------
+
+
+def test_meta_names_the_desktop_profile(make_app: Any) -> None:
+    assert make_app().get("/api/meta").json()["profile"] == "desktop"

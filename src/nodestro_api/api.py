@@ -24,6 +24,7 @@ from nodestro_runtime.memory_spaces import MemoryFile, MemorySpaceInfo, check_sp
 from nodestro_runtime.preflight import WorkflowCheck, preflight
 from nodestro_runtime.preview import ContextPreview, PreviewRequest, build_preview, latest_run
 from nodestro_runtime.problems import NodestroError
+from nodestro_runtime.profile import ProfileKind
 from nodestro_runtime.providers import CAPABILITY_NAMES, PROVIDERS, ProviderInfo, qualify
 from nodestro_runtime.python_envs import ExportedDefinition, scope_of
 from nodestro_runtime.python_tools import check_with_dependencies, save_with_dependencies, tool_run_sandbox
@@ -160,6 +161,9 @@ class Meta(BaseModel):
     models: list[ModelInfo]
     server_tools: list[ServerToolInfo]
     efforts: list[str] = ["low", "medium", "high", "xhigh", "max"]
+    #: The product this API serves (AD-05): ``desktop`` (one person, this computer), ``local-container``
+    #: (Nodestro Local Docker: one person, a container on this computer) or ``server`` (an organization's server).
+    profile: ProfileKind = "desktop"
 
 
 # Whether this API process serves; on a server also whether it reaches its database (``503`` if not, D-10).
@@ -186,6 +190,7 @@ def meta(ctx: Ctx) -> Meta:
         # prices show in the model picker, and a model without a known price says so.
         models=models(ctx.pricing),
         server_tools=list(SERVER_TOOLS.values()),
+        profile=ctx.profile.kind,
     )
 
 

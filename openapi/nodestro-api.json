@@ -8490,6 +8490,16 @@
             "title": "Models",
             "type": "array"
           },
+          "profile": {
+            "default": "desktop",
+            "enum": [
+              "desktop",
+              "server",
+              "local-container"
+            ],
+            "title": "Profile",
+            "type": "string"
+          },
           "providers": {
             "items": {
               "$ref": "#/components/schemas/ProviderInfo"
