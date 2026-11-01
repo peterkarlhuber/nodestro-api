@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Pins: PostgreSQL read performance (2026-11-01)
+
+- Pins `nodestro-runtime` `d141b8f` (before `6eacec1`) and `nodestro-examples` `660e9a9` (before `1ead26c`). The
+  runtime's PostgreSQL store checks pooled connections only after they sat idle, retries reads on a lost connection,
+  writes single statements in autocommit, and migration 0006 makes the `status`/`trigger_ref` indexes partial. A
+  server applies migration 0006 at its next start (`nodestro-server migrate`, backup first as for every migration).
+
 ### Example guide terminology (2026-11-01)
 
 - Pin of `nodestro-examples` at `1ead26c` (before: `e370567`): the localized example guides use the studio's
