@@ -136,10 +136,12 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
     studio = [item for item in found if item.access in {"read", "edit", "run", "admin", "install", "public"}]
     assert Counter(item.access for item in studio) == {
         # read: + MCP stdio server environment (WP-8); + a typed model's capabilities (Amazon Bedrock)
-        "read": 100,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
+        # read: + live run chat view, message, events (LRC-1)
+        "read": 103,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
         # MCP status, servers, server, tools (WP-3); tool approval inbox, run questions, pre-grants, state (S-2b)
         "edit": 48,  # + the tool panel's test run (review H-1, was run)
-        "run": 31,  # + deciding a tool call (S-2b); - the tool panel's test run (review H-1)
+        # run: + sending a live run chat message (LRC-1)
+        "run": 32,  # + deciding a tool call (S-2b); - the tool panel's test run (review H-1)
         "admin": 43,  # + price sync, reviews, overrides, billing keys and reconciliation (PRICING-1); gate (Q-3);
         # MCP add, change, remove, discover, decision, events (WP-3); pre-grants, audit, activation (S-2b);
         # MCP OAuth start, callback, sign-out (WP-6); MCP stdio package plan (WP-8); MCP stats (WP-7);
@@ -186,6 +188,10 @@ SENSITIVE = {
     ("GET", "/api/tool-approvals/audit"): "admin",
     ("POST", "/api/tool-approvals/legacy"): "admin",
     ("GET", "/api/runs/{run_id}/tool-approvals"): "read",
+    ("POST", "/api/runs/{run_id}/chat/messages"): "run",
+    ("GET", "/api/runs/{run_id}/chat"): "read",
+    ("GET", "/api/runs/{run_id}/chat/events"): "read",
+    ("GET", "/api/runs/{run_id}/chat/messages/{message_id}"): "read",
     ("POST", "/api/tools/jobs"): "run",
     ("POST", "/api/tools/{name}/run"): "edit",  # and run, checked in the route (review H-1)
     ("POST", "/api/tools/drafts/{draft_id}/test"): "run",
