@@ -4,6 +4,8 @@
 
 ### Security fixes from the independent MCP re-review (R-1) (2026-11-01)
 
+- Pin of `nodestro-runtime` at `58cec5c` (before: `f71086a`; re-review fixes R-1 and R-2) and `nodestro-examples` at
+  `3429f5b` (before: `69e5e65`, same examples on the new runtime).
 - `POST /api/runs/{run_id}/tool-approvals/{request_id}` checks both classifications of an MCP tool call: the one it
   was asked with and the tool's classification now. If either is `destructive`, deciding needs `admin` (403
   `access.forbidden`, `permission: admin`), so a tool reclassified as destructive while its call waited is never
