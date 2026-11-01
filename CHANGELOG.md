@@ -50,6 +50,8 @@
   - Run and run summaries carry `warnings` from the runtime.
   - `/api/health` on a server uses `PostgresDatabase.ping`; `architect.py` uses the runtime's public names (D-14).
 - CI: the read token is scoped per step, dependencies are audited, and PostgreSQL 17 is tested.
+- Pins: `nodestro-runtime` at `6eacec1` (before: `58cec5c`) with the runtime audit fixes, and `nodestro-examples`
+  at `e370567` (before: `5e2d532`), which pins the same runtime.
 
 ### Example library format 2: teams, knowledge files, integrations, model tiers (2026-11-01)
 
