@@ -298,6 +298,7 @@ def _document_models() -> dict[str, type[BaseModel]]:
     Imported here: these modules import much of the app, and the backup module is imported early."""
     from nodestro_runtime.input_files import InputFile
     from nodestro_runtime.python_envs import PythonEnvironment
+    from nodestro_runtime.run_chat import RunMessage
     from nodestro_runtime.tool_approvals import ToolApprovalRequest
     from nodestro_runtime.tool_drafts import ToolDraft
     from nodestro_runtime.tool_provenance import AuthoredVersions
@@ -336,6 +337,7 @@ def _document_models() -> dict[str, type[BaseModel]]:
         "tool_drafts": ToolDraft,
         "tool_provenance": AuthoredVersions,
         "tool_approvals": ToolApprovalRequest,
+        "run_messages": RunMessage,
     }
 
 

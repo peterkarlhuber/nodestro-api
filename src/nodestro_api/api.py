@@ -945,6 +945,11 @@ def export_run(
     if run is None:
         raise KeyError(run_id)
     data = run.model_dump(mode="json")
+    if run.parent_run_id is None:
+        # The live run chat (LRC-1) goes with the top-level run's trace; sanitizing covers it like the run.
+        chat = ctx.runs.chat.export(run.id)
+        if chat:
+            data["chat"] = chat
     if mode == "sanitized":
         data = sanitize_run(data, personal_data=personal_data, contents=contents)
     suffix = "_sanitized" if mode == "sanitized" else ""
@@ -1042,6 +1047,8 @@ def delete_run(run_id: str, ctx: Ctx) -> Response:
         ctx.files.delete_run(item.id)
         # A run paused at a tool call (M6b): its questions close and its checkpoints go with it.
         ctx.runs.discard_tool_waits(item.id, because="run.deleted")
+    # Its live chat (LRC-1) is stored under the top-level run.
+    ctx.runs.chat.delete_run(run.id)
     # Input files only these runs used go with them (knowledge files are never touched).
     ctx.inputs.release([file_id for item in tree for file_id in item.file_ids])
     return Response(status_code=204)

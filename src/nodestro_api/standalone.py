@@ -332,6 +332,7 @@ class StandaloneHost:
                 run = self.store.get("runs", summary.id, Run)
                 self.store.delete("runs", summary.id)
                 self.files.delete_run(summary.id)
+                self.store.delete_prefix("run_messages", f"{summary.id}:")  # its live chat (LRC-1)
                 if run is not None:
                     self.inputs.release(run.file_ids)
                 removed += 1
