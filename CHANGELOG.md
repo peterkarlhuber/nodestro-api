@@ -2,6 +2,49 @@
 
 ## Unreleased
 
+### Amazon Bedrock (2026-11-01)
+
+- Pins `nodestro-runtime` `ac96c6f` (before `d141b8f`; the runtime's Bedrock provider and its review fixes, Orkexa
+  `3467940` with boto3) and `nodestro-examples` `dcad0d1` (the same runtime pin, branch only).
+- Contract (`openapi/nodestro-api.json`), all additions:
+  - `POST /api/settings/providers/bedrock/verify` (permission `admin`, like changing the settings; optional body
+    `ProviderVerifyIn {model}`, `bedrock:` in front is accepted, model ids keep every colon): checks the Bedrock
+    settings with free AWS calls only (STS `GetCallerIdentity` and one control-plane read; no model is invoked) and
+    answers the provider's `ProviderStatus` with `verification {state, checked_at, code}`. A failed check is a 200 with
+    `state: "failed"` and a stable `provider.aws_*` code; nothing about the AWS identity is returned. A second check
+    within 10 seconds answers 429 `provider.verify_rate_limited` with `Retry-After`; a model of another provider 400
+    `provider.model_invalid`.
+  - From the runtime: `ProviderInfo.auth` (`api_key`/`endpoint`/`aws`) and `region_env_vars`; `ProviderSettingsIn`
+    `region`, `auth`, `profile_name`, `data_residency`; `ProviderStatus` `auth`, `region`, `profile_name`,
+    `data_residency(_forced)`, `auth_methods`, `allowed_regions`, `operator_role`, `verification`
+    (`ProviderVerification`); `ModelInfo.price_region(s)`; `ReconciliationReport.not_reconciled`
+    (`UnreconciledProvider`). `/api/meta` lists `bedrock` and EU inference-profile suggestions.
+  - `OverrideIn.aws_regions`: the AWS regions an individual Bedrock price applies to (the first is the default);
+    required for `bedrock` (`pricing.invalid_price` with `pricing.region_required`), refused for other providers.
+    The override routes already take model ids with colons and slashes (`{model:path}`, ARNs).
+- `GET /api/models/capabilities?model=` (permission `read`, `ModelCapabilities {model, capabilities}`): Orkexa's
+  capability values of a typed Bedrock model id (the same values the catalog entries of `/api/meta` now carry in
+  `ModelInfo.capabilities`); `null` for other providers and invalid names. A new route because no existing response
+  fits one typed id (`/api/meta` lists only the catalog, `/agents/validate` answers a list, `/workflows/check` a
+  schema the Workflow Architect shares). From the runtime also `PriceEntry.regions`.
+- The connection diagnosis of Bedrock stores the verification result as a side effect (documented on both routes).
+- Errors of the studio API now carry the headers of an `ApiError` (here `Retry-After`).
+- Server: `nodestro-server` reads `NODESTRO_BEDROCK_TENANT_ROLES[_FILE]`, `NODESTRO_BEDROCK_DATA_RESIDENCY` and
+  `NODESTRO_BEDROCK_ALLOWED_REGIONS` (`profile.invalid` names the variable, never a role ARN or an external id, so
+  `nodestro-server check` validates them); API and worker processes hand each tenant's workspace only its own role
+  (`ServerEnvironment.bedrock` → `TenantComposition.bedrock`/`TenantFiles.bedrock` → `tenant_storage(bedrock=)`).
+- Export: `workflow/manifest.json` gains `settings` (Bedrock: region and data residency only); `.env.example` and
+  the README name `AWS_REGION`/`AWS_DEFAULT_REGION` and the default credential chain instead of a key or base URL;
+  the export check has `export.region_missing` (error), `export.aws_profile_not_exported` and
+  `export.aws_role_not_exported` (warnings). The vendored orkexa `pyproject.toml` takes its extras from orkexa's
+  metadata (`bedrock` with boto3, `all` with boto3), matching `requirements.lock`. The exported API reads the region
+  from the environment or the manifest (`provider.region_missing` → 503).
+- A published API whose Bedrock settings are missing, have no operator role or a refused region answers 503
+  `model.unavailable`; the connection diagnosis of Bedrock runs the verification (codes `ok`, `key_rejected`,
+  `unreachable`, `not_configured`, `failed`, with the `provider.*` code in `params.reason`).
+- The AWS SDK's loggers (`botocore`, `boto3`, `s3transfer`) start at WARNING: at DEBUG botocore logs signed request
+  headers and temporary session tokens, which must not reach logs through a process-wide DEBUG setting.
+
 ### Run deletion removes orchestrator team runs (2026-11-01)
 
 - `DELETE /api/runs/{id}` also deletes the team runs an orchestrator node started (`child_run_ids`), at any depth,

@@ -46,6 +46,7 @@ import subprocess
 import sys
 from typing import Any
 
+from nodestro_runtime.bedrock import BedrockOperatorConfig
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.profile import RuntimeProfile
 from nodestro_runtime.server_settings import ServerSettings
@@ -77,6 +78,11 @@ class ServerEnvironment:
     #: Runs one worker holds and how many of them may wait for a tool approval (``NODESTRO_WORKER_MAX_RUNS``,
     #: ``NODESTRO_WORKER_MAX_WAITING``; defaults 2 and 1, see :func:`nodestro_runtime.jobs.check_capacity`).
     capacity: dict[str, int] = field(default_factory=dict)
+    #: The operator's Amazon Bedrock settings (``NODESTRO_BEDROCK_TENANT_ROLES[_FILE]``,
+    #: ``NODESTRO_BEDROCK_DATA_RESIDENCY``, ``NODESTRO_BEDROCK_ALLOWED_REGIONS``): which tenant may assume which IAM
+    #: role. ``None`` or no role for a tenant: Bedrock is not available to it (the server's own AWS chain is never
+    #: used for a tenant). Each tenant's workspace receives only its own entry.
+    bedrock: BedrockOperatorConfig | None = None
 
 
 def _capacity(environ: Mapping[str, str], problems: list[dict[str, str]]) -> dict[str, int]:
@@ -178,6 +184,14 @@ def load(environ: Mapping[str, str] | None = None) -> ServerEnvironment:
         problems.append(
             {"field": error.params.get("field", ""), "value": error.params.get("value", ""), "reason": str(error)}
         )
+    bedrock: BedrockOperatorConfig | None = None
+    try:
+        bedrock = BedrockOperatorConfig.from_env(environ)
+    except NodestroError as error:
+        # The problem names the variable, never a role ARN or an external id.
+        problems.append(
+            {"field": error.params.get("field", ""), "value": error.params.get("value", ""), "reason": str(error)}
+        )
     if problems:
         raise NodestroError(
             "profile.invalid",
@@ -194,6 +208,7 @@ def load(environ: Mapping[str, str] | None = None) -> ServerEnvironment:
         worker=worker,
         price_sync=price_sync,
         capacity=capacity,
+        bedrock=bedrock,
     )
 
 
@@ -267,6 +282,7 @@ def create_server_app() -> Any:
             secrets=settings.secret_box(),
             static_dir=server.static_dir,
             endpoints=server.endpoints,
+            bedrock=server.bedrock,
         )
     )
 
@@ -288,6 +304,7 @@ async def run_worker(server: ServerEnvironment) -> None:
         docs_dir=server.docs_dir,
         secrets=server.settings.secret_box(),
         endpoints=server.endpoints,
+        bedrock=server.bedrock,
     )
     timing = dict(server.worker)
     settings = WorkerSettings(

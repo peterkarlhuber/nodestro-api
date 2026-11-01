@@ -68,7 +68,10 @@ async def diagnostics(ctx: Ctx) -> Diagnostics:
 
 @router.post("/diagnostics/connection", dependencies=INSTALL)
 async def diagnostics_connection(ctx: Ctx, provider: str | None = None) -> DiagnosticCheck:
-    """Reach a provider's API (default: the default model's) by listing its models; no tokens, no cost."""
+    """Reach a provider's API (default: the default model's) by listing its models; no tokens, no cost.
+
+    Amazon Bedrock: runs the settings verification instead (free AWS calls) and, as a side effect, stores its result
+    in the provider's ``verification`` (rate limit shared with ``POST /api/settings/providers/bedrock/verify``)."""
     return await asyncio.to_thread(check_connection, ctx, provider)
 
 

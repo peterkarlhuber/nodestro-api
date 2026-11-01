@@ -8530,6 +8530,39 @@
         "title": "Meta",
         "type": "object"
       },
+      "ModelCapabilities": {
+        "description": "What a model supports according to Orkexa, for a model id typed in the editor (not only catalog entries).",
+        "properties": {
+          "capabilities": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "enum": [
+                    "supported",
+                    "unsupported",
+                    "unknown"
+                  ],
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capabilities"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model"
+        ],
+        "title": "ModelCapabilities",
+        "type": "object"
+      },
       "ModelChoice": {
         "properties": {
           "current_model": {
@@ -8651,6 +8684,25 @@
             ],
             "title": "Cache Write 5M Usd Per Mtok"
           },
+          "capabilities": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "enum": [
+                    "supported",
+                    "unsupported",
+                    "unknown"
+                  ],
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capabilities"
+          },
           "description": {
             "title": "Description",
             "type": "string"
@@ -8699,6 +8751,31 @@
               }
             ],
             "title": "Price Quality"
+          },
+          "price_region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Region"
+          },
+          "price_regions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Regions"
           },
           "price_source": {
             "anyOf": [
@@ -9601,6 +9678,21 @@
       "OverrideIn": {
         "description": "An individual price (USD per million tokens, as decimal strings): a contract price or a correction.",
         "properties": {
+          "aws_regions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 40,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aws Regions"
+          },
           "cache_read_usd_per_mtok": {
             "anyOf": [
               {
@@ -10445,6 +10537,20 @@
               }
             ]
           },
+          "regions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regions"
+          },
           "source": {
             "title": "Source",
             "type": "string"
@@ -10920,6 +11026,16 @@
       "ProviderInfo": {
         "description": "What a provider needs and offers (static; the interface translates it by ``id``).",
         "properties": {
+          "auth": {
+            "default": "api_key",
+            "enum": [
+              "api_key",
+              "endpoint",
+              "aws"
+            ],
+            "title": "Auth",
+            "type": "string"
+          },
           "base_url": {
             "default": false,
             "title": "Base Url",
@@ -10960,7 +11076,8 @@
               "gemini",
               "compatible",
               "ollama",
-              "vllm"
+              "vllm",
+              "bedrock"
             ],
             "title": "Id",
             "type": "string"
@@ -10972,6 +11089,13 @@
           "needs_key": {
             "title": "Needs Key",
             "type": "boolean"
+          },
+          "region_env_vars": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Region Env Vars",
+            "type": "array"
           }
         },
         "required": [
@@ -11024,7 +11148,7 @@
         "type": "object"
       },
       "ProviderSettingsIn": {
-        "description": "A change of one provider's settings: ``None`` keeps a value, an empty text removes it.",
+        "description": "A change of one provider's settings: ``None`` keeps a value, an empty text removes it.\n\n``region``, ``auth``, ``profile_name`` and ``data_residency`` belong to Amazon Bedrock only (other providers\nrefuse them with ``provider.field_not_supported``); Bedrock refuses ``api_key``, ``base_url`` and\n``capabilities``.",
         "properties": {
           "api_key": {
             "anyOf": [
@@ -11036,6 +11160,17 @@
               }
             ],
             "title": "Api Key"
+          },
+          "auth": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth"
           },
           "base_url": {
             "anyOf": [
@@ -11066,6 +11201,39 @@
               }
             ],
             "title": "Capabilities"
+          },
+          "data_residency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Residency"
+          },
+          "profile_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Name"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
           }
         },
         "title": "ProviderSettingsIn",
@@ -11074,6 +11242,45 @@
       "ProviderStatus": {
         "description": "A provider as the settings page shows it; never contains the key itself.",
         "properties": {
+          "allowed_regions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Regions"
+          },
+          "auth": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth"
+          },
+          "auth_methods": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Methods"
+          },
           "base_url": {
             "anyOf": [
               {
@@ -11106,6 +11313,28 @@
           "configured": {
             "title": "Configured",
             "type": "boolean"
+          },
+          "data_residency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Residency"
+          },
+          "data_residency_forced": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Residency Forced"
           },
           "env_var": {
             "anyOf": [
@@ -11140,6 +11369,49 @@
           "label": {
             "title": "Label",
             "type": "string"
+          },
+          "operator_role": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operator Role"
+          },
+          "profile_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Name"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "verification": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProviderVerification"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -11149,6 +11421,65 @@
           "key_source"
         ],
         "title": "ProviderStatus",
+        "type": "object"
+      },
+      "ProviderVerification": {
+        "description": "The result of the last explicit check of a provider (Bedrock); never an account, ARN or key.",
+        "properties": {
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "state": {
+            "default": "not_configured",
+            "enum": [
+              "not_configured",
+              "configured",
+              "verified",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "title": "ProviderVerification",
+        "type": "object"
+      },
+      "ProviderVerifyIn": {
+        "description": "What to check: without ``model`` the region's model list is read; with one, that model or inference profile\n(``eu.anthropic...``, an ARN; ``bedrock:`` in front is accepted).",
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          }
+        },
+        "title": "ProviderVerifyIn",
         "type": "object"
       },
       "Publication": {
@@ -11763,6 +12094,13 @@
             "format": "date",
             "title": "End",
             "type": "string"
+          },
+          "not_reconciled": {
+            "items": {
+              "$ref": "#/components/schemas/UnreconciledProvider"
+            },
+            "title": "Not Reconciled",
+            "type": "array"
           },
           "providers": {
             "items": {
@@ -17233,6 +17571,49 @@
         "title": "TraceImport",
         "type": "object"
       },
+      "UnreconciledProvider": {
+        "description": "A provider Nodestro estimated costs for in the period but did not compare with a bill.",
+        "properties": {
+          "code": {
+            "enum": [
+              "pricing.reconciliation_not_supported",
+              "pricing.reconciliation_not_configured"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "estimated_usd": {
+            "title": "Estimated Usd",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "requests": {
+            "title": "Requests",
+            "type": "integer"
+          },
+          "unpriced_requests": {
+            "title": "Unpriced Requests",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "provider",
+          "code",
+          "estimated_usd",
+          "requests",
+          "unpriced_requests",
+          "note"
+        ],
+        "title": "UnreconciledProvider",
+        "type": "object"
+      },
       "UploadResult": {
         "description": "One uploaded file: stored (``file``) or refused (``problem``).",
         "properties": {
@@ -21094,7 +21475,7 @@
     },
     "/api/diagnostics/connection": {
       "post": {
-        "description": "Reach a provider's API (default: the default model's) by listing its models; no tokens, no cost.",
+        "description": "Reach a provider's API (default: the default model's) by listing its models; no tokens, no cost.\n\nAmazon Bedrock: runs the settings verification instead (free AWS calls) and, as a side effect, stores its result\nin the provider's ``verification`` (rate limit shared with ``POST /api/settings/providers/bedrock/verify``).",
         "operationId": "diagnostics_connection_api_diagnostics_connection_post",
         "parameters": [
           {
@@ -22973,6 +23354,48 @@
           }
         },
         "summary": "Meta"
+      }
+    },
+    "/api/models/capabilities": {
+      "get": {
+        "description": "Orkexa's capabilities of one qualified model id (``bedrock:eu.anthropic...-v1:0``, an ARN; colons kept).",
+        "operationId": "get_model_capabilities_api_models_capabilities_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "model",
+            "required": true,
+            "schema": {
+              "maxLength": 2048,
+              "minLength": 1,
+              "title": "Model",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelCapabilities"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Model Capabilities"
       }
     },
     "/api/organize": {
@@ -26854,6 +27277,55 @@
           }
         },
         "summary": "Put Settings"
+      }
+    },
+    "/api/settings/providers/bedrock/verify": {
+      "post": {
+        "description": "Check the Amazon Bedrock settings with free AWS calls only (STS ``GetCallerIdentity`` and one read of the\nBedrock control plane; no model is invoked) and store the result in the provider's ``verification``.\n\nThe connection diagnosis (``POST /api/diagnostics/connection?provider=bedrock``) runs the same check, so it also\nstores the verification as a side effect and shares its rate limit.\n\nA failed check answers 200 with ``verification.state == \"failed\"`` and a stable code; nothing about the AWS\nidentity (account, ARN, keys) is ever returned. At most one check every few seconds per workspace (429).",
+        "operationId": "verify_bedrock_api_settings_providers_bedrock_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ProviderVerifyIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Checked a moment ago (provider.verify_rate_limited, Retry-After)"
+          }
+        },
+        "summary": "Verify Bedrock"
       }
     },
     "/api/tool-approvals": {

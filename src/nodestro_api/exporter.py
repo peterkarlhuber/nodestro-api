@@ -46,7 +46,7 @@ from nodestro_runtime import __version__ as runtime_version
 from nodestro_runtime.builtin_tools import BUILTIN_TOOLS
 from nodestro_runtime.engine import start_fields
 from nodestro_runtime.problems import CheckIssue, NodestroError
-from nodestro_runtime.providers import PROVIDERS, base_url_variable, has_credentials, provider_of
+from nodestro_runtime.providers import PROVIDERS, base_url_variable, exported_settings, has_credentials, provider_of
 from nodestro_runtime.release import ReleaseBundle, current_runtime
 from nodestro_runtime.schemas import InputField, new_id, now
 from orkexa import __version__ as library_version
@@ -275,7 +275,7 @@ def _sha(data: bytes) -> str:
 
 #: What the exported application itself needs (orkexa with its provider SDKs comes separately).
 _APP_PACKAGES = ("fastapi", "uvicorn[standard]", "pydantic", "pypdf")
-#: The agent library with every provider SDK (Anthropic, OpenAI, Gemini) and PDF support.
+#: The agent library with every provider SDK (Anthropic, OpenAI, Gemini, boto3 for Amazon Bedrock) and PDF support.
 _LIBRARY = "orkexa[all,pdf]"
 _DEV_PACKAGES = ("pytest", "httpx")
 
@@ -503,6 +503,9 @@ def check(ctx: Nodestro, publication: Publication, release: Release, options: Ex
     for provider in release_providers(bundle):
         provider_info = PROVIDERS.get(provider)
         if provider_info is None:
+            continue
+        if provider_info.auth == "aws":
+            problems += _aws_issues(ctx, provider)
             continue
         variables = provider_info.env_vars or [f"{provider.upper()}_API_KEY"]
         if provider_info.base_url:
@@ -1141,6 +1144,7 @@ def _readme(
     excluded: list[str],
     memory: list[str],
     base_urls: dict[str, str] | None = None,
+    provider_settings: dict[str, dict[str, Any]] | None = None,
 ) -> str:
     sample = examples(served, "http://127.0.0.1:8000")
     german = options.language == "de"
@@ -1181,7 +1185,7 @@ def _readme(
         "{memory}": ", ".join(memory) or "-",
         "{guide}": ("\n- [docs/AI_GUIDE.md](docs/AI_GUIDE.md)" if options.guide_id else ""),
         "{providers}": ", ".join(PROVIDERS[item].label for item in providers if item in PROVIDERS) or "-",
-        "{provider_rows}": _provider_rows(providers, german, base_urls),
+        "{provider_rows}": _provider_rows(providers, german, base_urls, provider_settings),
     }
     for key, value in replacements.items():
         text = text.replace(key, value)
@@ -1221,12 +1225,88 @@ wird von dort installiert; ein Zugriff auf das Repository ist nicht nötig. Beim
 dass die Library weitergegeben werden darf. Beachte das, bevor du das Projekt weitergibst."""
 
 
-def _provider_rows(providers: list[str], german: bool, base_urls: dict[str, str] | None) -> str:
+def _aws_issues(ctx: Nodestro, provider: str) -> list[CheckIssue]:
+    """Amazon Bedrock in an export: the region goes along, AWS credentials never do (the target machine's default
+    credential chain signs the requests)."""
+    info = PROVIDERS[provider]
+    status = next((item for item in ctx.settings().providers if item.id == provider), None)
+    region = status.region if status is not None else None
+    auth = status.auth if status is not None else None
+    variables = " / ".join(info.region_env_vars)
+    found = [
+        _issue(
+            "export.provider",
+            f"{info.label}: the export signs in with the AWS default credential chain of the machine it runs on "
+            f"(environment, AWS profile or IAM role); {variables} overrides the exported region",
+            level="info",
+            provider=provider,
+            variables=variables,
+        )
+    ]
+    if not region:
+        found.append(
+            _issue(
+                "export.region_missing",
+                f"{info.label} has no AWS region in the settings; choose one before exporting",
+                level="error",
+                provider=provider,
+            )
+        )
+    if auth == "profile":
+        found.append(
+            _issue(
+                "export.aws_profile_not_exported",
+                f"The AWS profile of {info.label} is not exported: the export uses the default AWS credential chain "
+                "of the target machine (set AWS_PROFILE there if needed)",
+                level="warning",
+                provider=provider,
+            )
+        )
+    elif auth == "operator_role":
+        found.append(
+            _issue(
+                "export.aws_role_not_exported",
+                f"The server's AWS role for {info.label} is not exported: configure AWS credentials (for example an "
+                "IAM role) on the target machine",
+                level="warning",
+                provider=provider,
+            )
+        )
+    return found
+
+
+def _aws_region(provider: str, settings: dict[str, dict[str, Any]] | None) -> str:
+    return str(((settings or {}).get(provider) or {}).get("region") or "")
+
+
+def _provider_rows(
+    providers: list[str],
+    german: bool,
+    base_urls: dict[str, str] | None,
+    settings: dict[str, dict[str, Any]] | None = None,
+) -> str:
     """The README table rows of the providers' environment variables."""
     rows: list[str] = []
     for provider in providers:
         info = PROVIDERS.get(provider)
         if info is None:
+            continue
+        if info.auth == "aws":
+            names = " / ".join(f"`{name}`" for name in info.region_env_vars)
+            region = _aws_region(provider, settings)
+            shown = f" (`{region}`)" if region else ""
+            if german:
+                rows.append(f"| {names} | AWS-Region für {info.label}; ohne sie gilt die exportierte Region{shown}. |")
+                rows.append(
+                    "| `AWS_PROFILE`, `AWS_ACCESS_KEY_ID`, ... | Anmeldung bei AWS über die Standard-Credential-Chain "
+                    "dieses Rechners (Umgebung, `~/.aws`, IAM-Rolle); das Projekt enthält keine AWS-Zugangsdaten. |"
+                )
+            else:
+                rows.append(f"| {names} | The AWS region for {info.label}; without it the exported region{shown}. |")
+                rows.append(
+                    "| `AWS_PROFILE`, `AWS_ACCESS_KEY_ID`, ... | AWS sign-in through the default credential chain of "
+                    "this machine (environment, `~/.aws`, IAM role); the project contains no AWS credentials. |"
+                )
             continue
         if info.needs_key:
             names = " / ".join(f"`{name}`" for name in info.env_vars)
@@ -1553,11 +1633,22 @@ Runtime.
 """
 
 
-def _env_example(publication: Publication, providers: list[str], base_urls: dict[str, str]) -> str:
+def _env_example(
+    publication: Publication,
+    providers: list[str],
+    base_urls: dict[str, str],
+    settings: dict[str, dict[str, Any]] | None = None,
+) -> str:
     lines: list[str] = []
     for provider in providers:
         info = PROVIDERS.get(provider)
         if info is None:
+            continue
+        if info.auth == "aws":
+            lines.append(f"# {info.label}: AWS credentials come from the default credential chain of this machine")
+            lines.append("# (AWS_PROFILE, AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, ~/.aws, an IAM role); never put")
+            lines.append("# them into this file. The region overrides the exported one.")
+            lines.append(f"{info.region_env_vars[0]}={_aws_region(provider, settings)}")
             continue
         if info.needs_key:
             lines.append(f"{info.env_vars[0]}=")
@@ -1607,11 +1698,38 @@ testpaths = ["tests"]
 """
 
 
+#: Extras of orkexa that belong to its development, not to an exported project.
+_LIBRARY_DEV_EXTRAS = frozenset({"dev", "docs"})
+
+
+def _library_extras() -> dict[str, list[str]]:
+    """orkexa's extras from its installed metadata (``bedrock`` with boto3, ``all`` with every provider SDK), so the
+    vendored ``pyproject.toml`` installs what ``requirements.lock`` pins (``./vendor/orkexa[all,pdf]``)."""
+    found: dict[str, list[str]] = {}
+    environment = {key: str(value) for key, value in default_environment().items()}
+    for item in metadata.requires("orkexa") or []:
+        requirement = Requirement(item)
+        if requirement.marker is None:
+            continue
+        extras = [
+            extra
+            for extra in metadata.metadata("orkexa").get_all("Provides-Extra") or []
+            if extra not in _LIBRARY_DEV_EXTRAS
+            and requirement.marker.evaluate({**environment, "extra": extra})
+            and not requirement.marker.evaluate({**environment, "extra": ""})
+        ]
+        requirement.marker = None
+        for extra in extras:
+            found.setdefault(extra, []).append(str(requirement))
+    return found
+
+
 def _vendor_pyproject() -> str:
     requires = [
         str(Requirement(item)) for item in metadata.requires("orkexa") or [] if Requirement(item).marker is None
     ]
     deps = "\n".join(f'    "{item}",' for item in requires)
+    extras = "\n".join(f"{name} = {json.dumps(sorted(items))}" for name, items in sorted(_library_extras().items()))
     return f"""[build-system]
 requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
@@ -1627,11 +1745,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-anthropic = ["anthropic>=2.0,<3"]
-openai = ["openai>=3.0,<4"]
-gemini = ["google-genai>=2.0,<3"]
-all = ["anthropic>=2.0,<3", "openai>=3.0,<4", "google-genai>=2.0,<3"]
-pdf = ["pypdf>=4"]
+{extras}
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/orkexa"]
@@ -1742,7 +1856,7 @@ def _project_files(
             json.dumps({"space": space_ref.space, "files": content}, indent=2) + "\n",
         )
     providers = release_providers(bundle)
-    base_urls, capabilities = _provider_manifest(ctx, providers)
+    base_urls, capabilities, provider_settings = _provider_manifest(ctx, providers)
     manifest = {
         "format": "nodestro-export",
         "format_version": 1,
@@ -1767,6 +1881,7 @@ def _project_files(
         "providers": providers,
         "base_urls": base_urls,
         "capabilities": capabilities,
+        "settings": provider_settings,
         "knowledge_included": [ref.id for ref in bundle.knowledge if ref.name in knowledge_in],
         "knowledge_excluded": [ref.id for ref in bundle.knowledge if ref.name in knowledge_out],
         "memory_included": memory_in,
@@ -1805,7 +1920,18 @@ def _project_files(
     tools = sorted([*bundle.tools, *bundle.builtin_tools])
     add(
         "README.md",
-        _readme(publication, release, options, served, tools, knowledge_in, knowledge_out, memory_in, base_urls),
+        _readme(
+            publication,
+            release,
+            options,
+            served,
+            tools,
+            knowledge_in,
+            knowledge_out,
+            memory_in,
+            base_urls,
+            provider_settings,
+        ),
     )
     sample = examples(served, "http://127.0.0.1:8000")
     add("examples/request.json", json.dumps(sample.request, indent=2, ensure_ascii=False) + "\n")
@@ -1816,7 +1942,7 @@ def _project_files(
         + "\n\n".join(sample.curl.values())
         + "\n",
     )
-    add(".env.example", _env_example(publication, providers, base_urls))
+    add(".env.example", _env_example(publication, providers, base_urls, provider_settings))
     add(".gitignore", ".env\ndata/\n.venv/\n__pycache__/\n")
     add("Dockerfile", _dockerfile(options.orkexa == "git"))
     add("tests/conftest.py", _CONFTEST)
@@ -1828,21 +1954,39 @@ def _project_files(
     return files
 
 
-def _provider_manifest(ctx: Nodestro, providers: list[str]) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
-    """Base URLs without credentials and declared capabilities of the release's endpoint providers."""
+def _provider_manifest(
+    ctx: Nodestro, providers: list[str]
+) -> tuple[dict[str, str], dict[str, dict[str, str]], dict[str, dict[str, Any]]]:
+    """Base URLs without credentials and declared capabilities of the release's endpoint providers, and the
+    provider settings an export keeps (Amazon Bedrock: region and data residency only; never a profile name, a role
+    or a key)."""
     base_urls: dict[str, str] = {}
     capabilities: dict[str, dict[str, str]] = {}
+    settings: dict[str, dict[str, Any]] = {}
     for provider in providers:
         info = PROVIDERS.get(provider)
-        if info is None or not info.base_url:
+        if info is None:
             continue
         stored = ctx.provider_settings(provider)
+        if info.auth == "aws":
+            status = next((item for item in ctx.settings().providers if item.id == provider), None)
+            # The settings in effect: a data residency the server's operator forces stays in force in the export.
+            effective = {
+                "region": stored.get("region"),
+                "data_residency": status.data_residency if status is not None else stored.get("data_residency"),
+            }
+            exported = exported_settings(provider, effective)
+            if exported:
+                settings[provider] = exported
+            continue
+        if not info.base_url:
+            continue
         url = str(stored.get("base_url") or "")
         if url and not has_credentials(url):
             base_urls[provider] = url
         if stored.get("capabilities"):
             capabilities[provider] = dict(stored["capabilities"])
-    return base_urls, capabilities
+    return base_urls, capabilities, settings
 
 
 def _safe(name: str) -> str:
