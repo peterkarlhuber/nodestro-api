@@ -36,8 +36,9 @@ from nodestro_runtime.documents import rows_of_xlsx
 from nodestro_runtime.engine import start_fields
 from nodestro_runtime.forms import FieldError, check_values, field_label
 from nodestro_runtime.launcher import CostEstimate, approval_steps, estimate_cost, external_tools, launch
-from nodestro_runtime.problems import NodestroError
+from nodestro_runtime.problems import NodestroError, Problem, problem
 from nodestro_runtime.schemas import Run, RunIn, RunStatus, RunTrigger, Workflow, new_id, now, total_cost
+from nodestro_runtime.tool_preflight import UnattendedTrigger, unattended_tool_issues
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
@@ -88,6 +89,18 @@ class BatchItem(BaseModel):
     tokens: int = 0
     duration_s: float | None = None
     output: Any = None
+
+
+def tool_warnings(
+    ctx: Nodestro, workflow: Workflow, *, trigger: UnattendedTrigger, trigger_ref: str | None = None
+) -> list[Problem]:
+    """The tool calls that runs started by ``trigger`` would have refused (risk R1 of the S-2 acceptance), from the
+    runtime's own policy (:func:`~nodestro_runtime.tool_preflight.unattended_tool_issues`); empty while per-call
+    approvals are off. Only a warning: nothing is granted, and the runtime still refuses at every call."""
+    return [
+        problem(item.code, item.message, **item.params)
+        for item in unattended_tool_issues(ctx, workflow, trigger=trigger, trigger_ref=trigger_ref)
+    ]
 
 
 def with_models(workflow: Workflow, models: dict[str, str]) -> Workflow:
@@ -179,6 +192,8 @@ class BatchPlan(BaseModel):
     items: list[BatchItem]
     estimate: CostEstimate
     external_tools: list[str] = Field(default_factory=list)
+    #: Tool calls the per-call approval rules would refuse in these runs (only while they are switched on).
+    tool_warnings: list[Problem] = Field(default_factory=list)
     approvals: int = 0
     fields: list[str] = Field(default_factory=list)
 
@@ -388,6 +403,7 @@ class Batches:
             items=items,
             estimate=estimate_cost(self.ctx, workflow.id, valid),
             external_tools=external_tools(self.ctx, workflow),
+            tool_warnings=tool_warnings(self.ctx, workflow, trigger="batch"),
             approvals=approval_steps(self.ctx, workflow),
             fields=[field.name for field in start_fields(workflow)],
         )

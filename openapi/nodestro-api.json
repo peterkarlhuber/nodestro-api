@@ -2911,6 +2911,13 @@
             "title": "Items",
             "type": "array"
           },
+          "tool_warnings": {
+            "items": {
+              "$ref": "#/components/schemas/Problem"
+            },
+            "title": "Tool Warnings",
+            "type": "array"
+          },
           "total": {
             "title": "Total",
             "type": "integer"
@@ -3112,6 +3119,13 @@
               "type": "object"
             },
             "title": "Problems",
+            "type": "array"
+          },
+          "tool_warnings": {
+            "items": {
+              "$ref": "#/components/schemas/Problem"
+            },
+            "title": "Tool Warnings",
             "type": "array"
           }
         },
@@ -25871,8 +25885,26 @@
     },
     "/api/schedules/preview": {
       "post": {
-        "description": "The next slots and everything that would keep the schedule off; nothing is saved.",
+        "description": "The next slots and everything that would keep the schedule off; nothing is saved. ``schedule_id``: the saved\nschedule being edited (its tool pre-grants count for the warnings).",
         "operationId": "preview_schedule_api_schedules_preview_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "schedule_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Schedule Id"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {

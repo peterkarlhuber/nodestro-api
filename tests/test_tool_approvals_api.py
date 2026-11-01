@@ -278,3 +278,58 @@ def test_repeating_the_activation_never_exempts_later_workflows_or_releases(gate
     assert ctx.workflow(newest["id"]).nodes[1].agent.tool_policies == {}
     repeated = [item for item in gated.get("/api/tool-approvals/audit").json() if item["details"].get("repeated")]
     assert len(repeated) == 2  # the API call after the interrupted one, and the explicit repeat
+
+
+def test_unattended_starts_and_publications_warn_about_refused_tool_calls(gated: TestClient) -> None:
+    """Risk R1 of the S-2 acceptance: schedules, batches, test series and published APIs name the tool calls the
+    per-call rules would refuse, before the start or the publication. Warnings only; nothing is granted."""
+    workflow = gated.post("/api/workflows", json=flow()).json()
+    schedule = {"workflow_id": workflow["id"], "kind": "daily", "at": "08:00", "input": "x"}
+
+    def codes(items: list[dict[str, Any]]) -> list[str]:
+        return [item["code"] for item in items if item["code"].startswith("tool.unattended_")]
+
+    draft = gated.post("/api/schedules/preview", json=schedule).json()
+    assert codes(draft["notes"]) == ["tool.unattended_not_started"]
+    saved = gated.post("/api/schedules", json=schedule).json()
+    preview = gated.post(f"/api/schedules/preview?schedule_id={saved['id']}", json=schedule).json()
+    [note] = [item for item in preview["notes"] if item["code"].startswith("tool.unattended_")]
+    assert note["code"] == "tool.unattended_pre_grant_missing"
+    assert note["params"]["tool"] == TOOL and note["params"]["workflow"] == "Approvals"
+    enabled = gated.post(f"/api/schedules/{saved['id']}/enable").json()
+    # (it stays off for other reasons here: no budget limit, no agreement to external tools)
+    assert codes(enabled["activation"]["notes"]) == ["tool.unattended_pre_grant_missing"]
+    created = gated.post("/api/tool-pre-grants", json={"tool": TOOL, "scope": "schedule", "scope_id": saved["id"]})
+    assert created.status_code == 201
+    granted = gated.post(f"/api/schedules/preview?schedule_id={saved['id']}", json=schedule).json()
+    assert codes(granted["notes"]) == []
+
+    batch = gated.post(
+        "/api/batches/plan", json={"workflow_id": workflow["id"], "rows": [{"input": "x"}], "confirm_external": True}
+    ).json()
+    assert codes(batch["tool_warnings"]) == ["tool.unattended_not_started"]
+    suite = gated.post("/api/benchmarks", json={"workflow_id": workflow["id"], "cases": [{"input": "x"}]}).json()
+    series = gated.post(f"/api/benchmarks/{suite['id']}/plan", json={"judge": False}).json()
+    assert codes(series["tool_warnings"]) == ["tool.unattended_not_started"]
+
+    check = gated.post(f"/api/workflows/{workflow['id']}/api/check", json={}).json()
+    [warning] = [item for item in check["problems"] if item["code"].startswith("tool.unattended_")]
+    assert warning["code"] == "tool.unattended_api" and warning["level"] == "warning" and warning["node_id"] == "a"
+    assert check["ok"]  # a warning, not a block: publishing stays possible
+    # Nothing was granted on the way: the only pre-grant is the one made explicitly above.
+    assert [item["scope_id"] for item in gated.get("/api/tool-pre-grants").json()] == [saved["id"]]
+
+
+def test_without_the_switch_no_tool_warnings_are_given(
+    make_app: Callable[..., TestClient], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv(ENABLE_ENV, raising=False)
+    client = make_app({})
+    with_tool(client)
+    workflow = client.post("/api/workflows", json=flow()).json()
+    preview = client.post(
+        "/api/schedules/preview", json={"workflow_id": workflow["id"], "kind": "daily", "at": "08:00", "input": "x"}
+    ).json()
+    assert not [item for item in preview["notes"] if item["code"].startswith("tool.unattended_")]
+    check = client.post(f"/api/workflows/{workflow['id']}/api/check", json={}).json()
+    assert not [item for item in check["problems"] if item["code"].startswith("tool.unattended_")]

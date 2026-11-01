@@ -223,9 +223,10 @@ def list_time_zones() -> list[str]:
 
 
 @router.post("/schedules/preview", dependencies=READ)
-def preview_schedule(body: ScheduleIn, ctx: Ctx) -> Activation:
-    """The next slots and everything that would keep the schedule off; nothing is saved."""
-    result = ctx.schedules.check(body)
+def preview_schedule(body: ScheduleIn, ctx: Ctx, schedule_id: str | None = None) -> Activation:
+    """The next slots and everything that would keep the schedule off; nothing is saved. ``schedule_id``: the saved
+    schedule being edited (its tool pre-grants count for the warnings)."""
+    result = ctx.schedules.check(body, schedule_id=schedule_id)
     if not result.next_runs:
         result.next_runs = upcoming(body, ctx.schedules.clock())
     return result
