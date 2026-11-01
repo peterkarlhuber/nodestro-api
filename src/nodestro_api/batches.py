@@ -35,9 +35,9 @@ from nodestro_runtime.conditions import parse_result
 from nodestro_runtime.documents import rows_of_xlsx
 from nodestro_runtime.engine import start_fields
 from nodestro_runtime.forms import FieldError, check_values, field_label
-from nodestro_runtime.launcher import CostEstimate, approval_steps, estimate_cost, external_tools, launch
+from nodestro_runtime.launcher import CostEstimate, approval_steps, external_tools, launch
 from nodestro_runtime.problems import NodestroError, Problem, problem
-from nodestro_runtime.schemas import Run, RunIn, RunStatus, RunTrigger, Workflow, new_id, now, total_cost
+from nodestro_runtime.schemas import Run, RunIn, RunStatus, RunSummary, RunTrigger, Workflow, new_id, now, total_cost
 from nodestro_runtime.tool_preflight import UnattendedTrigger, unattended_tool_issues
 from pydantic import BaseModel, Field
 
@@ -286,6 +286,35 @@ def rows_from_records(records: list[dict[str, str]], mapping: dict[str, str]) ->
     return rows
 
 
+def estimate_cost(ctx: Nodestro, workflow_id: str, runs: int) -> CostEstimate:
+    """What ``runs`` runs of the workflow will probably cost, from its 20 newest succeeded runs.
+
+    The same estimate as :func:`nodestro_runtime.launcher.estimate_cost`, but it finds the workflow's runs however
+    many other runs were stored since (C-15): the runtime's version reads only the 500 newest runs of all workflows
+    and answers "no data" for a workflow whose runs are older. Drop this once the runtime looks the runs up by
+    workflow itself.
+    """
+    candidates = [
+        summary
+        for summary in ctx.store.find("runs", "workflow_id", [workflow_id], RunSummary)
+        if summary.status == "succeeded"
+        and summary.parent_run_id is None
+        and summary.imported_at is None
+        and summary.usage.estimated_cost_usd is not None
+    ]
+    # ``find`` answers in update order; the newest runs say most about the next ones.
+    summaries = candidates[::-1][:20]
+    estimate = CostEstimate(runs=runs, based_on=len(summaries))
+    if summaries:
+        average = sum(summary.usage.estimated_cost_usd or 0.0 for summary in summaries) / len(summaries)
+        estimate.per_run_usd = round(average, 6)
+        estimate.total_usd = round(average * runs, 4)
+    budget = ctx.settings().default_budget_usd
+    if budget is not None:
+        estimate.max_total_usd = round(budget * runs, 4)
+    return estimate
+
+
 # ---- the manager -------------------------------------------------------------------------
 
 
@@ -303,7 +332,8 @@ class Batches:
         self._wake: dict[str, asyncio.Event] = {}
         self._done: dict[str, asyncio.Event] = {}
         ctx.runs.listeners.append(self._run_changed)
-        self._recover()
+        if not ctx.shared_storage:
+            self._recover()
 
     # ---- storage ------------------------------------------------------------
 
@@ -314,11 +344,21 @@ class Batches:
         return batch
 
     def list(self, *, kind: str | None = "batch", ref: str | None = None) -> list[BatchSummary]:
+        """Every stored batch (of one test series with ``ref``), newest first.
+
+        All of them, however many there are (C-15): read as summaries, without their items, which keeps a
+        long history cheap."""
+        stored = (
+            self.ctx.store.find(COLLECTION, "ref", [ref], BatchSummary)
+            if ref is not None
+            else self.ctx.store.list(COLLECTION, BatchSummary)
+        )
         found = []
-        for batch in self.ctx.store.list(COLLECTION, Batch, limit=500):
-            current = self._live.get(batch.id, batch)
+        for summary in stored:
+            live = self._live.get(summary.id)
+            current = _summary(live) if live is not None else summary
             if (kind is None or current.kind == kind) and (ref is None or current.ref == ref):
-                found.append(_summary(current))
+                found.append(current)
         return sorted(found, key=lambda item: item.created_at, reverse=True)
 
     def _save(self, batch: Batch) -> None:
@@ -333,7 +373,7 @@ class Batches:
         self._live.pop(batch_id, None)
 
     def _recover(self) -> None:
-        for batch in self.ctx.store.list(COLLECTION, Batch, limit=500):
+        for batch in self.ctx.store.find(COLLECTION, "status", ["running"], Batch):
             if batch.status == "running":
                 batch.status = "interrupted"
                 batch.stop_code = "batch.interrupted"

@@ -24,6 +24,7 @@ import zipfile
 from fastapi.testclient import TestClient
 import httpx
 from nodestro_runtime.schemas import Run, RunEvent, Workflow, new_id, now
+from nodestro_runtime.storage import SCHEMA_VERSION
 import pytest
 from test_published_api import PUBLISHED, auth, finish, form_workflow, new_key, publish
 
@@ -754,7 +755,7 @@ def test_a_backup_of_a_newer_schema_is_refused(make_app: Callable[..., TestClien
     answer = client.post("/api/backup/inspect", files={"file": ("b.zip", buffer.getvalue(), "application/zip")})
     assert answer.status_code == 400
     assert answer.json()["code"] == "backup.schema_too_new"
-    assert answer.json()["params"] == {"found": 99, "supported": 0}
+    assert answer.json()["params"] == {"found": 99, "supported": SCHEMA_VERSION}
 
 
 def test_the_api_uses_no_private_storage_attributes() -> None:

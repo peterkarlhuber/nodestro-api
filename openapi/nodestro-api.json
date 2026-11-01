@@ -8490,6 +8490,16 @@
             "title": "Models",
             "type": "array"
           },
+          "profile": {
+            "default": "desktop",
+            "enum": [
+              "desktop",
+              "server",
+              "local-container"
+            ],
+            "title": "Profile",
+            "type": "string"
+          },
           "providers": {
             "items": {
               "$ref": "#/components/schemas/ProviderInfo"
@@ -13167,6 +13177,13 @@
             "title": "Values",
             "type": "object"
           },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/RunWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
           "workflow": {
             "$ref": "#/components/schemas/Workflow"
           },
@@ -13625,6 +13642,13 @@
           "usage": {
             "$ref": "#/components/schemas/Usage"
           },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/RunWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
           "workflow_id": {
             "title": "Workflow Id",
             "type": "string"
@@ -13655,6 +13679,41 @@
           "created_at"
         ],
         "title": "RunSummary",
+        "type": "object"
+      },
+      "RunWarning": {
+        "description": "Something a run that ended went without (AD-03): e.g. a tool call that was refused, timed out or failed.\n\n``code`` is the call's problem code (``tool.approval_rejected``, ``tool.approval_timeout``, ``tool.not_granted``,\n``mcp.unreachable``, ...; ``tool.failed`` when the tool's error has no code); ``count`` calls of ``tool`` in\n``node_id`` had it.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "count": {
+            "default": 1,
+            "title": "Count",
+            "type": "integer"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool"
+          }
+        },
+        "required": [
+          "code",
+          "node_id"
+        ],
+        "title": "RunWarning",
         "type": "object"
       },
       "SampleInfo": {
@@ -25463,7 +25522,7 @@
     },
     "/api/runs": {
       "get": {
-        "description": "Stored runs, newest first; sub-workflow runs only with ``include_children`` (they belong to a parent).",
+        "description": "Stored runs, newest first; sub-workflow runs only with ``include_children`` (they belong to a parent).\n\nPaging (AX-25): the answer stays a list; ``X-Has-More`` says whether older runs match, and ``X-Next-Before`` is\nthe cursor for ``before`` that continues with them.",
         "operationId": "list_runs_api_runs_get",
         "parameters": [
           {
@@ -25518,6 +25577,25 @@
               ],
               "title": "Trigger Ref"
             }
+          },
+          {
+            "description": "Only runs older than this cursor: the ``X-Next-Before`` header of the previous page (``<created_at>|<run id>``), or a time (ISO 8601).",
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only runs older than this cursor: the ``X-Next-Before`` header of the previous page (``<created_at>|<run id>``), or a time (ISO 8601).",
+              "title": "Before"
+            }
           }
         ],
         "responses": {
@@ -25533,7 +25611,25 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Successful Response",
+            "headers": {
+              "X-Has-More": {
+                "description": "``true`` when older runs match than this page holds",
+                "schema": {
+                  "enum": [
+                    "true",
+                    "false"
+                  ],
+                  "type": "string"
+                }
+              },
+              "X-Next-Before": {
+                "description": "The ``before`` cursor of the next (older) page; only with ``X-Has-More: true``",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "422": {
             "content": {
@@ -27715,6 +27811,7 @@
         "summary": "List Workflows"
       },
       "post": {
+        "description": "Create a workflow. A connection to a node that does not exist is refused (400 ``workflow.edge_dangling``),\nas are two nodes with one id (``workflow.node_duplicate``).",
         "operationId": "create_workflow_api_workflows_post",
         "requestBody": {
           "content": {
@@ -27810,7 +27907,7 @@
     },
     "/api/workflows/import": {
       "post": {
-        "description": "Import an exported workflow as a new copy (new id).",
+        "description": "Import an exported workflow as a new copy (new id).\n\nA file that is not a workflow export (no ``nodes`` list) is refused with 400 ``workflow.import_invalid``; a\ngraph the check finds broken with its code (``workflow.edge_dangling``, ``workflow.node_duplicate``).",
         "operationId": "import_workflow_api_workflows_import_post",
         "requestBody": {
           "content": {
@@ -27888,6 +27985,7 @@
     },
     "/api/workflows/{workflow_id}": {
       "delete": {
+        "description": "Delete a workflow with its versions, schedules, test series and published APIs.\n\nRefused with 409 ``workflow.runs_active`` while runs of the workflow are queued or running.",
         "operationId": "delete_workflow_api_workflows__workflow_id__delete",
         "parameters": [
           {
@@ -27955,7 +28053,7 @@
         "summary": "Get Workflow"
       },
       "put": {
-        "description": "Save a workflow; a changed workflow becomes the next version (``note`` describes it).",
+        "description": "Save a workflow; a changed workflow becomes the next version (``note`` describes it).\n\nThe revision of a workflow is its ``updated_at`` (AD-07). A client that sends it as ``If-Match`` saves only\nwhen nobody saved in between; otherwise the answer is 409 ``workflow.conflict`` with the current revision in\n``params.updated_at``.",
         "operationId": "update_workflow_api_workflows__workflow_id__put",
         "parameters": [
           {
@@ -27976,6 +28074,24 @@
               "maxLength": 200,
               "title": "Note",
               "type": "string"
+            }
+          },
+          {
+            "description": "The revision the edit is based on: the workflow's ``updated_at`` as read (quotes optional). A save based on an older revision is refused with 409 ``workflow.conflict``; without the header the save always applies.",
+            "in": "header",
+            "name": "if-match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The revision the edit is based on: the workflow's ``updated_at`` as read (quotes optional). A save based on an older revision is refused with 409 ``workflow.conflict``; without the header the save always applies.",
+              "title": "If-Match"
             }
           }
         ],
@@ -27999,6 +28115,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "409": {
+            "description": "``workflow.conflict``: the workflow changed since the revision in If-Match"
           },
           "422": {
             "content": {

@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 from .api import Ctx, _sse
 from .architect import ArchitectJob, ArchitectRequest
-from .permissions import EDIT, READ, RUN
+from .permissions import EDIT, READ, RUN, StreamAccess
 
 router = APIRouter(prefix="/api")
 
@@ -40,6 +40,8 @@ async def architect_events(job_id: str, request: Request, ctx: Ctx) -> Streaming
     """Server-Sent Events: a ``snapshot`` of the job first, then every event until ``end``."""
     job = ctx.architect.get(job_id)
 
+    access = StreamAccess(request)
+
     async def stream() -> AsyncIterator[str]:
         if not ctx.architect.is_live(job_id):
             yield _sse("snapshot", job.model_dump(mode="json"))
@@ -51,8 +53,11 @@ async def architect_events(job_id: str, request: Request, ctx: Ctx) -> Streaming
             while True:
                 if await request.is_disconnected():
                     return
+                if await access.lost():
+                    yield _sse("end", {"reason": "access_ended"})
+                    return
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=15)
+                    event = await asyncio.wait_for(queue.get(), timeout=access.wait)
                 except asyncio.TimeoutError:
                     yield ": keep-alive\n\n"
                     continue

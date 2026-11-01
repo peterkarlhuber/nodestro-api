@@ -29,7 +29,7 @@ from nodestro_runtime.identity_store import IdentityStore
 from nodestro_runtime.storage_postgres import PostgresDatabase
 import stub_oidc
 
-from nodestro_api.identity import SESSION_COOKIE, OidcClient, OidcSettings, safe_return_path
+from nodestro_api.identity import LOGIN_COOKIE, SESSION_COOKIE, OidcClient, OidcSettings, safe_return_path
 from nodestro_api.server_app import TenantComposition, create_tenant_app
 
 DSN = os.environ.get("NODESTRO_TEST_POSTGRES", "")
@@ -452,3 +452,184 @@ def test_switching_tenants_needs_a_membership(server: Server) -> None:
     me = alice.get("/api/auth/me").json()
     assert (me["tenant_id"], me["role"]) == ("globex", "viewer")
     assert server.identity.session(old or "") is None  # the old session ended
+
+
+# ---- audit hardening: login binding, logs, health, API reference, attribution --------------------
+
+
+def test_a_callback_url_from_another_browser_logs_nobody_in(server: Server) -> None:
+    """A-01: the callback URL of a login that Mallory started is worthless in Victor's browser (login CSRF)."""
+    server.identity.create_tenant("evil", "Evil")
+    server.identity.set_role("evil", server.identity.login(stub_oidc.ISSUER, "mallory").id, "owner")
+    attacker = server.browser()
+    started = attacker.get("/api/auth/login?tenant=evil")
+    assert started.status_code == 303
+    cookie = started.headers["set-cookie"]
+    assert cookie.startswith(f"{LOGIN_COOKIE}=")
+    for attribute in ("HttpOnly", "Secure", "SameSite=lax", "Path=/", "Max-Age=600"):
+        assert attribute.lower() in cookie.lower(), attribute
+    callback = server.provider.authorize(started.headers["location"], "mallory")
+    victim = server.browser()
+    answer = victim.get(callback)
+    assert answer.status_code == 400 and answer.json()["code"] == "identity.login_expired"
+    assert f"{SESSION_COOKIE}=" not in answer.headers.get("set-cookie", "")
+    assert victim.get("/api/auth/me").status_code == 401
+    # The state was taken: the attacker cannot use the same callback any more either.
+    assert attacker.get(callback).status_code == 400
+
+
+def test_the_login_cookie_must_match_and_is_cleared_after_the_callback(server: Server) -> None:
+    server.member("acme", "alice", "viewer")
+    browser = server.browser()
+    started = browser.get("/api/auth/login")
+    callback = server.provider.authorize(started.headers["location"], "alice")
+    browser.cookies.set(LOGIN_COOKIE, "another-state", domain="studio.test")
+    refused = browser.get(callback)
+    assert refused.status_code == 400 and refused.json()["code"] == "identity.login_expired"
+    assert f'{LOGIN_COOKIE}=""' in refused.headers["set-cookie"]  # cleared on failure
+    again = browser.get("/api/auth/login")
+    answer = browser.get(server.provider.authorize(again.headers["location"], "alice"))
+    assert answer.status_code == 303
+    cookies = answer.headers.get_list("set-cookie")
+    assert any(item.startswith(f"{SESSION_COOKIE}=") for item in cookies)
+    assert any(item.startswith(f'{LOGIN_COOKIE}=""') for item in cookies)  # cleared on success
+    assert browser.get("/api/auth/me").status_code == 200
+
+
+def test_setup_tokens_and_sign_in_codes_never_reach_the_access_log(server: Server) -> None:
+    """D-02: the server's access log does not keep the bootstrap token, nor the provider's code and state."""
+    import io
+    import logging
+
+    from uvicorn.logging import AccessFormatter
+
+    secret = "BOOTSTRAP-TOKEN-EXAMPLE-0123456789"
+    access = logging.getLogger("uvicorn.access")
+    written = io.StringIO()
+    handler = logging.StreamHandler(written)
+    handler.setFormatter(AccessFormatter('%(client_addr)s - "%(request_line)s" %(status_code)s'))
+    level = access.level
+    access.setLevel(logging.INFO)
+    access.addHandler(handler)
+    try:
+        for path in (
+            f"/api/auth/login?setup={secret}",
+            f"/api/auth/login?return_to=/runs&setup={secret}",
+            f"/api/auth/callback?code={secret}&state={secret}",
+            f"/api/mcp/oauth/callback?state={secret}&code={secret}",
+        ):
+            access.info('%s - "%s %s HTTP/%s" %d', "127.0.0.1:5", "GET", path, "1.1", 303)
+    finally:
+        access.removeHandler(handler)
+        access.setLevel(level)
+    text_written = written.getvalue()
+    assert secret not in text_written
+    assert "/api/auth/login?setup=[redacted]" in text_written
+    assert "return_to=/runs&setup=[redacted]" in text_written
+    assert "/api/auth/callback?code=[redacted]&state=[redacted]" in text_written
+
+
+def test_the_server_health_check_reports_the_database(server: Server, monkeypatch: pytest.MonkeyPatch) -> None:
+    """D-10: ``/api/health`` answers 503 when this process cannot reach its database."""
+    browser = server.browser()
+    answer = browser.get("/api/health")
+    assert answer.status_code == 200 and answer.json() == {"status": "ok", "database": "ok"}
+    check = server.app.state.health_check
+    check.timeout = 0.3
+
+    def unreachable(**_kwargs: Any) -> bool:
+        return False  # ``ping`` reports a lost connection as False; it never raises
+
+    monkeypatch.setattr(check.database, "ping", unreachable)
+    answer = browser.get("/api/health")
+    assert answer.status_code == 503 and answer.json() == {"status": "unavailable", "database": "unreachable"}
+
+    def hanging(**_kwargs: Any) -> bool:
+        time.sleep(2)
+        return True
+
+    monkeypatch.setattr(check.database, "ping", hanging)
+    began = time.monotonic()
+    assert browser.get("/api/health").status_code == 503
+    assert browser.get("/api/health").status_code == 503  # the hanging check is not started twice
+    assert time.monotonic() - began < 1.8
+    monkeypatch.undo()
+    time.sleep(2.1)
+    assert browser.get("/api/health").status_code == 200
+
+
+def test_meta_names_the_server_profile(server: Server) -> None:
+    """AD-05: the studio can tell a server from the desktop and adapt its local-only copy."""
+    viewer = server.member("acme", "victor", "viewer")
+    assert viewer.get("/api/meta").json()["profile"] == "server"
+
+
+def test_a_tenant_never_uses_the_servers_environment_billing_keys(
+    server: Server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The desktop falls back to admin keys from the environment; a server's tenants must not see the operator's."""
+    monkeypatch.setenv("NODESTRO_ANTHROPIC_ADMIN_KEY", "sk-ant-admin-12345678")
+    admin = server.member("acme", "ada", "admin")
+    keys = {item["provider"]: item for item in admin.get("/api/pricing/billing-keys").json()}
+    assert keys["anthropic"]["configured"] is False and keys["anthropic"]["origin"] == "none"
+
+
+def test_the_api_reference_needs_a_login_on_a_server(server: Server) -> None:
+    """A-09: the OpenAPI document and the reference page are not anonymous on a server."""
+    anonymous = server.browser()
+    for path in ("/api/openapi.json", "/api/docs"):
+        answer = anonymous.get(path)
+        assert answer.status_code == 401 and answer.json()["code"] == "access.login_required", path
+    viewer = server.member("acme", "victor", "viewer")
+    document = viewer.get("/api/openapi.json")
+    assert document.status_code == 200 and "/api/workflows" in document.json()["paths"]
+    page = viewer.get("/api/docs")
+    assert page.status_code == 200 and "/api/openapi.json" in page.text
+
+
+APPROVAL_FLOW = {
+    "name": "Needs approval",
+    "nodes": [
+        {"id": "start", "type": "start"},
+        {"id": "check", "type": "approval", "label": "Release payment"},
+        {"id": "a", "type": "agent", "label": "A", "agent": {"name": "A", "system_prompt": "ALPHA"}},
+        {"id": "out", "type": "output"},
+    ],
+    "edges": [
+        {"id": "e1", "source": "start", "target": "check"},
+        {"id": "e2", "source": "check", "target": "a", "source_handle": "approved"},
+        {"id": "e3", "source": "a", "target": "out"},
+    ],
+}
+
+
+def test_approvals_and_uploads_name_the_member_who_made_them(server: Server) -> None:
+    """A-06: the approval record and the uploaded input name the user, not ``local``."""
+    owner = server.member("acme", "alice", "owner")
+    operator = server.member("acme", "oscar", "operator")
+    oscar = server.identity.login(stub_oidc.ISSUER, "oscar").id
+    alice = server.identity.login(stub_oidc.ISSUER, "alice").id
+    workflow = owner.post("/api/workflows", json=APPROVAL_FLOW)
+    assert workflow.status_code == 201, workflow.text
+    run_id = owner.post(f"/api/workflows/{workflow.json()['id']}/runs", json={"input": "pay"}).json()["id"]
+    deadline = time.monotonic() + 15
+    while owner.get(f"/api/runs/{run_id}").json()["status"] != "paused":
+        assert time.monotonic() < deadline
+        time.sleep(0.05)
+    decided = operator.post(f"/api/runs/{run_id}/approvals/check", json={"decision": "approved", "comment": "ok"})
+    assert decided.status_code == 200, decided.text
+    record = owner.get(f"/api/runs/{run_id}").json()["nodes"]["check"]["approval"]
+    assert record["decided_by"] == oscar
+    upload = owner.post("/api/inputs", files={"files": ("input.txt", b"Alpha input", "text/plain")})
+    assert upload.status_code == 201, upload.text
+    file_id = upload.json()[0]["file"]["id"]
+    assert server.app.state.tenants.get("acme").inputs.get(file_id).uploaded_by == alice
+
+
+def test_automatic_language_clears_the_stored_one_on_a_server(server: Server) -> None:
+    """Choosing "Automatic" sends ``language: null``: it clears the stored language; an absent field keeps it."""
+    admin = server.member("acme", "ada", "admin")
+    assert admin.put("/api/settings", json={"language": "it"}).json()["language"] == "it"
+    assert admin.put("/api/settings", json={"default_budget_usd": 2}).json()["language"] == "it"
+    assert admin.put("/api/settings", json={"language": None}).json()["language"] is None
+    assert admin.get("/api/settings").json()["language"] is None

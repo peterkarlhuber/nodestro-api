@@ -604,3 +604,68 @@ def test_deleting_the_workflow_ends_its_api(published: Callable[..., Any]) -> No
     gone = client.get(f"{PUBLISHED}/{publication['slug']}", headers=auth(token))
     assert gone.status_code in (401, 404)
     assert client.get("/api/publications").json() == []
+
+
+def test_old_idempotency_records_are_deleted(published: Callable[..., Any]) -> None:
+    """A-09: Idempotency-Key records past their 24 hours do not stay forever."""
+    from datetime import datetime, timedelta, timezone
+
+    client, publication, token = published()
+    store = client.app.state.nodestro.store  # type: ignore[attr-defined]
+    old = (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat()
+    store.put_raw("api_idempotency", "old-record", {"run_id": "run_old", "request": "x", "at": old})
+    headers = {**auth(token), "Idempotency-Key": "order-1"}
+    first = client.post(f"{PUBLISHED}/{publication['slug']}/runs", json={"values": {"customer": "A"}}, headers=headers)
+    assert first.status_code == 202, first.text
+    assert store.get_raw("api_idempotency", "old-record") is None
+    kept = [key for key in _keys(store, "api_idempotency") if key != "old-record"]
+    assert len(kept) == 1
+    finish(client, publication["slug"], token, first.json()["run_id"])
+
+
+def _keys(store: Any, collection: str) -> list[str]:
+    from pydantic import BaseModel, ConfigDict
+
+    class Anything(BaseModel):
+        model_config = ConfigDict(extra="allow")
+
+    return [key for key, _value in store.items(collection, Anything)]
+
+
+def test_the_rate_limiter_forgets_idle_clients(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A-09: counters of clients without hits in the last minute are dropped (no unbounded growth)."""
+    from nodestro_api import serving
+
+    clock = [1000.0]
+    monkeypatch.setattr(serving.time, "monotonic", lambda: clock[0])
+    window = serving._Window()
+    for client in range(500):
+        assert window.allow(f"auth:10.0.{client // 256}.{client % 256}", 30) is None
+    assert len(window._hits) == 500
+    clock[0] += 61
+    assert window.allow("auth:10.9.9.9", 30) is None
+    assert list(window._hits) == ["auth:10.9.9.9"]
+    for _ in range(29):
+        assert window.allow("auth:10.9.9.9", 30) is None
+    assert window.allow("auth:10.9.9.9", 30) is not None  # the limit itself still holds
+
+
+def test_validation_errors_name_each_field_once(published: Callable[..., Any]) -> None:
+    """AD-15: a number field (``int | float``) reports one error, not one per union branch."""
+    client, publication, token = published()
+    answer = client.post(
+        f"{PUBLISHED}/{publication['slug']}/runs", json={"values": {"amount": "many"}}, headers=auth(token)
+    )
+    assert answer.status_code == 422
+    params = answer.json()["error"]["params"]
+    assert params["errors"] == [
+        {"field": "values.customer", "code": "missing", "message": "Field required"},
+        {"field": "values.amount", "code": "number_parsing", "message": "Input should be a valid number"},
+    ]
+    assert params["fields"] == "values.customer, values.amount"
+    tried = client.post(
+        f"/api/publications/{publication['id']}/test",
+        json={"body": {"values": {"customer": "A", "amount": "x"}}, "dry_run": True},
+    )
+    assert tried.status_code == 422
+    assert [item["field"] for item in tried.json()["params"]["errors"]] == ["values.amount"]

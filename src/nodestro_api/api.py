@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import suppress
 from datetime import datetime, timezone
 import hashlib
 import json
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
-from fastapi import APIRouter, Depends, FastAPI, File, Form, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, FastAPI, File, Form, Header, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 import nodestro_examples as library
 from nodestro_examples import samples as library_samples
@@ -18,12 +18,14 @@ from nodestro_runtime.agent_builder import ConfigIssue
 from nodestro_runtime.agent_test import AgentTestIn, AgentTestResult
 from nodestro_runtime.catalog import SERVER_TOOLS, ModelInfo, ServerToolInfo, models
 from nodestro_runtime.contracts import contract_of
+from nodestro_runtime.engine import check_workflow
 from nodestro_runtime.knowledge import KnowledgeFile
 from nodestro_runtime.launcher import launch
 from nodestro_runtime.memory_spaces import MemoryFile, MemorySpaceInfo, check_space_name
 from nodestro_runtime.preflight import WorkflowCheck, preflight
 from nodestro_runtime.preview import ContextPreview, PreviewRequest, build_preview, latest_run
 from nodestro_runtime.problems import NodestroError
+from nodestro_runtime.profile import ProfileKind
 from nodestro_runtime.providers import CAPABILITY_NAMES, PROVIDERS, ProviderInfo, qualify
 from nodestro_runtime.python_envs import ExportedDefinition, scope_of
 from nodestro_runtime.python_tools import check_with_dependencies, save_with_dependencies, tool_run_sandbox
@@ -38,16 +40,19 @@ from nodestro_runtime.schemas import (
     AgentTemplate,
     AgentTemplateIn,
     Language,
+    OrchestratorConfig,
     Run,
     RunIn,
     RunSummary,
     Settings,
     SettingsIn,
+    Usage,
     Workflow,
     WorkflowIn,
     WorkflowSummary,
     now,
 )
+from nodestro_runtime.tool_legacy import keep_only_inherited
 from nodestro_runtime.tool_library import (
     CUSTOM_TESTS_TEMPLATE,
     CUSTOM_TOOL_TEMPLATE,
@@ -67,8 +72,10 @@ from . import __version__
 from .assistants import AgentDraft, MemorySeed
 from .benchmarks import SuiteIn, TestCase
 from .context import Nodestro
-from .permissions import ADMIN, EDIT, PUBLIC, READ, RUN, AccessError, Permission, Principal
+from .permissions import ADMIN, EDIT, PUBLIC, READ, RUN, AccessError, Permission, Principal, StreamAccess
+from .publishing import PUBLICATIONS, RELEASES
 from .references import Reference, ReferenceKind, references
+from .search import readable_documents, stored_workflows
 from .serving import ApiError
 
 router = APIRouter(prefix="/api")
@@ -89,6 +96,12 @@ def app_context(request: Request) -> Nodestro:
 
 
 Ctx = Annotated[Nodestro, Depends(app_context)]
+
+
+def actor_id(request: Request) -> str:
+    """Who a record names as the person acting: the request's principal (``local``: the desktop's owner)."""
+    principal = getattr(request.state, "principal", None)
+    return principal.id if principal is not None else "local"
 
 
 def _error(status_code: int, code: str, detail: str, **params: Any) -> JSONResponse:
@@ -149,11 +162,22 @@ class Meta(BaseModel):
     models: list[ModelInfo]
     server_tools: list[ServerToolInfo]
     efforts: list[str] = ["low", "medium", "high", "xhigh", "max"]
+    #: The product this API serves (AD-05): ``desktop`` (one person, this computer), ``local-container``
+    #: (Nodestro Local Docker: one person, a container on this computer) or ``server`` (an organization's server).
+    profile: ProfileKind = "desktop"
 
 
+# Whether this API process serves; on a server also whether it reaches its database (``503`` if not, D-10).
+# (A comment, not a docstring: the OpenAPI contract of this route stays as it was.)
 @router.get("/health", dependencies=PUBLIC)
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health(request: Request, response: Response) -> dict[str, str]:
+    check = getattr(request.app.state, "health_check", None)
+    if check is None:
+        return {"status": "ok"}
+    if not await check():
+        response.status_code = 503
+        return {"status": "unavailable", "database": "unreachable"}
+    return {"status": "ok", "database": "ok"}
 
 
 @router.get("/meta", dependencies=READ)
@@ -167,6 +191,7 @@ def meta(ctx: Ctx) -> Meta:
         # prices show in the model picker, and a model without a known price says so.
         models=models(ctx.pricing),
         server_tools=list(SERVER_TOOLS.values()),
+        profile=ctx.profile.kind,
     )
 
 
@@ -205,7 +230,8 @@ def request_language(request: Request) -> str:
 @router.get("/workflows", dependencies=READ)
 def list_workflows(ctx: Ctx) -> list[WorkflowSummary]:
     last_status: dict[str, Any] = {}
-    for run in ctx.store.list("runs", RunSummary, limit=500):
+    recent = readable_documents(ctx.store, "runs", RunSummary, newest_first=lambda run: run.created_at, limit=500)
+    for run in recent:
         if run.imported_at is None:
             last_status.setdefault(run.workflow_id, run.status)
     return [
@@ -219,13 +245,41 @@ def list_workflows(ctx: Ctx) -> list[WorkflowSummary]:
             capabilities=w.capabilities,
             contract=[field.name for field in contract_of(w)],
         )
-        for w in ctx.store.list("workflows", Workflow)
+        for w in stored_workflows(ctx.store)
     ]
 
 
+#: Findings of the workflow check that make a graph unusable: a save or import with one is refused (AD-08), with
+#: the code and params ``/workflows/check`` reports for it. Stored workflows are not checked when they are read.
+_REFUSED_ON_SAVE = ("workflow.edge_dangling", "workflow.node_duplicate")
+
+#: The name of a workflow created without one, in the interface language.
+_NEW_NAME = {
+    "de": "Neuer Workflow",
+    "en": "New workflow",
+    "es": "Nuevo flujo de trabajo",
+    "fr": "Nouveau workflow",
+    "pt-BR": "Novo fluxo de trabalho",
+    "it": "Nuovo workflow",
+}
+
+
+def _checked(body: WorkflowIn, request: Request | None = None) -> WorkflowIn:
+    """``body`` if its graph is consistent (else ``NodestroError`` with the check's code); a missing name is
+    given in the request's language."""
+    for issue in check_workflow(Workflow(**body.model_dump())):
+        if issue.code in _REFUSED_ON_SAVE:
+            raise NodestroError(issue.code, issue.message, **issue.params)
+    if request is not None and "name" not in body.model_fields_set:
+        body = body.model_copy(update={"name": _NEW_NAME[request_language(request)]})
+    return body
+
+
 @router.post("/workflows", status_code=201, dependencies=EDIT)
-def create_workflow(body: WorkflowIn, ctx: Ctx) -> Workflow:
-    return ctx.save_workflow(body)
+def create_workflow(body: WorkflowIn, request: Request, ctx: Ctx) -> Workflow:
+    """Create a workflow. A connection to a node that does not exist is refused (400 ``workflow.edge_dangling``),
+    as are two nodes with one id (``workflow.node_duplicate``)."""
+    return ctx.save_workflow(_checked(body, request))
 
 
 class WorkflowImport(WorkflowIn):
@@ -234,9 +288,18 @@ class WorkflowImport(WorkflowIn):
 
 
 @router.post("/workflows/import", status_code=201, dependencies=EDIT)
-def import_workflow(body: WorkflowImport, ctx: Ctx) -> Workflow:
-    """Import an exported workflow as a new copy (new id)."""
-    workflow = create_workflow(WorkflowIn(**body.model_dump(exclude={"python"})), ctx)
+def import_workflow(body: WorkflowImport, request: Request, ctx: Ctx) -> Workflow:
+    """Import an exported workflow as a new copy (new id).
+
+    A file that is not a workflow export (no ``nodes`` list) is refused with 400 ``workflow.import_invalid``; a
+    graph the check finds broken with its code (``workflow.edge_dangling``, ``workflow.node_duplicate``)."""
+    if "nodes" not in body.model_fields_set:
+        raise NodestroError(
+            "workflow.import_invalid",
+            "This file is not a Nodestro workflow export: it has no nodes",
+            missing=["nodes"],
+        )
+    workflow = ctx.save_workflow(_checked(WorkflowIn(**body.model_dump(exclude={"python"})), request))
     if body.python is not None:
         ctx.python.adopt("workflow", workflow.id, body.python, label=workflow.name, change="imported")
     return workflow
@@ -247,32 +310,159 @@ def get_workflow(workflow_id: str, ctx: Ctx) -> Workflow:
     return _workflow(ctx, workflow_id)
 
 
-@router.put("/workflows/{workflow_id}", dependencies=EDIT)
-def update_workflow(workflow_id: str, body: WorkflowIn, ctx: Ctx, note: str = Query("", max_length=200)) -> Workflow:
-    """Save a workflow; a changed workflow becomes the next version (``note`` describes it)."""
+@router.put(
+    "/workflows/{workflow_id}",
+    dependencies=EDIT,
+    responses={409: {"description": "``workflow.conflict``: the workflow changed since the revision in If-Match"}},
+)
+def update_workflow(
+    workflow_id: str,
+    body: WorkflowIn,
+    ctx: Ctx,
+    note: str = Query("", max_length=200),
+    if_match: Annotated[
+        str | None,
+        Header(
+            description="The revision the edit is based on: the workflow's ``updated_at`` as read (quotes "
+            "optional). A save based on an older revision is refused with 409 ``workflow.conflict``; without the "
+            "header the save always applies.",
+        ),
+    ] = None,
+) -> Workflow:
+    """Save a workflow; a changed workflow becomes the next version (``note`` describes it).
+
+    The revision of a workflow is its ``updated_at`` (AD-07). A client that sends it as ``If-Match`` saves only
+    when nobody saved in between; otherwise the answer is 409 ``workflow.conflict`` with the current revision in
+    ``params.updated_at``."""
     current = _workflow(ctx, workflow_id)
+    expected = _revision(if_match)
+    _checked(body)
     workflow = Workflow(**body.model_dump(), id=current.id, created_at=current.created_at, updated_at=now())
-    ctx.store.put("workflows", workflow.id, workflow)
-    ctx.versions.record(workflow, description=note, previous=current)
-    return workflow
+    return _replace_workflow(
+        ctx,
+        workflow,
+        lambda saved, previous: ctx.versions.record(saved, description=note, previous=previous),
+        expected=expected,
+    )
+
+
+def _revision(if_match: str | None) -> datetime | None:
+    """The revision an ``If-Match`` header names (``None``: none, or ``*``, which matches any revision)."""
+    if if_match is None:
+        return None
+    text = if_match.strip()
+    if text.startswith("W/"):
+        text = text[2:]
+    text = text.strip().strip('"').strip()
+    if text in ("", "*"):
+        return None
+    revision = _time(text)
+    if revision is None:
+        raise ApiError(
+            400, "workflow.revision_invalid", "If-Match must be the workflow's updated_at", revision=if_match
+        )
+    return revision
+
+
+def _time(text: object) -> datetime | None:
+    """An ISO time as stored or sent (``None``: not one); a time without a zone is UTC."""
+    try:
+        value = datetime.fromisoformat(str(text).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+
+
+def _conflict(current: Workflow) -> ApiError:
+    return ApiError(
+        409,
+        "workflow.conflict",
+        "The workflow was changed since it was opened; reload it or save it as a new version",
+        updated_at=current.updated_at.isoformat().replace("+00:00", "Z"),
+        name=current.name,
+    )
+
+
+def _replace_workflow(
+    ctx: Nodestro,
+    workflow: Workflow,
+    record: Callable[[Workflow, Workflow], object],
+    *,
+    expected: datetime | None = None,
+) -> Workflow:
+    """Store a changed workflow and its version in one transaction under the workflow's lock; the stored workflow.
+
+    - Only while the workflow still exists (C-16): a save that races a delete answers 404 instead of bringing the
+      deleted workflow back (without its schedules, versions and published APIs).
+    - With ``expected`` (the revision the edit is based on, AD-07), only while the stored ``updated_at`` is still
+      that revision; otherwise 409 ``workflow.conflict``. The check and the write are one step under the lock that
+      :meth:`Workspace.save_workflow` takes too, so two saves based on the same revision never both win.
+    - Legacy tool exemptions come only from the activation step, never from a save (as in ``save_workflow``).
+
+    ``record(saved, previous)`` stores the version; ``previous`` is the state read under the lock."""
+    with ctx.store.transaction():
+        ctx.store.lock("workflows", workflow.id)
+        previous = ctx.store.get("workflows", workflow.id, Workflow)
+        if previous is None:
+            raise KeyError(workflow.id)
+        if expected is not None and expected != previous.updated_at:
+            raise _conflict(previous)
+        saved = keep_only_inherited(workflow, previous)
+        # Conditional as a second guard: a writer that skips the lock still cannot bring back a deleted workflow.
+        if not ctx.store.replace_if("workflows", saved.id, saved, field="id", expected=saved.id):
+            raise KeyError(saved.id)
+        record(saved, previous)
+    return saved
+
+
+#: Run states in which a run still executes (or waits to) and may need the workflow's Python environment.
+_EXECUTING = ("queued", "running")
 
 
 @router.delete("/workflows/{workflow_id}", status_code=204, dependencies=EDIT)
 def delete_workflow(workflow_id: str, ctx: Ctx) -> Response:
-    if not ctx.store.delete("workflows", workflow_id):
-        raise KeyError(workflow_id)
+    """Delete a workflow with its versions, schedules, test series and published APIs.
+
+    Refused with 409 ``workflow.runs_active`` while runs of the workflow are queued or running."""
+    # They may still need its Python environment, which the delete removes. The documents go in one store
+    # transaction, so a crash never leaves half a workflow (C-16); the files (Python environment, release
+    # directories) are removed after it.
+    _workflow(ctx, workflow_id)
+    executing = [
+        run.id for run in ctx.store.find("runs", "workflow_id", [workflow_id], RunSummary) if run.status in _EXECUTING
+    ]
+    if executing or workflow_id in ctx.runs.live_workflow_ids():
+        raise ApiError(
+            409,
+            "workflow.runs_active",
+            "Runs of this workflow are still running; delete it when they have finished or were cancelled",
+            runs=max(len(executing), 1),
+        )
+    # Only store reads and writes inside the transaction: a lock taken in it could deadlock with a thread that
+    # holds that lock and waits for the store.
+    with ctx.store.transaction():
+        if not ctx.store.delete("workflows", workflow_id):
+            raise KeyError(workflow_id)
+        ctx.versions.delete_all(workflow_id)
+        ctx.organize.forget("workflow", workflow_id)
+        # Schedules and test series of the workflow cannot run any more.
+        for schedule in ctx.schedules.list():
+            if schedule.workflow_id == workflow_id:
+                ctx.schedules.delete(schedule.id)
+        for suite in ctx.benchmarks.suites(workflow_id):
+            ctx.benchmarks.delete_suite(suite.id)
+        # Its published APIs end with it.
+        publications = [item for item in ctx.publications.all() if item.workflow_id == workflow_id]
+        releases = [release.id for item in publications for release in ctx.publications.releases(item.id)]
+        for publication in publications:
+            ctx.store.delete_prefix(RELEASES, f"{publication.id}:")
+            ctx.store.delete(PUBLICATIONS, publication.id)
+    for release_id in releases:
+        ctx.publications.forget_environment(release_id)
     ctx.python.forget(scope_of("workflow", workflow_id))
-    ctx.versions.delete_all(workflow_id)
-    ctx.organize.forget("workflow", workflow_id)
-    # Schedules and test series of the workflow cannot run any more.
-    for schedule in ctx.schedules.list():
-        if schedule.workflow_id == workflow_id:
-            ctx.schedules.delete(schedule.id)
-    for suite in ctx.benchmarks.suites(workflow_id):
-        ctx.benchmarks.delete_suite(suite.id)
-    # Its published APIs end with it; keys keep working for their other APIs.
-    for publication_id in ctx.publications.forget_workflow(workflow_id):
-        ctx.api_keys.forget_publication(publication_id)
+    # Keys keep working for their other APIs.
+    for publication in publications:
+        ctx.api_keys.forget_publication(publication.id)
     return Response(status_code=204)
 
 
@@ -306,9 +496,9 @@ def restore_version(workflow_id: str, number: int, ctx: Ctx) -> Workflow:
     current = _workflow(ctx, workflow_id)
     version = ctx.versions.get(workflow_id, number)
     workflow = Workflow(**version.snapshot.model_dump(), id=current.id, created_at=current.created_at, updated_at=now())
-    ctx.store.put("workflows", workflow.id, workflow)
-    ctx.versions.record(workflow, restored_from=number, previous=current)
-    return workflow
+    return _replace_workflow(
+        ctx, workflow, lambda saved, previous: ctx.versions.record(saved, restored_from=number, previous=previous)
+    )
 
 
 _COPY = {"de": "Kopie", "en": "copy", "es": "copia", "fr": "copie", "pt-BR": "cópia", "it": "copia"}
@@ -319,7 +509,7 @@ def duplicate_workflow(workflow_id: str, request: Request, ctx: Ctx) -> Workflow
     source = _workflow(ctx, workflow_id)
     body = WorkflowIn(**source.model_dump(exclude={"id", "created_at", "updated_at"}))
     body.name = f"{source.name} ({_COPY[request_language(request)]})"
-    workflow = create_workflow(body, ctx)
+    workflow = ctx.save_workflow(body)  # an exact copy: not checked, like the source
     definition = ctx.python.export(scope_of("workflow", source.id))
     if definition is not None:
         ctx.python.adopt("workflow", workflow.id, definition, label=workflow.name, change="copied")
@@ -384,7 +574,7 @@ class _LibraryHost:
         self.inputs: list[str] = []
 
     def save_workflow(self, workflow: WorkflowIn) -> tuple[str, int | None]:
-        saved = create_workflow(workflow, self.ctx)
+        saved = self.ctx.save_workflow(_checked(workflow))
         self.workflows.append(saved.id)
         return saved.id, self.ctx.current_version(saved)
 
@@ -497,7 +687,7 @@ def copy_library_template(template_id: str, body: LibraryCopy, request: Request,
     host = _LibraryHost(ctx)
     try:
         made = library.instantiate(template_id, language, host, models=models, connections=connections)
-        copy = create_workflow(made.workflow, ctx)
+        copy = ctx.save_workflow(_checked(made.workflow))
         host.workflows.append(copy.id)
         if body.tests and spec.tests:
             text = library.texts(template_id, language)
@@ -550,24 +740,113 @@ async def start_run(workflow_id: str, body: RunIn, ctx: Ctx) -> Run:
     return await launch(ctx, _workflow(ctx, workflow_id), body)
 
 
-@router.get("/runs", dependencies=READ)
+@router.get(
+    "/runs",
+    dependencies=READ,
+    responses={
+        200: {
+            "headers": {
+                "X-Has-More": {
+                    "description": "``true`` when older runs match than this page holds",
+                    "schema": {"type": "string", "enum": ["true", "false"]},
+                },
+                "X-Next-Before": {
+                    "description": "The ``before`` cursor of the next (older) page; only with ``X-Has-More: true``",
+                    "schema": {"type": "string"},
+                },
+            }
+        }
+    },
+)
 def list_runs(
     ctx: Ctx,
+    response: Response,
     workflow_id: str | None = None,
     limit: int = Query(100, le=500),
     include_children: bool = False,
     trigger_ref: str | None = None,
+    before: str | None = Query(
+        None,
+        max_length=200,
+        description="Only runs older than this cursor: the ``X-Next-Before`` header of the previous page "
+        "(``<created_at>|<run id>``), or a time (ISO 8601).",
+    ),
 ) -> list[RunSummary]:
-    """Stored runs, newest first; sub-workflow runs only with ``include_children`` (they belong to a parent)."""
-    filtered = workflow_id is not None or not include_children or trigger_ref is not None
-    runs = ctx.store.list("runs", RunSummary, limit=2000 if filtered else limit)
+    """Stored runs, newest first; sub-workflow runs only with ``include_children`` (they belong to a parent).
+
+    Paging (AX-25): the answer stays a list; ``X-Has-More`` says whether older runs match, and ``X-Next-Before`` is
+    the cursor for ``before`` that continues with them."""
+    cursor = _run_cursor(before)
+    runs: list[RunSummary]
+    if workflow_id is not None:
+        # Every run of the workflow, however many other runs were stored since (C-04).
+        runs = ctx.store.find("runs", "workflow_id", [workflow_id], RunSummary)
+    elif trigger_ref is not None:
+        runs = ctx.store.find("runs", "trigger_ref", [trigger_ref], RunSummary)
+    elif cursor is not None:
+        # An older page: the store lists by update, not by creation, so every run is read (only on request; the
+        # polled first page reads a window of the newest).
+        runs = ctx.store.list("runs", RunSummary)
+    elif include_children:
+        runs = ctx.store.list("runs", RunSummary, limit=max(limit, 0) + 1)
+    else:
+        runs = _top_level_runs(ctx, max(limit, 0) + 1)
     if not include_children:
         runs = [run for run in runs if run.parent_run_id is None]
     if workflow_id is not None:
         runs = [run for run in runs if run.workflow_id == workflow_id]
     if trigger_ref is not None:
         runs = [run for run in runs if run.trigger_ref == trigger_ref]
-    return sorted(runs, key=lambda run: run.created_at, reverse=True)[:limit]
+    if cursor is not None:
+        runs = [run for run in runs if _run_key(run) < cursor]
+    ordered = sorted(runs, key=_run_key, reverse=True)
+    page = ordered[: max(limit, 0)]
+    more = len(ordered) > len(page)
+    response.headers["X-Has-More"] = "true" if more else "false"
+    if more and page:
+        last = page[-1]
+        response.headers["X-Next-Before"] = f"{_iso(last.created_at)}|{last.id}"
+    return page
+
+
+def _iso(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _run_key(run: RunSummary) -> tuple[datetime, str]:
+    """The order of the run list: by creation, then by id (two runs can share a time)."""
+    created = run.created_at if run.created_at.tzinfo is not None else run.created_at.replace(tzinfo=timezone.utc)
+    return created, run.id
+
+
+def _run_cursor(before: str | None) -> tuple[datetime, str] | None:
+    """``before`` as a position in the run list: ``<created_at>|<id>``, or a time alone (older than that time)."""
+    if before is None or not before.strip():
+        return None
+    moment, _, run_id = before.strip().partition("|")
+    created = _time(moment)
+    if created is None:
+        raise ApiError(
+            400, "runs.cursor_invalid", "before must be a time or the X-Next-Before of a page", before=before
+        )
+    return created, run_id
+
+
+#: Runs read at least for the top-level run list: runs are listed by creation, the store answers by update.
+_RUN_WINDOW = 2000
+
+
+def _top_level_runs(ctx: Nodestro, limit: int) -> list[RunSummary]:
+    """The most recently updated runs, enough of them to hold ``limit`` top-level runs (or all runs).
+
+    Sub-workflow and team runs can outnumber their parents by far; the window grows until it holds enough
+    top-level runs instead of stopping at a fixed number of runs."""
+    window = _RUN_WINDOW
+    while True:
+        runs = ctx.store.list("runs", RunSummary, limit=window)
+        if len(runs) < window or sum(run.parent_run_id is None for run in runs) >= limit:
+            return runs
+        window *= 4
 
 
 class TraceImport(BaseModel):
@@ -685,9 +964,9 @@ def list_approvals(ctx: Ctx) -> list[PendingApproval]:
 
 
 @router.post("/runs/{run_id}/approvals/{node_id}", dependencies=RUN)
-async def decide_approval(run_id: str, node_id: str, body: ApprovalDecision, ctx: Ctx) -> Run:
+async def decide_approval(run_id: str, node_id: str, body: ApprovalDecision, request: Request, ctx: Ctx) -> Run:
     """Approve or reject at an approval node; the run (its top-level run) continues right away."""
-    return ctx.runs.decide(run_id, node_id, body.decision, body.comment)
+    return ctx.runs.decide(run_id, node_id, body.decision, body.comment, decided_by=actor_id(request))
 
 
 @router.delete("/runs/{run_id}", status_code=204, dependencies=EDIT)
@@ -738,6 +1017,8 @@ async def run_events(run_id: str, request: Request, ctx: Ctx) -> StreamingRespon
     if run is None:
         raise KeyError(run_id)
 
+    access = StreamAccess(request)
+
     async def stream() -> AsyncIterator[str]:
         if not ctx.runs.is_live(run_id):
             yield _sse("snapshot", run.model_dump(mode="json"))
@@ -750,8 +1031,11 @@ async def run_events(run_id: str, request: Request, ctx: Ctx) -> StreamingRespon
             while True:
                 if await request.is_disconnected():
                     return
+                if await access.lost():
+                    yield _sse("end", {"reason": "access_ended"})
+                    return
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=15)
+                    event = await asyncio.wait_for(queue.get(), timeout=access.wait)
                 except asyncio.TimeoutError:
                     yield ": keep-alive\n\n"
                     continue
@@ -880,10 +1164,7 @@ def usage(ctx: Ctx, days: int = Query(30, ge=1, le=365)) -> UsageReport:
             key = model
         return by_model.setdefault(key, UsageBucket(key=key, label=key))
 
-    for run in ctx.store.list("runs", Run, limit=2000):
-        # Imported traces were paid elsewhere; a sub-workflow's run is counted in its parent run.
-        if run.created_at.timestamp() < cutoff or run.imported_at is not None or run.parent_run_id is not None:
-            continue
+    for run in _runs_since(ctx, cutoff):
         day = run.created_at.date().isoformat()
         buckets = [
             total,
@@ -894,7 +1175,8 @@ def usage(ctx: Ctx, days: int = Query(30, ge=1, le=365)) -> UsageReport:
         ]
         for bucket in buckets:
             _add(bucket, run.usage, run=True)
-        for model, model_usage in models_of_run(ctx, run).items():
+        # The lean run has every field models_of_run reads (sub-workflow runs it reads in full itself).
+        for model, model_usage in models_of_run(ctx, cast(Run, run)).items():
             _add(model_bucket(model), model_usage, run=True)
     since = datetime.fromtimestamp(cutoff, tz=timezone.utc)
     entries = ctx.usage_log.entries(since)
@@ -914,6 +1196,63 @@ def usage(ctx: Ctx, days: int = Query(30, ge=1, le=365)) -> UsageReport:
         by_source=[bucket for bucket in by_source.values() if bucket.runs or bucket.operations],
         recent=entries[:25],
     )
+
+
+# The usage report reads every run of the period. Validating full run documents (with the workflow snapshot, every
+# step's messages and outputs) costs far more than the report needs, so it reads them with these lean models: only
+# the fields the report and ``models_of_run`` use, with the same names and defaults as the full models.
+
+
+class _UsageAgent(BaseModel):
+    model: str = AgentConfig.model_fields["model"].default
+
+
+class _UsageOrchestrator(BaseModel):
+    model: str = OrchestratorConfig.model_fields["model"].default
+
+
+class _UsageNode(BaseModel):
+    id: str
+    type: str = "agent"
+    agent: _UsageAgent | None = None
+    orchestrator: _UsageOrchestrator | None = None
+
+
+class _UsageWorkflow(BaseModel):
+    nodes: list[_UsageNode] = Field(default_factory=list)
+
+
+class _UsageNodeRun(BaseModel):
+    usage: Usage = Field(default_factory=Usage)
+    child_run_id: str | None = None
+    child_run_ids: list[str] = Field(default_factory=list)
+    decision_usage: Usage | None = None
+
+
+class _UsageRun(BaseModel):
+    id: str
+    workflow_id: str
+    workflow_name: str
+    workflow: _UsageWorkflow
+    nodes: dict[str, _UsageNodeRun] = Field(default_factory=dict)
+    usage: Usage = Field(default_factory=Usage)
+    created_at: datetime
+    imported_at: datetime | None = None
+    trigger: str = "manual"
+    parent_run_id: str | None = None
+
+
+def _runs_since(ctx: Nodestro, cutoff: float) -> list[_UsageRun]:
+    """Every top-level, not imported run created at ``cutoff`` (a timestamp) or later, newest first (C-04).
+
+    All of them, however many runs are stored: the store has no query by time, so this reads every run (with the
+    lean model above, which keeps that affordable)."""
+    counted = [
+        run
+        for run in ctx.store.list("runs", _UsageRun)
+        if run.created_at.timestamp() >= cutoff and run.imported_at is None and run.parent_run_id is None
+    ]
+    return sorted(counted, key=lambda run: run.created_at, reverse=True)
 
 
 # ---- agents ---------------------------------------------------------------------

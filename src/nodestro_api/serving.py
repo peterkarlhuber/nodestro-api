@@ -32,7 +32,7 @@ import asyncio
 import base64
 import binascii
 from collections import deque
-from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Sequence
 import contextlib
 from datetime import date, datetime, timedelta
 import hashlib
@@ -699,17 +699,32 @@ def usage_out(usage: Usage) -> UsageOut:
 # ---- limits --------------------------------------------------------------------------------
 
 
+class _IdempotencyRecord(BaseModel):
+    """A stored Idempotency-Key: the run it started, the request's fingerprint and when."""
+
+    run_id: str
+    request: str
+    at: datetime
+
+
 class _Window:
     """Counts events per key in a sliding minute."""
 
     def __init__(self) -> None:
         self._hits: dict[str, deque[float]] = {}
         self._lock = threading.Lock()
+        self._swept = time.monotonic()
 
     def allow(self, key: str, limit: int, *, period: float = 60.0) -> float | None:
         """``None`` when allowed (and counted), else the seconds until the next slot."""
         moment = time.monotonic()
         with self._lock:
+            if moment - self._swept >= period:
+                # Keys without a hit in the last period count nothing: drop them, so the table of client
+                # addresses and keys cannot grow without bound (A-09).
+                self._swept = moment
+                for stale in [name for name, found in self._hits.items() if not found or moment - found[-1] >= period]:
+                    del self._hits[stale]
             hits = self._hits.setdefault(key, deque())
             while hits and moment - hits[0] >= period:
                 hits.popleft()
@@ -754,6 +769,21 @@ class ServingCore:
         self._requests = _Window()
         self._failures = _Window()
         self._start_lock = asyncio.Lock()
+        self._idempotency_pruned: float | None = None
+
+    def _prune_idempotency(self) -> None:
+        """Delete Idempotency-Key records older than their 24 hours (at most once an hour; A-09)."""
+        moment = time.monotonic()
+        if self._idempotency_pruned is not None and moment - self._idempotency_pruned < 3600:
+            return
+        self._idempotency_pruned = moment
+        limit = now() - timedelta(hours=_IDEMPOTENCY_HOURS)
+        try:
+            for key, record in self.host.store.items(_IDEMPOTENCY, _IdempotencyRecord):
+                if record.at <= limit:
+                    self.host.store.delete(_IDEMPOTENCY, key)
+        except Exception:
+            logger.exception("Old Idempotency-Key records could not be deleted")
 
     # ---- access ---------------------------------------------------------------------
 
@@ -995,14 +1025,7 @@ class ServingCore:
         try:
             return model.model_validate(raw)
         except ValidationError as exc:
-            errors = [
-                {
-                    "field": ".".join(str(part) for part in item["loc"]),
-                    "code": item["type"],
-                    "message": item["msg"],
-                }
-                for item in exc.errors()
-            ]
+            errors = field_errors(exc.errors(), raw)
             raise ApiError(
                 422,
                 "request.invalid",
@@ -1145,6 +1168,7 @@ class ServingCore:
                 except Exception:
                     # The run has started: answering 500 now would make the client retry and start it twice.
                     logger.exception("The Idempotency-Key of run %s could not be stored", run.id)
+                self._prune_idempotency()
         status_code = 202
         if wait > 0:
             timeout = min(wait, release.limits.sync_timeout_seconds)
@@ -1383,6 +1407,55 @@ KEY_AUTHENTICATED_ROUTES = frozenset(
 )
 
 
+#: Pydantic's codes for a value that is not a number, as the branches of ``int | float`` report it.
+_NUMBER_CODES = frozenset({"int_parsing", "int_type", "int_from_float", "float_parsing", "float_type"})
+
+
+def field_errors(errors: Sequence[Any], raw: Any) -> list[dict[str, str]]:
+    """Pydantic's errors as one entry per field of the request (AD-15): ``{"field", "code", "message"}``.
+
+    A union (a form's ``number`` is ``int | float``) reports one error per branch, with the branch's name added to the
+    location (``values.qty.int``, ``values.qty.float``). The location is followed through ``raw`` (the request
+    body) and ends at the last part the request has, so a branch name never appears as a field; the field's
+    errors become one. Codes are pydantic's (``missing``, ``string_type``, ...); a value that fits no branch of a
+    number is ``number_parsing`` ("Input should be a valid number")."""
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for item in errors:
+        field = _field_of(tuple(item.get("loc", ())), raw, missing=item.get("type") == "missing")
+        grouped.setdefault(field, []).append(item)
+    found: list[dict[str, str]] = []
+    for field, items in grouped.items():
+        codes = [str(item.get("type", "")) for item in items]
+        if len(items) == 1:
+            code, message = codes[0], str(items[0].get("msg", ""))
+        elif "missing" in codes:
+            code, message = "missing", "Field required"
+        elif all(code in _NUMBER_CODES for code in codes):
+            code, message = "number_parsing", "Input should be a valid number"
+        else:
+            code, message = codes[0], str(items[0].get("msg", ""))
+        found.append({"field": field, "code": code, "message": message})
+    return found
+
+
+def _field_of(loc: tuple[Any, ...], raw: Any, *, missing: bool) -> str:
+    """The part of ``loc`` that names a place in ``raw``. A missing field is named as pydantic names it (it is not
+    in ``raw``, and pydantic reports it once, without a branch)."""
+    if missing:
+        return ".".join(str(part) for part in loc)
+    parts: list[str] = []
+    value = raw
+    for part in loc:
+        if (isinstance(value, dict) and part in value) or (
+            isinstance(value, list) and isinstance(part, int) and 0 <= part < len(value)
+        ):
+            value = value[part]
+        else:
+            break  # a union branch's name
+        parts.append(str(part))
+    return ".".join(parts)
+
+
 class KeyAuthenticatedRoute(APIRoute):
     """A published endpoint: authenticated by API key, every error (FastAPI's own too) in the API's error format."""
 
@@ -1395,10 +1468,7 @@ class KeyAuthenticatedRoute(APIRoute):
             except ApiError as exc:
                 return exc.response()
             except RequestValidationError as exc:
-                errors = [
-                    {"field": ".".join(str(p) for p in item["loc"]), "code": item["type"], "message": item["msg"]}
-                    for item in exc.errors()
-                ]
+                errors = field_errors(exc.errors(), {"body": exc.body})
                 return ApiError(422, "request.invalid", "The request is invalid", errors=errors).response()
             except Exception as exc:
                 return _error_of(exc).response()

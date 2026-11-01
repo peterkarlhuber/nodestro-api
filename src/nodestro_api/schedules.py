@@ -413,8 +413,28 @@ class Schedules:
                     started.append(run_id)
         return started
 
-    async def _due(self, schedule: Schedule, current: datetime) -> str | None:
-        assert schedule.next_run_at is not None
+    def _take_slots(self, listed: Schedule, current: datetime) -> tuple[Schedule, bool, datetime | None] | None:
+        """Advance the stored schedule past its due slots; ``None``: leave it alone this time.
+
+        The tick listed the schedules before it started earlier ones, which takes a while; meanwhile the user (or
+        another process) may have deleted, switched off or changed this one. So the schedule is read again here and
+        written only while it is still the stored version (compare-and-set on ``updated_at``), never from the stale
+        copy of the list: a deleted schedule is not brought back, a switched-off one not switched on (C-09). Nothing
+        awaits between the read and the write.
+
+        Returns the advanced schedule, whether a run is due now and the slot it fires.
+        """
+        raw = self.ctx.store.get_raw(COLLECTION, listed.id)
+        if not isinstance(raw, dict) or not isinstance(raw.get("updated_at"), str):
+            return None  # deleted meanwhile
+        schedule = Schedule.model_validate(raw)
+        if (
+            not schedule.enabled
+            or schedule.next_run_at is None
+            or schedule.next_run_at > current
+            or schedule.next_run_at != listed.next_run_at
+        ):
+            return None  # switched off or rescheduled meanwhile: the next tick looks at it again
         due: builtins.list[datetime] = []
         slot: datetime | None = schedule.next_run_at
         while slot is not None and slot <= current and len(due) < 10_000:
@@ -430,10 +450,20 @@ class Schedules:
         if schedule.kind == "once" and slot is None:
             schedule.enabled, schedule.completed = False, True
         # The slot is taken before the run starts: a crash during the start never runs it twice.
-        self._save(schedule)
-        if not run_now:
+        schedule.updated_at = now()
+        if not self.ctx.store.replace_if(
+            COLLECTION, schedule.id, schedule, field="updated_at", expected=raw["updated_at"]
+        ):
+            return None  # changed in this very moment: the next tick decides with the new version
+        return schedule, run_now, (on_time or missed)[-1] if run_now else None
+
+    async def _due(self, listed: Schedule, current: datetime) -> str | None:
+        taken = self._take_slots(listed, current)
+        if taken is None:
             return None
-        fired = (on_time or missed)[-1]
+        schedule, run_now, fired = taken
+        if not run_now or fired is None:
+            return None
         if self.claim_slot is not None and not self.claim_slot(schedule.id, fired):
             return None  # another process fired this slot already
         run_id = await self._run(schedule, current)
@@ -443,13 +473,22 @@ class Schedules:
             except Exception:  # bookkeeping only; the slot is claimed either way
                 logger.exception("Recording the run of schedule %s failed", schedule.id)
         # Starting takes a moment: the user may have switched the schedule off, changed or deleted it
-        # meanwhile. Only the outcome of this run is recorded on the stored schedule.
-        latest = self.ctx.store.get(COLLECTION, schedule.id, Schedule)
-        if latest is not None:
-            for name in ("last_run_at", "last_run_id", "runs", "last_error_code", "last_error", "last_error_params"):
-                setattr(latest, name, getattr(schedule, name))
-            self._save(latest)
+        # meanwhile. Only the outcome of this run is recorded on the stored schedule, and only while it exists.
+        self._record_outcome(schedule)
         return run_id
+
+    def _record_outcome(self, outcome: Schedule) -> None:
+        for _attempt in range(5):
+            raw = self.ctx.store.get_raw(COLLECTION, outcome.id)
+            if not isinstance(raw, dict) or not isinstance(raw.get("updated_at"), str):
+                return  # deleted meanwhile: it stays deleted
+            latest = Schedule.model_validate(raw)
+            for name in ("last_run_at", "last_run_id", "runs", "last_error_code", "last_error", "last_error_params"):
+                setattr(latest, name, getattr(outcome, name))
+            latest.updated_at = now()
+            if self.ctx.store.replace_if(COLLECTION, latest.id, latest, field="updated_at", expected=raw["updated_at"]):
+                return
+        logger.warning("The outcome of schedule %s's run was not recorded: it kept changing", outcome.id)
 
     async def _run(self, schedule: Schedule, current: datetime) -> str | None:
         schedule.last_run_at = current
