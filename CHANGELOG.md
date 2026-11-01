@@ -16,8 +16,8 @@
   as `run_chat`; instructions reach the orchestrator through the store, also in a worker process.
 - The full trace export of a top-level run carries its chat (`chat`; the sanitized export masks or removes it),
   deleting a run deletes its chat, run retention too, and backups validate `run_messages`.
-- Pins `nodestro-runtime` `b5b765f` (runtime #67 and its fix #68; before `ac96c6f`): `nodestro_runtime.run_chat`, and
-  `nodestro-examples` `14a4d5b` (before `dcad0d1`, the same runtime pin).
+- Pins `nodestro-runtime` `a42b672` (runtime #67 and its fix #68; before `ac96c6f`): `nodestro_runtime.run_chat`, and
+  `nodestro-examples` `ebe899a` (before `dcad0d1`, the same runtime pin).
 
 ### Amazon Bedrock (2026-11-01)
 
