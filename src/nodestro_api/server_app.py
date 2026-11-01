@@ -33,6 +33,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import HTMLResponse, JSONResponse
+from nodestro_runtime.bedrock import BedrockOperatorConfig
 from nodestro_runtime.extensions import Integration
 from nodestro_runtime.identity_store import IdentityStore
 from nodestro_runtime.jobs import JobQueue, QueuedRuns
@@ -94,6 +95,8 @@ class TenantComposition:
     static_dir: Path | None = None
     #: Model endpoints (origins) tenants may use for the endpoint providers (none by default).
     endpoints: tuple[str, ...] = ()
+    #: The operator's Amazon Bedrock roles per tenant (``None``: Bedrock is not available to tenants).
+    bedrock: BedrockOperatorConfig | None = None
 
 
 @dataclass
@@ -110,6 +113,8 @@ class TenantFiles:
     integrations: Iterable[Integration] | None = field(default=None)
     secrets: SecretBox | None = None
     endpoints: tuple[str, ...] = ()
+    #: The operator's Amazon Bedrock roles; a tenant's workspace receives only its own entry (``for_tenant``).
+    bedrock: BedrockOperatorConfig | None = None
 
     def open(self, tenant_id: str) -> Nodestro:
         return Nodestro(
@@ -122,7 +127,7 @@ class TenantFiles:
             integrations=self.integrations,
             # Reference prices are the server's (read-only for tenants); overrides stay in the tenant's store.
             storage=replace(
-                tenant_storage(self.database, tenant_id, self.secrets, self.endpoints),
+                tenant_storage(self.database, tenant_id, self.secrets, self.endpoints, bedrock=self.bedrock),
                 price_reference=self.database.store(PRICE_REFERENCE_TENANT),
             ),
         )
@@ -152,6 +157,7 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
         integrations=composition.integrations,
         secrets=composition.secrets,
         endpoints=composition.endpoints,
+        bedrock=composition.bedrock,
     )
     queue = composition.queue
 

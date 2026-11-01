@@ -164,6 +164,8 @@ unsafe value is listed at once (`profile.invalid`), and nothing has a default th
 | `NODESTRO_STATIC_DIR`, `NODESTRO_DOCS_DIR` | the built studio interface and its documentation (optional) |
 | `DOCKER_HOST` (optional), `NODESTRO_DOCKER` | the container runtime for tool code (local socket by default) |
 | `NODESTRO_MODEL_ENDPOINTS` | comma-separated origins tenants may use for OpenAI-compatible, Ollama and vLLM endpoints (none by default; others are refused, so tenants cannot make the server reach internal services) |
+| `NODESTRO_BEDROCK_TENANT_ROLES` (or `_FILE`) | Amazon Bedrock per tenant: JSON `{"<tenant id>": {"role_arn": "arn:aws:iam::<account>:role/<name>", "external_id": "…"}}`. The API and worker processes assume a tenant's role with STS (the server's own AWS credentials as base, `ExternalId`, `RoleSessionName=nodestro-<tenant>`, regional STS endpoint, 30 minutes); the server's own AWS chain is never used for a tenant, and a tenant sees only `operator_role: true`. A tenant without an entry cannot use Bedrock (`provider.bedrock_not_available`) |
+| `NODESTRO_BEDROCK_DATA_RESIDENCY`, `NODESTRO_BEDROCK_ALLOWED_REGIONS` | `eu_only` forces EU-only data residency for every tenant (they cannot relax it); a comma-separated list limits the regions tenants may choose (with `eu_only` only EU regions) |
 | `NODESTRO_WORKER_LEASE_SECONDS`, `…_POLL_SECONDS`, `…_REAP_SECONDS` | worker timing (defaults 60, 1, 15) |
 | `NODESTRO_WORKER_MAX_RUNS`, `NODESTRO_WORKER_MAX_WAITING` | runs one worker holds at once, and how many of them may wait for a person's tool approval (defaults 2 and 1; waiting must stay below the runs, so one slot always executes) |
 | `NODESTRO_TOOL_APPROVALS` | `1` asks a person before tool calls that change or reach out. Off by default. Order: first `POST /api/tool-approvals/legacy` (once; stamps existing bindings of workflows, versions and published releases, whose digest changes once), review the report, then set this and restart, only after the security acceptance |
@@ -300,6 +302,13 @@ versions (`requirements.lock`), key tooling (`python -m app.keys`), examples, a 
 simulated model. orkexa is installed from its repository at the pinned commit, or bundled as source code
 (`vendor/orkexa`, only after confirming its redistribution). The project contains no provider or API keys; keys are
 configured as hashes in `API_KEYS`. The README of the project is written in English or German.
+
+Amazon Bedrock in an export: the manifest keeps only the region and the data residency (`settings.bedrock`; an
+`eu_only` stays in force), never an AWS profile name, a role or a key. The exported API signs in with the AWS default
+credential chain of the machine it runs on; `AWS_REGION` (or `AWS_DEFAULT_REGION`) overrides the exported region,
+and without any region a run answers 503 (`provider.region_missing`). The export check refuses Bedrock settings
+without a region (`export.region_missing`) and warns that an AWS profile (`export.aws_profile_not_exported`) or a
+server's tenant role (`export.aws_role_not_exported`) does not go along.
 
 ## Backups
 

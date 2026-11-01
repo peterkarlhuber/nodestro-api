@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
+import logging
 import os
 from pathlib import Path
 from typing import Any, Literal
@@ -37,6 +38,22 @@ from .pricing_setup import PriceSyncConfig
 from .publishing import Publications, StudioHost
 from .schedules import Schedules
 from .serving import ApiError, KeyIdentity, ResumeIn, ServedRelease, ServingCore
+
+#: The AWS SDK's loggers: at DEBUG, botocore logs signed request headers (``Authorization``, temporary
+#: ``X-Amz-Security-Token``s of a tenant's assumed role) and response bodies. A process-wide DEBUG logging setting
+#: (``logging.basicConfig(level=DEBUG)``) must not write AWS credentials into the logs, so they start at WARNING
+#: (an operator who needs botocore's debug output sets it on these loggers explicitly).
+AWS_LOGGERS = ("botocore", "boto3", "s3transfer")
+
+
+def quiet_aws_loggers() -> None:
+    for name in AWS_LOGGERS:
+        logger = logging.getLogger(name)
+        if logger.level == logging.NOTSET:  # a level set explicitly before stays
+            logger.setLevel(logging.WARNING)
+
+
+quiet_aws_loggers()
 
 
 @dataclass

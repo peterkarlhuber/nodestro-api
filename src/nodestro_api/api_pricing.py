@@ -30,7 +30,14 @@ import os
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from fastapi import APIRouter, Query, Response
-from nodestro_runtime.pricing import PriceEntry, PricingEvent, PricingStatus, StoredSnapshot, SubmitResult
+from nodestro_runtime.pricing import (
+    REGIONAL_PROVIDERS,
+    PriceEntry,
+    PricingEvent,
+    PricingStatus,
+    StoredSnapshot,
+    SubmitResult,
+)
 from nodestro_runtime.pricing_sync import SyncReport
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.profile import SINGLE_USER_PROFILES
@@ -44,7 +51,7 @@ from nodestro_runtime.reconciliation import (
     nodestro_estimates,
 )
 from nodestro_runtime.schemas import now
-from orkexa.pricing import ModelPrice, TokenRates
+from orkexa.pricing import ModelPrice, Tariff, TariffOption, TokenRates
 from pydantic import BaseModel, Field
 
 from .api import Ctx
@@ -179,6 +186,22 @@ class OverrideIn(BaseModel):
     source_url: str | None = Field(default=None, max_length=500)
     version: str | None = Field(default=None, max_length=80)
     note: str | None = Field(default=None, max_length=500)
+    #: Amazon Bedrock (priced per AWS region): the regions these rates apply to, the first one is the default
+    #: (``["eu-central-1", "eu-west-1"]``). Required for ``bedrock`` (``pricing.region_required``); a request from a
+    #: region not listed has an unknown cost. Refused for providers that are not priced per region.
+    aws_regions: list[str] | None = Field(default=None, max_length=40)
+
+
+def _tariffs(provider: str, body: OverrideIn) -> tuple[Tariff, ...]:
+    regions = list(dict.fromkeys(item.strip() for item in body.aws_regions or [] if item.strip()))
+    dimension = REGIONAL_PROVIDERS.get(provider)
+    if not regions:
+        return ()
+    if dimension is None:
+        raise NodestroError(
+            "pricing.invalid_price", f"aws_regions applies only to Amazon Bedrock prices, not to {provider}"
+        )
+    return (Tariff(dimension, regions[0], tuple(TariffOption(region) for region in regions)),)
 
 
 @router.put("/overrides/{provider}/{model:path}", dependencies=ADMIN)
@@ -200,6 +223,7 @@ def set_override(provider: str, model: str, body: OverrideIn, ctx: Ctx) -> Price
             version=body.version or now().date().isoformat(),
             checked_at=now(),
             quality=body.quality,
+            tariffs=_tariffs(provider, body),
         )
     except (ValueError, TypeError) as exc:  # Orkexa's PricingError is a ValueError
         raise NodestroError("pricing.invalid_price", str(exc)) from None
