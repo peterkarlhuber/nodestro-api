@@ -16,7 +16,7 @@
   as `run_chat`; instructions reach the orchestrator through the store, also in a worker process.
 - The full trace export of a top-level run carries its chat (`chat`; the sanitized export masks or removes it),
   deleting a run deletes its chat, run retention too, and backups validate `run_messages`.
-- Pins `nodestro-runtime` `ac0ac62` (before `d141b8f`): `nodestro_runtime.run_chat`, and `nodestro-examples` `8f7d0f3`
+- Pins `nodestro-runtime` `fe6f85d` (before `d141b8f`): `nodestro_runtime.run_chat`, and `nodestro-examples` `5129d75`
   (before `660e9a9`, the same runtime pin).
 
 ### Pins: PostgreSQL read performance (2026-11-01)

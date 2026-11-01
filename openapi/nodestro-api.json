@@ -4140,6 +4140,11 @@
       "ChatTarget": {
         "description": "An orchestrator node a person can talk to.",
         "properties": {
+          "deciding": {
+            "default": false,
+            "title": "Deciding",
+            "type": "boolean"
+          },
           "decisions": {
             "default": 0,
             "title": "Decisions",
