@@ -43,6 +43,8 @@ from nodestro_runtime.providers import provider_of
 from nodestro_runtime.schemas import RunIn, Workflow, new_id, now
 from pydantic import BaseModel, Field
 
+from .batches import tool_warnings
+
 if TYPE_CHECKING:
     from .context import Nodestro
 
@@ -279,8 +281,11 @@ class Schedules:
                 missing.append(provider)
         return sorted(missing)
 
-    def check(self, schedule: ScheduleIn) -> Activation:
-        """Everything that would stop the schedule's runs, found before it is switched on."""
+    def check(self, schedule: ScheduleIn, *, schedule_id: str | None = None) -> Activation:
+        """Everything that would stop the schedule's runs, found before it is switched on.
+
+        ``schedule_id`` names the saved schedule a draft belongs to (its pre-grants count); a stored
+        :class:`Schedule` names itself."""
         found: builtins.list[Problem] = []
         notes: builtins.list[Problem] = []
         workflow = self.ctx.store.get("workflows", schedule.workflow_id, Workflow)
@@ -323,6 +328,9 @@ class Schedules:
                         count=len(set(stored_inputs)),
                     )
                 )
+            # Tool calls the per-call approval rules would refuse in these runs (R1): warned, never granted here.
+            ref = schedule.id if isinstance(schedule, Schedule) else schedule_id
+            notes += tool_warnings(self.ctx, workflow, trigger="schedule", trigger_ref=ref)
             approvals = approval_steps(self.ctx, workflow)
             if approvals:
                 notes.append(

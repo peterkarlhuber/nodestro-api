@@ -52,6 +52,7 @@ from nodestro_runtime.release import (
 from nodestro_runtime.schemas import RunSummary, Workflow, new_id, now
 from nodestro_runtime.tool_legacy import LegacyBinding, VersionOf, stamp_workflow
 from nodestro_runtime.tool_library import ToolLibrary, make_sandbox
+from nodestro_runtime.tool_preflight import unattended_tool_issues
 from orkexa import __version__ as library_version
 from pydantic import BaseModel, Field
 
@@ -436,6 +437,9 @@ class Publications:
                     problems.append(
                         item.model_copy(update={"params": {**item.params, "workflow": child.workflow.name}})
                     )
+        # Published runs have nobody who could answer, and their own approval phase does not exist yet (D10): name
+        # the tool calls the per-call rules would refuse in them (R1). A warning only; the runtime still refuses.
+        problems += unattended_tool_issues(self.ctx, root, trigger="api")
         tools: set[str] = set()
         server_tools: set[str] = set()
         for flow in everything:

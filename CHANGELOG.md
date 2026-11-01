@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Tool approvals: warnings before unattended starts (S-2, R1, 2026-11-01)
+
+- Schedules (`POST /api/schedules/preview`, new optional query `schedule_id`, and switching on), batches
+  (`BatchPlan.tool_warnings`), test series (`BenchmarkPlan.tool_warnings`) and the publication check
+  (`ApiCheck.problems`, level `warning`) name every tool call the per-call approval rules would refuse in those
+  unattended runs: codes `tool.unattended_*` with the tool, agent, workflow and the reason. It uses the runtime's own
+  policy (`tool_preflight.unattended_tool_issues`), grants nothing and blocks nothing; the runtime still refuses at
+  every call. Empty while `NODESTRO_TOOL_APPROVALS` is off. Published APIs are always warned about because their own
+  approval phase does not exist yet.
+- Pins: `nodestro-runtime` `2d55242` (before `a13f894`), `nodestro-examples` `63be887` (before `2488c93`).
+
 Nodestro as an MCP server for published workflows (ADR-0007 D-8, WP-11; off by default):
 
 - `/api/published/_mcp` (Streamable HTTP, official MCP SDK, stateless): lists the publications an API key may run as

@@ -43,7 +43,7 @@ from nodestro_runtime.conditions import evaluate, parse_result, rule_problems
 from nodestro_runtime.engine import start_fields, usage_of
 from nodestro_runtime.forms import FieldError, check_values
 from nodestro_runtime.launcher import CostEstimate, approval_steps, blocking_problems, estimate_cost, external_tools
-from nodestro_runtime.problems import NodestroError
+from nodestro_runtime.problems import NodestroError, Problem
 from nodestro_runtime.providers import check_model, model_id
 from nodestro_runtime.sanitize import Sanitizer
 from nodestro_runtime.schemas import ConditionRule, Usage, Workflow, new_id, now, total_cost
@@ -52,7 +52,7 @@ from orkexa.dynamic import BudgetTracker
 from orkexa.usage import summarize_usage
 from pydantic import BaseModel, Field
 
-from .batches import BatchIn, BatchRow, with_models
+from .batches import BatchIn, BatchRow, tool_warnings, with_models
 from .model_choice import ModelChoice, ModelPolicy, agent_models, recommend, suite_basis, workflow_basis
 
 if TYPE_CHECKING:
@@ -233,6 +233,8 @@ class BenchmarkPlan(BaseModel):
     estimate: CostEstimate
     judged_cases: int
     external_tools: list[str] = Field(default_factory=list)
+    #: Tool calls the per-call approval rules would refuse in the test runs (only while they are switched on).
+    tool_warnings: list[Problem] = Field(default_factory=list)
     approvals: int = 0
     problems: list[dict[str, Any]] = Field(default_factory=list)
 
@@ -476,6 +478,7 @@ class Benchmarks:
             estimate=self._estimate(workflow, len(suite.cases), models, start.max_cost_usd),
             judged_cases=sum(bool(_criteria(case.judge_criteria)) for case in suite.cases) if start.judge else 0,
             external_tools=external_tools(self.ctx, workflow),
+            tool_warnings=tool_warnings(self.ctx, with_models(workflow, models), trigger="benchmark"),
             approvals=approval_steps(self.ctx, workflow),
             problems=problems,
         )
