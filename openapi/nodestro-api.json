@@ -25473,7 +25473,7 @@
     },
     "/api/runs": {
       "get": {
-        "description": "Stored runs, newest first; sub-workflow runs only with ``include_children`` (they belong to a parent).",
+        "description": "Stored runs, newest first; sub-workflow runs only with ``include_children`` (they belong to a parent).\n\nPaging (AX-25): the answer stays a list; ``X-Has-More`` says whether older runs match, and ``X-Next-Before`` is\nthe cursor for ``before`` that continues with them.",
         "operationId": "list_runs_api_runs_get",
         "parameters": [
           {
@@ -25528,6 +25528,25 @@
               ],
               "title": "Trigger Ref"
             }
+          },
+          {
+            "description": "Only runs older than this cursor: the ``X-Next-Before`` header of the previous page (``<created_at>|<run id>``), or a time (ISO 8601).",
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only runs older than this cursor: the ``X-Next-Before`` header of the previous page (``<created_at>|<run id>``), or a time (ISO 8601).",
+              "title": "Before"
+            }
           }
         ],
         "responses": {
@@ -25543,7 +25562,25 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Successful Response",
+            "headers": {
+              "X-Has-More": {
+                "description": "``true`` when older runs match than this page holds",
+                "schema": {
+                  "enum": [
+                    "true",
+                    "false"
+                  ],
+                  "type": "string"
+                }
+              },
+              "X-Next-Before": {
+                "description": "The ``before`` cursor of the next (older) page; only with ``X-Has-More: true``",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "422": {
             "content": {

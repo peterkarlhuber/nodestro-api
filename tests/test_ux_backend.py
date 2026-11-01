@@ -186,3 +186,58 @@ def test_a_workflow_created_without_a_name_is_named_in_the_interface_language(ma
     assert created.json()["name"] == "New workflow"
     created = client.post("/api/workflows", json={}, headers={"Accept-Language": "de-DE"})
     assert created.json()["name"] == "Neuer Workflow"
+
+
+# ---- AX-24/AX-25: paging the run list -------------------------------------------------------------------------
+
+
+def _stored_runs(client: TestClient, count: int, **fields: Any) -> list[str]:
+    from datetime import timedelta
+
+    from nodestro_runtime.schemas import Run, Workflow, now
+
+    ctx = _ctx(client)
+    workflow = Workflow(id="wf_paging", name="Paging")
+    base = now()
+    ids = []
+    for index in range(count):
+        run = Run(
+            id=f"run_{index:04d}",
+            workflow_id=workflow.id,
+            workflow_name=workflow.name,
+            workflow=workflow,
+            status="succeeded",
+            # Two runs share each time: the cursor must still not skip or repeat one.
+            created_at=base - timedelta(seconds=count - index // 2 * 2),
+            **fields,
+        )
+        ctx.store.put("runs", run.id, run)
+        ids.append(run.id)
+    return ids
+
+
+def test_the_run_list_pages_with_a_cursor(make_app: Any) -> None:
+    client = make_app()
+    ids = _stored_runs(client, 25)
+    first = client.get("/api/runs", params={"limit": 10})
+    assert first.status_code == 200 and isinstance(first.json(), list) and len(first.json()) == 10
+    assert first.headers["X-Has-More"] == "true"
+    seen = [run["id"] for run in first.json()]
+    cursor = first.headers["X-Next-Before"]
+    while cursor:
+        page = client.get("/api/runs", params={"limit": 10, "before": cursor})
+        assert page.status_code == 200
+        seen += [run["id"] for run in page.json()]
+        cursor = page.headers.get("X-Next-Before", "")
+    assert page.headers["X-Has-More"] == "false"
+    assert sorted(seen) == sorted(ids) and len(seen) == len(set(seen))
+    # The same paging with a workflow filter; a plain time as cursor; an unreadable cursor.
+    filtered = client.get("/api/runs", params={"workflow_id": "wf_paging", "limit": 20})
+    assert len(filtered.json()) == 20 and filtered.headers["X-Has-More"] == "true"
+    everything = client.get("/api/runs")
+    assert len(everything.json()) == 25 and everything.headers["X-Has-More"] == "false"
+    assert "X-Next-Before" not in everything.headers
+    oldest = everything.json()[-1]["created_at"]
+    assert client.get("/api/runs", params={"before": oldest}).json() == []
+    refused = client.get("/api/runs", params={"before": "last week"})
+    assert refused.status_code == 400 and refused.json()["code"] == "runs.cursor_invalid"

@@ -740,32 +740,96 @@ async def start_run(workflow_id: str, body: RunIn, ctx: Ctx) -> Run:
     return await launch(ctx, _workflow(ctx, workflow_id), body)
 
 
-@router.get("/runs", dependencies=READ)
+@router.get(
+    "/runs",
+    dependencies=READ,
+    responses={
+        200: {
+            "headers": {
+                "X-Has-More": {
+                    "description": "``true`` when older runs match than this page holds",
+                    "schema": {"type": "string", "enum": ["true", "false"]},
+                },
+                "X-Next-Before": {
+                    "description": "The ``before`` cursor of the next (older) page; only with ``X-Has-More: true``",
+                    "schema": {"type": "string"},
+                },
+            }
+        }
+    },
+)
 def list_runs(
     ctx: Ctx,
+    response: Response,
     workflow_id: str | None = None,
     limit: int = Query(100, le=500),
     include_children: bool = False,
     trigger_ref: str | None = None,
+    before: str | None = Query(
+        None,
+        max_length=200,
+        description="Only runs older than this cursor: the ``X-Next-Before`` header of the previous page "
+        "(``<created_at>|<run id>``), or a time (ISO 8601).",
+    ),
 ) -> list[RunSummary]:
-    """Stored runs, newest first; sub-workflow runs only with ``include_children`` (they belong to a parent)."""
+    """Stored runs, newest first; sub-workflow runs only with ``include_children`` (they belong to a parent).
+
+    Paging (AX-25): the answer stays a list; ``X-Has-More`` says whether older runs match, and ``X-Next-Before`` is
+    the cursor for ``before`` that continues with them."""
+    cursor = _run_cursor(before)
     runs: list[RunSummary]
     if workflow_id is not None:
         # Every run of the workflow, however many other runs were stored since (C-04).
         runs = ctx.store.find("runs", "workflow_id", [workflow_id], RunSummary)
     elif trigger_ref is not None:
         runs = ctx.store.find("runs", "trigger_ref", [trigger_ref], RunSummary)
+    elif cursor is not None:
+        # An older page: the store lists by update, not by creation, so every run is read (only on request; the
+        # polled first page reads a window of the newest).
+        runs = ctx.store.list("runs", RunSummary)
     elif include_children:
-        runs = ctx.store.list("runs", RunSummary, limit=limit)
+        runs = ctx.store.list("runs", RunSummary, limit=max(limit, 0) + 1)
     else:
-        runs = _top_level_runs(ctx, limit)
+        runs = _top_level_runs(ctx, max(limit, 0) + 1)
     if not include_children:
         runs = [run for run in runs if run.parent_run_id is None]
     if workflow_id is not None:
         runs = [run for run in runs if run.workflow_id == workflow_id]
     if trigger_ref is not None:
         runs = [run for run in runs if run.trigger_ref == trigger_ref]
-    return sorted(runs, key=lambda run: run.created_at, reverse=True)[:limit]
+    if cursor is not None:
+        runs = [run for run in runs if _run_key(run) < cursor]
+    ordered = sorted(runs, key=_run_key, reverse=True)
+    page = ordered[: max(limit, 0)]
+    more = len(ordered) > len(page)
+    response.headers["X-Has-More"] = "true" if more else "false"
+    if more and page:
+        last = page[-1]
+        response.headers["X-Next-Before"] = f"{_iso(last.created_at)}|{last.id}"
+    return page
+
+
+def _iso(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _run_key(run: RunSummary) -> tuple[datetime, str]:
+    """The order of the run list: by creation, then by id (two runs can share a time)."""
+    created = run.created_at if run.created_at.tzinfo is not None else run.created_at.replace(tzinfo=timezone.utc)
+    return created, run.id
+
+
+def _run_cursor(before: str | None) -> tuple[datetime, str] | None:
+    """``before`` as a position in the run list: ``<created_at>|<id>``, or a time alone (older than that time)."""
+    if before is None or not before.strip():
+        return None
+    moment, _, run_id = before.strip().partition("|")
+    created = _time(moment)
+    if created is None:
+        raise ApiError(
+            400, "runs.cursor_invalid", "before must be a time or the X-Next-Before of a page", before=before
+        )
+    return created, run_id
 
 
 #: Runs read at least for the top-level run list: runs are listed by creation, the store answers by update.
