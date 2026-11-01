@@ -9418,7 +9418,7 @@
         "type": "object"
       },
       "OrchestratorSelect": {
-        "description": "Pool selection by capability (AO M5): saved workflows whose capabilities match join the pool.\n\nThe selection is made when a run (or a published release) pins its workflows, so it is fixed and\nvisible in the run's snapshot: every selected member names the tags it matched. Teams are ordered\nby the number of matching tags, then by name; no score is invented. Workflows with errors, with\nand the workflow itself are left out. Teams with approval steps are offered: the orchestrator waits while\none of them waits for a person (AO M6b).",
+        "description": "Pool selection by capability (AO M5): saved workflows whose capabilities match join the pool.\n\nThe selection is made when a run (or a published release) pins its workflows, so it is fixed and\nvisible in the run's snapshot: every selected member names the tags it matched. Teams are ordered\nby the number of matching tags, then by name; no score is invented. Workflows with errors and the\nworkflow itself are left out. Teams with approval steps are offered: the orchestrator waits while\none of them waits for a person (AO M6b).",
         "properties": {
           "capabilities": {
             "items": {
@@ -15660,7 +15660,13 @@
               "decision_refused",
               "pre_granted",
               "pre_grant_revoked",
-              "legacy_stamped"
+              "legacy_stamped",
+              "suspended",
+              "resumed",
+              "executed",
+              "stale",
+              "result_lost",
+              "switch_off"
             ],
             "title": "Kind",
             "type": "string"
@@ -15741,6 +15747,11 @@
           "capability": {
             "$ref": "#/components/schemas/ToolCapability"
           },
+          "checkpointed": {
+            "default": false,
+            "title": "Checkpointed",
+            "type": "boolean"
+          },
           "closed_because": {
             "anyOf": [
               {
@@ -15802,6 +15813,18 @@
             ],
             "title": "Definition Hash"
           },
+          "executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executed At"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -15845,6 +15868,17 @@
           },
           "tool": {
             "title": "Tool",
+            "type": "string"
+          },
+          "use": {
+            "default": "open",
+            "enum": [
+              "open",
+              "executed",
+              "stale",
+              "closed"
+            ],
+            "title": "Use",
             "type": "string"
           },
           "version": {
@@ -25995,7 +26029,7 @@
     },
     "/api/runs/{run_id}/tool-approvals/{request_id}": {
       "post": {
-        "description": "Approve or reject one tool call; the waiting run continues at its next look (within about a second).",
+        "description": "Approve or reject one tool call; the waiting run continues at its next look (within about a second). A run\npaused at the call (agent checkpoints, M6b) continues right away once none of its calls waits any more.",
         "operationId": "decide_tool_approval_api_runs__run_id__tool_approvals__request_id__post",
         "parameters": [
           {

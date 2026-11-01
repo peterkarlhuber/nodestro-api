@@ -333,3 +333,55 @@ def test_without_the_switch_no_tool_warnings_are_given(
     assert not [item for item in preview["notes"] if item["code"].startswith("tool.unattended_")]
     check = client.post(f"/api/workflows/{workflow['id']}/api/check", json={}).json()
     assert not [item for item in check["problems"] if item["code"].startswith("tool.unattended_")]
+
+
+# ---- runs paused at a tool call (M6b agent checkpoints) -----------------------------------------------------------
+
+
+@pytest.fixture
+def paused_gate(make_app: Callable[..., TestClient], monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    from nodestro_runtime.tool_approvals import CHECKPOINTS_ENV
+
+    monkeypatch.setenv(ENABLE_ENV, "1")
+    monkeypatch.setenv(CHECKPOINTS_ENV, "1")
+    client = make_app({"AGENT": [tool_use(TOOL, {"celsius": 100}), text("done")]})
+    ctx = with_tool(client)
+    assert ctx.runs.tool_gate is not None and ctx.runs.tool_gate.checkpoints
+    return client
+
+
+def test_a_decision_continues_a_run_paused_at_the_call(paused_gate: TestClient) -> None:
+    run_id = start(paused_gate)
+    request = waiting(paused_gate, run_id)
+    assert request["checkpointed"] is True and request["use"] == "open"
+    assert finished(paused_gate, run_id)["status"] == "paused"
+    answer = paused_gate.post(
+        f"/api/runs/{run_id}/tool-approvals/{request['id']}",
+        json={"decision": "approved", "arguments_hash": request["arguments_hash"]},
+    )
+    assert answer.status_code == 200, answer.text
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline and paused_gate.get(f"/api/runs/{run_id}").json()["status"] == "paused":
+        time.sleep(0.05)
+    run = finished(paused_gate, run_id)
+    assert run["status"] == "succeeded", run
+    [call] = run["nodes"]["a"]["tool_calls"]
+    assert call["output"] == "212.0" and call["approval"]["status"] == "approved"
+    [used] = paused_gate.get(f"/api/runs/{run_id}/tool-approvals").json()
+    assert used["use"] == "executed" and used["executed_at"]
+    kinds = [event["kind"] for event in paused_gate.get("/api/tool-approvals/audit").json()]
+    assert {"suspended", "decided", "resumed", "executed"} <= set(kinds)
+
+
+def test_deleting_a_paused_run_closes_its_question(paused_gate: TestClient) -> None:
+    from nodestro_runtime import tool_checkpoints
+
+    run_id = start(paused_gate)
+    request = waiting(paused_gate, run_id)
+    assert finished(paused_gate, run_id)["status"] == "paused"
+    assert paused_gate.delete(f"/api/runs/{run_id}").status_code == 204
+    ctx = paused_gate.app.state.nodestro  # type: ignore[attr-defined]
+    stored = ToolApprovals(ctx.store).get(run_id, request["id"])
+    assert stored is not None and stored.status == "cancelled" and stored.closed_because == "run.deleted"
+    assert tool_checkpoints.runs_with_checkpoints(ctx.store) == set()
+    assert paused_gate.get("/api/tool-approvals").json() == []

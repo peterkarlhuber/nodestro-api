@@ -129,7 +129,12 @@ class ServerWorker:
 
         A run that is executing when ``stop`` is set is finished first (drain); a worker that is killed instead
         leaves its job to the reaper of another worker."""
+        # Overdue questions of paused runs expire before this worker continues any run (M6b).
+        await self.sweep_tool_waits()
         tasks = [
+            asyncio.create_task(
+                self._every(stop, self.settings.reap_every, self.sweep_tool_waits), name="worker-tool-waits"
+            ),
             asyncio.create_task(self.runner.serve(stop), name="worker-runs"),
             asyncio.create_task(self._every(stop, self.settings.reap_every, self._reap_once), name="worker-reaper"),
             asyncio.create_task(
@@ -156,6 +161,18 @@ class ServerWorker:
             report = await asyncio.to_thread(self.price_sync.sync)
             if report.ran:
                 logger.info("Reference prices checked; active version %s", report.active_version)
+
+    async def sweep_tool_waits(self) -> list[str]:
+        """The deadline sweep of runs paused at tool calls (M6b) for every tenant: overdue questions expire, decided
+        runs are queued again (a worker continues them under its lease), and with the switch off open questions
+        are closed. Runs once before this worker claims anything, then periodically."""
+        continued: list[str] = []
+        for tenant in await asyncio.to_thread(self.identity.tenants):
+            try:
+                continued += self.scheduling.get(tenant.id).runs.sweep_tool_waits()
+            except Exception:
+                logger.exception("Sweeping the runs of tenant %s paused at tool calls failed", tenant.id)
+        return continued
 
     async def _reap_once(self) -> list[Any]:
         return await asyncio.to_thread(self.reap)
