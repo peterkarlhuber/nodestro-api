@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import json
+import threading
 import time
 from typing import Any
 
@@ -223,21 +224,44 @@ def test_export_and_delete_carry_the_chat(make_app: Callable[..., TestClient]) -
 
 
 def test_the_event_stream_sends_changes(make_app: Callable[..., TestClient], monkeypatch: pytest.MonkeyPatch) -> None:
+    """Another process writes an instruction while the stream is open; the run then ends, and so does the stream.
+
+    The stream ends on its own, so the test also holds where the TestClient buffers a response until it is complete
+    (Starlette before 1.8, the last versions for Python 3.10)."""
     monkeypatch.setattr(api_run_chat, "POLL_SECONDS", 0.05)
     client, run_id = setup(make_app)
     ctx = client.app.state.nodestro  # type: ignore[attr-defined]
+    failures: list[BaseException] = []
+
+    def elsewhere() -> None:
+        try:
+            time.sleep(0.3)  # the stream is open and has sent its snapshot
+            ctx.runs.chat.submit(
+                run_id=run_id, target_run_id=run_id, node_id="lead", kind="instruction", content="From another process"
+            )
+            time.sleep(0.3)  # several polls see the instruction while it waits
+            (waiting,) = client.get("/api/approvals").json()
+            decided = client.post(
+                f"/api/runs/{waiting['run_id']}/approvals/{waiting['node_id']}", json={"decision": "approved"}
+            )
+            assert decided.status_code == 200, decided.text
+        except BaseException as exc:  # reported by the test thread
+            failures.append(exc)
+
+    worker = threading.Thread(target=elsewhere, daemon=True)
+    worker.start()
     with client.stream("GET", f"/api/runs/{run_id}/chat/events") as stream:
-        lines = stream.iter_lines()
-        assert next(lines) == "event: snapshot"
-        snapshot = json.loads(next(lines)[6:])
-        assert snapshot["active"] and snapshot["targets"][0]["node_id"] == "lead"
-        ctx.runs.chat.submit(
-            run_id=run_id, target_run_id=run_id, node_id="lead", kind="instruction", content="From another process"
-        )
-        for line in lines:
-            if line.startswith("data:") and "From another process" in line:
-                assert json.loads(line[6:])["status"] == "queued"
-                break
+        lines = [line for line in stream.iter_lines() if line]
+    worker.join(10)
+    assert not failures, failures
+    assert lines[0] == "event: snapshot"
+    snapshot = json.loads(lines[1][6:])
+    assert snapshot["active"] and snapshot["targets"][0]["node_id"] == "lead"
+    statuses = [
+        json.loads(line[6:])["status"] for line in lines if line.startswith("data:") and "From another process" in line
+    ]
+    assert statuses[0] == "queued" and statuses[-1] == "considered", statuses
+    assert lines[-2] == "event: end"
 
 
 def test_conversations_of_another_tenant_are_not_found(server: Any) -> None:  # noqa: F811
