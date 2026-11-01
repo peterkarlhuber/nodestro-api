@@ -10,7 +10,7 @@ import hashlib
 import json
 from typing import Annotated, Any, Literal, cast
 
-from fastapi import APIRouter, Depends, FastAPI, File, Form, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, FastAPI, File, Form, Header, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 import nodestro_examples as library
 from nodestro_examples import samples as library_samples
@@ -50,6 +50,7 @@ from nodestro_runtime.schemas import (
     WorkflowSummary,
     now,
 )
+from nodestro_runtime.tool_legacy import keep_only_inherited
 from nodestro_runtime.tool_library import (
     CUSTOM_TESTS_TEMPLATE,
     CUSTOM_TOOL_TEMPLATE,
@@ -266,24 +267,108 @@ def get_workflow(workflow_id: str, ctx: Ctx) -> Workflow:
     return _workflow(ctx, workflow_id)
 
 
-@router.put("/workflows/{workflow_id}", dependencies=EDIT)
-def update_workflow(workflow_id: str, body: WorkflowIn, ctx: Ctx, note: str = Query("", max_length=200)) -> Workflow:
-    """Save a workflow; a changed workflow becomes the next version (``note`` describes it)."""
+@router.put(
+    "/workflows/{workflow_id}",
+    dependencies=EDIT,
+    responses={409: {"description": "``workflow.conflict``: the workflow changed since the revision in If-Match"}},
+)
+def update_workflow(
+    workflow_id: str,
+    body: WorkflowIn,
+    ctx: Ctx,
+    note: str = Query("", max_length=200),
+    if_match: Annotated[
+        str | None,
+        Header(
+            description="The revision the edit is based on: the workflow's ``updated_at`` as read (quotes "
+            "optional). A save based on an older revision is refused with 409 ``workflow.conflict``; without the "
+            "header the save always applies.",
+        ),
+    ] = None,
+) -> Workflow:
+    """Save a workflow; a changed workflow becomes the next version (``note`` describes it).
+
+    The revision of a workflow is its ``updated_at`` (AD-07). A client that sends it as ``If-Match`` saves only
+    when nobody saved in between; otherwise the answer is 409 ``workflow.conflict`` with the current revision in
+    ``params.updated_at``."""
     current = _workflow(ctx, workflow_id)
+    expected = _revision(if_match)
     workflow = Workflow(**body.model_dump(), id=current.id, created_at=current.created_at, updated_at=now())
-    _replace_workflow(ctx, workflow, lambda: ctx.versions.record(workflow, description=note, previous=current))
-    return workflow
+    return _replace_workflow(
+        ctx,
+        workflow,
+        lambda saved, previous: ctx.versions.record(saved, description=note, previous=previous),
+        expected=expected,
+    )
 
 
-def _replace_workflow(ctx: Nodestro, workflow: Workflow, record: Callable[[], object]) -> None:
-    """Store a changed workflow and its version together, only while the workflow still exists (C-16).
+def _revision(if_match: str | None) -> datetime | None:
+    """The revision an ``If-Match`` header names (``None``: none, or ``*``, which matches any revision)."""
+    if if_match is None:
+        return None
+    text = if_match.strip()
+    if text.startswith("W/"):
+        text = text[2:]
+    text = text.strip().strip('"').strip()
+    if text in ("", "*"):
+        return None
+    revision = _time(text)
+    if revision is None:
+        raise ApiError(
+            400, "workflow.revision_invalid", "If-Match must be the workflow's updated_at", revision=if_match
+        )
+    return revision
 
-    A save that races a delete answers 404 instead of bringing the deleted workflow back (without its schedules,
-    versions and published APIs): the write is conditional, as one step of the store."""
+
+def _time(text: object) -> datetime | None:
+    """An ISO time as stored or sent (``None``: not one); a time without a zone is UTC."""
+    try:
+        value = datetime.fromisoformat(str(text).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+
+
+def _conflict(current: Workflow) -> ApiError:
+    return ApiError(
+        409,
+        "workflow.conflict",
+        "The workflow was changed since it was opened; reload it or save it as a new version",
+        updated_at=current.updated_at.isoformat().replace("+00:00", "Z"),
+        name=current.name,
+    )
+
+
+def _replace_workflow(
+    ctx: Nodestro,
+    workflow: Workflow,
+    record: Callable[[Workflow, Workflow], object],
+    *,
+    expected: datetime | None = None,
+) -> Workflow:
+    """Store a changed workflow and its version in one transaction under the workflow's lock; the stored workflow.
+
+    - Only while the workflow still exists (C-16): a save that races a delete answers 404 instead of bringing the
+      deleted workflow back (without its schedules, versions and published APIs).
+    - With ``expected`` (the revision the edit is based on, AD-07), only while the stored ``updated_at`` is still
+      that revision; otherwise 409 ``workflow.conflict``. The check and the write are one step under the lock that
+      :meth:`Workspace.save_workflow` takes too, so two saves based on the same revision never both win.
+    - Legacy tool exemptions come only from the activation step, never from a save (as in ``save_workflow``).
+
+    ``record(saved, previous)`` stores the version; ``previous`` is the state read under the lock."""
     with ctx.store.transaction():
-        if not ctx.store.replace_if("workflows", workflow.id, workflow, field="id", expected=workflow.id):
+        ctx.store.lock("workflows", workflow.id)
+        previous = ctx.store.get("workflows", workflow.id, Workflow)
+        if previous is None:
             raise KeyError(workflow.id)
-        record()
+        if expected is not None and expected != previous.updated_at:
+            raise _conflict(previous)
+        saved = keep_only_inherited(workflow, previous)
+        # Conditional as a second guard: a writer that skips the lock still cannot bring back a deleted workflow.
+        if not ctx.store.replace_if("workflows", saved.id, saved, field="id", expected=saved.id):
+            raise KeyError(saved.id)
+        record(saved, previous)
+    return saved
 
 
 #: Run states in which a run still executes (or waits to) and may need the workflow's Python environment.
@@ -367,8 +452,9 @@ def restore_version(workflow_id: str, number: int, ctx: Ctx) -> Workflow:
     current = _workflow(ctx, workflow_id)
     version = ctx.versions.get(workflow_id, number)
     workflow = Workflow(**version.snapshot.model_dump(), id=current.id, created_at=current.created_at, updated_at=now())
-    _replace_workflow(ctx, workflow, lambda: ctx.versions.record(workflow, restored_from=number, previous=current))
-    return workflow
+    return _replace_workflow(
+        ctx, workflow, lambda saved, previous: ctx.versions.record(saved, restored_from=number, previous=previous)
+    )
 
 
 _COPY = {"de": "Kopie", "en": "copy", "es": "copia", "fr": "copie", "pt-BR": "cópia", "it": "copia"}
