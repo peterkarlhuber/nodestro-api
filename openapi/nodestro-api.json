@@ -9306,6 +9306,11 @@
       "OrchestratorConfig": {
         "description": "An AI model that delegates the task to teams of its pool until it can answer (AO M4).\n\nIt only selects: it creates no agents and no tools, and has no tools of its own. Each chosen team\nruns as a linked child run with its own budget, limits and tool approvals; the orchestrator's\ndecisions, reasons and the teams' results are recorded (``NodeRun.orchestration``).",
         "properties": {
+          "allow_values": {
+            "default": false,
+            "title": "Allow Values",
+            "type": "boolean"
+          },
           "instructions": {
             "default": "",
             "title": "Instructions",
@@ -9316,6 +9321,13 @@
             "maximum": 50.0,
             "minimum": 1.0,
             "title": "Max Decisions",
+            "type": "integer"
+          },
+          "max_parallel": {
+            "default": 1,
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Max Parallel",
             "type": "integer"
           },
           "max_per_member": {
@@ -9330,6 +9342,13 @@
               }
             ],
             "title": "Max Per Member"
+          },
+          "max_team": {
+            "default": 5,
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Max Team",
+            "type": "integer"
           },
           "members": {
             "items": {
@@ -9353,6 +9372,11 @@
                 "type": "null"
               }
             ]
+          },
+          "staffing": {
+            "default": false,
+            "title": "Staffing",
+            "type": "boolean"
           },
           "task_template": {
             "default": "{{input}}",
@@ -9394,7 +9418,7 @@
         "type": "object"
       },
       "OrchestratorSelect": {
-        "description": "Pool selection by capability (AO M5): saved workflows whose capabilities match join the pool.\n\nThe selection is made when a run (or a published release) pins its workflows, so it is fixed and\nvisible in the run's snapshot: every selected member names the tags it matched. Teams are ordered\nby the number of matching tags, then by name; no score is invented. Workflows with errors, with\napproval steps (not supported inside an orchestrator) and the workflow itself are left out.",
+        "description": "Pool selection by capability (AO M5): saved workflows whose capabilities match join the pool.\n\nThe selection is made when a run (or a published release) pins its workflows, so it is fixed and\nvisible in the run's snapshot: every selected member names the tags it matched. Teams are ordered\nby the number of matching tags, then by name; no score is invented. Workflows with errors, with\nand the workflow itself are left out. Teams with approval steps are offered: the orchestrator waits while\none of them waits for a person (AO M6b).",
         "properties": {
           "capabilities": {
             "items": {
