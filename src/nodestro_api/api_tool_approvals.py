@@ -2,7 +2,8 @@
 
 - ``GET /api/tool-approvals``: the tenant's open questions of all runs (the approval inbox), oldest first.
 - ``GET /api/runs/{run_id}/tool-approvals``: the questions of one run, decided ones included.
-- ``POST /api/runs/{run_id}/tool-approvals/{request_id}``: approve or reject one call. Needs ``run``; the decision
+- ``POST /api/runs/{run_id}/tool-approvals/{request_id}``: approve or reject one call. Needs ``run``, and ``admin``
+  for a call of a destructive MCP tool (independent review M-3); the decision
   names the arguments hash the person was shown, so a decision about other arguments or another tool definition is
   refused (409 ``tool.approval_stale``), and so is a late or repeated one (409 ``tool.approval_expired`` /
   ``tool.approval_decided``). The decider is the request's principal, never a field of the body.
@@ -23,6 +24,7 @@ from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Request
+from nodestro_runtime.mcp_access import is_mcp_tool
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.schemas import now
 from nodestro_runtime.tool_approvals import (
@@ -38,7 +40,7 @@ from nodestro_runtime.tool_policy import PreGrantScope, ToolPreGrant
 from pydantic import BaseModel, Field
 
 from .api import Ctx
-from .permissions import ADMIN, READ, RUN, Principal
+from .permissions import ADMIN, READ, RUN, AccessError, Permission, Principal
 from .serving import ApiError
 
 router = APIRouter(prefix="/api")
@@ -55,6 +57,24 @@ def _actor(request: Request) -> str:
 def _require_run(ctx: Ctx, run_id: str) -> None:
     if ctx.runs.get(run_id) is None:
         raise KeyError(run_id)
+
+
+def _require_approver(ctx: Ctx, run_id: str, request_id: str, request: Request) -> None:
+    """A call of a destructive MCP tool is approved or rejected only by an administrator (independent review M-3).
+
+    Everything else keeps ``run``. The check reads the stored request, never the body; an unknown request falls through
+    to the runtime (404)."""
+    stored = ToolApprovals(ctx.store).get(run_id, request_id)
+    if stored is None or not (is_mcp_tool(stored.tool) and stored.capability.access == "destructive"):
+        return
+    principal: Principal = request.state.principal
+    if not principal.allows(Permission.ADMIN):
+        raise AccessError(
+            403,
+            "access.forbidden",
+            "Deciding about a destructive MCP tool call needs the permission 'admin'",
+            permission=Permission.ADMIN.value,
+        )
 
 
 class ToolApprovalDecision(BaseModel):
@@ -83,6 +103,7 @@ async def decide_tool_approval(
     """Approve or reject one tool call; the waiting run continues at its next look (within about a second). A run
     paused at the call (agent checkpoints, M6b) continues right away once none of its calls waits any more."""
     _require_run(ctx, run_id)
+    _require_approver(ctx, run_id, request_id, request)
     try:
         return ctx.runs.decide_tool_call(
             run_id,

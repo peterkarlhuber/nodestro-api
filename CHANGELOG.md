@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Security fixes from the independent MCP review (H-1, M-3, L-3) (2026-11-01)
+
+- Pin of `nodestro-runtime` at `f71086a` (before: `c86781b`; independent MCP review fixes, offline worker fix F5) and
+  `nodestro-examples` at `69e5e65` (before: `cd8b0af`, same examples on the new runtime).
+- `POST /api/agents/test` keeps `run` and additionally needs `edit` unless the tested configuration is exactly a
+  saved one (the agent of a node of `workflow_id`, or an agent template): a run-only user (`operator`) can no longer
+  give an agent arbitrary tools or prompts through a test (403 `access.forbidden`, `permission: edit`). Every tool call
+  of a test follows the same per-call rules as a workflow run (runtime): a call the rules would ask about is refused
+  with `tool.approval_not_in_test`, MCP tools that change data never run in a test.
+- `POST /api/tools/{name}/run` (the tool editor's test panel) now needs `edit` and `run` (before: `run`); it never runs
+  an MCP tool that changes data (`mcp.write_not_supported`).
+- `POST /api/runs/{run_id}/tool-approvals/{request_id}`: deciding about a call of a destructive MCP tool needs `admin`
+  (403 `access.forbidden`, `permission: admin`); every other call keeps `run`. The check reads the stored request.
+- `POST /api/mcp/servers/{id}/tools/{name}/decision`: approving needs `expected_hash` (400 `mcp.hash_required`).
+- The MCP tool list reports a write tool as usable when a gated workflow run could use it (`check(..., gated=True)`).
+
 ### Runs paused at a tool approval (AO M6b, behind a switch), pin: nodestro-runtime c86781b (2026-11-01)
 
 - Pin of `nodestro-runtime` at `c86781b` (before: `6ac4ae3`) and `nodestro-examples` at `cd8b0af` (before:

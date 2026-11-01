@@ -385,3 +385,34 @@ def test_deleting_a_paused_run_closes_its_question(paused_gate: TestClient) -> N
     assert stored is not None and stored.status == "cancelled" and stored.closed_because == "run.deleted"
     assert tool_checkpoints.runs_with_checkpoints(ctx.store) == set()
     assert paused_gate.get("/api/tool-approvals").json() == []
+
+
+def test_the_agent_test_never_runs_an_own_write_tool_that_would_need_approval(
+    make_app: Callable[..., TestClient], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Independent review H-1 at the HTTP level for an own tool: with approvals on, an editor's agent test is
+    answered, but the write tool's call is refused (``tool.approval_not_in_test``) and its code leaves no trace (its
+    output ``212.0``); a reading builtin runs. Without the switch the same test shows the trace, so it is visible."""
+    script = {"AGENT": [tool_use(TOOL, {"celsius": 100}), tool_use("calculator", {"expression": "6*7"}), text("done")]}
+    agent = {"name": "Agent", "system_prompt": "AGENT", "tools": [TOOL, "calculator"]}
+    editor = Principal(id="editor", permissions=frozenset({Permission.READ, Permission.EDIT, Permission.RUN}))
+
+    monkeypatch.setenv(ENABLE_ENV, "1")
+    gated = make_app(script)
+    ctx = with_tool(gated)
+    assert ctx.runs.tool_gate is not None and ctx.tools.get(TOOL).capability.access == "write"
+    gated.app.state.principal_resolver = lambda _connection: editor  # type: ignore[attr-defined]
+    answer = gated.post("/api/agents/test", json={"agent": agent, "input": "x"})
+    assert answer.status_code == 200, answer.text
+    calls = {call["name"]: call for call in answer.json()["tool_calls"]}
+    own = calls[TOOL]
+    assert own["approval"]["status"] == "denied" and own["approval"]["code"] == "tool.approval_not_in_test"
+    assert "212" not in (own["output"] or "")
+    assert calls["calculator"]["approval"]["status"] == "allowed" and "42" in calls["calculator"]["output"]
+
+    monkeypatch.delenv(ENABLE_ENV)
+    open_app = make_app(script)
+    with_tool(open_app)
+    unguarded = open_app.post("/api/agents/test", json={"agent": agent, "input": "x"})
+    assert unguarded.status_code == 200, unguarded.text
+    assert next(c for c in unguarded.json()["tool_calls"] if c["name"] == TOOL)["output"] == "212.0"

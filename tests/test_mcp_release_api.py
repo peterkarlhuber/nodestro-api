@@ -39,9 +39,12 @@ def connect(client: TestClient, url: str) -> str:
     added = client.post("/api/mcp/servers", json={"name": "Docs", "url": url, "allow_loopback": True})
     assert added.status_code == 201, added.text
     server_id = str(added.json()["id"])
-    assert client.post(f"/api/mcp/servers/{server_id}/discover").status_code == 200
+    found = client.post(f"/api/mcp/servers/{server_id}/discover")
+    assert found.status_code == 200
+    reviewed = next(tool["hash"] for tool in found.json()["tools"] if tool["name"] == "search")
     decided = client.post(
-        f"/api/mcp/servers/{server_id}/tools/search/decision", json={"approve": True, "access": "read"}
+        f"/api/mcp/servers/{server_id}/tools/search/decision",
+        json={"approve": True, "access": "read", "expected_hash": reviewed},
     )
     assert decided.status_code == 200, decided.text
     return server_id

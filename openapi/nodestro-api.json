@@ -18358,7 +18358,7 @@
     },
     "/api/agents/test": {
       "post": {
-        "description": "Run one agent with its current configuration on a test task; not a workflow run.\n\nThe result is returned, never stored as a run; its usage goes to the ledger.",
+        "description": "Run one agent with its current configuration on a test task; not a workflow run.\n\nThe result is returned, never stored as a run; its usage goes to the ledger. Testing costs money (``run``); a\nconfiguration that is not exactly a saved one (a node of ``workflow_id`` or an agent template) is a free choice of\nprompt and tools and also needs ``edit``, like saving it would. Every tool call follows the same per-call rules as\nin a workflow run (the runtime's agent test refuses calls that would ask a person).",
         "operationId": "test_agent_api_agents_test_post",
         "requestBody": {
           "content": {
@@ -27306,6 +27306,7 @@
     },
     "/api/tools/{name}/run": {
       "post": {
+        "description": "The tool editor's test panel: run one tool with free input, outside any run and without asking anybody.\n\nNeeds ``edit`` (it belongs to editing the tool) and ``run`` (it executes code). MCP tools that change data never\nrun here (``mcp.write_not_supported``); they run only in workflow runs that ask before every call.",
         "operationId": "run_tool_api_tools__name__run_post",
         "parameters": [
           {
