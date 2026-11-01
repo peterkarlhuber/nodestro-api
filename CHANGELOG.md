@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+Nodestro as an MCP server for published workflows (ADR-0007 D-8, WP-11; off by default):
+
+- `/api/published/_mcp` (Streamable HTTP, official MCP SDK, stateless): lists the publications an API key may run as
+  tools and runs them through `ServingCore.launch` (same limits, budgets, approvals and run history as
+  `POST /api/published/{slug}/runs`). Answers only clients on this computer.
+- Needs both the operator's `NODESTRO_MCP_SERVER=1` and the administrator's per-publication offer
+  (`Publication.mcp_tool`, `PATCH /api/publications/{id}`; history events `mcp_tool_on` / `mcp_tool_off`).
+  Otherwise `404 mcp_server.disabled` or no tools.
+
+`GET /api/mcp/stats` (`admin`, WP-7): MCP calls in flight, the operator's limits and each server's health (calls,
+failures, circuit breaker, last error code; no secrets, no arguments).
+
+Local MCP servers and MCP tools in published APIs (ADR-0007, WP-8 and WP-9):
+
+- `GET /api/mcp/servers/{id}/environment` and `POST /api/mcp/servers/{id}/environment/plan` (admin): the packages of
+  a local stdio server, planned hash-pinned for review and approved with `POST /api/python/plans/{id}/approve`; it
+  runs only in the Docker sandbox's containers. `GET /api/mcp/status` reports `stdio_possible`.
+- Publishing freezes the MCP tools a workflow uses in the release (`bundle.mcp_tools`: server id and slug, approved
+  hash, classification; no address or token). The check reports `api.mcp_tools`, `api.mcp_unattended_off` (API runs
+  need the operator's `NODESTRO_MCP_UNATTENDED`) and blocks unusable tools (`api.mcp_tool_unusable`). A release's
+  runs use only the frozen tools and stop when an approval changed (`mcp.release_tool_changed`).
+- Exports refuse releases with MCP tools (`export.mcp_tools`): the standalone project has no connection to the
+  tenant's MCP servers.
+
 ### Tool approvals: one-time activation step (S-2 security acceptance, 2026-10-31)
 
 - **Fix:** `POST /api/tool-approvals/legacy` could be repeated, and every repeat stamped bindings created since then

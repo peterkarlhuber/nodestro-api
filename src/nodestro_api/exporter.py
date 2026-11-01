@@ -564,6 +564,18 @@ def check(ctx: Nodestro, publication: Publication, release: Release, options: Ex
                 tools=", ".join(bundle.server_tools),
             )
         )
+    if bundle.mcp_tools:
+        # The standalone project has no connection to the tenant's MCP servers and no place for their tokens; a
+        # release with MCP tools runs only in Nodestro (WP-9).
+        problems.append(
+            _issue(
+                "export.mcp_tools",
+                f"Tools of external MCP services ({', '.join(sorted(bundle.mcp_tools))}) cannot be exported; "
+                "publish a release without them for an export",
+                level="error",
+                tools=", ".join(sorted(bundle.mcp_tools)),
+            )
+        )
     if options.guide_id:
         guide = ctx.store.get_raw(GUIDES, options.guide_id)
         if guide is None or not guide.get("accepted") or guide.get("release_id") != release.id:

@@ -32,12 +32,15 @@ from nodestro_runtime import __version__ as runtime_version
 from nodestro_runtime.agent_builder import AgentBuilder
 from nodestro_runtime.engine import MAX_DEPTH, RunEnvironment, node_label
 from nodestro_runtime.graph import workflow_refs
+from nodestro_runtime.mcp.pinned import PinnedMcp
+from nodestro_runtime.mcp_access import is_mcp_tool, unattended_mcp_enabled
 from nodestro_runtime.preflight import PROVIDER_CHECKS, preflight
 from nodestro_runtime.problems import CheckIssue, NodestroError
 from nodestro_runtime.providers import PROVIDERS, MissingApiKeyError
 from nodestro_runtime.python_envs import scope_of
 from nodestro_runtime.release import (
     KnowledgeRef,
+    McpToolRef,
     MemoryRef,
     PythonLock,
     ReleaseBundle,
@@ -89,6 +92,8 @@ EventKind = Literal[
     "gate_off",
     "gate_override",
     "legacy_stamped",
+    "mcp_tool_on",
+    "mcp_tool_off",
 ]
 
 
@@ -110,6 +115,9 @@ class Publication(BaseModel):
     active_release: int | None = None
     #: Reachable through the network listener (when that is switched on, see :mod:`nodestro_api.network`).
     network: bool = False
+    #: Offered as a tool of Nodestro's MCP server (WP-11); only an administrator switches it on, and the server
+    #: answers only while the operator also started it (``NODESTRO_MCP_SERVER=1``).
+    mcp_tool: bool = False
     limits: ApiLimits = Field(default_factory=ApiLimits)
     #: The opt-in release gate (Q-3); ``None``: new releases need no test evidence (as before).
     gate: ReleaseGate | None = None
@@ -456,6 +464,7 @@ class Publications:
                     tools=", ".join(sorted(server_tools)),
                 )
             )
+        problems.extend(self._mcp_issues(sorted(name for name in tools if is_mcp_tool(name))))
         result.knowledge = self._knowledge_refs(everything)
         result.memory = self._memory_refs(everything)
         if result.knowledge:
@@ -499,6 +508,39 @@ class Publications:
         result.warnings = sum(item.level == "warning" for item in problems)
         result.ok = result.errors == 0
         return result
+
+    def _mcp_issues(self, names: list[str]) -> list[CheckIssue]:
+        """MCP tools in a release (WP-9): each must be usable now (it is frozen at its approved definition), and runs
+        of published APIs are unattended, so they use MCP tools only after the operator's switch (D-7)."""
+        if not names:
+            return []
+        problems: list[CheckIssue] = []
+        for name in names:
+            try:
+                self.ctx.mcp.check(name)
+            except NodestroError as exc:
+                problems.append(_issue("api.mcp_tool_unusable", f"{name}: {exc}", tool=name, detail=exc.code))
+        listed = ", ".join(names)
+        problems.append(
+            _issue(
+                "api.mcp_tools",
+                f"Agents use tools of external MCP services ({listed}); they are frozen at their approved "
+                "definitions, and the services' costs are unknown to Nodestro",
+                level="info",
+                tools=listed,
+            )
+        )
+        if not unattended_mcp_enabled():
+            problems.append(
+                _issue(
+                    "api.mcp_unattended_off",
+                    "API runs use MCP tools only after the operator switches on unattended MCP use "
+                    "(NODESTRO_MCP_UNATTENDED, after the MCP security acceptance); until then such runs are refused",
+                    level="warning",
+                    tools=listed,
+                )
+            )
+        return problems
 
     @staticmethod
     def _child(children: list[SubworkflowSnapshot], workflow_id: str, version: int | None) -> Workflow:
@@ -569,6 +611,7 @@ class Publications:
         root, children, _ = self._pin_all(workflow)
         everything = [root, *(item.workflow for item in children)]
         tools: dict[str, dict[str, Any]] = {}
+        mcp_tools: dict[str, McpToolRef] = {}
         builtin: set[str] = set()
         server_tools: set[str] = set()
         models: set[str] = set()
@@ -581,7 +624,10 @@ class Publications:
                     models.add(node.agent.quality.judge_model)
                 server_tools.update(node.agent.server_tools)
                 for name in node.agent.tools:
-                    if name in self.ctx.tools.builtin:
+                    if is_mcp_tool(name):
+                        # Frozen as a safe reference (server id, hash, classification); never an address or token.
+                        mcp_tools.setdefault(name, self.ctx.mcp.pin(name))
+                    elif name in self.ctx.tools.builtin:
                         builtin.add(name)
                     elif name not in tools:
                         tools[name] = tool_record(self.ctx.tools.registry.record(name))
@@ -608,6 +654,7 @@ class Publications:
             tool_trust={name: self.ctx.tools.trust(name) for name in tools},
             builtin_tools=sorted(builtin),
             server_tools=sorted(server_tools),
+            mcp_tools=mcp_tools,
             models=sorted(models),
             python=python,
             knowledge=check.knowledge,
@@ -772,9 +819,12 @@ class Publications:
         description: str | None = None,
         limits: ApiLimits | None = None,
         network: bool | None = None,
+        mcp_tool: bool | None = None,
     ) -> Publication:
         with self._lock:
-            return self._update(publication_id, slug=slug, description=description, limits=limits, network=network)
+            return self._update(
+                publication_id, slug=slug, description=description, limits=limits, network=network, mcp_tool=mcp_tool
+            )
 
     def _update(
         self,
@@ -784,6 +834,7 @@ class Publications:
         description: str | None,
         limits: ApiLimits | None,
         network: bool | None,
+        mcp_tool: bool | None = None,
     ) -> Publication:
         publication = self.get(publication_id)
         if slug is not None and slug != publication.slug:
@@ -805,6 +856,9 @@ class Publications:
         if network is not None and network != publication.network:
             publication.network = network
             publication.history.append(PublicationEvent(kind="network_on" if network else "network_off"))
+        if mcp_tool is not None and mcp_tool != publication.mcp_tool:
+            publication.mcp_tool = mcp_tool
+            publication.history.append(PublicationEvent(kind="mcp_tool_on" if mcp_tool else "mcp_tool_off"))
         self._put(publication)
         return publication
 
@@ -855,6 +909,9 @@ class Publications:
                 policy=self.ctx.sandbox_policy,
                 provenance=self.ctx.tools.linked_provenance(),
             )
+            if bundle.mcp_tools:
+                # Only the frozen MCP tools, revalidated against the tenant's approvals on every call (WP-9).
+                tools.mcp = PinnedMcp(self.ctx.mcp, bundle.mcp_tools)  # type: ignore[assignment]
             builder = AgentBuilder(tools, self.ctx.knowledge, self.ctx.memory)
             builder.declared = self.ctx.builder.declared
             locks = {item.workflow_id for item in bundle.python}
@@ -885,6 +942,7 @@ class Publications:
             enabled=publication.enabled,
             active=publication.active_release == release.number,
             network=publication.network,
+            mcp_tool=publication.mcp_tool,
             published_at=release.created_at,
             approvals=release.bundle.approvals(),
             output_schema=release.bundle.output_schema,
