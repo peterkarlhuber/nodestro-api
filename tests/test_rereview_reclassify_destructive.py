@@ -19,6 +19,8 @@ import test_mcp_review_api as review  # reuse the fixtures of the fix round
 from test_mcp_review_api import DELETE, SCRIPT, Counting, _finished, _waiting, as_role, connected, save_workflow
 
 mcp_server = review.mcp_server
+#: Like the fix round's tests: the MCP SDK needs Python 3.11+ (they run in the 3.13 job).
+pytestmark = review.pytestmark
 
 MakeApp = Callable[..., TestClient]
 
