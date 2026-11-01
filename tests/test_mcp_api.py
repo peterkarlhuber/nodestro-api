@@ -167,7 +167,8 @@ def test_discovery_approval_and_the_tool_list(make_app: MakeApp, loopback: Any) 
     assert loopback.url not in stats.text
     # A tool that changes data stays unusable until per-call approval exists (WP-5).
     write = client.post(
-        f"/api/mcp/servers/{server['id']}/tools/delete_page/decision", json={"approve": True, "access": "write"}
+        f"/api/mcp/servers/{server['id']}/tools/delete_page/decision",
+        json={"approve": True, "access": "write", "expected_hash": tools["delete_page"]["hash"]},
     ).json()
     assert write["usable"] is False and write["refusal"] == "mcp.write_not_supported"
     # Rejecting takes the tool away again.
@@ -207,7 +208,7 @@ def test_resources_are_read_through_an_approved_tool(make_app: MakeApp) -> None:
         assert decided.json()["usable"] is True
         tried = client.post(f"/api/tools/{reader['tool_name']}/run", json={"input": {"uri": "docs://travel"}})
         assert tried.status_code == 200, tried.text
-        assert tried.json()["is_error"] is False and tried.json()["output"].endswith("Book trains.")
+        assert tried.json()["is_error"] is False and "Book trains.\n[End of external data " in tried.json()["output"]
     finally:
         handle.stop()
 

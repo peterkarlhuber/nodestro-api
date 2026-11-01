@@ -65,7 +65,7 @@ from . import __version__
 from .assistants import AgentDraft, MemorySeed
 from .benchmarks import SuiteIn, TestCase
 from .context import Nodestro
-from .permissions import ADMIN, EDIT, PUBLIC, READ, RUN, AccessError
+from .permissions import ADMIN, EDIT, PUBLIC, READ, RUN, AccessError, Permission, Principal
 from .references import Reference, ReferenceKind, references
 from .serving import ApiError
 
@@ -829,12 +829,38 @@ def design_agent(body: DesignRequest, ctx: Ctx) -> AgentDraft:
         ctx.usage_log.record("agent_design", tracker.records, label=body.description, tracker=tracker)
 
 
+def _is_saved_agent(ctx: Nodestro, body: AgentTestIn) -> bool:
+    """Whether the tested configuration is exactly one that somebody with ``edit`` saved: the agent of a node of the
+    named workflow, or an agent template. Its tools are then an authorized assignment, not a free choice."""
+    wanted = body.agent.model_dump(mode="json")
+    if body.workflow_id is not None:
+        workflow = ctx.store.get("workflows", body.workflow_id, Workflow)
+        if workflow is not None and any(
+            node.agent is not None and node.agent.model_dump(mode="json") == wanted for node in workflow.nodes
+        ):
+            return True
+    return any(
+        template.agent.model_dump(mode="json") == wanted for template in ctx.store.list("templates", AgentTemplate)
+    )
+
+
 @router.post("/agents/test", dependencies=RUN)
-async def test_agent(body: AgentTestIn, ctx: Ctx) -> AgentTestResult:
+async def test_agent(body: AgentTestIn, ctx: Ctx, request: Request) -> AgentTestResult:
     """Run one agent with its current configuration on a test task; not a workflow run.
 
-    The result is returned, never stored as a run; its usage goes to the ledger.
+    The result is returned, never stored as a run; its usage goes to the ledger. Testing costs money (``run``); a
+    configuration that is not exactly a saved one (a node of ``workflow_id`` or an agent template) is a free choice of
+    prompt and tools and also needs ``edit``, like saving it would. Every tool call follows the same per-call rules as
+    in a workflow run (the runtime's agent test refuses calls that would ask a person).
     """
+    principal: Principal | None = getattr(request.state, "principal", None)
+    if principal is not None and not principal.allows(Permission.EDIT) and not _is_saved_agent(ctx, body):
+        raise AccessError(
+            403,
+            "access.forbidden",
+            "Testing a changed agent configuration needs the permission 'edit'",
+            permission=Permission.EDIT.value,
+        )
     blocking = [issue for issue in ctx.builder.validate(body.agent) if issue.level == "error"]
     if blocking:
         raise NodestroError(
@@ -991,8 +1017,15 @@ def delete_tool(name: str, ctx: Ctx) -> Response:
     return Response(status_code=204)
 
 
-@router.post("/tools/{name}/run", dependencies=RUN)
-def run_tool(name: str, body: ToolRunRequest, ctx: Ctx) -> ToolRunResult:
+@router.post("/tools/{name}/run", dependencies=EDIT)
+def run_tool(name: str, body: ToolRunRequest, ctx: Ctx, request: Request) -> ToolRunResult:
+    """The tool editor's test panel: run one tool with free input, outside any run and without asking anybody.
+
+    Needs ``edit`` (it belongs to editing the tool) and ``run`` (it executes code). MCP tools that change data never
+    run here (``mcp.write_not_supported``); they run only in workflow runs that ask before every call."""
+    principal: Principal | None = getattr(request.state, "principal", None)
+    if principal is not None and not principal.allows(Permission.RUN):
+        raise AccessError(403, "access.forbidden", "This needs the permission 'run'", permission=Permission.RUN.value)
     output, is_error = ctx.tools.run(name, body.input, sandbox=tool_run_sandbox(ctx.tools, ctx.python, name))
     return ToolRunResult(output=output, is_error=is_error)
 

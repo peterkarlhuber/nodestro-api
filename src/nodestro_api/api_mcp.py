@@ -111,14 +111,16 @@ class McpDiscovery(BaseModel):
 class McpDecision(BaseModel):
     approve: bool
     access: ToolAccess | None = None
-    #: The definition hash the administrator reviewed; a different current definition is refused.
+    #: The definition hash the administrator reviewed; a different current definition is refused. Required to
+    #: approve (``mcp.hash_required`` otherwise); a rejection needs none.
     expected_hash: str | None = None
 
 
 def _tool_view(ctx: Ctx, tool: McpTool) -> McpToolView:
     refusal: str | None = None
     try:
-        ctx.mcp.check(tool.tool_name)
+        # Usable at all, i.e. in a workflow run that asks before every call; tests and the tool panel stay read-only.
+        ctx.mcp.check(tool.tool_name, gated=True)
     except NodestroError as exc:
         refusal = exc.code
     return McpToolView(
