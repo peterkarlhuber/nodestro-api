@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### MCP resources (WP-10), pin: nodestro-runtime 1bc3924 (2026-11-01)
+
+- Pin of `nodestro-runtime` at `1bc3924` (before: `2d55242`) and `nodestro-examples` at `6658599` (before:
+  `63be887`, same examples on the new runtime). A server's listed resources show up as one more tool,
+  `resources/read`, in discovery and the tool list; it is approved, classified and test-called through the existing
+  routes (the decision route takes the percent-encoded name). No route or schema changes; the OpenAPI document is
+  unchanged.
+
 ### Tool approvals: warnings before unattended starts (S-2, R1, 2026-11-01)
 
 - Schedules (`POST /api/schedules/preview`, new optional query `schedule_id`, and switching on), batches
