@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Coroutine, Iterator
 from datetime import datetime, timedelta, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -317,3 +318,119 @@ def test_only_the_leader_fires_a_schedule_and_each_slot_fires_once(
 
 async def _scheduling(background: Background, tenant: str) -> Any:
     return background.worker.scheduling.get(tenant)
+
+
+# ---- audit hardening: streams end with access, housekeeping ---------------------------------------
+
+
+def test_an_open_event_stream_ends_when_the_member_loses_access(server: Server) -> None:
+    """A-04: a removed member's open stream ends (``access_ended``) and receives nothing written afterwards."""
+    from nodestro_runtime.jobs import PostgresEventLog
+    from nodestro_runtime.schemas import RunEvent
+
+    server.app.state.stream_recheck_seconds = 0.2
+    owner = server.member("acme", "alice", "owner")
+    viewer = server.member("acme", "victor", "viewer")
+    run_id = _start(owner)
+    received: list[str] = []
+    opened = threading.Event()
+
+    def follow() -> None:
+        with viewer.stream("GET", f"/api/runs/{run_id}/events") as stream:
+            for line in stream.iter_lines():
+                if line.startswith(("data: ", "event: ")):
+                    received.append(line)
+                    opened.set()
+
+    thread = threading.Thread(target=follow, daemon=True)
+    thread.start()
+    log = PostgresEventLog(server.identity.database, "acme")
+    try:
+        assert opened.wait(10)
+        server.identity.remove_member("acme", server.identity.login(stub_oidc.ISSUER, "victor").id)
+        thread.join(5)
+        assert not thread.is_alive(), received
+    finally:
+        log.append(RunEvent(seq=1, run_id=run_id, type="node_finished", node_id="a", data={"output": "SECRET"}))
+        log.append(RunEvent(seq=2, run_id=run_id, type="run_finished", data={"status": "succeeded"}))
+        thread.join(10)
+    assert received[-2:] == ["event: end", 'data: {"reason": "access_ended"}']
+    assert not [line for line in received if "SECRET" in line]
+
+
+def test_a_member_keeps_streaming_while_access_lasts(server: Server) -> None:
+    from nodestro_runtime.jobs import PostgresEventLog
+    from nodestro_runtime.schemas import RunEvent
+
+    server.app.state.stream_recheck_seconds = 0.1
+    owner = server.member("acme", "alice", "owner")
+    run_id = _start(owner)
+    received: list[str] = []
+    opened = threading.Event()
+
+    def follow() -> None:
+        with owner.stream("GET", f"/api/runs/{run_id}/events") as stream:
+            for line in stream.iter_lines():
+                received.append(line)
+                opened.set()
+                if line.startswith("event: end"):
+                    return
+
+    thread = threading.Thread(target=follow, daemon=True)
+    thread.start()
+    assert opened.wait(10)
+    time.sleep(0.6)  # several checks pass
+    log = PostgresEventLog(server.identity.database, "acme")
+    log.append(RunEvent(seq=1, run_id=run_id, type="node_finished", node_id="a", data={"output": "visible"}))
+    log.append(RunEvent(seq=2, run_id=run_id, type="run_finished", data={"status": "succeeded"}))
+    thread.join(10)
+    assert not thread.is_alive()
+    assert [line for line in received if "visible" in line]
+    assert not [line for line in received if "access_ended" in line]
+
+
+def test_the_leader_deletes_expired_sessions_logins_old_jobs_and_events(
+    server: Server, make_worker: Callable[..., Background], connect: Callable[[], PostgresDatabase]
+) -> None:
+    """A-02: abandoned login starts, expired sessions, old finished jobs and old run events do not pile up."""
+    database = connect()
+    identity = IdentityStore(database)
+    alice = server.member("acme", "alice", "owner")
+    for _ in range(3):
+        assert server.browser().get("/api/auth/login").status_code == 303  # anonymous, abandoned
+    database._write("UPDATE nodestro_login_states SET expires_at = clock_timestamp() - interval '1 minute'", ())
+    fresh = server.browser().get("/api/auth/login")  # a login that is still starting
+    assert fresh.status_code == 303
+    user = identity.login(stub_oidc.ISSUER, "alice")
+    stale = identity.create_session(user.id, "acme")
+    database._write(
+        "UPDATE nodestro_sessions SET expires_at = clock_timestamp() - interval '1 minute' WHERE token_hash = %s",
+        (hashlib.sha256(stale.encode()).digest(),),
+    )
+    queue = JobQueue(database)
+    for ref, age in (("run_old", "8 days"), ("run_recent", "1 day")):
+        job = queue.enqueue("acme", RUN_JOB, ref)
+        assert job is not None
+        database._write(
+            "UPDATE nodestro_jobs SET status = 'done', finished_at = clock_timestamp() - %s::interval WHERE id = %s",
+            (age, job.id),
+        )
+    queued = queue.enqueue("acme", RUN_JOB, "run_waiting")
+    for seq, age in ((1, "3 days"), (2, "1 hour")):
+        database._write(
+            "INSERT INTO nodestro_run_events (tenant_id, run_id, seq, event, created_at)"
+            " VALUES ('acme', 'run_x', %s, '{}', clock_timestamp() - %s::interval)",
+            (seq, age),
+        )
+
+    leader, other = make_worker(), make_worker()
+    assert leader.call(leader.worker.fire_schedules()) == []  # takes the scheduler lock
+    assert other.call(other.worker.clean_up()) == {}  # only the leader cleans up
+    removed = leader.call(leader.worker.clean_up())
+    assert removed == {"sessions_and_logins": 4, "jobs": 1, "run_events": 1}, removed
+
+    assert database._query("SELECT count(*) FROM nodestro_login_states") == [(1,)]  # the fresh one
+    assert alice.get("/api/auth/me").status_code == 200  # valid sessions stay
+    refs = {row[0] for row in database._query("SELECT ref FROM nodestro_jobs")}
+    assert refs == {"run_recent", "run_waiting"} and queued is not None
+    assert database._query("SELECT seq FROM nodestro_run_events") == [(2,)]

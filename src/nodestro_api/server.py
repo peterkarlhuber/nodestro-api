@@ -16,6 +16,12 @@ sentence listing every problem (``profile.invalid``); nothing has a default that
     Executes queued runs, reaps runs of dead workers and fires schedules (:class:`nodestro_api.worker.ServerWorker`).
 ``nodestro-server create-tenant ID NAME`` / ``nodestro-server setup-link TENANT``
     Create a tenant, and print a one-time setup link that makes the person who opens it the tenant's first owner.
+``nodestro-server members TENANT`` / ``set-role TENANT USER ROLE`` / ``remove-member TENANT USER`` /
+``revoke-sessions USER``
+    Membership of a tenant (A-08): list it, add a member or change a role, remove a member (their sessions in the
+    tenant end with it), and end every session of a user at once. ``USER`` is a user id (``u_…``), a verified
+    e-mail address or the subject at the configured identity provider. A person is known once they logged in at
+    least once (a login alone grants nothing); a tenant always keeps at least one owner.
 
 API and worker processes start only when the database schema is current and Docker is reachable: tool code runs
 only in containers on a server (ADR-0006), so a server without a container runtime does not start. Docker may be
@@ -33,6 +39,7 @@ from datetime import datetime, timedelta, timezone
 import logging
 import os
 from pathlib import Path
+import re
 import shutil
 import signal
 import subprocess
@@ -62,7 +69,8 @@ class ServerEnvironment:
     docker: str
     #: Model endpoints (origins) tenants may use: ``NODESTRO_MODEL_ENDPOINTS``, comma-separated.
     endpoints: tuple[str, ...] = ()
-    #: Worker timing: ``NODESTRO_WORKER_LEASE_SECONDS``, ``…_POLL_SECONDS``, ``…_REAP_SECONDS``.
+    #: Worker timing: ``NODESTRO_WORKER_LEASE_SECONDS``, ``…_POLL_SECONDS``, ``…_REAP_SECONDS``,
+    #: ``…_CLEANUP_SECONDS``.
     worker: dict[str, float] = field(default_factory=dict)
     #: The reference price sync of the workers (``NODESTRO_PRICE_*``, see :mod:`nodestro_api.pricing_setup`).
     price_sync: PriceSyncConfig = field(default_factory=PriceSyncConfig)
@@ -146,7 +154,7 @@ def load(environ: Mapping[str, str] | None = None) -> ServerEnvironment:
                 }
             )
     worker: dict[str, float] = {}
-    for name, key in (("LEASE", "lease"), ("POLL", "poll"), ("REAP", "reap_every")):
+    for name, key in (("LEASE", "lease"), ("POLL", "poll"), ("REAP", "reap_every"), ("CLEANUP", "cleanup_every")):
         text = environ.get(f"NODESTRO_WORKER_{name}_SECONDS", "").strip()
         if not text:
             continue
@@ -404,6 +412,129 @@ def create_tenant(server: ServerEnvironment, tenant_id: str, name: str) -> None:
         database.close()
 
 
+# ---- members ----------------------------------------------------------------------------------
+
+_USER_ID = re.compile(r"u_[0-9a-f]{24}")
+
+
+def find_user(server: ServerEnvironment, database: Any, who: str) -> Any:
+    """The user named by an id (``u_…``), a verified e-mail address or a subject at the configured provider."""
+    from nodestro_runtime.identity_store import IdentityStore, User
+
+    who = who.strip()
+    identity = IdentityStore(database)
+    if _USER_ID.fullmatch(who):
+        found = identity.user(who)
+        if found is not None:
+            return found
+        rows: list[Any] = []
+    elif "@" in who:
+        rows = database._query(
+            "SELECT id, issuer, subject, email, name FROM nodestro_users WHERE lower(email) = lower(%s) ORDER BY id",
+            (who,),
+        )
+    else:
+        rows = database._query(
+            "SELECT id, issuer, subject, email, name FROM nodestro_users WHERE issuer = %s AND subject = %s",
+            (server.settings.oidc_issuer, who),
+        )
+    if not rows:
+        raise NodestroError(
+            "identity.user_unknown",
+            f"No user {who!r} has logged in yet; ask them to log in once (they are told they have no access yet), "
+            "then run this command again",
+            user=who,
+        )
+    if len(rows) > 1:
+        raise NodestroError(
+            "identity.user_ambiguous",
+            f"{who!r} names {len(rows)} users; use the user id ({', '.join(row[0] for row in rows)})",
+            user=who,
+        )
+    row = rows[0]
+    return User(id=row[0], issuer=row[1], subject=row[2], email=row[3], name=row[4])
+
+
+def _require_tenant(identity: Any, tenant_id: str) -> None:
+    if identity.tenant(tenant_id) is None:
+        raise NodestroError("identity.tenant_unknown", f"No tenant {tenant_id}", tenant=tenant_id)
+
+
+def members(server: ServerEnvironment, tenant_id: str) -> list[str]:
+    """One line per member of a tenant: user id, role, e-mail address, name and subject."""
+    from nodestro_runtime.identity_store import IdentityStore
+
+    database = _database(server)
+    try:
+        database.require_current_schema()
+        identity = IdentityStore(database)
+        _require_tenant(identity, tenant_id)
+        lines = []
+        for member in identity.members(tenant_id):
+            user = identity.user(member.user_id)
+            email = (user.email if user else None) or "-"
+            name = (user.name if user else None) or "-"
+            subject = user.subject if user else "-"
+            lines.append(f"{member.user_id}\t{member.role}\t{email}\t{name}\t{subject}")
+        return lines
+    finally:
+        database.close()
+
+
+def set_role(server: ServerEnvironment, tenant_id: str, who: str, role: str) -> str:
+    """Give a user a role in a tenant (adds the member); takes effect with their next request."""
+    from nodestro_runtime.identity_store import ROLES, IdentityStore
+
+    if role not in ROLES:
+        raise NodestroError("identity.role", f"Unknown role {role!r} (one of {', '.join(ROLES)})", role=role)
+    database = _database(server)
+    try:
+        database.require_current_schema()
+        identity = IdentityStore(database)
+        _require_tenant(identity, tenant_id)
+        user = find_user(server, database, who)
+        before = identity.role(tenant_id, user.id)
+        identity.set_role(tenant_id, user.id, role)
+    finally:
+        database.close()
+    logger.info("Operator set the role of %s in tenant %s: %s -> %s", user.id, tenant_id, before or "-", role)
+    return f"{user.id} is {role} in {tenant_id}" + (f" (was {before})" if before and before != role else "")
+
+
+def remove_member(server: ServerEnvironment, tenant_id: str, who: str) -> str:
+    """Remove a user from a tenant; their sessions in the tenant end at once (the last owner stays)."""
+    from nodestro_runtime.identity_store import IdentityStore
+
+    database = _database(server)
+    try:
+        database.require_current_schema()
+        identity = IdentityStore(database)
+        _require_tenant(identity, tenant_id)
+        user = find_user(server, database, who)
+        if identity.role(tenant_id, user.id) is None:
+            raise NodestroError("identity.not_a_member", f"{user.id} is not a member of {tenant_id}", tenant=tenant_id)
+        identity.remove_member(tenant_id, user.id)
+    finally:
+        database.close()
+    logger.info("Operator removed %s from tenant %s", user.id, tenant_id)
+    return f"removed {user.id} from {tenant_id}"
+
+
+def revoke_sessions(server: ServerEnvironment, who: str) -> str:
+    """End every session of a user in every tenant (memberships stay; a new login starts a new session)."""
+    from nodestro_runtime.identity_store import IdentityStore
+
+    database = _database(server)
+    try:
+        database.require_current_schema()
+        user = find_user(server, database, who)
+        ended = IdentityStore(database).end_sessions(user.id)
+    finally:
+        database.close()
+    logger.info("Operator ended %d sessions of %s", ended, user.id)
+    return f"ended {ended} sessions of {user.id}"
+
+
 # ---- reference prices ------------------------------------------------------------------------
 
 
@@ -444,6 +575,8 @@ def pricing(server: ServerEnvironment, command: str, version: str | None = None,
 
 
 def parser() -> argparse.ArgumentParser:
+    from nodestro_runtime.identity_store import ROLES
+
     found = argparse.ArgumentParser(prog="nodestro-server", description="Nodestro server processes")
     commands = found.add_subparsers(dest="command", required=True)
     commands.add_parser("check", help="Check settings, database and container runtime")
@@ -462,6 +595,18 @@ def parser() -> argparse.ArgumentParser:
     tenant.add_argument("name")
     link = commands.add_parser("setup-link", help="Print a one-time link that binds the first owner of a tenant")
     link.add_argument("tenant_id")
+    listing = commands.add_parser("members", help="List the members of a tenant with their roles")
+    listing.add_argument("tenant_id")
+    user_help = "user id (u_...), verified e-mail address or subject at the identity provider"
+    role = commands.add_parser("set-role", help="Add a member to a tenant or change their role")
+    role.add_argument("tenant_id")
+    role.add_argument("user", help=user_help)
+    role.add_argument("role", choices=ROLES)
+    removing = commands.add_parser("remove-member", help="Remove a member from a tenant and end their sessions there")
+    removing.add_argument("tenant_id")
+    removing.add_argument("user", help=user_help)
+    revoking = commands.add_parser("revoke-sessions", help="End every session of a user (log them out everywhere)")
+    revoking.add_argument("user", help=user_help)
     pricing = commands.add_parser("pricing", help="Reference prices: status, sync, open reviews and their decisions")
     pricing_commands = pricing.add_subparsers(dest="pricing_command", required=True)
     pricing_commands.add_parser("status", help="Print the state of the reference prices and the open reviews")
@@ -510,6 +655,14 @@ def main(argv: Sequence[str] | None = None) -> None:
             print(f"created tenant {args.tenant_id}")
         elif args.command == "setup-link":
             print(setup_link(server, args.tenant_id))
+        elif args.command == "members":
+            print("\n".join(members(server, args.tenant_id)) or f"tenant {args.tenant_id} has no members")
+        elif args.command == "set-role":
+            print(set_role(server, args.tenant_id, args.user, args.role))
+        elif args.command == "remove-member":
+            print(remove_member(server, args.tenant_id, args.user))
+        elif args.command == "revoke-sessions":
+            print(revoke_sessions(server, args.user))
         elif args.command == "pricing":
             print(pricing(server, args.pricing_command, getattr(args, "version", None), getattr(args, "note", None)))
     except NodestroError as error:
@@ -527,10 +680,15 @@ __all__ = [
     "create_server_app",
     "create_tenant",
     "dump",
+    "find_user",
     "load",
     "main",
+    "members",
     "migrate",
     "pricing",
+    "remove_member",
+    "revoke_sessions",
     "run_worker",
+    "set_role",
     "setup_link",
 ]

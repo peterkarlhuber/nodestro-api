@@ -11,7 +11,10 @@ or more worker processes (:class:`ServerWorker`). Every worker:
   runs it starts are queued like any other, and each slot fires at most once
   (:class:`nodestro_runtime.jobs.ScheduleFirings`);
 - syncs the server's reference prices when they are due, under the price-sync lock: one worker at a time
-  (:mod:`nodestro_api.pricing_setup`; only with :attr:`WorkerSettings.price_sync` switched on).
+  (:mod:`nodestro_api.pricing_setup`; only with :attr:`WorkerSettings.price_sync` switched on);
+- deletes what is no longer needed while it holds the scheduler lock (:meth:`ServerWorker.clean_up`): expired
+  sessions and abandoned login starts, finished jobs after :attr:`WorkerSettings.job_retention` and run events after
+  :attr:`WorkerSettings.event_retention` (the runs themselves stay).
 
 ``nodestro-server worker`` (:mod:`nodestro_api.server`) runs one. Only runs go through the queue so far; batches,
 test series, assistant drafts and Python environment installations still run in the API process that started them.
@@ -32,6 +35,7 @@ from nodestro_runtime.jobs import (
     DEFAULT_MAX_WAITING,
     JobQueue,
     LeaderLock,
+    PostgresEventLog,
     QueuedRuns,
     RunWorker,
     ScheduleFirings,
@@ -68,6 +72,12 @@ class WorkerSettings:
     #: concept option A): a waiting run keeps its slot, so at least one slot always executes.
     max_runs: int = DEFAULT_MAX_RUNS
     max_waiting: int = DEFAULT_MAX_WAITING
+    #: How often the scheduler leader deletes expired sessions, login starts, old jobs and run events (seconds).
+    cleanup_every: float = 600.0
+    #: Finished jobs are kept this long (the runs themselves are not touched).
+    job_retention: timedelta = timedelta(days=7)
+    #: Run events are kept this long: live streams and waits read them; a run's own record keeps its results.
+    event_retention: timedelta = timedelta(days=2)
 
 
 class ServerWorker:
@@ -124,6 +134,23 @@ class ServerWorker:
                 logger.exception("Firing the schedules of tenant %s failed", tenant.id)
         return started
 
+    async def clean_up(self) -> dict[str, int]:
+        """Delete expired sessions and login starts, finished jobs and old run events while this worker leads (A-02);
+        returns how many rows went (empty: another worker leads)."""
+        if not await asyncio.to_thread(self.leader.acquire):
+            return {}
+        database = self.files.database
+        removed = {
+            "sessions_and_logins": await asyncio.to_thread(self.identity.cleanup),
+            "jobs": await asyncio.to_thread(self.queue.cleanup, older_than=self.settings.job_retention),
+            "run_events": await asyncio.to_thread(
+                PostgresEventLog.cleanup, database, older_than=self.settings.event_retention
+            ),
+        }
+        if any(removed.values()):
+            logger.info("Cleanup removed %s", ", ".join(f"{count} {name}" for name, count in removed.items()))
+        return removed
+
     async def serve(self, stop: asyncio.Event) -> None:
         """Execute jobs, reap and fire schedules until ``stop`` is set, then close every context.
 
@@ -141,6 +168,9 @@ class ServerWorker:
                 self._every(stop, self.settings.schedule_every, self.fire_schedules), name="worker-scheduler"
             ),
         ]
+        tasks.append(
+            asyncio.create_task(self._every(stop, self.settings.cleanup_every, self.clean_up), name="worker-cleanup")
+        )
         if self.settings.price_sync.enabled:
             tasks.append(
                 asyncio.create_task(
