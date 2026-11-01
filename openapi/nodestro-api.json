@@ -6144,6 +6144,10 @@
             "title": "Adapt",
             "type": "string"
           },
+          "control": {
+            "title": "Control",
+            "type": "string"
+          },
           "flow": {
             "title": "Flow",
             "type": "string"
@@ -6159,6 +6163,10 @@
           "result": {
             "title": "Result",
             "type": "string"
+          },
+          "why": {
+            "title": "Why",
+            "type": "string"
           }
         },
         "required": [
@@ -6166,7 +6174,9 @@
           "flow",
           "input",
           "result",
-          "adapt"
+          "adapt",
+          "control",
+          "why"
         ],
         "title": "Guide",
         "type": "object"
@@ -7261,6 +7271,13 @@
       },
       "LibraryCopy": {
         "properties": {
+          "integrations": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Integrations",
+            "type": "object"
+          },
           "language": {
             "anyOf": [
               {
@@ -15145,8 +15162,36 @@
             "title": "Description",
             "type": "string"
           },
+          "integrations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Integrations",
+            "type": "array"
+          },
           "judge": {
             "title": "Judge",
+            "type": "boolean"
+          },
+          "kind": {
+            "default": "agent",
+            "enum": [
+              "agent",
+              "orchestrator"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "knowledge": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Knowledge",
+            "type": "array"
+          },
+          "memory": {
+            "default": false,
+            "title": "Memory",
             "type": "boolean"
           },
           "model": {
@@ -15225,6 +15270,17 @@
             "title": "Agents",
             "type": "integer"
           },
+          "budget_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Usd"
+          },
           "category": {
             "enum": [
               "industry",
@@ -15259,7 +15315,13 @@
                 "files",
                 "documents",
                 "proposals",
-                "memory"
+                "memory",
+                "orchestrator",
+                "knowledge",
+                "integration",
+                "loop",
+                "budget",
+                "contract"
               ],
               "type": "string"
             },
@@ -15280,6 +15342,20 @@
           "input": {
             "title": "Input",
             "type": "string"
+          },
+          "integrations": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateIntegration"
+            },
+            "title": "Integrations",
+            "type": "array"
+          },
+          "knowledge": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateKnowledge"
+            },
+            "title": "Knowledge",
+            "type": "array"
           },
           "language": {
             "title": "Language",
@@ -15305,7 +15381,8 @@
             "enum": [
               "sequential",
               "parallel",
-              "branching"
+              "branching",
+              "adaptive"
             ],
             "title": "Pattern",
             "type": "string"
@@ -15320,6 +15397,18 @@
           "sensitive": {
             "title": "Sensitive",
             "type": "boolean"
+          },
+          "team_details": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateTeam"
+            },
+            "title": "Team Details",
+            "type": "array"
+          },
+          "teams": {
+            "default": 0,
+            "title": "Teams",
+            "type": "integer"
           },
           "tests": {
             "items": {
@@ -15362,6 +15451,75 @@
         "title": "TemplateDetail",
         "type": "object"
       },
+      "TemplateIntegration": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "offline": {
+            "title": "Offline",
+            "type": "string"
+          },
+          "setup": {
+            "title": "Setup",
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "description",
+          "setup",
+          "tools",
+          "offline"
+        ],
+        "title": "TemplateIntegration",
+        "type": "object"
+      },
+      "TemplateKnowledge": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description"
+        ],
+        "title": "TemplateKnowledge",
+        "type": "object"
+      },
       "TemplateSummary": {
         "properties": {
           "agents": {
@@ -15402,7 +15560,13 @@
                 "files",
                 "documents",
                 "proposals",
-                "memory"
+                "memory",
+                "orchestrator",
+                "knowledge",
+                "integration",
+                "loop",
+                "budget",
+                "contract"
               ],
               "type": "string"
             },
@@ -15441,7 +15605,8 @@
             "enum": [
               "sequential",
               "parallel",
-              "branching"
+              "branching",
+              "adaptive"
             ],
             "title": "Pattern",
             "type": "string"
@@ -15449,6 +15614,11 @@
           "sensitive": {
             "title": "Sensitive",
             "type": "boolean"
+          },
+          "teams": {
+            "default": 0,
+            "title": "Teams",
+            "type": "integer"
           },
           "tools": {
             "items": {
@@ -15475,6 +15645,67 @@
           "tools"
         ],
         "title": "TemplateSummary",
+        "type": "object"
+      },
+      "TemplateTeam": {
+        "description": "A team an orchestrator of the template can delegate to (a part, copied as a workflow of its own).",
+        "properties": {
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateAgent"
+            },
+            "title": "Agents",
+            "type": "array"
+          },
+          "approval": {
+            "title": "Approval",
+            "type": "boolean"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "contract": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Contract",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parameters": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Parameters",
+            "type": "array"
+          },
+          "part_id": {
+            "title": "Part Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "part_id",
+          "name",
+          "description",
+          "capabilities",
+          "agents",
+          "approval",
+          "contract",
+          "parameters"
+        ],
+        "title": "TemplateTeam",
         "type": "object"
       },
       "TestCase": {
@@ -21723,7 +21954,7 @@
     },
     "/api/library/{template_id}/copy": {
       "post": {
-        "description": "Create an ordinary, independent workflow from a template; the template itself never changes.\n\nParts the template runs as sub-workflows are copied first, as workflows of their own; the\ncopy's sub-workflow nodes are pinned to their first version. With ``tests`` the template's\ntest cases become a test series of the copy; their sample files are stored as input files.",
+        "description": "Create an ordinary, independent workflow from a template; the template itself never changes.\n\nParts the template runs as sub-workflows or orchestrator teams are copied first, as workflows of their own;\nevery reference is pinned to their first version. Knowledge files are stored in the knowledge base (collection\n\"Examples: <name>\" in the copy's language; identical files of an earlier copy are reused). Agents get model\ntiers mapped to the workspace's provider. Integrations named in ``integrations`` are connected to the chosen MCP\nserver (only approved read-only tools); the others run in their labelled offline mode. With ``tests`` the\ntemplate's test cases become a test series of the copy; their sample files are stored as input files.\n\nEverything is checked before anything is stored, and a copy that fails half-way leaves nothing behind.",
         "operationId": "copy_library_template_api_library__template_id__copy_post",
         "parameters": [
           {

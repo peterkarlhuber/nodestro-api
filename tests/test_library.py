@@ -61,6 +61,35 @@ def keys_of(value: Any, prefix: str = "") -> set[str]:
     return {prefix}
 
 
+class Teams(AnswerAll):
+    """Like :class:`AnswerAll`, and orchestrators decide like a person would test them: staff the first team when
+    the orchestrator staffs its teams, give it one task, then finish with a summary."""
+
+    def _answer(self, request: dict[str, Any]) -> Any:
+        model = request.get("output_format")
+        if model is None or model.__name__ != "Decision":
+            return super()._answer(request)
+        with self._lock:
+            self.calls.append({key: value for key, value in request.items() if key != "output_format"})
+        # The task lists the pool ("id: wf_..."), and what happened so far in the run.
+        seen = json.dumps(request.get("messages", []), default=str)
+        team = next(iter(re.findall(r"id: (wf_[A-Za-z0-9_]+)", seen)), "")
+        if "Delegated to" in seen:
+            decision: dict[str, Any] = {"action": "finish", "answer": "Summary of the teams.", "reason": "done"}
+        elif "Team now: nobody yet" in seen:
+            decision = {"action": "staff", "add": [team]}
+        else:
+            decision = {"action": "delegate", "member": team, "task": "Please work on this."}
+        optional = {name: None for name, field in model.model_fields.items() if not field.is_required()}
+        return Parsed(text("{}"), model(**{**optional, **decision}))
+
+
+class TeamsClient(AnswerAllClient):
+    def __init__(self) -> None:
+        self.messages = Teams()
+        self.beta = types.SimpleNamespace(messages=self.messages)
+
+
 # ---- the files ------------------------------------------------------------------
 
 
@@ -115,7 +144,8 @@ def test_a_copy_is_an_independent_workflow(make_app: Callable[..., TestClient]) 
     german = {"Accept-Language": "de"}
     first = client.post("/api/library/blog-article/copy", json={}, headers=german).json()
     assert first["name"] == "Blogartikel" and first["id"].startswith("wf_")
-    assert [node["label"] for node in first["nodes"] if node["type"] == "agent"][:2] == ["Zielgruppe", "Gliederung"]
+    names = [node.label for node in library.build("blog-article", "de").nodes if node.type == "agent"]
+    assert [node["label"] for node in first["nodes"] if node["type"] == "agent"] == names
     assert len(client.get(f"/api/workflows/{first['id']}/versions").json()) == 1
 
     # Edit the copy: name, prompt, a node removed. The template and later copies stay as they were.
@@ -174,7 +204,7 @@ def test_every_template_runs_end_to_end_with_a_fake_client(
 ) -> None:
     # German plus one more language per template, so all six languages run.
     for language in ("de", LANGUAGES[1 + IDS.index(template_id) % (len(LANGUAGES) - 1)]):
-        fake = AnswerAllClient()
+        fake = TeamsClient()
         client = make_app(client=fake)
         workflow = client.post(f"/api/library/{template_id}/copy", json={"language": language}).json()
         start = next(node for node in workflow["nodes"] if node["type"] == "start")
@@ -338,7 +368,7 @@ def test_a_copy_can_take_over_the_test_cases_with_their_sample_files(
     from nodestro_runtime.schemas import ConditionRule
 
     language = LANGUAGES[IDS.index(template_id) % len(LANGUAGES)]
-    client = make_app(client=AnswerAllClient())
+    client = make_app(client=TeamsClient())
     plain = client.post(f"/api/library/{template_id}/copy", json={"language": language}).json()
     assert client.get(f"/api/benchmarks?workflow_id={plain['id']}").json() == []
     copy = client.post(f"/api/library/{template_id}/copy", json={"language": language, "tests": True}).json()
@@ -388,7 +418,7 @@ def test_production_downtime_checks_tell_both_branches_apart(make_app: Callable[
         assert not all(check.passed for check in check_case(Case(**other), result["output"]))
 
 
-def test_contract_review_reads_an_uploaded_contract_without_knowledge(make_app: Callable[..., TestClient]) -> None:
+def test_contract_review_reads_an_uploaded_contract(make_app: Callable[..., TestClient]) -> None:
     from nodestro_examples import samples
 
     client = make_app(client=AnswerAllClient())
@@ -414,7 +444,9 @@ def test_contract_review_reads_an_uploaded_contract_without_knowledge(make_app: 
     # The structurer proposes the contract's key data; nothing reaches knowledge without a confirmation.
     [proposal] = nodes["structure"]["proposals"]
     assert proposal["content_kind"] == "extracted" and proposal["adopted_file_id"] is None
-    assert client.get("/api/knowledge").json() == []
+    # The knowledge base holds only the copy's own knowledge file (the playbook), no proposal.
+    [playbook] = client.get("/api/knowledge").json()
+    assert playbook["collection"].startswith("Beispiele: ") and playbook["origin"] == "upload"
     # Wrong file types and a second file are refused before the run starts.
     other = upload(client, "data.csv", b"a,b\n1,2\n")
     wrong = client.post(f"/api/workflows/{workflow['id']}/runs", json={"values": {"contract_file": [other["id"]]}})
@@ -449,7 +481,8 @@ def test_hr_recruiting_revises_only_after_a_failed_fairness_check(make_app: Call
         workflow = client.post("/api/library/hr-recruiting/copy", json={"language": "en"}).json()
         start = next(node for node in workflow["nodes"] if node["type"] == "start")
         run = client.post(f"/api/workflows/{workflow['id']}/runs", json={"input": start["start"]["default_input"]})
-        result = wait_run(client, run.json()["id"])
+        # The release step waits for a person; the test approves it.
+        result = decide_approvals(client, run.json()["id"])
         assert result["status"] == "succeeded"
         assert result["nodes"]["revise"]["status"] == status
         if not approved:
@@ -461,7 +494,7 @@ def test_hr_recruiting_revises_only_after_a_failed_fairness_check(make_app: Call
 
 def test_construction_report_files_wait_for_the_approval(make_app: Callable[..., TestClient]) -> None:
     for decision, status in (("rejected", "cancelled"), ("approved", "succeeded")):
-        client = make_app(client=AnswerAllClient())
+        client = make_app(client=TeamsClient())
         workflow = client.post("/api/library/construction-delay/copy", json={"language": "fr"}).json()
         start = next(node for node in workflow["nodes"] if node["type"] == "start")
         run = client.post(f"/api/workflows/{workflow['id']}/runs", json={"input": start["start"]["default_input"]})
@@ -499,8 +532,12 @@ def test_every_example_can_be_checked_for_publishing_as_an_api(
         properties = json.dumps(check["input_schema"])
         for field in file_fields(template_id):
             assert field.name in properties, (template_id, field.name)
-        # Approvals stay approvals behind the API.
-        approvals = sum(node["type"] == "approval" for node in workflow["nodes"])
+        # Approvals stay approvals behind the API, also those of the teams and sub-workflows.
+        nodes = [
+            *library.structure(template_id).nodes,
+            *(n for p in library.part_ids(template_id) for n in library.part(p).nodes),
+        ]
+        approvals = sum(node.type == "approval" for node in nodes)
         assert check["approvals"] == approvals
 
 
