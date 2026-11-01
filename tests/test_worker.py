@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import queue
 import threading
 import time
 from typing import Any, TypeVar
@@ -323,6 +324,68 @@ async def _scheduling(background: Background, tenant: str) -> Any:
 # ---- audit hardening: streams end with access, housekeeping ---------------------------------------
 
 
+def _live_lines(browser: TestClient, path: str) -> Iterator[str]:
+    """The lines of an event stream as the app sends them, with ``browser``'s cookies.
+
+    Starlette's TestClient before 1.8 (the last release for Python 3.10 is 1.7) reads a whole response before it
+    returns, so a stream that stays open cannot be followed through it; this calls the ASGI app directly."""
+    base = httpx.URL(str(browser.base_url))
+    headers = [(b"host", base.netloc), (b"cookie", "; ".join(f"{k}={v}" for k, v in browser.cookies.items()).encode())]
+    if origin := browser.headers.get("origin"):
+        headers.append((b"origin", origin.encode()))
+    scope: dict[str, Any] = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": base.scheme,
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "root_path": "",
+        "headers": headers,
+        "client": ("127.0.0.1", 50000),
+        "server": (base.host, base.port or (443 if base.scheme == "https" else 80)),
+        "state": dict(getattr(browser, "app_state", {})),
+    }
+    chunks: queue.Queue[bytes | None] = queue.Queue()
+    loop = asyncio.new_event_loop()
+    stop = asyncio.Event()
+    requested = False
+
+    async def receive() -> dict[str, Any]:
+        nonlocal requested
+        if not requested:
+            requested = True
+            return {"type": "http.request", "body": b"", "more_body": False}
+        await stop.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message: dict[str, Any]) -> None:
+        if message["type"] == "http.response.body":
+            chunks.put(message.get("body", b""))
+
+    async def serve() -> None:
+        try:
+            await browser.app(scope, receive, send)  # type: ignore[arg-type]
+        finally:
+            chunks.put(None)
+
+    thread = threading.Thread(target=loop.run_until_complete, args=(serve(),), daemon=True)
+    thread.start()
+    buffer = ""
+    try:
+        while (chunk := chunks.get(timeout=30)) is not None:
+            buffer += chunk.decode()
+            *lines, buffer = buffer.split("\n")
+            yield from lines
+        if buffer:
+            yield buffer
+    finally:
+        loop.call_soon_threadsafe(stop.set)
+        thread.join(10)
+
+
 def test_an_open_event_stream_ends_when_the_member_loses_access(server: Server) -> None:
     """A-04: a removed member's open stream ends (``access_ended``) and receives nothing written afterwards."""
     from nodestro_runtime.jobs import PostgresEventLog
@@ -336,11 +399,10 @@ def test_an_open_event_stream_ends_when_the_member_loses_access(server: Server) 
     opened = threading.Event()
 
     def follow() -> None:
-        with viewer.stream("GET", f"/api/runs/{run_id}/events") as stream:
-            for line in stream.iter_lines():
-                if line.startswith(("data: ", "event: ")):
-                    received.append(line)
-                    opened.set()
+        for line in _live_lines(viewer, f"/api/runs/{run_id}/events"):
+            if line.startswith(("data: ", "event: ")):
+                received.append(line)
+                opened.set()
 
     thread = threading.Thread(target=follow, daemon=True)
     thread.start()
@@ -369,12 +431,11 @@ def test_a_member_keeps_streaming_while_access_lasts(server: Server) -> None:
     opened = threading.Event()
 
     def follow() -> None:
-        with owner.stream("GET", f"/api/runs/{run_id}/events") as stream:
-            for line in stream.iter_lines():
-                received.append(line)
-                opened.set()
-                if line.startswith("event: end"):
-                    return
+        for line in _live_lines(owner, f"/api/runs/{run_id}/events"):
+            received.append(line)
+            opened.set()
+            if line.startswith("event: end"):
+                return
 
     thread = threading.Thread(target=follow, daemon=True)
     thread.start()
