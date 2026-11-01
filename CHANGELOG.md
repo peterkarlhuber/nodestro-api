@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Example guide terminology (2026-11-01)
+
+- Pin of `nodestro-examples` at `1ead26c` (before: `e370567`): the localized example guides use the studio's
+  terms (de "Arbeitsbereich", it "spazio di lavoro", pt-BR "fluxo de trabalho", fr "vous"). Texts only; same runtime.
+
 ### Backend audit (2026-11-01)
 
 - Security and operations (server profile):
