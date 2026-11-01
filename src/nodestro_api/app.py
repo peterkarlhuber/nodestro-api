@@ -93,6 +93,7 @@ def create_app(
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         stop_prices = asyncio.Event()
         prices: asyncio.Task[None] | None = None
+        sweeping: asyncio.Task[None] | None = None
         try:
             if scheduler:
                 nodestro.schedules.start()
@@ -101,6 +102,9 @@ def create_app(
             # Reference prices: checked at start when due, then daily; offline the last valid prices stay.
             if nodestro.price_sync is not None and nodestro.config.price_sync.enabled:
                 prices = asyncio.create_task(nodestro.price_sync.run(stop_prices), name="price-sync")
+            # Runs paused at a tool call (M6b): the deadline sweep continues decided and overdue ones.
+            if nodestro.runs.tool_gate is not None:
+                sweeping = asyncio.create_task(_sweep_tool_waits(nodestro, stop_prices), name="tool-waits")
         except BaseException:
             await shutdown()
             raise
@@ -108,9 +112,10 @@ def create_app(
             yield
         finally:
             stop_prices.set()
-            if prices is not None:
-                with suppress(Exception):
-                    await asyncio.wait_for(prices, timeout=5)
+            for task in (prices, sweeping):
+                if task is not None:
+                    with suppress(Exception):
+                        await asyncio.wait_for(task, timeout=5)
             await shutdown()
 
     # /docs belongs to the built-in user documentation; the API reference lives under /api.
@@ -180,3 +185,17 @@ def create_app(
     # Fail closed: an application with a route that declares no access requirement is not built.
     check_routes(app)
     return app
+
+
+#: How often the desktop looks for runs paused at a tool call whose question was decided or ran out (seconds).
+TOOL_WAIT_SWEEP_SECONDS = 15.0
+
+
+async def _sweep_tool_waits(nodestro: Any, stop: asyncio.Event, every: float = TOOL_WAIT_SWEEP_SECONDS) -> None:
+    while not stop.is_set():
+        try:
+            nodestro.runs.sweep_tool_waits()
+        except Exception:
+            logging.getLogger(__name__).exception("Sweeping runs paused at tool calls failed")
+        with suppress(asyncio.TimeoutError):
+            await asyncio.wait_for(stop.wait(), timeout=every)

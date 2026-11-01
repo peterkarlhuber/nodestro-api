@@ -77,13 +77,14 @@ def run_tool_approvals(run_id: str, ctx: Ctx) -> list[ToolApprovalRequest]:
 
 
 @router.post("/runs/{run_id}/tool-approvals/{request_id}", dependencies=RUN)
-def decide_tool_approval(
+async def decide_tool_approval(
     run_id: str, request_id: str, body: ToolApprovalDecision, ctx: Ctx, request: Request
 ) -> ToolApprovalRequest:
-    """Approve or reject one tool call; the waiting run continues at its next look (within about a second)."""
+    """Approve or reject one tool call; the waiting run continues at its next look (within about a second). A run
+    paused at the call (agent checkpoints, M6b) continues right away once none of its calls waits any more."""
     _require_run(ctx, run_id)
     try:
-        return ToolApprovals(ctx.store).decide(
+        return ctx.runs.decide_tool_call(
             run_id,
             request_id,
             approved=body.decision == "approved",

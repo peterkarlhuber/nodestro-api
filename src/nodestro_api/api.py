@@ -580,6 +580,8 @@ def delete_run(run_id: str, ctx: Ctx) -> Response:
     for item in tree:
         ctx.store.delete("runs", item.id)
         ctx.files.delete_run(item.id)
+        # A run paused at a tool call (M6b): its questions close and its checkpoints go with it.
+        ctx.runs.discard_tool_waits(item.id, because="run.deleted")
     # Input files only these runs used go with them (knowledge files are never touched).
     ctx.inputs.release([file_id for item in tree for file_id in item.file_ids])
     return Response(status_code=204)
