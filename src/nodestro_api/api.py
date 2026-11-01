@@ -67,7 +67,7 @@ from . import __version__
 from .assistants import AgentDraft, MemorySeed
 from .benchmarks import SuiteIn, TestCase
 from .context import Nodestro
-from .permissions import ADMIN, EDIT, PUBLIC, READ, RUN, AccessError, Permission, Principal
+from .permissions import ADMIN, EDIT, PUBLIC, READ, RUN, AccessError, Permission, Principal, StreamAccess
 from .references import Reference, ReferenceKind, references
 from .serving import ApiError
 
@@ -89,6 +89,12 @@ def app_context(request: Request) -> Nodestro:
 
 
 Ctx = Annotated[Nodestro, Depends(app_context)]
+
+
+def actor_id(request: Request) -> str:
+    """Who a record names as the person acting: the request's principal (``local``: the desktop's owner)."""
+    principal = getattr(request.state, "principal", None)
+    return principal.id if principal is not None else "local"
 
 
 def _error(status_code: int, code: str, detail: str, **params: Any) -> JSONResponse:
@@ -151,9 +157,17 @@ class Meta(BaseModel):
     efforts: list[str] = ["low", "medium", "high", "xhigh", "max"]
 
 
+# Whether this API process serves; on a server also whether it reaches its database (``503`` if not, D-10).
+# (A comment, not a docstring: the OpenAPI contract of this route stays as it was.)
 @router.get("/health", dependencies=PUBLIC)
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health(request: Request, response: Response) -> dict[str, str]:
+    check = getattr(request.app.state, "health_check", None)
+    if check is None:
+        return {"status": "ok"}
+    if not await check():
+        response.status_code = 503
+        return {"status": "unavailable", "database": "unreachable"}
+    return {"status": "ok", "database": "ok"}
 
 
 @router.get("/meta", dependencies=READ)
@@ -685,9 +699,9 @@ def list_approvals(ctx: Ctx) -> list[PendingApproval]:
 
 
 @router.post("/runs/{run_id}/approvals/{node_id}", dependencies=RUN)
-async def decide_approval(run_id: str, node_id: str, body: ApprovalDecision, ctx: Ctx) -> Run:
+async def decide_approval(run_id: str, node_id: str, body: ApprovalDecision, request: Request, ctx: Ctx) -> Run:
     """Approve or reject at an approval node; the run (its top-level run) continues right away."""
-    return ctx.runs.decide(run_id, node_id, body.decision, body.comment)
+    return ctx.runs.decide(run_id, node_id, body.decision, body.comment, decided_by=actor_id(request))
 
 
 @router.delete("/runs/{run_id}", status_code=204, dependencies=EDIT)
@@ -738,6 +752,8 @@ async def run_events(run_id: str, request: Request, ctx: Ctx) -> StreamingRespon
     if run is None:
         raise KeyError(run_id)
 
+    access = StreamAccess(request)
+
     async def stream() -> AsyncIterator[str]:
         if not ctx.runs.is_live(run_id):
             yield _sse("snapshot", run.model_dump(mode="json"))
@@ -750,8 +766,11 @@ async def run_events(run_id: str, request: Request, ctx: Ctx) -> StreamingRespon
             while True:
                 if await request.is_disconnected():
                     return
+                if await access.lost():
+                    yield _sse("end", {"reason": "access_ended"})
+                    return
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=15)
+                    event = await asyncio.wait_for(queue.get(), timeout=access.wait)
                 except asyncio.TimeoutError:
                     yield ": keep-alive\n\n"
                     continue

@@ -9,6 +9,9 @@ With a job queue (:attr:`TenantComposition.queue`, ADR-0004) the API processes e
 store and queue them, and worker processes (:mod:`nodestro_api.worker`) execute them; event streams and waits read
 the worker's events from the database. Without a queue, runs execute in the API process (tests).
 
+Unlike the desktop, the API reference (``/api/docs``, ``/api/openapi.json``) needs a login (``read``), and
+``/api/health`` also reports whether the process reaches its database (``503`` when not).
+
 ``nodestro-server api`` (:mod:`nodestro_api.server`) builds it from validated
 :class:`~nodestro_runtime.server_settings.ServerSettings`. Not part of it yet: the published workflow APIs
 (tenant-bound keys) and backups (``install``; operators use ``pg_dump``). Schedules fire in the worker process that
@@ -17,15 +20,19 @@ holds the scheduler lock, not in the API.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Callable, Iterable
+from concurrent.futures import Future
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 import logging
 from pathlib import Path
+import threading
 from typing import Any
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from nodestro_runtime.extensions import Integration
 from nodestro_runtime.identity_store import IdentityStore
@@ -53,9 +60,10 @@ from .identity import (
     SessionResolver,
     TenantWorkspaces,
     auth_router,
+    redact_auth_logs,
     secure_url,
 )
-from .permissions import check_routes
+from .permissions import READ, check_routes
 from .pricing_setup import PRICE_REFERENCE_TENANT
 from .serving import PREFIX as PUBLISHED_PREFIX
 
@@ -160,15 +168,19 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
         finally:
             await tenants.aclose()
 
+    # The API reference needs a login on a server (A-09): FastAPI's own public routes are off, and
+    # :func:`_api_reference` serves the same pages with the ``read`` requirement.
     app = FastAPI(
         title="Nodestro",
         version=__version__,
         lifespan=lifespan,
-        docs_url="/api/docs",
+        docs_url=None,
         redoc_url=None,
-        openapi_url="/api/openapi.json",
+        openapi_url=None,
     )
+    redact_auth_logs()
     app.state.tenants = tenants
+    app.state.health_check = DatabaseHealth(composition.database)
     # The configured public origin (never a request's Host header): callbacks such as the MCP sign-in use it.
     app.state.public_origin = composition.origin
     app.state.principal_resolver = SessionResolver(composition.identity)
@@ -186,10 +198,71 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
     app.include_router(tool_approvals_router)
     app.include_router(router)
     app.include_router(data_router)
+    _api_reference(app)
     check_routes(app)
     if composition.static_dir is not None and (composition.static_dir / "index.html").is_file():
         mount_frontend(app, composition.static_dir)
     return app
+
+
+class DatabaseHealth:
+    """``/api/health`` on a server (D-10): whether this process reaches its database (``SELECT 1``).
+
+    At most one check runs at a time, so an unreachable database cannot tie up the worker threads with waiting
+    checks; an answer that takes longer than ``timeout`` seconds counts as unreachable."""
+
+    def __init__(self, database: PostgresDatabase, *, timeout: float = 2.0) -> None:
+        self.database = database
+        self.timeout = timeout
+        self._pending: Future[None] | None = None
+        self._lock = threading.Lock()
+
+    def _ping(self) -> None:
+        if self.database.closed:
+            raise RuntimeError("The database connection is closed")
+        self.database._query("SELECT 1")
+
+    def _start(self) -> Future[None]:
+        """Run one check in a daemon thread of its own: it never waits in (or blocks) the pool that serves
+        requests, and a check that hangs cannot keep the process from stopping."""
+        found: Future[None] = Future()
+
+        def check() -> None:
+            if not found.set_running_or_notify_cancel():
+                return
+            try:
+                self._ping()
+            except BaseException as exc:
+                found.set_exception(exc)
+            else:
+                found.set_result(None)
+
+        threading.Thread(target=check, name="nodestro-health", daemon=True).start()
+        return found
+
+    async def __call__(self) -> bool:
+        with self._lock:
+            if self._pending is None or self._pending.done():
+                self._pending = self._start()
+            pending = self._pending
+        try:
+            await asyncio.wait_for(asyncio.shield(asyncio.wrap_future(pending)), timeout=self.timeout)
+        except Exception as exc:
+            logger.warning("Health check: the database is not reachable (%s)", type(exc).__name__)
+            return False
+        return True
+
+
+def _api_reference(app: FastAPI) -> None:
+    """The OpenAPI document and its reference page, for logged-in members only (``read``)."""
+
+    @app.get("/api/openapi.json", dependencies=READ, include_in_schema=False)
+    def openapi_document() -> JSONResponse:
+        return JSONResponse(app.openapi())
+
+    @app.get("/api/docs", dependencies=READ, include_in_schema=False)
+    def api_docs() -> HTMLResponse:
+        return get_swagger_ui_html(openapi_url="/api/openapi.json", title=f"{app.title} - API reference")
 
 
 def _secure_origin(origin: str) -> bool:
@@ -214,4 +287,4 @@ def mount_frontend(app: FastAPI, static_dir: Path) -> None:
         return FileResponse(index)
 
 
-__all__ = ["TenantComposition", "TenantFiles", "close_tenant", "create_tenant_app", "mount_frontend"]
+__all__ = ["DatabaseHealth", "TenantComposition", "TenantFiles", "close_tenant", "create_tenant_app", "mount_frontend"]

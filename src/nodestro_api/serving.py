@@ -699,17 +699,32 @@ def usage_out(usage: Usage) -> UsageOut:
 # ---- limits --------------------------------------------------------------------------------
 
 
+class _IdempotencyRecord(BaseModel):
+    """A stored Idempotency-Key: the run it started, the request's fingerprint and when."""
+
+    run_id: str
+    request: str
+    at: datetime
+
+
 class _Window:
     """Counts events per key in a sliding minute."""
 
     def __init__(self) -> None:
         self._hits: dict[str, deque[float]] = {}
         self._lock = threading.Lock()
+        self._swept = time.monotonic()
 
     def allow(self, key: str, limit: int, *, period: float = 60.0) -> float | None:
         """``None`` when allowed (and counted), else the seconds until the next slot."""
         moment = time.monotonic()
         with self._lock:
+            if moment - self._swept >= period:
+                # Keys without a hit in the last period count nothing: drop them, so the table of client
+                # addresses and keys cannot grow without bound (A-09).
+                self._swept = moment
+                for stale in [name for name, found in self._hits.items() if not found or moment - found[-1] >= period]:
+                    del self._hits[stale]
             hits = self._hits.setdefault(key, deque())
             while hits and moment - hits[0] >= period:
                 hits.popleft()
@@ -754,6 +769,21 @@ class ServingCore:
         self._requests = _Window()
         self._failures = _Window()
         self._start_lock = asyncio.Lock()
+        self._idempotency_pruned: float | None = None
+
+    def _prune_idempotency(self) -> None:
+        """Delete Idempotency-Key records older than their 24 hours (at most once an hour; A-09)."""
+        moment = time.monotonic()
+        if self._idempotency_pruned is not None and moment - self._idempotency_pruned < 3600:
+            return
+        self._idempotency_pruned = moment
+        limit = now() - timedelta(hours=_IDEMPOTENCY_HOURS)
+        try:
+            for key, record in self.host.store.items(_IDEMPOTENCY, _IdempotencyRecord):
+                if record.at <= limit:
+                    self.host.store.delete(_IDEMPOTENCY, key)
+        except Exception:
+            logger.exception("Old Idempotency-Key records could not be deleted")
 
     # ---- access ---------------------------------------------------------------------
 
@@ -1145,6 +1175,7 @@ class ServingCore:
                 except Exception:
                     # The run has started: answering 500 now would make the client retry and start it twice.
                     logger.exception("The Idempotency-Key of run %s could not be stored", run.id)
+                self._prune_idempotency()
         status_code = 202
         if wait > 0:
             timeout = min(wait, release.limits.sync_timeout_seconds)

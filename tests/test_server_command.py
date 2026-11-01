@@ -76,10 +76,11 @@ def test_model_endpoints_and_worker_timing_come_from_the_environment(tmp_path: P
             NODESTRO_MODEL_ENDPOINTS="https://models.example.com, http://localhost:9000",
             NODESTRO_WORKER_LEASE_SECONDS="5",
             NODESTRO_WORKER_REAP_SECONDS="2.5",
+            NODESTRO_WORKER_CLEANUP_SECONDS="300",
         )
     )
     assert loaded.endpoints == ("https://models.example.com", "http://localhost:9000")
-    assert loaded.worker == {"lease": 5.0, "reap_every": 2.5}
+    assert loaded.worker == {"lease": 5.0, "reap_every": 2.5, "cleanup_every": 300.0}
     with pytest.raises(NodestroError) as error:
         command.load(
             _environment(tmp_path, NODESTRO_MODEL_ENDPOINTS="models.example.com", NODESTRO_WORKER_POLL_SECONDS="0")
@@ -218,3 +219,85 @@ def test_the_backup_command_writes_a_pg_dump(
     written = Path(capsys.readouterr().out.strip().splitlines()[-1])
     assert written.parent == tmp_path / "backups" and written.name.startswith("nodestro-") and written.suffix == ".dump"
     assert written.read_bytes().startswith(b"PGDMP")  # pg_dump's custom format
+
+
+def test_operators_manage_members_roles_and_sessions(
+    schema: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A-08 / D-03: members are listed, added, changed and removed, and sessions revoked, without SQL."""
+    from nodestro_runtime.identity_store import IdentityStore
+
+    for key, value in _environment(tmp_path).items():
+        monkeypatch.setenv(key, value)
+    command.main(["migrate"])
+    command.main(["create-tenant", "acme", "Acme"])
+    database = PostgresDatabase(DSN, schema=schema)
+    try:
+        identity = IdentityStore(database)
+        owner = identity.login("https://login.example", "owner-sub", email="owner@example.com", name="Olga")
+        identity.set_role("acme", owner.id, "owner")
+        # Bob logged in once (a login alone grants nothing); his e-mail address is verified.
+        bob = identity.login("https://login.example", "bob-sub", email="Bob@Example.com")
+        capsys.readouterr()
+
+        command.main(["set-role", "acme", "bob@example.com", "editor"])
+        assert capsys.readouterr().out.strip() == f"{bob.id} is editor in acme"
+        assert identity.role("acme", bob.id) == "editor"
+        command.main(["set-role", "acme", "bob-sub", "viewer"])  # the subject at the configured provider
+        assert capsys.readouterr().out.strip() == f"{bob.id} is viewer in acme (was editor)"
+        command.main(["members", "acme"])
+        listed = capsys.readouterr().out.strip().splitlines()
+        assert listed == sorted(
+            [
+                f"{owner.id}\towner\towner@example.com\tOlga\towner-sub",
+                f"{bob.id}\tviewer\tBob@Example.com\t-\tbob-sub",
+            ]
+        )
+
+        session = identity.create_session(bob.id, "acme")
+        command.main(["revoke-sessions", bob.id])
+        assert capsys.readouterr().out.strip() == f"ended 1 sessions of {bob.id}"
+        assert identity.session(session) is None and identity.role("acme", bob.id) == "viewer"
+
+        session = identity.create_session(bob.id, "acme")
+        command.main(["remove-member", "acme", "bob@example.com"])
+        assert capsys.readouterr().out.strip() == f"removed {bob.id} from acme"
+        assert identity.role("acme", bob.id) is None and identity.session(session) is None
+
+        for argv, code in (
+            (["set-role", "acme", "nobody@example.com", "viewer"], "identity.user_unknown"),
+            (["set-role", "other", bob.id, "viewer"], "identity.tenant_unknown"),
+            (["remove-member", "acme", bob.id], "identity.not_a_member"),
+            (["remove-member", "acme", owner.id], "identity.last_owner"),
+            (["set-role", "acme", owner.id, "admin"], "identity.last_owner"),
+        ):
+            with pytest.raises(SystemExit) as stopped:
+                command.main(argv)
+            assert str(stopped.value.code).startswith(f"{code}:"), (argv, stopped.value.code)
+        assert identity.role("acme", owner.id) == "owner"
+        with pytest.raises(SystemExit):
+            command.main(["set-role", "acme", bob.id, "superuser"])  # not a role
+    finally:
+        database.close()
+
+
+def test_a_shared_e_mail_address_needs_the_user_id(
+    schema: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from nodestro_runtime.identity_store import IdentityStore
+
+    for key, value in _environment(tmp_path).items():
+        monkeypatch.setenv(key, value)
+    command.main(["migrate"])
+    command.main(["create-tenant", "acme", "Acme"])
+    database = PostgresDatabase(DSN, schema=schema)
+    try:
+        identity = IdentityStore(database)
+        identity.login("https://login.example", "one", email="team@example.com")
+        identity.login("https://other.example", "two", email="team@example.com")
+        with pytest.raises(SystemExit) as stopped:
+            command.main(["set-role", "acme", "team@example.com", "viewer"])
+        assert str(stopped.value.code).startswith("identity.user_ambiguous:")
+        assert identity.members("acme") == []
+    finally:
+        database.close()

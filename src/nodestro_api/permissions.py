@@ -27,7 +27,8 @@ published workflow APIs under ``/api/published``, which authenticate their calle
 (:mod:`nodestro_api.serving`). The prefix alone exempts nothing: a route there passes only if it is a
 :class:`~nodestro_api.serving.KeyAuthenticatedRoute` listed in
 :data:`~nodestro_api.serving.KEY_AUTHENTICATED_ROUTES`. The API reference that FastAPI generates
-(``/api/docs``, ``/api/openapi.json``) is public as well.
+(``/api/docs``, ``/api/openapi.json``) is public as well on the desktop; on a server it needs ``read``
+(:func:`nodestro_api.server_app.create_tenant_app`).
 
 In the desktop profile there is one principal, the local owner (:data:`LOCAL_OWNER`), who holds every
 permission: the studio API behaves as before. On a server, principals come from logins (OpenID Connect,
@@ -36,9 +37,11 @@ permission: the studio API behaves as before. On a server, principals come from 
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from enum import Enum
+import time
 from typing import Any, cast
 
 from fastapi import FastAPI, params
@@ -142,6 +145,50 @@ class Access:
 
     def __repr__(self) -> str:
         return f"Access({self.label})"
+
+
+#: How often a long-lived response (an event stream) checks again that its principal still has access (seconds).
+STREAM_RECHECK_SECONDS = 15.0
+
+
+class StreamAccess:
+    """Checks again, while an event stream is open, that the principal that opened it still may read it (A-04).
+
+    Access is checked when a stream opens; a member who is removed, logs out or loses the permission while it is
+    open would otherwise keep receiving events. :meth:`lost` resolves the request's principal again at most every
+    ``app.state.stream_recheck_seconds`` (default :data:`STREAM_RECHECK_SECONDS`); the stream ends when it is gone,
+    is another user or tenant, or lacks ``permission``. :attr:`wait` is how long a stream may wait for its next event
+    before it should check (and send a keep-alive)."""
+
+    def __init__(self, connection: HTTPConnection, permission: Permission = Permission.READ) -> None:
+        self.connection = connection
+        self.permission = permission
+        self.principal: Principal | None = getattr(connection.state, "principal", None)
+        self.every = float(getattr(connection.app.state, "stream_recheck_seconds", STREAM_RECHECK_SECONDS))
+        self._due = time.monotonic() + self.every
+
+    @property
+    def wait(self) -> float:
+        return min(STREAM_RECHECK_SECONDS, self.every)
+
+    async def lost(self) -> bool:
+        """Whether the stream must end because its principal no longer has access (checks only when due)."""
+        if time.monotonic() < self._due:
+            return False
+        self._due = time.monotonic() + self.every
+        resolve: PrincipalResolver | None = getattr(self.connection.app.state, "principal_resolver", None)
+        if resolve is None or self.principal is None:
+            return True
+        try:
+            current = await asyncio.to_thread(resolve, self.connection)
+        except Exception:
+            return True  # fail closed: a stream whose access cannot be confirmed ends
+        return (
+            current is None
+            or current.id != self.principal.id
+            or current.tenant_id != self.principal.tenant_id
+            or not current.allows(self.permission)
+        )
 
 
 def _requirement(access: Access) -> Sequence[params.Depends]:
@@ -271,6 +318,7 @@ __all__ = [
     "READ",
     "RUN",
     "SEPARATELY_AUTHENTICATED",
+    "STREAM_RECHECK_SECONDS",
     "Access",
     "AccessError",
     "Permission",
@@ -278,6 +326,7 @@ __all__ = [
     "PrincipalResolver",
     "RouteAccess",
     "RouteAccessError",
+    "StreamAccess",
     "check_routes",
     "classify",
     "local_owner",
