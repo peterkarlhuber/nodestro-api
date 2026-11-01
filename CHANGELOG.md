@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Example library format 2: teams, knowledge files, integrations, model tiers (2026-11-01)
+
+- `POST /api/library/{id}/copy` builds the copy with `nodestro_examples.instantiate`: parts used as sub-workflows or
+  orchestrator teams are saved first and every reference is pinned to their first version; the template's knowledge
+  files are stored in the knowledge base (collection "Examples: <name>" in the copy's language) and given to the
+  agents (a later copy reuses an identical file, recognised by the metadata `library_sha256`); agents get the model
+  tiers mapped to the workspace's default and assistant models (`model_choice`).
+- New field `integrations` (integration id -> MCP server id): only tools the server offers as approved (current hash)
+  and classified `read` are bound to the agents (`mcp__<slug>__<tool>`); otherwise 409
+  `library.integration_unavailable` (params `integration`, `server`, `missing`, `not_read_only`). An unknown
+  integration is 422 `library.integration_unknown`, an unknown server 404. Integrations not named run in their
+  labelled offline mode.
+- `tests` together with `integrations` is refused (422 `library.tests_need_offline`): a test series runs without a
+  person, and MCP tools are refused in such runs.
+- Pin of `nodestro-examples` at `5e2d532` (before: `3429f5b`): template format 2 and the modernized examples.
+- Everything is checked before anything is stored; a copy that fails half-way removes the workflows, knowledge files
+  and input files it created.
+- The OpenAPI document follows the library's new response models (teams, knowledge, integrations, budget).
+
 ### Security fixes from the independent MCP re-review (R-1) (2026-11-01)
 
 - Pin of `nodestro-runtime` at `58cec5c` (before: `f71086a`; re-review fixes R-1 and R-2) and `nodestro-examples` at

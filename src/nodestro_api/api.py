@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from contextlib import suppress
 from datetime import datetime, timezone
+import hashlib
 import json
 from typing import Annotated, Any, Literal
 
@@ -357,40 +359,160 @@ def download_library_sample(
 class LibraryCopy(BaseModel):
     #: The language of the copy; the interface language when empty.
     language: Language | None = None
-    #: Also create the template's test cases as a test series of the copy (nothing is run).
+    #: Also create the template's test cases as a test series of the copy (nothing is run). Not together with
+    #: connected integrations: test series run without a person, and MCP tools are refused in such runs.
     tests: bool = False
+    #: The template's integrations to connect (integration id -> MCP server id). Every tool an integration needs
+    #: must be approved on that server as read-only; integrations not named here run in their offline mode.
+    integrations: dict[str, str] = Field(default_factory=dict)
+
+
+#: Metadata of a knowledge file stored by a copy: the SHA-256 of the file as the library rendered it, so a second
+#: copy of the same template in the same language reuses the file instead of storing it again.
+_LIBRARY_DIGEST = "library_sha256"
+
+
+class _LibraryHost:
+    """Stores what a copy of a template needs in the workspace (:class:`nodestro_examples.CopyHost`).
+
+    It remembers what it created, so a copy that fails half-way leaves nothing behind (:meth:`undo`)."""
+
+    def __init__(self, ctx: Nodestro) -> None:
+        self.ctx = ctx
+        self.workflows: list[str] = []
+        self.knowledge: list[str] = []
+        self.inputs: list[str] = []
+
+    def save_workflow(self, workflow: WorkflowIn) -> tuple[str, int | None]:
+        saved = create_workflow(workflow, self.ctx)
+        self.workflows.append(saved.id)
+        return saved.id, self.ctx.current_version(saved)
+
+    def add_knowledge(self, data: bytes, *, name: str, media_type: str, description: str, collection: str) -> str:
+        digest = hashlib.sha256(data).hexdigest()
+        for entry in self.ctx.knowledge.store.list():
+            if entry.metadata.get(_LIBRARY_DIGEST) == digest and entry.name == name:
+                return entry.id
+        added = self.ctx.knowledge.add(
+            data,
+            name=name,
+            media_type=media_type,
+            description=description,
+            collection=collection,
+            extra={_LIBRARY_DIGEST: digest},
+        )
+        self.knowledge.append(added.id)
+        return added.id
+
+    def add_input(self, name: str, media_type: str, data: bytes) -> str:
+        file_id = self.ctx.inputs.add(data, name=name, media_type=media_type, origin="test").id
+        self.inputs.append(file_id)
+        return file_id
+
+    def undo(self) -> None:
+        """Remove what this copy created (the error that stopped the copy is what the caller reports)."""
+        for workflow_id in reversed(self.workflows):
+            with suppress(Exception):
+                for suite in self.ctx.benchmarks.suites(workflow_id):
+                    self.ctx.benchmarks.delete_suite(suite.id)
+                self.ctx.store.delete("workflows", workflow_id)
+                self.ctx.versions.delete_all(workflow_id)
+        for file_id in self.knowledge:
+            with suppress(Exception):
+                self.ctx.knowledge.delete(file_id)
+        for file_id in self.inputs:
+            with suppress(Exception):
+                self.ctx.inputs.delete(file_id, force=True)
+
+
+def _library_connections(ctx: Nodestro, template_id: str, chosen: dict[str, str]) -> dict[str, dict[str, str]]:
+    """The agent tool names of each chosen integration (:func:`nodestro_examples.connect`); stores nothing."""
+    known = {item.id for item in library.structure(template_id).integrations}
+    unknown = sorted(set(chosen) - known)
+    if unknown:
+        raise ApiError(
+            422,
+            "library.integration_unknown",
+            f"The template {template_id} has no integration {', '.join(unknown)}",
+            integration=", ".join(unknown),
+        )
+    connections: dict[str, dict[str, str]] = {}
+    for integration_id, server_id in chosen.items():
+        try:
+            ctx.mcp.server(server_id)
+        except NodestroError as exc:
+            if exc.code == "mcp.server_not_found":
+                raise KeyError(server_id) from None
+            raise
+        offered = {
+            tool.name: library.ServerTool(
+                agent_name=tool.tool_name,
+                # Approved means: the current definition is the one an administrator approved.
+                approved=tool.status == "approved" and tool.approved_hash == tool.hash,
+                access=tool.access,
+            )
+            for tool in ctx.mcp.tools(server_id)
+            if tool.status != "removed"
+        }
+        try:
+            connections[integration_id] = library.connect(template_id, integration_id, offered)
+        except library.IntegrationProblem as problem:
+            raise ApiError(
+                409,
+                "library.integration_unavailable",
+                str(problem),
+                integration=integration_id,
+                server=server_id,
+                missing=", ".join(problem.missing),
+                not_read_only=", ".join(problem.not_read_only),
+            ) from problem
+    return connections
 
 
 @router.post("/library/{template_id}/copy", status_code=201, dependencies=EDIT)
 def copy_library_template(template_id: str, body: LibraryCopy, request: Request, ctx: Ctx) -> Workflow:
     """Create an ordinary, independent workflow from a template; the template itself never changes.
 
-    Parts the template runs as sub-workflows are copied first, as workflows of their own; the
-    copy's sub-workflow nodes are pinned to their first version. With ``tests`` the template's
-    test cases become a test series of the copy; their sample files are stored as input files.
+    Parts the template runs as sub-workflows or orchestrator teams are copied first, as workflows of their own;
+    every reference is pinned to their first version. Knowledge files are stored in the knowledge base (collection
+    "Examples: <name>" in the copy's language; identical files of an earlier copy are reused). Agents get model
+    tiers mapped to the workspace's provider. Integrations named in ``integrations`` are connected to the chosen MCP
+    server (only approved read-only tools); the others run in their labelled offline mode. With ``tests`` the
+    template's test cases become a test series of the copy; their sample files are stored as input files.
+
+    Everything is checked before anything is stored, and a copy that fails half-way leaves nothing behind.
     """
     language = body.language or request_language(request)
-    workflow = library.build(template_id, language)
-    sensitive = library.structure(template_id).sensitive
-    copies: dict[str, tuple[str, int | None]] = {}
-    for part_id in library.part_ids(template_id):
-        child = create_workflow(library.build_part(part_id, language, sensitive=sensitive), ctx)
-        copies[part_id] = (child.id, ctx.current_version(child))
-    copy = create_workflow(library.link_parts(workflow, copies), ctx)
-    if body.tests and library.structure(template_id).tests:
-
-        def store(name: str, media_type: str, data: bytes) -> str:
-            return ctx.inputs.add(data, name=name, media_type=media_type, origin="test").id
-
-        text = library.texts(template_id, language)
-        ctx.benchmarks.save_suite(
-            SuiteIn(
-                name=text.name,
-                description=text.description,
-                workflow_id=copy.id,
-                cases=[TestCase(**case) for case in library_samples.suite_cases(template_id, language, copy, store)],
-            )
+    spec = library.structure(template_id)
+    if body.tests and body.integrations:
+        raise ApiError(
+            422,
+            "library.tests_need_offline",
+            "A test series runs without a person and cannot use MCP tools; copy the template without integrations to "
+            "take over its test cases",
         )
+    connections = _library_connections(ctx, template_id, body.integrations)
+    settings = ctx.settings()
+    models = library.model_choice(settings.default_model, settings.assistant_model)
+    host = _LibraryHost(ctx)
+    try:
+        made = library.instantiate(template_id, language, host, models=models, connections=connections)
+        copy = create_workflow(made.workflow, ctx)
+        host.workflows.append(copy.id)
+        if body.tests and spec.tests:
+            text = library.texts(template_id, language)
+            cases = library_samples.suite_cases(template_id, language, copy, host.add_input)
+            ctx.benchmarks.save_suite(
+                SuiteIn(
+                    name=text.name,
+                    description=text.description,
+                    workflow_id=copy.id,
+                    cases=[TestCase(**case) for case in cases],
+                )
+            )
+    except Exception:
+        host.undo()
+        raise
     return copy
 
 
