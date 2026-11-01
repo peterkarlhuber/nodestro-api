@@ -53,6 +53,7 @@ from orkexa.usage import summarize_usage
 from pydantic import BaseModel, Field
 
 from .batches import BatchIn, BatchRow, with_models
+from .model_choice import ModelChoice, ModelPolicy, agent_models, recommend, suite_basis, workflow_basis
 
 if TYPE_CHECKING:
     from .context import Nodestro
@@ -215,6 +216,11 @@ class BenchmarkRun(BaseModel):
     judge: bool = True
     #: Agent node id -> model this run used instead of the saved one (Q-2); empty for a run of the saved version.
     models: dict[str, str] = Field(default_factory=dict)
+    #: The model every agent used (overrides applied), the workflow apart from its models and the cases with their
+    #: judge, recorded at the start (AO M6, :mod:`nodestro_api.model_choice`); ``None`` for older test runs.
+    agent_models: dict[str, str] = Field(default_factory=dict)
+    basis: str | None = None
+    suite_basis: str | None = None
     created_at: datetime = Field(default_factory=now)
     finished_at: datetime | None = None
     results: list[CaseResult] = Field(default_factory=list)
@@ -410,6 +416,11 @@ class Benchmarks:
         found = [run for run in self.ctx.store.list(RUNS, BenchmarkRun, limit=500) if run.suite_id == suite_id]
         return sorted(found, key=lambda item: item.created_at, reverse=True)
 
+    def model_choice(self, suite_id: str, node_id: str, policy: ModelPolicy) -> ModelChoice:
+        """The model to use for one agent by the policy and the series' measured runs (AO M6); changes nothing."""
+        suite = self.suite(suite_id)
+        return recommend(self.ctx, suite, self.runs(suite_id), node_id, policy)
+
     def run(self, run_id: str) -> BenchmarkRun:
         found = self.ctx.store.get(RUNS, run_id, BenchmarkRun)
         if found is None:
@@ -496,9 +507,18 @@ class Benchmarks:
         suite = self.suite(suite_id)
         if not suite.cases:
             raise BenchmarkError("benchmark.no_cases", "The test series has no test cases")
-        models = self._models(self._workflow(suite, start.version), start)
+        workflow = self._workflow(suite, start.version)
+        models = self._models(workflow, start)
+        tested = with_models(workflow, models)
         bench = BenchmarkRun(
-            suite_id=suite.id, suite_name=suite.name, workflow_id=suite.workflow_id, judge=start.judge, models=models
+            suite_id=suite.id,
+            suite_name=suite.name,
+            workflow_id=suite.workflow_id,
+            judge=start.judge,
+            models=models,
+            agent_models={node_id: check_model(model) for node_id, model in agent_models(tested).items()},
+            basis=workflow_basis(tested),
+            suite_basis=suite_basis(suite),
         )
         batch = self.ctx.batches.create(
             self._batch_request(suite, start), kind="benchmark", ref=bench.id, version=start.version, models=models

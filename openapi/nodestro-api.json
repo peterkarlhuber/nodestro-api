@@ -3125,6 +3125,24 @@
       },
       "BenchmarkRun": {
         "properties": {
+          "agent_models": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Agent Models",
+            "type": "object"
+          },
+          "basis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Basis"
+          },
           "batch_id": {
             "anyOf": [
               {
@@ -3202,6 +3220,17 @@
               }
             ],
             "title": "Stop Code"
+          },
+          "suite_basis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suite Basis"
           },
           "suite_id": {
             "title": "Suite Id",
@@ -8007,6 +8036,101 @@
         "title": "McpToolView",
         "type": "object"
       },
+      "Measurement": {
+        "description": "One model's newest matching test run.",
+        "properties": {
+          "available": {
+            "default": true,
+            "title": "Available",
+            "type": "boolean"
+          },
+          "avg_duration_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Duration S"
+          },
+          "benchmark_run_id": {
+            "title": "Benchmark Run Id",
+            "type": "string"
+          },
+          "cases": {
+            "title": "Cases",
+            "type": "integer"
+          },
+          "cost_per_case_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Per Case Usd"
+          },
+          "created_at": {
+            "title": "Created At"
+          },
+          "current": {
+            "title": "Current",
+            "type": "boolean"
+          },
+          "excluded": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Excluded",
+            "type": "array"
+          },
+          "judge_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Judge Score"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "new_failures": {
+            "items": {
+              "type": "string"
+            },
+            "title": "New Failures",
+            "type": "array"
+          },
+          "pass_rate": {
+            "title": "Pass Rate",
+            "type": "number"
+          },
+          "passed": {
+            "title": "Passed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "model",
+          "benchmark_run_id",
+          "created_at",
+          "current",
+          "cases",
+          "passed",
+          "pass_rate"
+        ],
+        "title": "Measurement",
+        "type": "object"
+      },
       "MemoryConfig": {
         "description": "``run`` keeps memory for one workflow run, ``persistent`` in a named space.",
         "properties": {
@@ -8279,6 +8403,92 @@
         "title": "Meta",
         "type": "object"
       },
+      "ModelChoice": {
+        "properties": {
+          "current_model": {
+            "title": "Current Model",
+            "type": "string"
+          },
+          "measurements": {
+            "items": {
+              "$ref": "#/components/schemas/Measurement"
+            },
+            "title": "Measurements",
+            "type": "array"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "switch",
+              "keep",
+              "no_baseline",
+              "no_measurement"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/ModelPolicy"
+          },
+          "recommended": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommended"
+          },
+          "required_pass_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required Pass Rate"
+          },
+          "skipped": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Skipped",
+            "type": "object"
+          },
+          "suite_id": {
+            "title": "Suite Id",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "workflow_id": {
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "suite_id",
+          "workflow_id",
+          "node_id",
+          "current_model",
+          "policy",
+          "outcome"
+        ],
+        "title": "ModelChoice",
+        "type": "object"
+      },
       "ModelInfo": {
         "properties": {
           "cache_read_usd_per_mtok": {
@@ -8413,6 +8623,41 @@
           "description"
         ],
         "title": "ModelInfo",
+        "type": "object"
+      },
+      "ModelPolicy": {
+        "description": "How a model is chosen from measurements; nothing in it is a quality value of its own.",
+        "properties": {
+          "min_pass_rate": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Pass Rate"
+          },
+          "no_new_failures": {
+            "default": true,
+            "title": "No New Failures",
+            "type": "boolean"
+          },
+          "objective": {
+            "default": "cost",
+            "enum": [
+              "cost",
+              "duration",
+              "quality"
+            ],
+            "title": "Objective",
+            "type": "string"
+          }
+        },
+        "title": "ModelPolicy",
         "type": "object"
       },
       "NeededRequirement": {
@@ -20128,6 +20373,98 @@
           }
         },
         "summary": "Update Suite"
+      }
+    },
+    "/api/benchmarks/{suite_id}/model-choice": {
+      "get": {
+        "description": "The model one agent should use by a policy and the series' measured test runs (AO M6); nothing changes.",
+        "operationId": "benchmark_model_choice_api_benchmarks__suite_id__model_choice_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "title": "Suite Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "title": "Node Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "objective",
+            "required": false,
+            "schema": {
+              "default": "cost",
+              "enum": [
+                "cost",
+                "duration",
+                "quality"
+              ],
+              "title": "Objective",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_pass_rate",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Pass Rate"
+            }
+          },
+          {
+            "in": "query",
+            "name": "no_new_failures",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "No New Failures",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelChoice"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Benchmark Model Choice"
       }
     },
     "/api/benchmarks/{suite_id}/plan": {

@@ -136,7 +136,7 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
     studio = [item for item in found if item.access in {"read", "edit", "run", "admin", "install", "public"}]
     assert Counter(item.access for item in studio) == {
         # read: + MCP stdio server environment (WP-8)
-        "read": 98,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
+        "read": 99,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
         # MCP status, servers, server, tools (WP-3); tool approval inbox, run questions, pre-grants, state (S-2b)
         "edit": 47,
         "run": 32,  # + deciding a tool call (S-2b)
