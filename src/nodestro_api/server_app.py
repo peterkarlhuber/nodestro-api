@@ -218,9 +218,9 @@ class DatabaseHealth:
         self._lock = threading.Lock()
 
     def _ping(self) -> None:
-        if self.database.closed:
-            raise RuntimeError("The database connection is closed")
-        self.database._query("SELECT 1")
+        # ``ping`` never raises; its timeout bounds the wait for a pooled connection, ``__call__`` the whole check.
+        if not self.database.ping(timeout=self.timeout):
+            raise RuntimeError("The database does not answer")
 
     def _start(self) -> Future[None]:
         """Run one check in a daemon thread of its own: it never waits in (or blocks) the pool that serves

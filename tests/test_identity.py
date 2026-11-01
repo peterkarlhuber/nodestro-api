@@ -537,17 +537,18 @@ def test_the_server_health_check_reports_the_database(server: Server, monkeypatc
     check = server.app.state.health_check
     check.timeout = 0.3
 
-    def unreachable(*_args: Any) -> Any:
-        raise OSError("connection lost")
+    def unreachable(**_kwargs: Any) -> bool:
+        return False  # ``ping`` reports a lost connection as False; it never raises
 
-    monkeypatch.setattr(check.database, "_query", unreachable)
+    monkeypatch.setattr(check.database, "ping", unreachable)
     answer = browser.get("/api/health")
     assert answer.status_code == 503 and answer.json() == {"status": "unavailable", "database": "unreachable"}
 
-    def hanging(*_args: Any) -> Any:
+    def hanging(**_kwargs: Any) -> bool:
         time.sleep(2)
+        return True
 
-    monkeypatch.setattr(check.database, "_query", hanging)
+    monkeypatch.setattr(check.database, "ping", hanging)
     began = time.monotonic()
     assert browser.get("/api/health").status_code == 503
     assert browser.get("/api/health").status_code == 503  # the hanging check is not started twice
