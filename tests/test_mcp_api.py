@@ -182,6 +182,37 @@ def test_discovery_approval_and_the_tool_list(make_app: MakeApp, loopback: Any) 
 
 
 @needs_sdk
+def test_resources_are_read_through_an_approved_tool(make_app: MakeApp) -> None:
+    from urllib.parse import quote
+
+    from mcp.server.mcpserver.resources.types import TextResource
+    from mcp_test_server import build_server, serve
+
+    mcp = build_server()
+    mcp.add_resource(TextResource(uri="docs://travel", name="travel", text="Book trains."))
+    handle = serve(mcp)
+    try:
+        client = make_app()
+        server = _add(client, handle.url)
+        found = client.post(f"/api/mcp/servers/{server['id']}/discover").json()
+        tools = {tool["name"]: tool for tool in found["tools"]}
+        reader = tools["resources/read"]
+        assert reader["status"] == "new" and reader["suggested_access"] == "read"
+        # The tool's name holds a slash; the studio sends it percent-encoded.
+        decided = client.post(
+            f"/api/mcp/servers/{server['id']}/tools/{quote(reader['name'], safe='')}/decision",
+            json={"approve": True, "access": "read", "expected_hash": reader["hash"]},
+        )
+        assert decided.status_code == 200, decided.text
+        assert decided.json()["usable"] is True
+        tried = client.post(f"/api/tools/{reader['tool_name']}/run", json={"input": {"uri": "docs://travel"}})
+        assert tried.status_code == 200, tried.text
+        assert tried.json()["is_error"] is False and tried.json()["output"].endswith("Book trains.")
+    finally:
+        handle.stop()
+
+
+@needs_sdk
 def test_an_unreachable_server_is_reported_with_a_stable_code(make_app: MakeApp) -> None:
     from mcp_test_server import _free_port
 
