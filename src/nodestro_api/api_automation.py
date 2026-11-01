@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, Response, UploadFile
+from fastapi import APIRouter, File, Form, Query, Response, UploadFile
 from nodestro_runtime.schemas import Workflow
 from pydantic import BaseModel
 
@@ -34,6 +34,7 @@ from .benchmarks import (
     SuiteIn,
     compare,
 )
+from .model_choice import ModelChoice, ModelPolicy, Objective
 from .permissions import EDIT, READ, RUN
 from .schedules import Activation, Schedule, ScheduleIn, time_zones, upcoming
 
@@ -164,6 +165,20 @@ async def start_benchmark(suite_id: str, body: BenchmarkStart, ctx: Ctx) -> Benc
 @router.get("/benchmarks/{suite_id}/runs", dependencies=READ)
 def list_benchmark_runs(suite_id: str, ctx: Ctx) -> list[BenchmarkRun]:
     return ctx.benchmarks.runs(suite_id)
+
+
+@router.get("/benchmarks/{suite_id}/model-choice", dependencies=READ)
+def benchmark_model_choice(
+    suite_id: str,
+    node_id: str,
+    ctx: Ctx,
+    objective: Objective = "cost",
+    min_pass_rate: Annotated[float | None, Query(ge=0, le=1)] = None,
+    no_new_failures: bool = True,
+) -> ModelChoice:
+    """The model one agent should use by a policy and the series' measured test runs (AO M6); nothing changes."""
+    policy = ModelPolicy(objective=objective, min_pass_rate=min_pass_rate, no_new_failures=no_new_failures)
+    return ctx.benchmarks.model_choice(suite_id, node_id, policy)
 
 
 @router.post("/runs/{run_id}/test-case", dependencies=READ)
