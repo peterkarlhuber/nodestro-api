@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Security fix: stale tools in server workers (S-2 pilot finding F1), pin: nodestro-runtime 6ac4ae3 (2026-11-01)
+
+- Pin of `nodestro-runtime` at `6ac4ae3` (before: `081705d`) and `nodestro-examples` at `1da29b7` (before:
+  `b5aa4db`, same examples on the new runtime). The API process and every server worker now see tool changes and
+  deletions made by another process at their next lookup; a running step refuses a tool whose version changed or
+  was deleted since it started, also after an approval or advance approval for the old version. Publishing freezes
+  the current tool version. No route or OpenAPI change.
+
 ### Dynamic teams and approvals inside teams (AO M6b), pin: nodestro-runtime 081705d (2026-11-01)
 
 - Pin of `nodestro-runtime` at `081705d` (before: `1bc3924`) and `nodestro-examples` at `b5aa4db` (before:
