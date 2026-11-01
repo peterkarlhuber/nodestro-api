@@ -73,3 +73,9 @@ python_version = "3.10"
 strict = true
 packages = ["nodestro_api"]
 mypy_path = "src"
+
+[[tool.mypy.overrides]]
+# The MCP SDK needs Python 3.11+ (a runtime dependency with an environment marker); on 3.10 it is not installed and
+# the MCP server endpoint answers mcp.unavailable.
+module = ["mcp", "mcp.*", "mcp_types", "mcp_types.*"]
+ignore_missing_imports = true

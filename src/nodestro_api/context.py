@@ -30,12 +30,13 @@ from .benchmarks import Benchmarks
 from .docs_index import DocsIndex
 from .launch import launch_secret_from_env
 from .local_container import access_key_from_env, browser_host_from_env, host_port_from_env, session_hours_from_env
+from .mcp_server import McpServerEndpoint
 from .network import NetworkListener
 from .organize import Organizer
 from .pricing_setup import PriceSyncConfig
 from .publishing import Publications, StudioHost
 from .schedules import Schedules
-from .serving import ApiError, KeyIdentity, ResumeIn, ServingCore
+from .serving import ApiError, KeyIdentity, ResumeIn, ServedRelease, ServingCore
 
 
 @dataclass
@@ -148,6 +149,8 @@ class Nodestro(Workspace):
         self.api_keys = ApiKeys(self.store)
         self.runs.environments = lambda run: self.publications.environment(run.release_id) if run.release_id else None
         self.serving = ServingCore(StudioHost(self))
+        # Nodestro's MCP server (WP-11): off unless the operator and an administrator switch it on.
+        self.mcp_server = McpServerEndpoint(self.serving, self._mcp_catalog)
         self.network = NetworkListener(
             self.store,
             self.serving,
@@ -159,6 +162,15 @@ class Nodestro(Workspace):
         self.published = _PublishedRuns(self)
         #: Syncs the reference prices; ``None`` on a server, whose worker syncs them (see :mod:`.pricing_setup`).
         self.price_sync = self.config.price_sync.service(self.pricing) if self.pricing.reference_writable else None
+
+    def _mcp_catalog(self) -> list[ServedRelease]:
+        """The active releases of the publications an administrator offered as MCP tools."""
+        found = []
+        for publication in self.publications.all():
+            if publication.mcp_tool and publication.active_release is not None:
+                release = self.publications.release(publication.id, publication.active_release)
+                found.append(self.publications.served(publication, release))
+        return found
 
     def _normalize_published(self) -> None:
         """Releases and export records in the current format, also after a restore (idempotent)."""

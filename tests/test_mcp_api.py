@@ -52,6 +52,7 @@ def test_the_status_describes_the_desktop_setup(make_app: MakeApp, monkeypatch: 
         "loopback_possible": True,
         "unattended_enabled": False,
         "write_tools_enabled": False,
+        "stdio_possible": False,
     }
 
 
@@ -157,6 +158,13 @@ def test_discovery_approval_and_the_tool_list(make_app: MakeApp, loopback: Any) 
     tried = client.post(f"/api/tools/{search['tool_name']}/run", json={"input": {"query": "nodes"}})
     assert tried.status_code == 200, tried.text
     assert tried.json()["is_error"] is False and "results for nodes" in tried.json()["output"]
+    # Administrators see the operational state (WP-7): limits and the server's health, no secrets.
+    stats = client.get("/api/mcp/stats")
+    assert stats.status_code == 200, stats.text
+    health = stats.json()["servers"][server["id"]]
+    assert health["calls"] >= 1 and health["failures"] == 0 and health["cooling_down_seconds"] == 0
+    assert stats.json()["active_calls"] == 0 and stats.json()["limits"]["max_parallel"] >= 1
+    assert loopback.url not in stats.text
     # A tool that changes data stays unusable until per-call approval exists (WP-5).
     write = client.post(
         f"/api/mcp/servers/{server['id']}/tools/delete_page/decision", json={"approve": True, "access": "write"}

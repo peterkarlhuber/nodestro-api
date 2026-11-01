@@ -180,12 +180,19 @@ class PublicationPatch(BaseModel):
     description: str | None = Field(default=None, max_length=2000)
     limits: ApiLimits | None = None
     network: bool | None = None
+    #: Offer the API as a tool of Nodestro's MCP server (WP-11; also needs the operator's NODESTRO_MCP_SERVER=1).
+    mcp_tool: bool | None = None
 
 
 @router.patch("/publications/{publication_id}", dependencies=ADMIN)
 def update_publication(publication_id: str, body: PublicationPatch, ctx: Ctx) -> Publication:
     return ctx.publications.update(
-        publication_id, slug=body.slug, description=body.description, limits=body.limits, network=body.network
+        publication_id,
+        slug=body.slug,
+        description=body.description,
+        limits=body.limits,
+        network=body.network,
+        mcp_tool=body.mcp_tool,
     )
 
 

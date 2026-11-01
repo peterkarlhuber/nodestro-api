@@ -7529,6 +7529,57 @@
         "title": "McpOAuthStart",
         "type": "object"
       },
+      "McpServerHealth": {
+        "description": "What this process knows about one server since it started (no secrets, no arguments).",
+        "properties": {
+          "calls": {
+            "title": "Calls",
+            "type": "integer"
+          },
+          "consecutive_failures": {
+            "title": "Consecutive Failures",
+            "type": "integer"
+          },
+          "cooling_down_seconds": {
+            "title": "Cooling Down Seconds",
+            "type": "number"
+          },
+          "failures": {
+            "title": "Failures",
+            "type": "integer"
+          },
+          "last_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Duration Ms"
+          },
+          "last_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Code"
+          }
+        },
+        "required": [
+          "calls",
+          "failures",
+          "consecutive_failures",
+          "cooling_down_seconds"
+        ],
+        "title": "McpServerHealth",
+        "type": "object"
+      },
       "McpServerIn": {
         "properties": {
           "allow_loopback": {
@@ -7824,6 +7875,36 @@
         "title": "McpServerView",
         "type": "object"
       },
+      "McpStats": {
+        "description": "Operational state for administrators (WP-7): calls in flight, the operator's limits, per-server health.",
+        "properties": {
+          "active_calls": {
+            "title": "Active Calls",
+            "type": "integer"
+          },
+          "limits": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Limits",
+            "type": "object"
+          },
+          "servers": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/McpServerHealth"
+            },
+            "title": "Servers",
+            "type": "object"
+          }
+        },
+        "required": [
+          "active_calls",
+          "limits",
+          "servers"
+        ],
+        "title": "McpStats",
+        "type": "object"
+      },
       "McpStatus": {
         "properties": {
           "available": {
@@ -7846,6 +7927,11 @@
           },
           "loopback_possible": {
             "title": "Loopback Possible",
+            "type": "boolean"
+          },
+          "stdio_possible": {
+            "default": false,
+            "title": "Stdio Possible",
             "type": "boolean"
           },
           "token_vault": {
@@ -11066,6 +11152,11 @@
           "limits": {
             "$ref": "#/components/schemas/ApiLimits"
           },
+          "mcp_tool": {
+            "default": false,
+            "title": "Mcp Tool",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -11124,7 +11215,9 @@
               "gate_changed",
               "gate_off",
               "gate_override",
-              "legacy_stamped"
+              "legacy_stamped",
+              "mcp_tool_on",
+              "mcp_tool_off"
             ],
             "title": "Kind",
             "type": "string"
@@ -11209,6 +11302,17 @@
                 "type": "null"
               }
             ]
+          },
+          "mcp_tool": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mcp Tool"
           },
           "network": {
             "anyOf": [
@@ -21941,6 +22045,86 @@
         "summary": "Discover Server"
       }
     },
+    "/api/mcp/servers/{server_id}/environment": {
+      "get": {
+        "description": "The state of a local (stdio) server's packages: approval needed, installing, ready, ... (WP-8).",
+        "operationId": "server_environment_api_mcp_servers__server_id__environment_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DependencyStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Server Environment"
+      }
+    },
+    "/api/mcp/servers/{server_id}/environment/plan": {
+      "post": {
+        "description": "Resolve the hash-pinned versions of a stdio server's packages for review; an administrator approves the plan\nwith ``POST /api/python/plans/{plan_id}/approve``, which installs it as a sandbox image.",
+        "operationId": "plan_server_environment_api_mcp_servers__server_id__environment_plan_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Plan"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Plan Server Environment"
+      }
+    },
     "/api/mcp/servers/{server_id}/oauth/sign-out": {
       "post": {
         "operationId": "sign_out_oauth_api_mcp_servers__server_id__oauth_sign_out_post",
@@ -22119,6 +22303,25 @@
           }
         },
         "summary": "Decide Tool"
+      }
+    },
+    "/api/mcp/stats": {
+      "get": {
+        "description": "Calls in flight, the operator's limits (``NODESTRO_MCP_*``) and each server's health since the start.",
+        "operationId": "mcp_stats_api_mcp_stats_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpStats"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Mcp Stats"
       }
     },
     "/api/mcp/status": {
