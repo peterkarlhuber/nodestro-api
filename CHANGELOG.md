@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+### Backend audit (2026-11-01)
+
+- Security and operations (server profile):
+  - A-01: logins are bound to the browser that started them. A `__Host-nodestro-login` cookie must match the OIDC
+    `state` at `/api/auth/callback`; otherwise the callback answers 400 `identity.login_expired`.
+  - D-02: the access log no longer contains setup-link tokens or OIDC/MCP sign-in codes and states.
+  - D-10: `/api/health` checks the database and answers 503 `{"status": "unavailable", "database": "unreachable"}`
+    when it is unreachable.
+  - A-09: `/api/docs` and `/api/openapi.json` need a login on a server.
+  - A-04: open run, Workflow Architect and assistant event streams end within about 15 seconds once the viewer's
+    session or membership ends (`event: end` with `{"reason": "access_ended"}`).
+  - A-06: approval decisions and input uploads record the deciding or uploading user instead of `local`.
+  - A-02: workers delete expired sessions and abandoned login starts, finished jobs after 7 days and run events after
+    2 days (`NODESTRO_WORKER_CLEANUP_SECONDS`, default 600).
+  - A-09: published APIs prune idle rate-limit counters and Idempotency-Key records older than 24 hours.
+  - A-08, D-03: new operator commands manage tenant membership: `nodestro-server members`, `set-role`,
+    `remove-member` and `revoke-sessions`.
+- Reliability:
+  - C-04, C-15: the run list filtered by workflow or trigger, the usage report, batches, test series and the cost
+    estimate see every stored item, not only the newest 2000 or 500.
+  - C-07: on a server, opening a tenant no longer marks batches and test series running in another API process as
+    interrupted.
+  - C-09: the scheduler no longer brings back deleted schedules, switches disabled ones on again or starts them.
+  - C-10: a damaged workflow document is skipped and logged instead of breaking the workflow list and search.
+  - C-13: backup inspection checks every document for valid JSON and validates the restored collections against
+    their models.
+  - C-16: deleting a workflow is refused (409 `workflow.runs_active`, params `runs`) while its runs are queued or
+    running, and runs as one transaction. Saving or restoring a version of a workflow deleted meanwhile answers 404
+    instead of recreating it.
+- AX-21: on a server, `create_tenant_app` serves the built studio gzip-compressed, with
+  `public, max-age=31536000, immutable` for content-hashed `/assets` and `no-cache` for `index.html` and the
+  single-page fallback. API responses and event streams are unchanged. `mount_frontend` moved to
+  `nodestro_api.frontend` and is still importable from `nodestro_api.server_app`.
+- CI: the read token is scoped per step, dependencies are audited, and PostgreSQL 17 is tested.
+
 ### Example library format 2: teams, knowledge files, integrations, model tiers (2026-11-01)
 
 - `POST /api/library/{id}/copy` builds the copy with `nodestro_examples.instantiate`: parts used as sub-workflows or
