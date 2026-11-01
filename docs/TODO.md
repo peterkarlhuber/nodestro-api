@@ -299,4 +299,4 @@ None known.
 - Accepted risks stay listed with their reason until the risk is removed or re-evaluated.
 - Re-review the whole file before each release and update the "Last full review" line.
 - Security issues that are not yet fixed are described only in general terms here. Report details privately
-  (see SECURITY.md or GitHub private vulnerability reporting), never in this file or in public issues.
+  (GitHub private vulnerability reporting), never in this file or in public issues.
