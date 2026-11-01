@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import Annotated, Any
 
-from fastapi import APIRouter, File, Form, UploadFile
+from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import Response
 from nodestro_runtime.adoption import AdoptCheck, AdoptConfirm, AdoptOutcome, AdoptRequest, adopt, check
 from nodestro_runtime.file_delivery import INLINE_FILE_CHARS, INLINE_TOTAL_CHARS
@@ -24,7 +24,7 @@ from nodestro_runtime.knowledge import CollectionInfo
 from nodestro_runtime.problems import Problem
 from pydantic import BaseModel, Field
 
-from .api import Ctx, uploaded_file_headers
+from .api import Ctx, actor_id, uploaded_file_headers
 from .permissions import EDIT, READ
 
 router = APIRouter(prefix="/api")
@@ -86,6 +86,7 @@ def input_formats() -> FormatsInfo:
 @router.post("/inputs", status_code=201, dependencies=EDIT)
 async def upload_inputs(
     ctx: Ctx,
+    request: Request,
     files: Annotated[list[UploadFile], File()],
     accept: Annotated[str, Form()] = "",
     max_size_mb: Annotated[int | None, Form()] = None,
@@ -116,6 +117,7 @@ async def upload_inputs(
                 media_type=upload.content_type,
                 origin=origin if origin in ("studio", "test", "schedule", "batch") else "studio",  # type: ignore[arg-type]
                 limit_mb=max_size_mb or DEFAULT_FIELD_MB,
+                uploaded_by=actor_id(request),
             )
         except FileFormatError as error:
             results.append(UploadResult(name=name, problem=error.problem))

@@ -25,7 +25,7 @@ from .assistant import (
 )
 from .assistant_context import AttachRequest, Snapshot
 from .docs_index import DocsIndex
-from .permissions import EDIT, READ, RUN
+from .permissions import EDIT, READ, RUN, StreamAccess
 
 router = APIRouter(prefix="/api/assistant")
 
@@ -120,6 +120,8 @@ async def message_events(conversation_id: str, message_id: str, request: Request
     """Server-Sent Events: a ``snapshot`` of the answer so far, then ``event``s until ``end``."""
     service = ctx.assistant
 
+    access = StreamAccess(request)
+
     async def stream() -> AsyncIterator[str]:
         snapshot, last, queue = service.subscribe(message_id)
         try:
@@ -135,8 +137,11 @@ async def message_events(conversation_id: str, message_id: str, request: Request
             while True:
                 if await request.is_disconnected():
                     return
+                if await access.lost():
+                    yield _sse("end", {"reason": "access_ended"})
+                    return
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=15)
+                    event = await asyncio.wait_for(queue.get(), timeout=access.wait)
                 except asyncio.TimeoutError:
                     yield ": keep-alive\n\n"
                     continue

@@ -11,6 +11,11 @@ Nothing is granted by a login alone: a user needs a role in a tenant. The first 
 one-time setup link (``/api/auth/login?setup=<bootstrap token>``) that an operator creates; there is no default
 administrator and no password.
 
+A login is bound to the browser that starts it: ``/api/auth/login`` gives the browser a short-lived
+``__Host-nodestro-login`` cookie holding the login's ``state``, and the callback is refused without it (no login CSRF
+with a callback URL started elsewhere). Setup tokens and sign-in codes are kept out of the access log
+(:func:`redact_auth_logs`).
+
 Changing requests must come from the studio's own origin (:class:`SameOriginMiddleware`): the session cookie is
 sent by the browser automatically, so the ``Origin`` header protects against cross-site requests. It is not a
 replacement for the login.
@@ -23,6 +28,7 @@ from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
 import hashlib
 import logging
+import re
 import secrets
 import threading
 from typing import Any
@@ -43,6 +49,9 @@ logger = logging.getLogger(__name__)
 
 #: The session cookie: ``__Host-`` makes browsers require ``Secure``, ``Path=/`` and no ``Domain``.
 SESSION_COOKIE = "__Host-nodestro-session"
+#: Binds a starting login to the browser that started it (A-01): it holds the login's ``state``, and the callback
+#: is only accepted from a browser that sends the same value (no login CSRF with a callback URL from elsewhere).
+LOGIN_COOKIE = "__Host-nodestro-login"
 #: What each role may do in its tenant. No role holds ``install`` (the installation belongs to its operator).
 ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
     "owner": frozenset({Permission.READ, Permission.EDIT, Permission.RUN, Permission.ADMIN}),
@@ -275,6 +284,44 @@ def clear_session_cookie(response: Response) -> None:
     response.delete_cookie(SESSION_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
 
 
+def set_login_cookie(response: Response, state: str, max_age: int) -> None:
+    """The browser's half of a starting login (``Lax``: sent on the provider's top-level redirect back)."""
+    response.set_cookie(LOGIN_COOKIE, state, max_age=max_age, path="/", secure=True, httponly=True, samesite="lax")
+
+
+def clear_login_cookie(response: Response) -> None:
+    response.delete_cookie(LOGIN_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
+
+
+#: Query values that are secrets of a login: the bootstrap token of a setup link, the provider's ``code`` and
+#: the ``state`` of OpenID Connect and MCP sign-in callbacks.
+_AUTH_QUERY = re.compile(r"([?&](?:setup|code|state)=)[^&\s\"]*")
+
+
+class RedactAuthSecrets(logging.Filter):
+    """Keep setup tokens and sign-in codes out of log records (uvicorn's access log prints the full request line;
+    D-02). Only the values are replaced: the path and the other parameters stay readable."""
+
+    @staticmethod
+    def redact(text: str) -> str:
+        return _AUTH_QUERY.sub(r"\1[redacted]", text) if "=" in text else text
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            # Formatters such as uvicorn's AccessFormatter unpack the arguments: keep them, redacted.
+            record.args = tuple(self.redact(arg) if isinstance(arg, str) else arg for arg in record.args)
+        if isinstance(record.msg, str):
+            record.msg = self.redact(record.msg)
+        return True
+
+
+def redact_auth_logs() -> None:
+    """Install :class:`RedactAuthSecrets` on the access log (``uvicorn.access``); installing twice is harmless."""
+    access = logging.getLogger("uvicorn.access")
+    if not any(isinstance(item, RedactAuthSecrets) for item in access.filters):
+        access.addFilter(RedactAuthSecrets())
+
+
 class SameOriginMiddleware:
     """Refuse changing requests from other sites (``403 access.cross_site``).
 
@@ -376,6 +423,7 @@ def auth_router(identity: IdentityStore, oidc: OidcClient) -> APIRouter:
     """``/api/auth``: start a login, the provider's callback, the current session, switching tenants, logout."""
     router = APIRouter(prefix="/api/auth")
     lifetime = int(identity.session_lifetime.total_seconds())
+    login_lifetime = int(identity.login_lifetime.total_seconds())
 
     @router.get("/login", dependencies=PUBLIC, include_in_schema=False)
     def login(return_to: str | None = None, tenant: str | None = None, setup: str | None = None) -> Response:
@@ -395,12 +443,23 @@ def auth_router(identity: IdentityStore, oidc: OidcClient) -> APIRouter:
         except LoginError as exc:
             logger.warning("Login could not start: %s", exc)
             return _login_error(exc.code, 502)
-        return RedirectResponse(url, status_code=303, headers={"Cache-Control": "no-store"})
+        answer = RedirectResponse(url, status_code=303, headers={"Cache-Control": "no-store"})
+        set_login_cookie(answer, state, login_lifetime)
+        return answer
 
     @router.get("/callback", dependencies=PUBLIC, include_in_schema=False)
-    def callback(state: str = "", code: str = "", error: str | None = None) -> Response:
+    def callback(request: Request, state: str = "", code: str = "", error: str | None = None) -> Response:
+        answer = _callback(request.cookies.get(LOGIN_COOKIE, ""), state, code, error)
+        clear_login_cookie(answer)
+        return answer
+
+    def _callback(bound: str, state: str, code: str, error: str | None) -> Response:
         started = identity.take_login_state(state)
         if started is None:
+            return _login_error("identity.login_expired")
+        if not bound or not secrets.compare_digest(bound.encode(), state.encode()):
+            # A callback URL that another browser started (login CSRF), or a browser that lost the login cookie.
+            logger.warning("A login callback came from a browser that did not start this login")
             return _login_error("identity.login_expired")
         if error or not code:
             logger.info("The identity provider refused the login: %s", (error or "no code")[:200])
@@ -468,17 +527,22 @@ def auth_router(identity: IdentityStore, oidc: OidcClient) -> APIRouter:
 
 __all__ = [
     "ALGORITHMS",
+    "LOGIN_COOKIE",
     "ROLE_PERMISSIONS",
     "SESSION_COOKIE",
     "LoginError",
     "Me",
     "OidcClient",
     "OidcSettings",
+    "RedactAuthSecrets",
     "SameOriginMiddleware",
     "SessionResolver",
     "TenantWorkspaces",
     "auth_router",
+    "clear_login_cookie",
     "clear_session_cookie",
+    "redact_auth_logs",
     "safe_return_path",
+    "set_login_cookie",
     "set_session_cookie",
 ]
