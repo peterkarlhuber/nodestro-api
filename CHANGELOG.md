@@ -16,6 +16,7 @@
   labelled offline mode.
 - `tests` together with `integrations` is refused (422 `library.tests_need_offline`): a test series runs without a
   person, and MCP tools are refused in such runs.
+- Pin of `nodestro-examples` at `5e2d532` (before: `3429f5b`): template format 2 and the modernized examples.
 - Everything is checked before anything is stored; a copy that fails half-way removes the workflows, knowledge files
   and input files it created.
 - The OpenAPI document follows the library's new response models (teams, knowledge, integrations, budget).
