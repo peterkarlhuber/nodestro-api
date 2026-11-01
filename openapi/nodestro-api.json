@@ -27888,6 +27888,7 @@
     },
     "/api/workflows/{workflow_id}": {
       "delete": {
+        "description": "Delete a workflow with its versions, schedules, test series and published APIs.\n\nRefused with 409 ``workflow.runs_active`` while runs of the workflow are queued or running.",
         "operationId": "delete_workflow_api_workflows__workflow_id__delete",
         "parameters": [
           {

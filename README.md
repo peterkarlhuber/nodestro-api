@@ -125,7 +125,9 @@ user login and does not lift the loopback-only rule. Without the variable (the `
   server's own environment variables such as `ANTHROPIC_API_KEY` are never used for any tenant.
 - Not part of it yet: published workflow APIs with tenant-bound keys, the network listener and backups in the studio
   (operators use `pg_dump`). Batches, test series, assistant drafts and Python environment installations still run
-  in the API process.
+  in the API process. Opening a tenant never marks its running batches or test series as interrupted, since another
+  API process may be running them; one whose API process died therefore stays `running` until someone cancels
+  it (they have no owner or lease yet).
 
 Uploaded files are served with `X-Content-Type-Options: nosniff`; HTML, SVG and XML files are always downloaded, and
 everything except PDF carries a restrictive `Content-Security-Policy`, so an uploaded page cannot run scripts in the

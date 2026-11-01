@@ -126,6 +126,10 @@ class Nodestro(Workspace):
         OCR (tests); ``integrations`` replaces the installed integrations. ``storage`` runs the context on the
         stores of one tenant (:mod:`nodestro_api.server_app`) instead of the data directory's database."""
         self.config = config
+        #: The context runs on a server tenant's handed-in storage, which other processes share: batches and test
+        #: series that look ``running`` may execute in another process right now, so opening the context never
+        #: marks them as interrupted (C-07; the engine skips its run recovery on such storage as well).
+        self.shared_storage = storage is not None
         super().__init__(
             profile=config.profile,
             client_factory=client_factory,
