@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Security fixes from the independent MCP re-review (R-1) (2026-11-01)
+
+- `POST /api/runs/{run_id}/tool-approvals/{request_id}` checks both classifications of an MCP tool call: the one it
+  was asked with and the tool's classification now. If either is `destructive`, deciding needs `admin` (403
+  `access.forbidden`, `permission: admin`), so a tool reclassified as destructive while its call waited is never
+  decided with `run`. The current classification is passed to the runtime: approving a call whose tool was
+  classified differently since it was asked is refused (409 `tool.approval_stale`) and closes the request; the
+  runtime also closes such requests itself when the tool is reclassified, and refuses stale approvals before the call.
+- New tests `tests/test_rereview_reclassify_destructive.py`: the independent reviewer's regression test plus both
+  directions, rejections, administrator rights, parallel decisions and a reclassification racing an approval.
+
 ### Security fixes from the independent MCP review (H-1, M-3, L-3) (2026-11-01)
 
 - Pin of `nodestro-runtime` at `f71086a` (before: `c86781b`; independent MCP review fixes, offline worker fix F5) and
