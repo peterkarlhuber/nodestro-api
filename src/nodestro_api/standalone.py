@@ -151,6 +151,9 @@ class Manifest(BaseModel):
     base_urls: dict[str, str] = Field(default_factory=dict)
     #: Capabilities declared for endpoints in Nodestro's settings, per provider.
     capabilities: dict[str, dict[str, str]] = Field(default_factory=dict)
+    #: Provider settings that are not credentials (Amazon Bedrock: ``region``, ``data_residency``; ``AWS_REGION``
+    #: overrides the region, an exported ``eu_only`` stays in force).
+    settings: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 class StandaloneHost:
@@ -285,10 +288,15 @@ class StandaloneHost:
         return None
 
     def connection(self, provider: str) -> Connection:
-        """The connection of a provider from the environment; raises when its key or endpoint is missing."""
+        """The connection of a provider from the environment; raises when its key or endpoint is missing (Amazon
+        Bedrock: ``provider.region_missing`` without a region; no AWS call is made here)."""
         client = self._client_factory(provider) if self._client_factory is not None else None
         return environment_connection(
-            provider, base_urls=self.manifest.base_urls, capabilities=self.manifest.capabilities, client=client
+            provider,
+            base_urls=self.manifest.base_urls,
+            capabilities=self.manifest.capabilities,
+            client=client,
+            settings=self.manifest.settings,
         )
 
     async def prepare_start(self, release: ServedRelease) -> None:

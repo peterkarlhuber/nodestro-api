@@ -16,7 +16,7 @@ import nodestro_examples as library
 from nodestro_examples import samples as library_samples
 from nodestro_runtime.agent_builder import ConfigIssue
 from nodestro_runtime.agent_test import AgentTestIn, AgentTestResult
-from nodestro_runtime.catalog import SERVER_TOOLS, ModelInfo, ServerToolInfo, models
+from nodestro_runtime.catalog import SERVER_TOOLS, ModelInfo, ServerToolInfo, model_capabilities, models
 from nodestro_runtime.contracts import contract_of
 from nodestro_runtime.engine import check_workflow
 from nodestro_runtime.knowledge import KnowledgeFile
@@ -26,7 +26,7 @@ from nodestro_runtime.preflight import WorkflowCheck, preflight
 from nodestro_runtime.preview import ContextPreview, PreviewRequest, build_preview, latest_run
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.profile import ProfileKind
-from nodestro_runtime.providers import CAPABILITY_NAMES, PROVIDERS, ProviderInfo, qualify
+from nodestro_runtime.providers import CAPABILITY_NAMES, PROVIDERS, ProviderInfo, ProviderStatus, qualify
 from nodestro_runtime.python_envs import ExportedDefinition, scope_of
 from nodestro_runtime.python_tools import check_with_dependencies, save_with_dependencies, tool_run_sandbox
 from nodestro_runtime.reports import FileRequest, ResultFile
@@ -133,7 +133,9 @@ def install_error_handlers(app: FastAPI) -> None:
 
     async def api_error(_: Request, exc: Exception) -> JSONResponse:
         assert isinstance(exc, ApiError)
-        return _error(exc.status, exc.code, exc.message, **exc.params)
+        response = _error(exc.status, exc.code, exc.message, **exc.params)
+        response.headers.update(exc.headers)  # e.g. Retry-After of a 429
+        return response
 
     async def access_error(_: Request, exc: Exception) -> JSONResponse:
         assert isinstance(exc, AccessError)
@@ -195,6 +197,24 @@ def meta(ctx: Ctx) -> Meta:
     )
 
 
+class ModelCapabilities(BaseModel):
+    """What a model supports according to Orkexa, for a model id typed in the editor (not only catalog entries)."""
+
+    model: str
+    #: Amazon Bedrock: Orkexa's values (``supported``/``unsupported``/``unknown`` per capability name of
+    #: ``/api/meta``), the same the catalog entries carry. ``None`` for the other providers, whose capabilities
+    #: depend on the connection (an endpoint's declared values), and for invalid model names.
+    capabilities: dict[str, Literal["supported", "unsupported", "unknown"]] | None = None
+
+
+# No existing response fits a single typed model id: /api/meta lists only the catalog, /agents/validate answers a
+# list of issues and /workflows/check a schema the Workflow Architect shares. Free, local, no request to AWS.
+@router.get("/models/capabilities", dependencies=READ)
+def get_model_capabilities(model: Annotated[str, Query(min_length=1, max_length=2048)]) -> ModelCapabilities:
+    """Orkexa's capabilities of one qualified model id (``bedrock:eu.anthropic...-v1:0``, an ARN; colons kept)."""
+    return ModelCapabilities(model=model, capabilities=model_capabilities(model))
+
+
 @router.get("/settings", dependencies=READ)
 def get_settings(ctx: Ctx) -> Settings:
     return ctx.settings()
@@ -203,6 +223,45 @@ def get_settings(ctx: Ctx) -> Settings:
 @router.put("/settings", dependencies=ADMIN)
 def put_settings(update: SettingsIn, ctx: Ctx) -> Settings:
     return ctx.update_settings(update)
+
+
+class ProviderVerifyIn(BaseModel):
+    """What to check: without ``model`` the region's model list is read; with one, that model or inference profile
+    (``eu.anthropic...``, an ARN; ``bedrock:`` in front is accepted)."""
+
+    model: str | None = Field(default=None, max_length=2048)
+
+
+@router.post(
+    "/settings/providers/bedrock/verify",
+    dependencies=ADMIN,
+    responses={429: {"description": "Checked a moment ago (provider.verify_rate_limited, Retry-After)"}},
+)
+def verify_bedrock(ctx: Ctx, body: ProviderVerifyIn | None = None) -> ProviderStatus:
+    """Check the Amazon Bedrock settings with free AWS calls only (STS ``GetCallerIdentity`` and one read of the
+    Bedrock control plane; no model is invoked) and store the result in the provider's ``verification``.
+
+    The connection diagnosis (``POST /api/diagnostics/connection?provider=bedrock``) runs the same check, so it also
+    stores the verification as a side effect and shares its rate limit.
+
+    A failed check answers 200 with ``verification.state == "failed"`` and a stable code; nothing about the AWS
+    identity (account, ARN, keys) is ever returned. At most one check every few seconds per workspace (429)."""
+    model = (body.model or "").strip() if body is not None else ""
+    prefix, colon, rest = model.partition(":")
+    if colon and prefix == "bedrock":
+        model = rest  # only the first colon names the provider; the model id keeps every further colon
+    elif colon and prefix in PROVIDERS:
+        raise NodestroError("provider.model_invalid", f"{model[:80]} is not an Amazon Bedrock model", model=model[:80])
+    if any(char.isspace() for char in model):
+        raise NodestroError("provider.model_invalid", "A Bedrock model id has no spaces", model=model[:80])
+    try:
+        return ctx.verify_provider("bedrock", model=model or None)  # type: ignore[no-any-return]
+    except NodestroError as exc:
+        if exc.code != "provider.verify_rate_limited":
+            raise
+        raise ApiError(
+            429, exc.code, str(exc), headers={"Retry-After": str(exc.params.get("retry_after") or 10)}, **exc.params
+        ) from None
 
 
 # ---- workflows ------------------------------------------------------------------

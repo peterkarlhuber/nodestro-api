@@ -31,7 +31,16 @@ def test_meta_lists_models_and_server_tools(make_app: Callable[..., TestClient])
         "compatible",
         "ollama",
         "vllm",
+        "bedrock",
     ]
+    bedrock = next(item for item in meta["providers"] if item["id"] == "bedrock")
+    assert bedrock["auth"] == "aws" and bedrock["needs_key"] is False and not bedrock["base_url"]
+    assert bedrock["region_env_vars"] == ["AWS_REGION", "AWS_DEFAULT_REGION"]
+    assert {item["auth"] for item in meta["providers"] if item["id"] != "bedrock"} <= {"api_key", "endpoint"}
+    # Bedrock suggestions keep every colon of their model ids; their prices name the AWS regions they cover.
+    suggested = [model for model in meta["models"] if model["provider"] == "bedrock"]
+    assert "bedrock:eu.anthropic.claude-haiku-4-5-20251001-v1:0" in {model["id"] for model in suggested}
+    assert all("price_region" in model and "price_regions" in model for model in suggested)
     assert "tools" in meta["capabilities"]
     assert {tool["key"] for tool in meta["server_tools"]} == {"web_search", "web_fetch", "code_execution"}
 

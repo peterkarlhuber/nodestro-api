@@ -76,6 +76,8 @@ if TYPE_CHECKING:
     from .context import Nodestro
 
 PUBLICATIONS = "publications"
+#: Codes of provider settings that exist but cannot be used (Amazon Bedrock): a published API answers 503 for them.
+_UNUSABLE_SETTINGS = frozenset({"provider.region_not_allowed", "provider.data_residency_region"})
 RELEASES = "api_releases"
 
 EventKind = Literal[
@@ -1006,11 +1008,25 @@ class StudioHost:
         try:
             self.ctx.require_providers(set(bundle.models))
         except MissingApiKeyError as exc:
+            # Amazon Bedrock without settings or without an operator role (provider.not_configured,
+            # provider.bedrock_not_available, provider.auth_not_allowed, provider.region_missing) lands here too.
             provider = str(exc.params.get("provider") or "")
             raise ApiError(
                 503,
                 "model.unavailable",
                 f"Nodestro has no settings for the provider {provider}; runs cannot start",
+                headers={"Retry-After": "300"},
+                provider=provider,
+            ) from None
+        except NodestroError as exc:
+            if exc.code not in _UNUSABLE_SETTINGS:
+                raise
+            # Settings that exist but cannot be used (a Bedrock region the data residency or the operator refuses).
+            provider = str(exc.params.get("provider") or "bedrock")
+            raise ApiError(
+                503,
+                "model.unavailable",
+                f"The settings of the provider {provider} cannot be used; runs cannot start",
                 headers={"Retry-After": "300"},
                 provider=provider,
             ) from None
