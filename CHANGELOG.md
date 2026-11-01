@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Dynamic teams and approvals inside teams (AO M6b), pin: nodestro-runtime 081705d (2026-11-01)
+
+- Pin of `nodestro-runtime` at `081705d` (before: `1bc3924`) and `nodestro-examples` at `b5aa4db` (before:
+  `6658599`, same examples on the new runtime). Orchestrators wait for approvals inside their teams instead of
+  cancelling them; the existing approval routes decide them and the run continues where it waited. The pending
+  approvals of a run include those of its orchestrators' team runs.
+- OpenAPI: `OrchestratorConfig` gains `max_parallel`, `staffing`, `max_team` and `allow_values` (all off by
+  default); `NodeRun.orchestration` carries protocol version 2 records (`outcomes`, `pending`). No route changes.
+
 ### MCP resources (WP-10), pin: nodestro-runtime 1bc3924 (2026-11-01)
 
 - Pin of `nodestro-runtime` at `1bc3924` (before: `2d55242`) and `nodestro-examples` at `6658599` (before:
