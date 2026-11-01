@@ -648,3 +648,24 @@ def test_the_rate_limiter_forgets_idle_clients(monkeypatch: pytest.MonkeyPatch) 
     for _ in range(29):
         assert window.allow("auth:10.9.9.9", 30) is None
     assert window.allow("auth:10.9.9.9", 30) is not None  # the limit itself still holds
+
+
+def test_validation_errors_name_each_field_once(published: Callable[..., Any]) -> None:
+    """AD-15: a number field (``int | float``) reports one error, not one per union branch."""
+    client, publication, token = published()
+    answer = client.post(
+        f"{PUBLISHED}/{publication['slug']}/runs", json={"values": {"amount": "many"}}, headers=auth(token)
+    )
+    assert answer.status_code == 422
+    params = answer.json()["error"]["params"]
+    assert params["errors"] == [
+        {"field": "values.customer", "code": "missing", "message": "Field required"},
+        {"field": "values.amount", "code": "number_parsing", "message": "Input should be a valid number"},
+    ]
+    assert params["fields"] == "values.customer, values.amount"
+    tried = client.post(
+        f"/api/publications/{publication['id']}/test",
+        json={"body": {"values": {"customer": "A", "amount": "x"}}, "dry_run": True},
+    )
+    assert tried.status_code == 422
+    assert [item["field"] for item in tried.json()["params"]["errors"]] == ["values.amount"]
