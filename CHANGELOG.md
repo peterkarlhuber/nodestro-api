@@ -4,8 +4,8 @@
 
 ### Amazon Bedrock (2026-11-01)
 
-- Pins `nodestro-runtime` `464468d` (before `d141b8f`; the runtime's Bedrock provider, Orkexa `3467940` with boto3)
-  and `nodestro-examples` `c07abea` (the same runtime pin, branch only).
+- Pins `nodestro-runtime` `ac96c6f` (before `d141b8f`; the runtime's Bedrock provider and its review fixes, Orkexa
+  `3467940` with boto3) and `nodestro-examples` `dcad0d1` (the same runtime pin, branch only).
 - Contract (`openapi/nodestro-api.json`), all additions:
   - `POST /api/settings/providers/bedrock/verify` (permission `admin`, like changing the settings; optional body
     `ProviderVerifyIn {model}`, `bedrock:` in front is accepted, model ids keep every colon): checks the Bedrock
@@ -22,6 +22,12 @@
   - `OverrideIn.aws_regions`: the AWS regions an individual Bedrock price applies to (the first is the default);
     required for `bedrock` (`pricing.invalid_price` with `pricing.region_required`), refused for other providers.
     The override routes already take model ids with colons and slashes (`{model:path}`, ARNs).
+- `GET /api/models/capabilities?model=` (permission `read`, `ModelCapabilities {model, capabilities}`): Orkexa's
+  capability values of a typed Bedrock model id (the same values the catalog entries of `/api/meta` now carry in
+  `ModelInfo.capabilities`); `null` for other providers and invalid names. A new route because no existing response
+  fits one typed id (`/api/meta` lists only the catalog, `/agents/validate` answers a list, `/workflows/check` a
+  schema the Workflow Architect shares). From the runtime also `PriceEntry.regions`.
+- The connection diagnosis of Bedrock stores the verification result as a side effect (documented on both routes).
 - Errors of the studio API now carry the headers of an `ApiError` (here `Retry-After`).
 - Server: `nodestro-server` reads `NODESTRO_BEDROCK_TENANT_ROLES[_FILE]`, `NODESTRO_BEDROCK_DATA_RESIDENCY` and
   `NODESTRO_BEDROCK_ALLOWED_REGIONS` (`profile.invalid` names the variable, never a role ARN or an external id, so
@@ -38,6 +44,12 @@
   `unreachable`, `not_configured`, `failed`, with the `provider.*` code in `params.reason`).
 - The AWS SDK's loggers (`botocore`, `boto3`, `s3transfer`) start at WARNING: at DEBUG botocore logs signed request
   headers and temporary session tokens, which must not reach logs through a process-wide DEBUG setting.
+
+### Run deletion removes orchestrator team runs (2026-11-01)
+
+- `DELETE /api/runs/{id}` also deletes the team runs an orchestrator node started (`child_run_ids`), at any depth,
+  with their files and tool waits. Before, only sub-workflow runs (`child_run_id`) went with the deleted run, and team
+  runs holding copies of its inputs and results stayed behind (backend audit, reported by the Live Run Chat thread).
 
 ### Pins: PostgreSQL read performance (2026-11-01)
 

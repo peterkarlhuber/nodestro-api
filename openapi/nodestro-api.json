@@ -8530,6 +8530,39 @@
         "title": "Meta",
         "type": "object"
       },
+      "ModelCapabilities": {
+        "description": "What a model supports according to Orkexa, for a model id typed in the editor (not only catalog entries).",
+        "properties": {
+          "capabilities": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "enum": [
+                    "supported",
+                    "unsupported",
+                    "unknown"
+                  ],
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capabilities"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model"
+        ],
+        "title": "ModelCapabilities",
+        "type": "object"
+      },
       "ModelChoice": {
         "properties": {
           "current_model": {
@@ -8650,6 +8683,25 @@
               }
             ],
             "title": "Cache Write 5M Usd Per Mtok"
+          },
+          "capabilities": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "enum": [
+                    "supported",
+                    "unsupported",
+                    "unknown"
+                  ],
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capabilities"
           },
           "description": {
             "title": "Description",
@@ -10484,6 +10536,20 @@
                 "type": "null"
               }
             ]
+          },
+          "regions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regions"
           },
           "source": {
             "title": "Source",
@@ -21409,7 +21475,7 @@
     },
     "/api/diagnostics/connection": {
       "post": {
-        "description": "Reach a provider's API (default: the default model's) by listing its models; no tokens, no cost.",
+        "description": "Reach a provider's API (default: the default model's) by listing its models; no tokens, no cost.\n\nAmazon Bedrock: runs the settings verification instead (free AWS calls) and, as a side effect, stores its result\nin the provider's ``verification`` (rate limit shared with ``POST /api/settings/providers/bedrock/verify``).",
         "operationId": "diagnostics_connection_api_diagnostics_connection_post",
         "parameters": [
           {
@@ -23288,6 +23354,48 @@
           }
         },
         "summary": "Meta"
+      }
+    },
+    "/api/models/capabilities": {
+      "get": {
+        "description": "Orkexa's capabilities of one qualified model id (``bedrock:eu.anthropic...-v1:0``, an ARN; colons kept).",
+        "operationId": "get_model_capabilities_api_models_capabilities_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "model",
+            "required": true,
+            "schema": {
+              "maxLength": 2048,
+              "minLength": 1,
+              "title": "Model",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelCapabilities"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Model Capabilities"
       }
     },
     "/api/organize": {
@@ -27173,7 +27281,7 @@
     },
     "/api/settings/providers/bedrock/verify": {
       "post": {
-        "description": "Check the Amazon Bedrock settings with free AWS calls only (STS ``GetCallerIdentity`` and one read of the\nBedrock control plane; no model is invoked) and store the result in the provider's ``verification``.\n\nA failed check answers 200 with ``verification.state == \"failed\"`` and a stable code; nothing about the AWS\nidentity (account, ARN, keys) is ever returned. At most one check every few seconds per workspace (429).",
+        "description": "Check the Amazon Bedrock settings with free AWS calls only (STS ``GetCallerIdentity`` and one read of the\nBedrock control plane; no model is invoked) and store the result in the provider's ``verification``.\n\nThe connection diagnosis (``POST /api/diagnostics/connection?provider=bedrock``) runs the same check, so it also\nstores the verification as a side effect and shares its rate limit.\n\nA failed check answers 200 with ``verification.state == \"failed\"`` and a stable code; nothing about the AWS\nidentity (account, ARN, keys) is ever returned. At most one check every few seconds per workspace (429).",
         "operationId": "verify_bedrock_api_settings_providers_bedrock_verify_post",
         "requestBody": {
           "content": {

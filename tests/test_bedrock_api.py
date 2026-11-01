@@ -244,6 +244,20 @@ def test_the_connection_diagnosis_of_bedrock_is_its_verification(
     assert ACCOUNT not in json.dumps(denied)
 
 
+def test_capabilities_of_a_typed_bedrock_model(make_app: Callable[..., TestClient]) -> None:
+    client = make_app()
+    meta = client.get("/api/meta").json()
+    listed = next(item for item in meta["models"] if item["id"] == MODEL)
+    typed = client.get("/api/models/capabilities", params={"model": MODEL}).json()
+    assert typed == {"model": MODEL, "capabilities": listed["capabilities"]}
+    assert set(typed["capabilities"]) == set(meta["capabilities"])
+    arn = f"bedrock:arn:aws:bedrock:eu-central-1:{ACCOUNT}:application-inference-profile/abc"
+    found = client.get("/api/models/capabilities", params={"model": arn}).json()
+    assert found["model"] == arn and set(found["capabilities"]) == set(meta["capabilities"])
+    for other in ("openai:gpt-5.5", "anthropic.claude-v1:0"):  # another provider; a colon without a provider
+        assert client.get("/api/models/capabilities", params={"model": other}).json()["capabilities"] is None
+
+
 def test_the_aws_sdk_never_logs_below_warning() -> None:
     for name in AWS_LOGGERS:
         assert logging.getLogger(name).getEffectiveLevel() >= logging.WARNING

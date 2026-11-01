@@ -75,6 +75,11 @@ def test_an_orchestrator_copy_runs_its_teams(make_app: Callable[..., TestClient]
     for child_id in children:
         assert client.get(f"/api/runs/{child_id}").json()["workflow_id"] in members
 
+    # Deleting the orchestrated run deletes its team runs too: they hold copies of its inputs and results.
+    assert client.delete(f"/api/runs/{result['id']}").status_code == 204
+    for child_id in children:
+        assert client.get(f"/api/runs/{child_id}").status_code == 404
+
 
 # ---- model tiers -------------------------------------------------------------------------------------------------
 
