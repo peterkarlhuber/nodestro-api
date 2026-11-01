@@ -13177,6 +13177,13 @@
             "title": "Values",
             "type": "object"
           },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/RunWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
           "workflow": {
             "$ref": "#/components/schemas/Workflow"
           },
@@ -13635,6 +13642,13 @@
           "usage": {
             "$ref": "#/components/schemas/Usage"
           },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/RunWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
           "workflow_id": {
             "title": "Workflow Id",
             "type": "string"
@@ -13665,6 +13679,41 @@
           "created_at"
         ],
         "title": "RunSummary",
+        "type": "object"
+      },
+      "RunWarning": {
+        "description": "Something a run that ended went without (AD-03): e.g. a tool call that was refused, timed out or failed.\n\n``code`` is the call's problem code (``tool.approval_rejected``, ``tool.approval_timeout``, ``tool.not_granted``,\n``mcp.unreachable``, ...; ``tool.failed`` when the tool's error has no code); ``count`` calls of ``tool`` in\n``node_id`` had it.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "count": {
+            "default": 1,
+            "title": "Count",
+            "type": "integer"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool"
+          }
+        },
+        "required": [
+          "code",
+          "node_id"
+        ],
+        "title": "RunWarning",
         "type": "object"
       },
       "SampleInfo": {
