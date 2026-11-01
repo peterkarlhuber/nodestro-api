@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Tool approvals: one-time activation step (S-2 security acceptance, 2026-10-31)
+
+- **Fix:** `POST /api/tool-approvals/legacy` could be repeated, and every repeat stamped bindings created since then
+  (new tool assignments, workflows, versions and releases) as legacy exemptions. The step now runs once: the
+  workspace part is guarded by the runtime (`stamped_at`), the releases part by `publications_stamped_at`, and it
+  stamps only releases created up to the workspace's `stamped_at` (so an interrupted first call can be finished
+  without exempting later releases). A repeat returns the stored report and is audited as repeated.
+- `ToolApprovalsState.legacy` carries `stamped_at`, `stamped_by` and `publications_stamped_at` (OpenAPI regenerated).
+- Pins `nodestro-runtime` `a13f894` (before `40e04b4`) and `nodestro-examples` `2488c93` (before `df458e8`).
+- README: the activation order (stamp, review, then switch on) and the one-time digest change of published releases.
+
 Model choice from measured test series results (Adaptive Orchestration M6a):
 
 - `GET /api/benchmarks/{suite_id}/model-choice?node_id=…` (`read`) recommends a model for one agent from the

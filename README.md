@@ -164,7 +164,7 @@ unsafe value is listed at once (`profile.invalid`), and nothing has a default th
 | `NODESTRO_MODEL_ENDPOINTS` | comma-separated origins tenants may use for OpenAI-compatible, Ollama and vLLM endpoints (none by default; others are refused, so tenants cannot make the server reach internal services) |
 | `NODESTRO_WORKER_LEASE_SECONDS`, `…_POLL_SECONDS`, `…_REAP_SECONDS` | worker timing (defaults 60, 1, 15) |
 | `NODESTRO_WORKER_MAX_RUNS`, `NODESTRO_WORKER_MAX_WAITING` | runs one worker holds at once, and how many of them may wait for a person's tool approval (defaults 2 and 1; waiting must stay below the runs, so one slot always executes) |
-| `NODESTRO_TOOL_APPROVALS` | `1` asks a person before tool calls that change or reach out (off by default; switch it on only after the security acceptance and after `POST /api/tool-approvals/legacy` stamped the existing bindings) |
+| `NODESTRO_TOOL_APPROVALS` | `1` asks a person before tool calls that change or reach out. Off by default. Order: first `POST /api/tool-approvals/legacy` (once; stamps existing bindings of workflows, versions and published releases, whose digest changes once), review the report, then set this and restart, only after the security acceptance |
 | `NODESTRO_PRICE_SYNC`, `NODESTRO_PRICE_LITELLM`, `NODESTRO_PRICE_SNAPSHOT_FILE` | reference price sync of the workers (`on`/`off`, default `on`; LiteLLM's cost map `on`/`off`; a reviewed Orkexa snapshot file), see "Model prices" |
 
 Commands:
