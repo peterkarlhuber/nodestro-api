@@ -41,8 +41,8 @@ from typing import TYPE_CHECKING, Any, Literal
 from nodestro_runtime.agent_builder import ConfigIssue
 from nodestro_runtime.catalog import SERVER_TOOLS, models
 from nodestro_runtime.cost_tracking import PricedTracker, PriceMode
-from nodestro_runtime.engine import _PLACEHOLDER, node_label, usage_of
-from nodestro_runtime.memory_spaces import _SPACE
+from nodestro_runtime.engine import PLACEHOLDER, node_label, usage_of
+from nodestro_runtime.memory_spaces import SPACE_PATTERN
 from nodestro_runtime.preflight import PROVIDER_CHECKS, WorkflowCheck, preflight
 from nodestro_runtime.pricing import PricingService
 from nodestro_runtime.problems import NodestroError, Problem, library_problem, problem
@@ -1073,7 +1073,7 @@ class _Session:
             item.knowledge_file_ids = files
             if item.memory == "persistent":
                 space = (item.memory_space or item.key).strip()
-                if not _SPACE.fullmatch(space):
+                if not SPACE_PATTERN.fullmatch(space):
                     space = _snake(space, "memory")[:60]
                 item.memory_space = space
                 self.log(
@@ -2010,7 +2010,7 @@ def _rename_placeholders(workflow: WorkflowIn, node_ids: dict[str, str], planned
 
     for node in workflow.nodes:
         if node.agent is not None and node.id in targets:
-            node.agent.task_template = _PLACEHOLDER.sub(replace, node.agent.task_template)
+            node.agent.task_template = PLACEHOLDER.sub(replace, node.agent.task_template)
 
 
 def _layout(workflow: WorkflowIn, base: WorkflowIn | None) -> None:

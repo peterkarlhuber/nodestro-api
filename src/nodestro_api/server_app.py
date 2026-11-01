@@ -113,7 +113,9 @@ class TenantFiles:
 
     def open(self, tenant_id: str) -> Nodestro:
         return Nodestro(
-            AppConfig(data_dir=self.data_root / "tenants" / tenant_id, docs_dir=self.docs_dir),
+            # A tenant is served by the server profile (AD-05: /api/meta says so; single-user fallbacks such as
+            # provider keys from the environment stay off).
+            AppConfig(data_dir=self.data_root / "tenants" / tenant_id, docs_dir=self.docs_dir, profile_kind="server"),
             client_factory=self.client_factory,
             python_runner=self.python_runner,
             ocr_runner=self.ocr_runner,
@@ -218,9 +220,9 @@ class DatabaseHealth:
         self._lock = threading.Lock()
 
     def _ping(self) -> None:
-        if self.database.closed:
-            raise RuntimeError("The database connection is closed")
-        self.database._query("SELECT 1")
+        # ``ping`` never raises; its timeout bounds the wait for a pooled connection, ``__call__`` the whole check.
+        if not self.database.ping(timeout=self.timeout):
+            raise RuntimeError("The database does not answer")
 
     def _start(self) -> Future[None]:
         """Run one check in a daemon thread of its own: it never waits in (or blocks) the pool that serves

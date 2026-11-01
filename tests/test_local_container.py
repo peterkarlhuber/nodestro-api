@@ -482,3 +482,10 @@ def test_the_app_reads_the_key_file_from_the_environment(tmp_path: Path, monkeyp
     config = AppConfig.from_env()
     assert config.browser_host == host and config.host_port == 9001
     assert (config.session_idle_hours, config.session_max_hours) == (2.0, 24.0)
+
+
+def test_meta_names_the_local_container_profile(tmp_path: Path) -> None:
+    """AD-05: the studio can tell Nodestro Local Docker from the desktop and a server."""
+    with client_for(tmp_path) as client:
+        meta = client.get("/api/meta", headers={"Authorization": f"Bearer {KEY}"})
+        assert meta.status_code == 200 and meta.json()["profile"] == "local-container"

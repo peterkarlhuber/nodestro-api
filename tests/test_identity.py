@@ -537,17 +537,18 @@ def test_the_server_health_check_reports_the_database(server: Server, monkeypatc
     check = server.app.state.health_check
     check.timeout = 0.3
 
-    def unreachable(*_args: Any) -> Any:
-        raise OSError("connection lost")
+    def unreachable(**_kwargs: Any) -> bool:
+        return False  # ``ping`` reports a lost connection as False; it never raises
 
-    monkeypatch.setattr(check.database, "_query", unreachable)
+    monkeypatch.setattr(check.database, "ping", unreachable)
     answer = browser.get("/api/health")
     assert answer.status_code == 503 and answer.json() == {"status": "unavailable", "database": "unreachable"}
 
-    def hanging(*_args: Any) -> Any:
+    def hanging(**_kwargs: Any) -> bool:
         time.sleep(2)
+        return True
 
-    monkeypatch.setattr(check.database, "_query", hanging)
+    monkeypatch.setattr(check.database, "ping", hanging)
     began = time.monotonic()
     assert browser.get("/api/health").status_code == 503
     assert browser.get("/api/health").status_code == 503  # the hanging check is not started twice
@@ -555,6 +556,22 @@ def test_the_server_health_check_reports_the_database(server: Server, monkeypatc
     monkeypatch.undo()
     time.sleep(2.1)
     assert browser.get("/api/health").status_code == 200
+
+
+def test_meta_names_the_server_profile(server: Server) -> None:
+    """AD-05: the studio can tell a server from the desktop and adapt its local-only copy."""
+    viewer = server.member("acme", "victor", "viewer")
+    assert viewer.get("/api/meta").json()["profile"] == "server"
+
+
+def test_a_tenant_never_uses_the_servers_environment_billing_keys(
+    server: Server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The desktop falls back to admin keys from the environment; a server's tenants must not see the operator's."""
+    monkeypatch.setenv("NODESTRO_ANTHROPIC_ADMIN_KEY", "sk-ant-admin-12345678")
+    admin = server.member("acme", "ada", "admin")
+    keys = {item["provider"]: item for item in admin.get("/api/pricing/billing-keys").json()}
+    assert keys["anthropic"]["configured"] is False and keys["anthropic"]["origin"] == "none"
 
 
 def test_the_api_reference_needs_a_login_on_a_server(server: Server) -> None:
@@ -607,3 +624,12 @@ def test_approvals_and_uploads_name_the_member_who_made_them(server: Server) -> 
     assert upload.status_code == 201, upload.text
     file_id = upload.json()[0]["file"]["id"]
     assert server.app.state.tenants.get("acme").inputs.get(file_id).uploaded_by == alice
+
+
+def test_automatic_language_clears_the_stored_one_on_a_server(server: Server) -> None:
+    """Choosing "Automatic" sends ``language: null``: it clears the stored language; an absent field keeps it."""
+    admin = server.member("acme", "ada", "admin")
+    assert admin.put("/api/settings", json={"language": "it"}).json()["language"] == "it"
+    assert admin.put("/api/settings", json={"default_budget_usd": 2}).json()["language"] == "it"
+    assert admin.put("/api/settings", json={"language": None}).json()["language"] is None
+    assert admin.get("/api/settings").json()["language"] is None
