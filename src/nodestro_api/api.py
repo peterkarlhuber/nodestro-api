@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import suppress
 from datetime import datetime, timezone
 import hashlib
 import json
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, Depends, FastAPI, File, Form, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -38,11 +38,13 @@ from nodestro_runtime.schemas import (
     AgentTemplate,
     AgentTemplateIn,
     Language,
+    OrchestratorConfig,
     Run,
     RunIn,
     RunSummary,
     Settings,
     SettingsIn,
+    Usage,
     Workflow,
     WorkflowIn,
     WorkflowSummary,
@@ -68,7 +70,9 @@ from .assistants import AgentDraft, MemorySeed
 from .benchmarks import SuiteIn, TestCase
 from .context import Nodestro
 from .permissions import ADMIN, EDIT, PUBLIC, READ, RUN, AccessError, Permission, Principal
+from .publishing import PUBLICATIONS, RELEASES
 from .references import Reference, ReferenceKind, references
+from .search import readable_documents, stored_workflows
 from .serving import ApiError
 
 router = APIRouter(prefix="/api")
@@ -205,7 +209,8 @@ def request_language(request: Request) -> str:
 @router.get("/workflows", dependencies=READ)
 def list_workflows(ctx: Ctx) -> list[WorkflowSummary]:
     last_status: dict[str, Any] = {}
-    for run in ctx.store.list("runs", RunSummary, limit=500):
+    recent = readable_documents(ctx.store, "runs", RunSummary, newest_first=lambda run: run.created_at, limit=500)
+    for run in recent:
         if run.imported_at is None:
             last_status.setdefault(run.workflow_id, run.status)
     return [
@@ -219,7 +224,7 @@ def list_workflows(ctx: Ctx) -> list[WorkflowSummary]:
             capabilities=w.capabilities,
             contract=[field.name for field in contract_of(w)],
         )
-        for w in ctx.store.list("workflows", Workflow)
+        for w in stored_workflows(ctx.store)
     ]
 
 
@@ -252,27 +257,69 @@ def update_workflow(workflow_id: str, body: WorkflowIn, ctx: Ctx, note: str = Qu
     """Save a workflow; a changed workflow becomes the next version (``note`` describes it)."""
     current = _workflow(ctx, workflow_id)
     workflow = Workflow(**body.model_dump(), id=current.id, created_at=current.created_at, updated_at=now())
-    ctx.store.put("workflows", workflow.id, workflow)
-    ctx.versions.record(workflow, description=note, previous=current)
+    _replace_workflow(ctx, workflow, lambda: ctx.versions.record(workflow, description=note, previous=current))
     return workflow
+
+
+def _replace_workflow(ctx: Nodestro, workflow: Workflow, record: Callable[[], object]) -> None:
+    """Store a changed workflow and its version together, only while the workflow still exists (C-16).
+
+    A save that races a delete answers 404 instead of bringing the deleted workflow back (without its schedules,
+    versions and published APIs): the write is conditional, as one step of the store."""
+    with ctx.store.transaction():
+        if not ctx.store.replace_if("workflows", workflow.id, workflow, field="id", expected=workflow.id):
+            raise KeyError(workflow.id)
+        record()
+
+
+#: Run states in which a run still executes (or waits to) and may need the workflow's Python environment.
+_EXECUTING = ("queued", "running")
 
 
 @router.delete("/workflows/{workflow_id}", status_code=204, dependencies=EDIT)
 def delete_workflow(workflow_id: str, ctx: Ctx) -> Response:
-    if not ctx.store.delete("workflows", workflow_id):
-        raise KeyError(workflow_id)
+    """Delete a workflow with its versions, schedules, test series and published APIs.
+
+    Refused with 409 ``workflow.runs_active`` while runs of the workflow are queued or running."""
+    # They may still need its Python environment, which the delete removes. The documents go in one store
+    # transaction, so a crash never leaves half a workflow (C-16); the files (Python environment, release
+    # directories) are removed after it.
+    _workflow(ctx, workflow_id)
+    executing = [
+        run.id for run in ctx.store.find("runs", "workflow_id", [workflow_id], RunSummary) if run.status in _EXECUTING
+    ]
+    if executing or workflow_id in ctx.runs.live_workflow_ids():
+        raise ApiError(
+            409,
+            "workflow.runs_active",
+            "Runs of this workflow are still running; delete it when they have finished or were cancelled",
+            runs=max(len(executing), 1),
+        )
+    # Only store reads and writes inside the transaction: a lock taken in it could deadlock with a thread that
+    # holds that lock and waits for the store.
+    with ctx.store.transaction():
+        if not ctx.store.delete("workflows", workflow_id):
+            raise KeyError(workflow_id)
+        ctx.versions.delete_all(workflow_id)
+        ctx.organize.forget("workflow", workflow_id)
+        # Schedules and test series of the workflow cannot run any more.
+        for schedule in ctx.schedules.list():
+            if schedule.workflow_id == workflow_id:
+                ctx.schedules.delete(schedule.id)
+        for suite in ctx.benchmarks.suites(workflow_id):
+            ctx.benchmarks.delete_suite(suite.id)
+        # Its published APIs end with it.
+        publications = [item for item in ctx.publications.all() if item.workflow_id == workflow_id]
+        releases = [release.id for item in publications for release in ctx.publications.releases(item.id)]
+        for publication in publications:
+            ctx.store.delete_prefix(RELEASES, f"{publication.id}:")
+            ctx.store.delete(PUBLICATIONS, publication.id)
+    for release_id in releases:
+        ctx.publications.forget_environment(release_id)
     ctx.python.forget(scope_of("workflow", workflow_id))
-    ctx.versions.delete_all(workflow_id)
-    ctx.organize.forget("workflow", workflow_id)
-    # Schedules and test series of the workflow cannot run any more.
-    for schedule in ctx.schedules.list():
-        if schedule.workflow_id == workflow_id:
-            ctx.schedules.delete(schedule.id)
-    for suite in ctx.benchmarks.suites(workflow_id):
-        ctx.benchmarks.delete_suite(suite.id)
-    # Its published APIs end with it; keys keep working for their other APIs.
-    for publication_id in ctx.publications.forget_workflow(workflow_id):
-        ctx.api_keys.forget_publication(publication_id)
+    # Keys keep working for their other APIs.
+    for publication in publications:
+        ctx.api_keys.forget_publication(publication.id)
     return Response(status_code=204)
 
 
@@ -306,8 +353,7 @@ def restore_version(workflow_id: str, number: int, ctx: Ctx) -> Workflow:
     current = _workflow(ctx, workflow_id)
     version = ctx.versions.get(workflow_id, number)
     workflow = Workflow(**version.snapshot.model_dump(), id=current.id, created_at=current.created_at, updated_at=now())
-    ctx.store.put("workflows", workflow.id, workflow)
-    ctx.versions.record(workflow, restored_from=number, previous=current)
+    _replace_workflow(ctx, workflow, lambda: ctx.versions.record(workflow, restored_from=number, previous=current))
     return workflow
 
 
@@ -559,8 +605,16 @@ def list_runs(
     trigger_ref: str | None = None,
 ) -> list[RunSummary]:
     """Stored runs, newest first; sub-workflow runs only with ``include_children`` (they belong to a parent)."""
-    filtered = workflow_id is not None or not include_children or trigger_ref is not None
-    runs = ctx.store.list("runs", RunSummary, limit=2000 if filtered else limit)
+    runs: list[RunSummary]
+    if workflow_id is not None:
+        # Every run of the workflow, however many other runs were stored since (C-04).
+        runs = ctx.store.find("runs", "workflow_id", [workflow_id], RunSummary)
+    elif trigger_ref is not None:
+        runs = ctx.store.find("runs", "trigger_ref", [trigger_ref], RunSummary)
+    elif include_children:
+        runs = ctx.store.list("runs", RunSummary, limit=limit)
+    else:
+        runs = _top_level_runs(ctx, limit)
     if not include_children:
         runs = [run for run in runs if run.parent_run_id is None]
     if workflow_id is not None:
@@ -568,6 +622,23 @@ def list_runs(
     if trigger_ref is not None:
         runs = [run for run in runs if run.trigger_ref == trigger_ref]
     return sorted(runs, key=lambda run: run.created_at, reverse=True)[:limit]
+
+
+#: Runs read at least for the top-level run list: runs are listed by creation, the store answers by update.
+_RUN_WINDOW = 2000
+
+
+def _top_level_runs(ctx: Nodestro, limit: int) -> list[RunSummary]:
+    """The most recently updated runs, enough of them to hold ``limit`` top-level runs (or all runs).
+
+    Sub-workflow and team runs can outnumber their parents by far; the window grows until it holds enough
+    top-level runs instead of stopping at a fixed number of runs."""
+    window = _RUN_WINDOW
+    while True:
+        runs = ctx.store.list("runs", RunSummary, limit=window)
+        if len(runs) < window or sum(run.parent_run_id is None for run in runs) >= limit:
+            return runs
+        window *= 4
 
 
 class TraceImport(BaseModel):
@@ -880,10 +951,7 @@ def usage(ctx: Ctx, days: int = Query(30, ge=1, le=365)) -> UsageReport:
             key = model
         return by_model.setdefault(key, UsageBucket(key=key, label=key))
 
-    for run in ctx.store.list("runs", Run, limit=2000):
-        # Imported traces were paid elsewhere; a sub-workflow's run is counted in its parent run.
-        if run.created_at.timestamp() < cutoff or run.imported_at is not None or run.parent_run_id is not None:
-            continue
+    for run in _runs_since(ctx, cutoff):
         day = run.created_at.date().isoformat()
         buckets = [
             total,
@@ -894,7 +962,8 @@ def usage(ctx: Ctx, days: int = Query(30, ge=1, le=365)) -> UsageReport:
         ]
         for bucket in buckets:
             _add(bucket, run.usage, run=True)
-        for model, model_usage in models_of_run(ctx, run).items():
+        # The lean run has every field models_of_run reads (sub-workflow runs it reads in full itself).
+        for model, model_usage in models_of_run(ctx, cast(Run, run)).items():
             _add(model_bucket(model), model_usage, run=True)
     since = datetime.fromtimestamp(cutoff, tz=timezone.utc)
     entries = ctx.usage_log.entries(since)
@@ -914,6 +983,63 @@ def usage(ctx: Ctx, days: int = Query(30, ge=1, le=365)) -> UsageReport:
         by_source=[bucket for bucket in by_source.values() if bucket.runs or bucket.operations],
         recent=entries[:25],
     )
+
+
+# The usage report reads every run of the period. Validating full run documents (with the workflow snapshot, every
+# step's messages and outputs) costs far more than the report needs, so it reads them with these lean models: only
+# the fields the report and ``models_of_run`` use, with the same names and defaults as the full models.
+
+
+class _UsageAgent(BaseModel):
+    model: str = AgentConfig.model_fields["model"].default
+
+
+class _UsageOrchestrator(BaseModel):
+    model: str = OrchestratorConfig.model_fields["model"].default
+
+
+class _UsageNode(BaseModel):
+    id: str
+    type: str = "agent"
+    agent: _UsageAgent | None = None
+    orchestrator: _UsageOrchestrator | None = None
+
+
+class _UsageWorkflow(BaseModel):
+    nodes: list[_UsageNode] = Field(default_factory=list)
+
+
+class _UsageNodeRun(BaseModel):
+    usage: Usage = Field(default_factory=Usage)
+    child_run_id: str | None = None
+    child_run_ids: list[str] = Field(default_factory=list)
+    decision_usage: Usage | None = None
+
+
+class _UsageRun(BaseModel):
+    id: str
+    workflow_id: str
+    workflow_name: str
+    workflow: _UsageWorkflow
+    nodes: dict[str, _UsageNodeRun] = Field(default_factory=dict)
+    usage: Usage = Field(default_factory=Usage)
+    created_at: datetime
+    imported_at: datetime | None = None
+    trigger: str = "manual"
+    parent_run_id: str | None = None
+
+
+def _runs_since(ctx: Nodestro, cutoff: float) -> list[_UsageRun]:
+    """Every top-level, not imported run created at ``cutoff`` (a timestamp) or later, newest first (C-04).
+
+    All of them, however many runs are stored: the store has no query by time, so this reads every run (with the
+    lean model above, which keeps that affordable)."""
+    counted = [
+        run
+        for run in ctx.store.list("runs", _UsageRun)
+        if run.created_at.timestamp() >= cutoff and run.imported_at is None and run.parent_run_id is None
+    ]
+    return sorted(counted, key=lambda run: run.created_at, reverse=True)
 
 
 # ---- agents ---------------------------------------------------------------------

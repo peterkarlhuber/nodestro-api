@@ -10,17 +10,60 @@ because it lives there in the interface language.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from collections.abc import Callable
+import logging
+from typing import TYPE_CHECKING, Any, Literal, TypeVar
 import unicodedata
 
 import nodestro_examples as library
 from nodestro_runtime.schemas import AgentTemplate, Workflow
-from pydantic import BaseModel
+from nodestro_runtime.storage import DocumentStore
+from pydantic import BaseModel, ValidationError
 
 from .organize import Organize
 
 if TYPE_CHECKING:
     from .context import Nodestro
+
+logger = logging.getLogger(__name__)
+ModelT = TypeVar("ModelT", bound=BaseModel)
+
+
+def readable_documents(
+    store: DocumentStore,
+    collection: str,
+    model: type[ModelT],
+    *,
+    newest_first: Callable[[ModelT], Any],
+    limit: int | None = None,
+) -> list[ModelT]:
+    """The documents of a collection like ``store.list``, but a damaged document is skipped and logged (C-10).
+
+    ``store.list`` fails as a whole on one document it cannot read (cut-off JSON, or data an older release does not
+    understand), which would hide every workflow from the list and the search. Only then are the documents read
+    one by one, the readable ones kept and ordered by ``newest_first`` (the stored update time is not available
+    there), newest first.
+    """
+    try:
+        return store.list(collection, model, limit=limit)
+    except ValidationError:
+        pass
+    found: list[ModelT] = []
+    damaged = 0
+    for _collection, data in store.search_raw([collection], ""):
+        try:
+            found.append(model.model_validate_json(data))
+        except ValidationError:
+            damaged += 1
+    logger.warning("Skipped %d damaged document(s) of %s; repair or delete them", damaged, collection)
+    found.sort(key=newest_first, reverse=True)
+    return found if limit is None else found[:limit]
+
+
+def stored_workflows(store: DocumentStore) -> list[Workflow]:
+    """Every readable workflow, most recently updated first; damaged ones are skipped and logged."""
+    return readable_documents(store, "workflows", Workflow, newest_first=lambda item: (item.updated_at, item.id))
+
 
 ResultKind = Literal["workflow", "agent", "template", "tool", "knowledge", "example"]
 
@@ -85,7 +128,7 @@ def search(nodestro: Nodestro, query: str, *, language: str = "en", limit: int =
         return [(" ".join(info.tags), 2.5)], info
 
     results: list[SearchResult] = []
-    for workflow in nodestro.store.list("workflows", Workflow):
+    for workflow in stored_workflows(nodestro.store):
         tag_fields, info = extra("workflow", workflow.id)
         score, snippet = _score(words, [(workflow.name, 4), (workflow.description, 1.5), *tag_fields])
         if score:

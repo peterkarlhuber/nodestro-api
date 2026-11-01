@@ -42,7 +42,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from nodestro_runtime.conditions import evaluate, parse_result, rule_problems
 from nodestro_runtime.engine import start_fields, usage_of
 from nodestro_runtime.forms import FieldError, check_values
-from nodestro_runtime.launcher import CostEstimate, approval_steps, blocking_problems, estimate_cost, external_tools
+from nodestro_runtime.launcher import CostEstimate, approval_steps, blocking_problems, external_tools
 from nodestro_runtime.problems import NodestroError, Problem
 from nodestro_runtime.providers import check_model, model_id
 from nodestro_runtime.sanitize import Sanitizer
@@ -52,7 +52,7 @@ from orkexa.dynamic import BudgetTracker
 from orkexa.usage import summarize_usage
 from pydantic import BaseModel, Field
 
-from .batches import BatchIn, BatchRow, tool_warnings, with_models
+from .batches import BatchIn, BatchRow, estimate_cost, tool_warnings, with_models
 from .model_choice import ModelChoice, ModelPolicy, agent_models, recommend, suite_basis, workflow_basis
 
 if TYPE_CHECKING:
@@ -322,16 +322,20 @@ class Benchmarks:
     def __init__(self, ctx: Nodestro) -> None:
         self.ctx = ctx
         self._tasks: dict[str, asyncio.Task[None]] = {}
-        for stored in ctx.store.list(RUNS, BenchmarkRun, limit=500):
-            if stored.status in ("running", "evaluating"):
+        # Test series that were running when Nodestro stopped can never finish. Only where this process owns the
+        # data (desktop): on a server another process may be running them right now (C-07).
+        if not ctx.shared_storage:
+            for stored in ctx.store.find(RUNS, "status", ["running", "evaluating"], BenchmarkRun):
                 stored.status, stored.stop_code = "interrupted", "benchmark.interrupted"
                 ctx.store.put(RUNS, stored.id, stored)
 
     # ---- suites ----------------------------------------------------------------
 
     def suites(self, workflow_id: str | None = None) -> list[Suite]:
-        found = self.ctx.store.list(SUITES, Suite, limit=1000)
-        return [suite for suite in found if workflow_id is None or suite.workflow_id == workflow_id]
+        if workflow_id is not None:
+            # ``find`` answers in update order, ``list`` most recently updated first: the same order here.
+            return self.ctx.store.find(SUITES, "workflow_id", [workflow_id], Suite)[::-1]
+        return self.ctx.store.list(SUITES, Suite)
 
     def suite(self, suite_id: str) -> Suite:
         found = self.ctx.store.get(SUITES, suite_id, Suite)
@@ -415,7 +419,7 @@ class Benchmarks:
     # ---- runs ------------------------------------------------------------------
 
     def runs(self, suite_id: str) -> list[BenchmarkRun]:
-        found = [run for run in self.ctx.store.list(RUNS, BenchmarkRun, limit=500) if run.suite_id == suite_id]
+        found = self.ctx.store.find(RUNS, "suite_id", [suite_id], BenchmarkRun)
         return sorted(found, key=lambda item: item.created_at, reverse=True)
 
     def model_choice(self, suite_id: str, node_id: str, policy: ModelPolicy) -> ModelChoice:

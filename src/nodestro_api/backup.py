@@ -291,6 +291,54 @@ def _fail(code: str, message: str, **params: Any) -> BackupError:
     return BackupError(code, message, **params)
 
 
+def _document_models() -> dict[str, type[BaseModel]]:
+    """The model of each collection whose documents are read with one model (lists and look-ups of the app).
+
+    Collections not named here (settings, caches, keys of mixed documents) are checked for valid JSON only.
+    Imported here: these modules import much of the app, and the backup module is imported early."""
+    from nodestro_runtime.input_files import InputFile
+    from nodestro_runtime.python_envs import PythonEnvironment
+    from nodestro_runtime.tool_approvals import ToolApprovalRequest
+    from nodestro_runtime.tool_drafts import ToolDraft
+    from nodestro_runtime.tool_provenance import AuthoredVersions
+    from nodestro_runtime.usage_log import UsageEntry
+    from nodestro_runtime.versions import WorkflowVersion
+
+    from .api_guide import ApiGuide
+    from .assistant_context import Snapshot
+    from .batches import Batch
+    from .benchmarks import RUNS, SUITES, BenchmarkRun, Suite
+    from .exporter import EXPORTS, ExportRecord
+    from .organize import Organize
+    from .publishing import PUBLICATIONS, RELEASES, Publication, Release
+    from .schedules import Schedule
+
+    return {
+        "workflows": Workflow,
+        "workflow_versions": WorkflowVersion,
+        "templates": AgentTemplate,
+        "runs": Run,
+        "schedules": Schedule,
+        "batches": Batch,
+        SUITES: Suite,
+        RUNS: BenchmarkRun,
+        PUBLICATIONS: Publication,
+        RELEASES: Release,
+        EXPORTS: ExportRecord,
+        "api_guides": ApiGuide,
+        "organize": Organize,
+        "assistant_conversations": Conversation,
+        "assistant_messages": ChatMessage,
+        "assistant_snapshots": Snapshot,
+        "input_files": InputFile,
+        "usage_log": UsageEntry,
+        "python_envs": PythonEnvironment,
+        "tool_drafts": ToolDraft,
+        "tool_provenance": AuthoredVersions,
+        "tool_approvals": ToolApprovalRequest,
+    }
+
+
 def _check_database(path: Path) -> None:
     try:
         connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
@@ -311,14 +359,21 @@ def _check_database(path: Path) -> None:
         columns = {row[1] for row in connection.execute("PRAGMA table_info(nodestro_documents)")}
         if not {"collection", "id", "data"} <= columns:
             raise _fail("backup.database_invalid", "The database has no Nodestro documents")
-        checks: dict[str, type[BaseModel]] = {
-            "workflows": Workflow,
-            "templates": AgentTemplate,
-            "runs": Run,
-            "assistant_conversations": Conversation,
-            "assistant_messages": ChatMessage,
-        }
-        for collection, model in checks.items():
+        # Every document the restore writes must at least be JSON; those of the collections Nodestro reads as a
+        # whole must also match their model, or one damaged document would break a list after the restore (C-13).
+        damaged = connection.execute(
+            "SELECT collection, id FROM nodestro_documents WHERE NOT json_valid(data) LIMIT 1"
+        ).fetchone()
+        if damaged is not None:
+            raise _fail(
+                "backup.document_invalid",
+                f"{damaged[0]}/{damaged[1]} is damaged: invalid JSON",
+                collection=damaged[0],
+                id=damaged[1],
+            )
+        for collection, model in _document_models().items():
+            if collection in _LOCAL_COLLECTIONS:
+                continue  # never restored: the current ones are kept
             for key, data in connection.execute(
                 "SELECT id, data FROM nodestro_documents WHERE collection = ?", (collection,)
             ):
