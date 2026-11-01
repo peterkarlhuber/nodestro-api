@@ -97,10 +97,12 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     # Linux sandbox the policy can choose (runtime 45e7774), and the per-call tool approval rules the engine
     # applies (tool_policy, tool_approvals; runtime 8597544), output contracts and the orchestrator node
     # (contracts, orchestrator; runtime 40e04b4), and the agent checkpoints of runs paused at a tool call
-    # (tool_checkpoints; runtime c86781b).
+    # (tool_checkpoints; runtime c86781b), and the tool call journal and the sandbox cancel binding that continuing
+    # and cancelling runs use (tool_journal, sandbox_cancel; backend audit B-02, B-03).
     modules = check["runtime_modules"]
-    assert len(modules) == 41 and "nodestro_runtime.extensions" in modules
+    assert len(modules) == 43 and "nodestro_runtime.extensions" in modules
     assert "nodestro_runtime.tool_checkpoints" in modules
+    assert {"nodestro_runtime.tool_journal", "nodestro_runtime.sandbox_cancel"} <= set(modules)
     assert {"nodestro_runtime.contracts", "nodestro_runtime.orchestrator"} <= set(modules)
     assert {"nodestro_runtime.tool_policy", "nodestro_runtime.tool_approvals"} <= set(modules)
     assert {"nodestro_runtime.builtin_sandbox", "nodestro_runtime.sandbox_confine"} <= set(modules)
