@@ -100,7 +100,7 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     # (tool_checkpoints; runtime c86781b), and the tool call journal and the sandbox cancel binding that continuing
     # and cancelling runs use (tool_journal, sandbox_cancel; backend audit B-02, B-03).
     modules = check["runtime_modules"]
-    assert len(modules) == 43 and "nodestro_runtime.extensions" in modules
+    assert len(modules) == 44 and "nodestro_runtime.extensions" in modules  # + nodestro_runtime.run_chat (LRC-1)
     assert "nodestro_runtime.tool_checkpoints" in modules
     assert {"nodestro_runtime.tool_journal", "nodestro_runtime.sandbox_cancel"} <= set(modules)
     assert {"nodestro_runtime.contracts", "nodestro_runtime.orchestrator"} <= set(modules)

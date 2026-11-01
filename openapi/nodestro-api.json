@@ -3895,6 +3895,43 @@
         "title": "CaseResult",
         "type": "object"
       },
+      "ChatLimits": {
+        "description": "Limits of the live chat of one run (all its orchestrators together).",
+        "properties": {
+          "budget_usd": {
+            "default": 0.5,
+            "title": "Budget Usd",
+            "type": "number"
+          },
+          "max_instructions": {
+            "default": 20,
+            "title": "Max Instructions",
+            "type": "integer"
+          },
+          "max_messages": {
+            "default": 200,
+            "title": "Max Messages",
+            "type": "integer"
+          },
+          "max_pending_questions": {
+            "default": 2,
+            "title": "Max Pending Questions",
+            "type": "integer"
+          },
+          "max_questions": {
+            "default": 30,
+            "title": "Max Questions",
+            "type": "integer"
+          },
+          "questions_per_minute": {
+            "default": 6,
+            "title": "Questions Per Minute",
+            "type": "integer"
+          }
+        },
+        "title": "ChatLimits",
+        "type": "object"
+      },
       "ChatMessage": {
         "properties": {
           "attempts": {
@@ -4048,6 +4085,135 @@
           "role"
         ],
         "title": "ChatMessage",
+        "type": "object"
+      },
+      "ChatMessageIn": {
+        "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "content": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "question",
+              "instruction"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "node_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Node Id",
+            "type": "string"
+          },
+          "target_run_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Target Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "target_run_id",
+          "node_id",
+          "content"
+        ],
+        "title": "ChatMessageIn",
+        "type": "object"
+      },
+      "ChatTarget": {
+        "description": "An orchestrator node a person can talk to.",
+        "properties": {
+          "decisions": {
+            "default": 0,
+            "title": "Decisions",
+            "type": "integer"
+          },
+          "depth": {
+            "default": 0,
+            "title": "Depth",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "max_decisions": {
+            "default": 0,
+            "title": "Max Decisions",
+            "type": "integer"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "path": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Path",
+            "type": "array"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "steering": {
+            "default": false,
+            "title": "Steering",
+            "type": "boolean"
+          },
+          "steering_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steering Code"
+          },
+          "teams": {
+            "items": {
+              "$ref": "#/components/schemas/TeamActivity"
+            },
+            "title": "Teams",
+            "type": "array"
+          },
+          "workflow_name": {
+            "title": "Workflow Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "node_id",
+          "label",
+          "workflow_name",
+          "status"
+        ],
+        "title": "ChatTarget",
         "type": "object"
       },
       "CheckIn": {
@@ -4790,6 +4956,41 @@
           "approved"
         ],
         "title": "Decision",
+        "type": "object"
+      },
+      "DecisionNote": {
+        "description": "What the orchestrator decided in the step an instruction was part of (data of the record, no reasoning).",
+        "properties": {
+          "accepted": {
+            "default": true,
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "members": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "title": "DecisionNote",
         "type": "object"
       },
       "DecisionRecord": {
@@ -6135,6 +6336,30 @@
           "status"
         ],
         "title": "GateReport",
+        "type": "object"
+      },
+      "GuidanceRef": {
+        "description": "One instruction of a person that was part of an orchestrator decision's prompt.",
+        "properties": {
+          "message_id": {
+            "title": "Message Id",
+            "type": "string"
+          },
+          "seq": {
+            "default": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "step": {
+            "title": "Step",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "message_id",
+          "step"
+        ],
+        "title": "GuidanceRef",
         "type": "object"
       },
       "Guide": {
@@ -9119,6 +9344,18 @@
             ],
             "title": "Child Version"
           },
+          "current_decision": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Decision"
+          },
           "decision": {
             "anyOf": [
               {
@@ -9212,6 +9449,13 @@
               }
             ],
             "title": "Finished At"
+          },
+          "guidance": {
+            "items": {
+              "$ref": "#/components/schemas/GuidanceRef"
+            },
+            "title": "Guidance",
+            "type": "array"
           },
           "iteration": {
             "items": {
@@ -9341,6 +9585,16 @@
           "instructions": {
             "default": "",
             "title": "Instructions",
+            "type": "string"
+          },
+          "live_steering": {
+            "default": "attended",
+            "enum": [
+              "attended",
+              "always",
+              "off"
+            ],
+            "title": "Live Steering",
             "type": "string"
           },
           "max_decisions": {
@@ -13215,6 +13469,69 @@
         "title": "Run",
         "type": "object"
       },
+      "RunChatView": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "answer_model": {
+            "title": "Answer Model",
+            "type": "string"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/ChatLimits"
+          },
+          "max_chars": {
+            "default": 2000,
+            "title": "Max Chars",
+            "type": "integer"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/RunMessage"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "questions_left": {
+            "title": "Questions Left",
+            "type": "integer"
+          },
+          "remaining_budget_usd": {
+            "title": "Remaining Budget Usd",
+            "type": "number"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "run_status": {
+            "title": "Run Status",
+            "type": "string"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/ChatTarget"
+            },
+            "title": "Targets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "run_id",
+          "run_status",
+          "active",
+          "targets",
+          "messages",
+          "limits",
+          "remaining_budget_usd",
+          "questions_left",
+          "answer_model"
+        ],
+        "title": "RunChatView",
+        "type": "object"
+      },
       "RunIn": {
         "properties": {
           "file_ids": {
@@ -13291,6 +13608,199 @@
           "available"
         ],
         "title": "RunInput",
+        "type": "object"
+      },
+      "RunMessage": {
+        "description": "One message of a run's live chat.",
+        "properties": {
+          "answer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer Id"
+          },
+          "author": {
+            "default": "local",
+            "title": "Author",
+            "type": "string"
+          },
+          "author_name": {
+            "default": "",
+            "title": "Author Name",
+            "type": "string"
+          },
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "content": {
+            "maxLength": 8000,
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DecisionNote"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "question",
+              "instruction",
+              "answer"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "reply_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reply To"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "default": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "snapshot_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot At"
+          },
+          "snapshot_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Digest"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "delivered",
+              "considered",
+              "rejected",
+              "expired",
+              "pending",
+              "answered",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "status_at": {
+            "format": "date-time",
+            "title": "Status At",
+            "type": "string"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step"
+          },
+          "target_run_id": {
+            "title": "Target Run Id",
+            "type": "string"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Usage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "run_id",
+          "target_run_id",
+          "node_id",
+          "kind",
+          "content",
+          "status"
+        ],
+        "title": "RunMessage",
         "type": "object"
       },
       "RunResultOut": {
@@ -15213,6 +15723,69 @@
           "active_version"
         ],
         "title": "SyncReport",
+        "type": "object"
+      },
+      "TeamActivity": {
+        "description": "One team an orchestrator gave work to, as stored now.",
+        "properties": {
+          "child_run_id": {
+            "title": "Child Run Id",
+            "type": "string"
+          },
+          "member": {
+            "title": "Member",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slot": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slot"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step"
+          },
+          "task": {
+            "default": "",
+            "title": "Task",
+            "type": "string"
+          },
+          "working": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Working",
+            "type": "array"
+          }
+        },
+        "required": [
+          "child_run_id",
+          "member",
+          "name",
+          "status"
+        ],
+        "title": "TeamActivity",
         "type": "object"
       },
       "TemplateAgent": {
@@ -17572,7 +18145,8 @@
               "workflow_design",
               "assistant",
               "benchmark_judge",
-              "api_docs"
+              "api_docs",
+              "run_chat"
             ],
             "title": "Source",
             "type": "string"
@@ -25833,6 +26407,182 @@
           }
         },
         "summary": "Cancel Run"
+      }
+    },
+    "/api/runs/{run_id}/chat": {
+      "get": {
+        "description": "The live chat of a run: messages, the orchestrators one can talk to and the limits.",
+        "operationId": "run_chat_view_api_runs__run_id__chat_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunChatView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Chat View"
+      }
+    },
+    "/api/runs/{run_id}/chat/events": {
+      "get": {
+        "description": "Server-Sent Events of the live chat (see the module docs); every process sees every change (the stream\nreads the stored conversation, written by API processes and by the worker that executes the run).",
+        "operationId": "run_chat_events_api_runs__run_id__chat_events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Chat Events"
+      }
+    },
+    "/api/runs/{run_id}/chat/messages": {
+      "post": {
+        "description": "Ask a question about the run, or give its orchestrator an instruction for the next decision.",
+        "operationId": "send_run_chat_message_api_runs__run_id__chat_messages_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatMessageIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunMessage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Send Run Chat Message"
+      }
+    },
+    "/api/runs/{run_id}/chat/messages/{message_id}": {
+      "get": {
+        "operationId": "run_chat_message_api_runs__run_id__chat_messages__message_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "title": "Message Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunMessage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Chat Message"
       }
     },
     "/api/runs/{run_id}/events": {

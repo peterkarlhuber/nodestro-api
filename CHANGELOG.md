@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Live run chat and steering (LRC-1, 2026-11-01)
+
+- New routes (`api_run_chat.py`) for talking to an orchestrator of a running run: `GET /api/runs/{id}/chat`
+  (`read`: conversation, the orchestrators of the run and its nested teams with what they do now, limits),
+  `POST /api/runs/{id}/chat/messages` (`run`: `kind` `question` or `instruction`, `target_run_id` + `node_id`,
+  idempotent with `client_id`: 201 new, 200 existing), `GET /api/runs/{id}/chat/messages/{message_id}` and the event
+  stream `GET /api/runs/{id}/chat/events` (`snapshot`, `message`, `targets`, `end`; re-checks access, ends with the
+  run). Refusals have stable codes: 404 `run_chat.unknown_target`, 409 `run_chat.run_not_active`,
+  `run_chat.orchestrator_finished`, `run_chat.steering_unattended`, `run_chat.steering_off`, ..., 429
+  `run_chat.busy`, `run_chat.rate_limited`, `run_chat.budget_exhausted`, `run_chat.too_many_*`. Questions are
+  answered in a thread of the API process (at most 4 at once) with the assistant model, recorded in the usage log
+  as `run_chat`; instructions reach the orchestrator through the store, also in a worker process.
+- The full trace export of a top-level run carries its chat (`chat`; the sanitized export masks or removes it),
+  deleting a run deletes its chat, run retention too, and backups validate `run_messages`.
+- Pins `nodestro-runtime` `ac0ac62` (before `d141b8f`): `nodestro_runtime.run_chat`.
+
 ### Pins: PostgreSQL read performance (2026-11-01)
 
 - Pins `nodestro-runtime` `d141b8f` (before `6eacec1`) and `nodestro-examples` `660e9a9` (before `1ead26c`). The
