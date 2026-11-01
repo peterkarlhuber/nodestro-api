@@ -3,7 +3,7 @@
 > Open work for this repository: release blockers, known bugs, security follow-ups, technical debt and planned improvements.
 > GitHub issues are the source of truth for details; this file is the entry point and summary.
 >
-> **Last full review:** 2026-11-01 against `master` at `e7fb1db`.
+> **Last full review:** 2026-11-01 against `master` at `fb7f438`.
 
 ## Summary
 
@@ -11,7 +11,7 @@
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 0 |
-| P2 Medium | 8 |
+| P2 Medium | 6 |
 | P3 Low | 14 |
 | P4 Optional | 4 |
 
@@ -19,7 +19,7 @@
 
 The desktop API is in solid shape. Most open work is in the multi-process server profile: batch leases, observability,
 key rotation, published APIs on the server. The rest is follow-up from the internal backend audit and the UX
-initiative of 2026-11-01. Live Run Chat (LRC-1) is waiting in an open pull request.
+initiative of 2026-11-01. Live Run Chat (LRC-1) is merged (#49).
 
 ## Priorities and statuses
 
@@ -41,27 +41,17 @@ None known.
 ### API-001 · Hardening of request size limits on the studio API's upload and import endpoints
 
 - **Priority:** P2 Medium · **Status:** Open · **Refs:** backend audit A-09 (residual)
-- **What:** The published workflow APIs count the body size while reading. Some studio API endpoints that take files
-  or imports rely on the reverse proxy's limit instead of an application-level limit. Inactive tenant contexts on
-  the server are also not evicted. Details are kept privately.
-- **Next step:** Add an application-level body size limit (ASGI middleware or the `serving` helper) to the
-  remaining endpoints, and evict idle tenant contexts. Report details privately (GitHub private vulnerability reporting).
+- **What:** Hardening follow-up: an application-level request size limit for the remaining endpoint group that
+  takes files or imports, and resource cleanup for idle tenant contexts on the server. Details are kept privately.
+- **Next step:** Apply the application-level limit to the remaining endpoints and add the cleanup, as described in
+  the internal audit.
 
 ### API-002 · Rate limiting of the anonymous login start (server)
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** backend audit A-02 (residual)
-- **What:** Expired login states are now cleaned up. The application still has no rate limit of its own on the
-  login start and accepts long return paths. Today the nodestro-server RUNBOOK recommends a proxy rate limit.
-- **Next step:** Add an application rate limit per client address, and a shorter maximum return path.
-
-### API-003 · Independent security review of per-call tool approvals (S-2)
-
-- **Priority:** P2 Medium · **Status:** Needs external review · **Refs:** `src/nodestro_api/api_tool_approvals.py`
-- **What:** `NODESTRO_TOOL_APPROVALS` is approved only for an isolated pilot. Broad activation needs an independent
-  security review of the approval routes together with the runtime gate and the studio UI.
-- **Next step:** Run the external review, then decide on activation. Until then the switch stays off outside the
-  pilot.
-- **Depends on:** nodestro-runtime (approval gate), nodestro-studio (approval UI)
+- **What:** Expired login states are now cleaned up. Hardening of the login start (an application-level rate limit
+  and tighter input bounds) is still open; today the nodestro-server RUNBOOK recommends a proxy rate limit.
+- **Next step:** Add the application-level limits as described in the internal audit.
 
 ### API-004 · Audit trail for logins, keys, tenants and roles (server)
 
@@ -77,7 +67,7 @@ None known.
 - **What:** `NODESTRO_SECRET_KEY` encrypts all tenant secrets, and it cannot be rotated.
 - **Next step:** Add a `nodestro-server` command that re-encrypts each tenant's secrets with a new key, with the old
   key accepted during the switch.
-- **Depends on:** nodestro-runtime (`SecretBox` helper, if needed)
+- **Depends on:** nodestro-runtime RT-010 (`SecretBox` support for an old key)
 
 ## Bugs and reliability
 
@@ -107,7 +97,7 @@ None known.
   workflow versions, `before-restore-*.zip` and `pre-migration-*.db` grow without limit.
 - **Next step:** Decide on a retention policy (defaults, per tenant on the server). Then add configurable cleanup
   to the existing leader task.
-- **Depends on:** nodestro-runtime (store deletes for runs and versions)
+- **Depends on:** nodestro-runtime RT-014 (store deletes for runs and versions)
 
 ## Architecture and modularity
 
@@ -146,7 +136,7 @@ None known.
 - **What:** The totals are now correct, but at 5,000 runs a request took about 0.8 s on SQLite and 1.4 s on
   PostgreSQL. The time grows linearly with the number of runs.
 - **Next step:** Aggregate in the store (SQL), or read only the usage fields with a `since` filter.
-- **Depends on:** nodestro-runtime (store query support)
+- **Depends on:** nodestro-runtime RT-009 (store-level time filter)
 
 ### API-014 · Lighter run list: summary projection and total count
 
@@ -157,13 +147,6 @@ None known.
 - **Depends on:** nodestro-runtime (projection on the storage level)
 
 ## Features and enhancements
-
-### API-015 · Live Run Chat and steering (LRC-1)
-
-- **Priority:** P2 Medium · **Status:** In progress · **Refs:** PR #49
-- **What:** REST and SSE routes for run chat messages and orchestrator steering under the run API.
-- **Next step:** Merge after the owner's approval in the pin order runtime → api → sdk → studio → server.
-- **Depends on:** nodestro-sdk SDK-001 (sdk #46), nodestro-studio (studio #77)
 
 ### API-016 · Machine-readable list of all error codes (X-03)
 
@@ -204,14 +187,14 @@ None known.
 - **What:** Published APIs warn about tool calls that would need approval, but they have no approval phase of
   their own, so such calls are refused at run time.
 - **Next step:** Design the approval flow for the `approve` key scope after the S-2 review.
-- **Depends on:** API-003
+- **Depends on:** nodestro-runtime RT-001 (independent S-2 review)
 
 ### API-021 · Region in usage data (Bedrock)
 
 - **Priority:** P4 Optional · **Status:** Open · **Refs:** Bedrock final report, section 7
 - **What:** Usage records carry no provider region, so the usage views cannot show costs by Bedrock region.
 - **Next step:** Record the region in the runtime usage data, then add it to `UsageBucket` or a `by_region` view.
-- **Depends on:** nodestro-runtime (usage records)
+- **Depends on:** nodestro-runtime RT-015 (region in usage records)
 
 ## Tests and quality assurance
 
@@ -232,7 +215,8 @@ None known.
 - **What:** Not verified: the desktop backend on macOS and Windows, PostgreSQL throughput on server hardware under
   real load (C-14 measured only in a shared container), real model providers (including a live Amazon Bedrock
   smoke test, which needs the owner's approval), and container sandbox paths outside CI.
-- **Next step:** Run a load test on target hardware and a live provider smoke test once approved. Add macOS and
+- **Next step:** Run the load test on target hardware (nodestro-server SRV-013) and a live provider smoke test once
+  approved. Add macOS and
   Windows runners when the desktop release needs them.
 
 ## Documentation
@@ -243,7 +227,7 @@ None known.
 
 ### API-024 · CI requires a read token although the dependencies are public
 
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** #50, backend audit D-08 (residual)
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** #50, backend audit D-08 (residual); same change in runtime #75
 - **What:** CI fails when `NODESTRO_READ` is empty, and the comments call the public repositories private. This
   blocks Dependabot and fork runs.
 - **Next step:** Install anonymously, keep the token optional or remove it, fix the comments, then consider
@@ -254,9 +238,9 @@ None known.
 - **Priority:** P3 Low · **Status:** Needs decision · **Refs:** `pyproject.toml` (`requires-python = ">=3.10"`), CI matrix 3.10/3.13
 - **What:** Python 3.10 reached end of life in October 2026, and Python 3.14 is not tested. The MCP tests already
   skip on 3.10.
-- **Next step:** Decide the range for the whole platform, then update `requires-python`, the CI matrix and the
-  README together with runtime, orkexa and the SDK.
-- **Depends on:** nodestro-runtime, orkexa, nodestro-sdk SDK-013
+- **Next step:** Follow the platform decision in nodestro-runtime RT-022, then update `requires-python`, the CI
+  matrix and the README.
+- **Depends on:** nodestro-runtime RT-022
 
 ## Later optimizations
 
@@ -276,18 +260,21 @@ None known.
 
 | This repo item | Other repo | Other item | Relation |
 |---|---|---|---|
-| API-003 | nodestro-runtime, nodestro-studio | S-2 tool approvals | reviewed together |
-| API-009 | nodestro-runtime | retention of runs and versions | runtime provides deletes |
-| API-011 | nodestro-server | RUNBOOK monitoring section | server documents what this adds |
+| (pointer) | nodestro-runtime | RT-001 (independent S-2 review, covers the approval routes here) | full entry in runtime |
+| API-005 | nodestro-runtime | RT-010 | runtime adds old-key decryption; the operator command lives here |
+| API-009 | nodestro-runtime | RT-014 | runtime provides deletes |
+| API-011 | nodestro-server | SRV-007 (RUNBOOK monitoring section) | server documents what this adds |
 | API-012 | nodestro-sdk | SDK-005 | SDK contract tests use the server contract |
-| API-013, API-014 | nodestro-runtime | store aggregation and projection | runtime change first |
-| API-015 | nodestro-sdk, nodestro-studio | SDK-001 (sdk #46), studio #77 | merge in pin order |
+| API-013, API-014 | nodestro-runtime | RT-009 (store time filter), projection | runtime change first |
 | API-016 | nodestro-runtime | RT-011 | combined code list |
 | API-017 | nodestro-studio | ST-014 (AD-20 Usage page card) | studio consumes the field |
 | API-018 | nodestro-runtime, nodestro-studio | RT-005, RT-012; ST-003 (studio #81) | runtime changes the run shape first; studio consumes it |
-| API-021 | nodestro-runtime | region in usage records | runtime change first |
-| API-024 | all Nodestro repositories | NODESTRO_READ in CI | same fix in each repo |
-| API-025 | nodestro-runtime, orkexa, nodestro-sdk | SDK-013 | one platform decision |
+| API-021 | nodestro-runtime | RT-015 | runtime change first |
+| API-023 | nodestro-server | SRV-013 (PostgreSQL load test) | load test runs there |
+| API-024 | all Nodestro repositories | NODESTRO_READ in CI (runtime RT-029) | same fix in each repo |
+| API-025 | nodestro-runtime | RT-022 | one platform decision, held in runtime |
+| (pointer) | nodestro-local-docker | LD-010 (session hardening) | implementation would be here; tracked there |
+| API-001, API-002, API-005, API-006, API-010, API-019 | nodestro-server | RUNBOOK limitations (pointer rows in its table) | server documents the current limits until these land |
 | (pointer) | nodestro-runtime | X-01 / RT-005 | full entry in runtime |
 
 ## Maintaining this file
