@@ -18,6 +18,7 @@ from nodestro_runtime.agent_builder import ConfigIssue
 from nodestro_runtime.agent_test import AgentTestIn, AgentTestResult
 from nodestro_runtime.catalog import SERVER_TOOLS, ModelInfo, ServerToolInfo, models
 from nodestro_runtime.contracts import contract_of
+from nodestro_runtime.engine import check_workflow
 from nodestro_runtime.knowledge import KnowledgeFile
 from nodestro_runtime.launcher import launch
 from nodestro_runtime.memory_spaces import MemoryFile, MemorySpaceInfo, check_space_name
@@ -248,9 +249,37 @@ def list_workflows(ctx: Ctx) -> list[WorkflowSummary]:
     ]
 
 
+#: Findings of the workflow check that make a graph unusable: a save or import with one is refused (AD-08), with
+#: the code and params ``/workflows/check`` reports for it. Stored workflows are not checked when they are read.
+_REFUSED_ON_SAVE = ("workflow.edge_dangling", "workflow.node_duplicate")
+
+#: The name of a workflow created without one, in the interface language.
+_NEW_NAME = {
+    "de": "Neuer Workflow",
+    "en": "New workflow",
+    "es": "Nuevo flujo de trabajo",
+    "fr": "Nouveau workflow",
+    "pt-BR": "Novo fluxo de trabalho",
+    "it": "Nuovo workflow",
+}
+
+
+def _checked(body: WorkflowIn, request: Request | None = None) -> WorkflowIn:
+    """``body`` if its graph is consistent (else ``NodestroError`` with the check's code); a missing name is
+    given in the request's language."""
+    for issue in check_workflow(Workflow(**body.model_dump())):
+        if issue.code in _REFUSED_ON_SAVE:
+            raise NodestroError(issue.code, issue.message, **issue.params)
+    if request is not None and "name" not in body.model_fields_set:
+        body = body.model_copy(update={"name": _NEW_NAME[request_language(request)]})
+    return body
+
+
 @router.post("/workflows", status_code=201, dependencies=EDIT)
-def create_workflow(body: WorkflowIn, ctx: Ctx) -> Workflow:
-    return ctx.save_workflow(body)
+def create_workflow(body: WorkflowIn, request: Request, ctx: Ctx) -> Workflow:
+    """Create a workflow. A connection to a node that does not exist is refused (400 ``workflow.edge_dangling``),
+    as are two nodes with one id (``workflow.node_duplicate``)."""
+    return ctx.save_workflow(_checked(body, request))
 
 
 class WorkflowImport(WorkflowIn):
@@ -259,9 +288,18 @@ class WorkflowImport(WorkflowIn):
 
 
 @router.post("/workflows/import", status_code=201, dependencies=EDIT)
-def import_workflow(body: WorkflowImport, ctx: Ctx) -> Workflow:
-    """Import an exported workflow as a new copy (new id)."""
-    workflow = create_workflow(WorkflowIn(**body.model_dump(exclude={"python"})), ctx)
+def import_workflow(body: WorkflowImport, request: Request, ctx: Ctx) -> Workflow:
+    """Import an exported workflow as a new copy (new id).
+
+    A file that is not a workflow export (no ``nodes`` list) is refused with 400 ``workflow.import_invalid``; a
+    graph the check finds broken with its code (``workflow.edge_dangling``, ``workflow.node_duplicate``)."""
+    if "nodes" not in body.model_fields_set:
+        raise NodestroError(
+            "workflow.import_invalid",
+            "This file is not a Nodestro workflow export: it has no nodes",
+            missing=["nodes"],
+        )
+    workflow = ctx.save_workflow(_checked(WorkflowIn(**body.model_dump(exclude={"python"})), request))
     if body.python is not None:
         ctx.python.adopt("workflow", workflow.id, body.python, label=workflow.name, change="imported")
     return workflow
@@ -298,6 +336,7 @@ def update_workflow(
     ``params.updated_at``."""
     current = _workflow(ctx, workflow_id)
     expected = _revision(if_match)
+    _checked(body)
     workflow = Workflow(**body.model_dump(), id=current.id, created_at=current.created_at, updated_at=now())
     return _replace_workflow(
         ctx,
@@ -470,7 +509,7 @@ def duplicate_workflow(workflow_id: str, request: Request, ctx: Ctx) -> Workflow
     source = _workflow(ctx, workflow_id)
     body = WorkflowIn(**source.model_dump(exclude={"id", "created_at", "updated_at"}))
     body.name = f"{source.name} ({_COPY[request_language(request)]})"
-    workflow = create_workflow(body, ctx)
+    workflow = ctx.save_workflow(body)  # an exact copy: not checked, like the source
     definition = ctx.python.export(scope_of("workflow", source.id))
     if definition is not None:
         ctx.python.adopt("workflow", workflow.id, definition, label=workflow.name, change="copied")
@@ -535,7 +574,7 @@ class _LibraryHost:
         self.inputs: list[str] = []
 
     def save_workflow(self, workflow: WorkflowIn) -> tuple[str, int | None]:
-        saved = create_workflow(workflow, self.ctx)
+        saved = self.ctx.save_workflow(_checked(workflow))
         self.workflows.append(saved.id)
         return saved.id, self.ctx.current_version(saved)
 
@@ -648,7 +687,7 @@ def copy_library_template(template_id: str, body: LibraryCopy, request: Request,
     host = _LibraryHost(ctx)
     try:
         made = library.instantiate(template_id, language, host, models=models, connections=connections)
-        copy = create_workflow(made.workflow, ctx)
+        copy = ctx.save_workflow(_checked(made.workflow))
         host.workflows.append(copy.id)
         if body.tests and spec.tests:
             text = library.texts(template_id, language)

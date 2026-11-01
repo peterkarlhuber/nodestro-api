@@ -134,3 +134,55 @@ def test_a_save_cannot_create_a_legacy_tool_exemption(make_app: Any) -> None:
 
 def test_meta_names_the_desktop_profile(make_app: Any) -> None:
     assert make_app().get("/api/meta").json()["profile"] == "desktop"
+
+
+# ---- AD-08: import and save validation ------------------------------------------------------------------------
+
+
+def test_importing_json_that_is_not_a_workflow_is_refused(make_app: Any) -> None:
+    client = make_app()
+    refused = client.post("/api/workflows/import", json={"foo": 1})
+    assert refused.status_code == 400
+    assert refused.json()["code"] == "workflow.import_invalid" and refused.json()["params"] == {"missing": ["nodes"]}
+    assert client.get("/api/workflows").json() == []
+    # An export (the editor's file) still imports.
+    imported = client.post("/api/workflows/import", json={**FLOW, "python": None})
+    assert imported.status_code == 201 and imported.json()["name"] == "Flow"
+
+
+def test_dangling_edges_are_refused_like_the_check_does(make_app: Any) -> None:
+    client = make_app()
+    broken = {**FLOW, "edges": [*FLOW["edges"], {"id": "e3", "source": "a", "target": "ghost"}]}
+    checked = client.post("/api/workflows/check", json=broken).json()
+    assert any(issue["code"] == "workflow.edge_dangling" for issue in checked["problems"])
+    for answer in (
+        client.post("/api/workflows", json=broken),
+        client.post("/api/workflows/import", json=broken),
+    ):
+        assert answer.status_code == 400
+        assert answer.json()["code"] == "workflow.edge_dangling" and answer.json()["params"] == {"edge": "e3"}
+    workflow_id = client.post("/api/workflows", json=FLOW).json()["id"]
+    refused = client.put(f"/api/workflows/{workflow_id}", json=broken)
+    assert refused.status_code == 400 and refused.json()["code"] == "workflow.edge_dangling"
+    duplicate = {**FLOW, "nodes": [*FLOW["nodes"], {"id": "a", "type": "output"}]}
+    assert client.post("/api/workflows", json=duplicate).json()["code"] == "workflow.node_duplicate"
+
+
+def test_a_stored_workflow_with_a_dangling_edge_still_loads_and_copies(make_app: Any) -> None:
+    from nodestro_runtime.schemas import Workflow
+
+    client = make_app()
+    ctx = _ctx(client)
+    legacy = Workflow(**{**FLOW, "edges": [{"id": "e9", "source": "a", "target": "ghost"}]})
+    ctx.store.put("workflows", legacy.id, legacy)
+    assert client.get(f"/api/workflows/{legacy.id}").status_code == 200
+    assert any(item["id"] == legacy.id for item in client.get("/api/workflows").json())
+    assert client.post(f"/api/workflows/{legacy.id}/duplicate").status_code == 201
+
+
+def test_a_workflow_created_without_a_name_is_named_in_the_interface_language(make_app: Any) -> None:
+    client = make_app()
+    created = client.post("/api/workflows", json={"nodes": []}, headers={"Accept-Language": "en-US"})
+    assert created.json()["name"] == "New workflow"
+    created = client.post("/api/workflows", json={}, headers={"Accept-Language": "de-DE"})
+    assert created.json()["name"] == "Neuer Workflow"

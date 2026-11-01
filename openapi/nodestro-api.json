@@ -27725,6 +27725,7 @@
         "summary": "List Workflows"
       },
       "post": {
+        "description": "Create a workflow. A connection to a node that does not exist is refused (400 ``workflow.edge_dangling``),\nas are two nodes with one id (``workflow.node_duplicate``).",
         "operationId": "create_workflow_api_workflows_post",
         "requestBody": {
           "content": {
@@ -27820,7 +27821,7 @@
     },
     "/api/workflows/import": {
       "post": {
-        "description": "Import an exported workflow as a new copy (new id).",
+        "description": "Import an exported workflow as a new copy (new id).\n\nA file that is not a workflow export (no ``nodes`` list) is refused with 400 ``workflow.import_invalid``; a\ngraph the check finds broken with its code (``workflow.edge_dangling``, ``workflow.node_duplicate``).",
         "operationId": "import_workflow_api_workflows_import_post",
         "requestBody": {
           "content": {
