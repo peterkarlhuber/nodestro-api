@@ -32,8 +32,7 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.openapi.docs import get_swagger_ui_html
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse, JSONResponse
 from nodestro_runtime.extensions import Integration
 from nodestro_runtime.identity_store import IdentityStore
 from nodestro_runtime.jobs import JobQueue, QueuedRuns
@@ -54,6 +53,7 @@ from .api_publish import router as publish_router
 from .api_python import router as python_router
 from .api_tool_approvals import router as tool_approvals_router
 from .context import AppConfig, Nodestro
+from .frontend import mount_frontend
 from .identity import (
     OidcClient,
     SameOriginMiddleware,
@@ -267,24 +267,6 @@ def _api_reference(app: FastAPI) -> None:
 
 def _secure_origin(origin: str) -> bool:
     return secure_url(origin)
-
-
-def mount_frontend(app: FastAPI, static_dir: Path) -> None:
-    """Serve the built single-page studio: real files as they are, every other non-API path as ``index.html``."""
-    assets = static_dir / "assets"
-    if assets.is_dir():
-        app.mount("/assets", StaticFiles(directory=assets), name="assets")
-    index = static_dir / "index.html"
-    root = static_dir.resolve()
-
-    @app.get("/{path:path}", include_in_schema=False)
-    async def frontend(path: str) -> Any:
-        if path == "api" or path.startswith("api/"):
-            return JSONResponse({"detail": "Not found"}, status_code=404)
-        candidate = (static_dir / path).resolve()
-        if path and candidate.is_file() and root in candidate.parents:
-            return FileResponse(candidate)
-        return FileResponse(index)
 
 
 __all__ = ["DatabaseHealth", "TenantComposition", "TenantFiles", "close_tenant", "create_tenant_app", "mount_frontend"]
