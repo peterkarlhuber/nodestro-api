@@ -624,3 +624,12 @@ def test_approvals_and_uploads_name_the_member_who_made_them(server: Server) -> 
     assert upload.status_code == 201, upload.text
     file_id = upload.json()[0]["file"]["id"]
     assert server.app.state.tenants.get("acme").inputs.get(file_id).uploaded_by == alice
+
+
+def test_automatic_language_clears_the_stored_one_on_a_server(server: Server) -> None:
+    """Choosing "Automatic" sends ``language: null``: it clears the stored language; an absent field keeps it."""
+    admin = server.member("acme", "ada", "admin")
+    assert admin.put("/api/settings", json={"language": "it"}).json()["language"] == "it"
+    assert admin.put("/api/settings", json={"default_budget_usd": 2}).json()["language"] == "it"
+    assert admin.put("/api/settings", json={"language": None}).json()["language"] is None
+    assert admin.get("/api/settings").json()["language"] is None

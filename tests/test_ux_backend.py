@@ -241,3 +241,15 @@ def test_the_run_list_pages_with_a_cursor(make_app: Any) -> None:
     assert client.get("/api/runs", params={"before": oldest}).json() == []
     refused = client.get("/api/runs", params={"before": "last week"})
     assert refused.status_code == 400 and refused.json()["code"] == "runs.cursor_invalid"
+
+
+# ---- settings: "Automatic" language ---------------------------------------------------------------------------
+
+
+def test_automatic_language_clears_the_stored_one(make_app: Any) -> None:
+    """The studio's "Automatic" sends ``language: null``: it clears the stored language; an absent field keeps it."""
+    client = make_app()
+    assert client.put("/api/settings", json={"language": "it"}).json()["language"] == "it"
+    assert client.put("/api/settings", json={"default_budget_usd": 2}).json()["language"] == "it"
+    assert client.put("/api/settings", json={"language": None}).json()["language"] is None
+    assert client.get("/api/settings").json()["language"] is None
