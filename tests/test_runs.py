@@ -154,10 +154,13 @@ def test_budget_stops_the_run(make_app: Callable[..., TestClient]) -> None:
         budget_usd=0.5,
     )
     run = start(client, workflow_id)
-    assert run["status"] == "failed"
-    assert "Budget" in run["nodes"]["expensive"]["error"]
-    assert run["nodes"]["expensive"]["error_code"] == "run.budget_exceeded"
-    assert run["nodes"]["next"]["status"] == "blocked"
+    # The first request cost more than the budget (its price was unknown in advance): its result is kept, and the
+    # next request waits for a budget decision instead of failing the run (BUDGET-1).
+    assert run["status"] == "paused"
+    assert run["nodes"]["expensive"]["status"] == "succeeded"
+    assert run["nodes"]["next"]["status"] == "awaiting_budget"
+    pending = client.get(f"/api/runs/{run['id']}/budget").json()["pending"]
+    assert pending["reason"] == "used_up" and pending["requests"][0]["node_id"] == "next"
 
 
 def test_quality_check_lets_the_agent_revise(make_app: Callable[..., TestClient]) -> None:
