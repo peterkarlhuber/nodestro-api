@@ -310,10 +310,11 @@ def _require_axentra_schema(server: ServerEnvironment, database: Any) -> None:
 
 
 def _require_readable_secrets(server: ServerEnvironment, database: Any) -> None:
-    """Refuse a configuration that cannot read every stored tenant secret (a rollback switched too early)."""
+    """Refuse a configuration that cannot read every stored tenant secret (a rollback switched too early, or a key
+    with other bytes under a known key id)."""
     from nodestro_runtime.axentra_platform import require_readable_secrets
 
-    require_readable_secrets(database, server.settings.axentra)
+    require_readable_secrets(database, server.settings.axentra, server.settings.secret_box())
 
 
 def _require_runtime_role(server: ServerEnvironment, database: Any) -> None:
