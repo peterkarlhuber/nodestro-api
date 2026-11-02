@@ -38,7 +38,7 @@ from nodestro_runtime.extensions import Integration
 from nodestro_runtime.identity_store import IdentityStore
 from nodestro_runtime.jobs import JobQueue, QueuedRuns
 from nodestro_runtime.postgres_tables import tenant_storage
-from nodestro_runtime.server_settings import SecretBox
+from nodestro_runtime.server_settings import TenantSecrets
 from nodestro_runtime.storage_postgres import PostgresDatabase
 
 from . import __version__
@@ -91,7 +91,7 @@ class TenantComposition:
     #: The job queue: runs are queued for worker processes instead of executing here (``None``: here).
     queue: JobQueue | None = None
     #: Encrypts the tenants' provider keys at rest (``None`` only in tests).
-    secrets: SecretBox | None = None
+    secrets: TenantSecrets | None = None
     #: The built studio interface, served for every path that is not an API route (``None``: API only).
     static_dir: Path | None = None
     #: Model endpoints (origins) tenants may use for the endpoint providers (none by default).
@@ -112,7 +112,7 @@ class TenantFiles:
     python_runner: Any | None = None
     ocr_runner: Any | None = None
     integrations: Iterable[Integration] | None = field(default=None)
-    secrets: SecretBox | None = None
+    secrets: TenantSecrets | None = None
     endpoints: tuple[str, ...] = ()
     #: The operator's Amazon Bedrock roles; a tenant's workspace receives only its own entry (``for_tenant``).
     bedrock: BedrockOperatorConfig | None = None

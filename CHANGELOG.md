@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Axentra platform services in `nodestro-server` (2026-11-02; everything off by default)
+
+- `migrate` applies Axentra's migrations after Nodestro's with one shared backup; `check`, `api` and `worker` refuse
+  a schema that is behind. New commands: `secrets reencrypt [--dry-run] [--tenant]`, `axentra status`,
+  `axentra reconcile [--dry-run] [--tenant]` (audit/usage mirrors), `axentra backfill-identity [--dry-run]` and
+  `axentra reconcile-identity`. The API and worker attach the audit/usage mirrors (`NODESTRO_AXENTRA_AUDIT`,
+  `_USAGE`) and use the identity backend `NODESTRO_IDENTITY_BACKEND` (`nodestro` default, `mirror`, `axentra`;
+  `axentra` refuses to start before the backfill). Routes, cookies, error codes and the OpenAPI document are unchanged.
+- Runtime pin `95dbdfa` (nodestro-runtime #79), examples pin `0ae5ad4` (nodestro-examples #44). The `server` and `dev` extras install `nodestro-runtime[postgres]`,
+  which brings Axentra on Python 3.11+ only.
+- Tests: `tests/test_server_axentra.py`; `tests/test_identity.py` runs every server case with identity on Axentra too.
+
 ### Automatic sandbox selection (2026-11-02, ADR-0009)
 
 - Pins: nodestro-runtime 7fd8761 (runtime #78, `auto` sandbox mode) and nodestro-examples f1c6403. `GET/PUT /api/settings` accept and return
