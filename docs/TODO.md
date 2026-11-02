@@ -207,14 +207,19 @@ None known.
   `POST /api/sandbox/self-test`, nodestro-runtime RT-033/RT-034
 - **What:** Both routes answer the runtime's background check (`Workspace.docker_status`, a `SandboxBackendStatus`);
   `GET /api/settings` never waits for Docker. A forced check (`refresh=1` by an admin, the self-test) starts at most
-  every 10 s per path and Docker monitor, which one server's tenants share (see API-028). Open: the studio does not show the status and the new
-  diagnostics codes `docker.checking` and `docker.unavailable` yet (nodestro-studio ST1); the export
-  (`TOOL_SANDBOX=docker`) still uses Orkexa's `orkexa-sandbox` image, because building Nodestro's runtime image
-  needs the Python environment manager, which an export does not carry; the routes were tested with stand-ins only
-  (no Docker daemon in the development container).
-- **Next step:** Wire the status into the studio (ST1); decide how an export gets a sandbox image without a hand
-  build; a real-daemon test of both routes in the CI `docker` job.
-- **Depends on:** nodestro-studio ST1, nodestro-sdk S1
+  every 10 s per path and Docker monitor, which one server's tenants share (see API-028). The studio shows the
+  status and the diagnostics codes `docker.checking` and `docker.unavailable` (nodestro-studio ST-033). Open: the
+  export (`TOOL_SANDBOX=docker`) still uses Orkexa's `orkexa-sandbox` image, which the operator builds by hand from
+  Orkexa's digest-pinned `docker/sandbox.Dockerfile` (the export's README gives the commands since 2026-11-02);
+  Nodestro's runtime image cannot be used, because building it needs the runtime's Python environment manager,
+  which an export does not carry, and an image id cannot be pinned in the export because it is local to one daemon.
+  The self-test resolves the tag to an id and every container runs that id, so a tag moved later is not run
+  unchecked. The routes were tested with stand-ins only (no Docker daemon in the development container).
+- **Next step:** Decide whether the export should build its sandbox image itself (for example a pinned
+  `docker/sandbox.Dockerfile` shipped in the export); pin the export's own `Dockerfile` (`FROM python:<v>-slim`,
+  no digest yet) by digest, e.g. from nodestro-runtime's `container_images.BASE_IMAGES`; a real-daemon test of both
+  routes in the CI `docker` job.
+- **Depends on:** None
 
 ### API-028 · Docker sandbox status: residual risks after the security review (DS-6, DS-8, DS-12)
 
@@ -226,9 +231,10 @@ None known.
   diagnosis (`GET /api/diagnostics`, permission `install`) still waits up to 5 s outside the waiter cap; the runtime's
   periodic preflight (TTL) is still started by any status read, as before.
 - **Next step:** Decide whether Docker host detail on a server goes to the operator only (a server-operator
-  permission instead of tenant `admin`), and whether the windows should be per tenant; studio and SDK show
-  `throttled`/`retry_after`, `refresh_ignored` and `redacted` (nodestro-studio ST1, nodestro-sdk S1).
-- **Depends on:** nodestro-studio ST1, nodestro-sdk S1
+  permission instead of tenant `admin`), and whether the windows should be per tenant. The studio shows
+  `throttled`/`retry_after`, `refresh_ignored` and `redacted` (nodestro-studio ST-033) and the SDK returns them
+  (`SandboxStatus`, nodestro-sdk, pin `dde77f5`).
+- **Depends on:** None
 
 ## Tests and quality assurance
 
@@ -256,7 +262,11 @@ None known.
 - **Priority:** P3 Low · **Status:** Open · **Refs:** backend audit sections 3 and 10; Bedrock final report
 - **What:** Not verified: the desktop backend on macOS and Windows, PostgreSQL throughput on server hardware under
   real load (C-14 measured only in a shared container), real model providers (including a live Amazon Bedrock
-  smoke test, which needs the owner's approval), and container sandbox paths outside CI.
+  smoke test, which needs the owner's approval), and container sandbox paths outside CI: the Docker sandbox
+  routes and the export's `TOOL_SANDBOX=docker` never ran against a real daemon in this repository's CI; Orkexa's
+  checks behind them ran in Orkexa's CI on Docker Engine (rootful, rootless, arm64), rootful Podman and Colima on
+  macOS x86-64 only. Docker Desktop (macOS Apple silicon and Intel, Windows x64 and ARM64), OrbStack and rootless
+  Podman never ran in any CI (orkexa ORK-024).
 - **Next step:** Run the load test on target hardware (nodestro-server SRV-013) and a live provider smoke test once
   approved. Add macOS and
   Windows runners when the desktop release needs them.

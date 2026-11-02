@@ -195,6 +195,27 @@ def test_runtime_is_copied_unchanged(exported: Callable[..., Any], tmp_path: Pat
     assert runtime["packages"]["nodestro-runtime"]["version"] == nodestro_runtime.__version__
 
 
+@pytest.mark.parametrize(
+    ("language", "build", "by_id"),
+    [
+        ("en", "build once from Orkexa's repository", "never by the tag"),
+        ("de", "einmal aus Orkexas", "nie über den Tag"),
+    ],
+)
+def test_readme_says_how_to_build_the_sandbox_image(
+    exported: Callable[..., Any], tmp_path: Path, language: str, build: str, by_id: str
+) -> None:
+    """``TOOL_SANDBOX=docker`` needs Orkexa's image: the README gives the build and check commands (Orkexa's own
+    README does not mention the image) and says that containers run the checked image's id."""
+    client, publication = exported()
+    project = _extract(_download(client, _export(client, publication["id"], language=language)["id"]), tmp_path)
+    readme = (project / "README.md").read_text()
+    assert "docker build -t orkexa-sandbox -f docker/sandbox.Dockerfile ." in readme
+    assert "python -m orkexa.dynamic.docker --self-test" in readme
+    assert build in readme and by_id in readme
+    assert "Orkexa's README" not in readme and "Orkexas README" not in readme
+
+
 def test_bundled_library_mode(exported: Callable[..., Any], tmp_path: Path) -> None:
     client, publication = exported()
     record = _export(client, publication["id"], orkexa="bundle", confirm_distribution=True)

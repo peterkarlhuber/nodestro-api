@@ -261,8 +261,11 @@ class StandaloneHost:
                     space.write(item["path"], item["content"])
 
     def _docker_sandbox(self, data_dir: Path) -> DockerSandbox:
-        """``TOOL_SANDBOX=docker``: Orkexa's container sandbox (its ``orkexa-sandbox`` image). Untrusted tools run in
-        it only once the daemon passed the preflight and the in-container self-test, which a background monitor
+        """``TOOL_SANDBOX=docker``: Orkexa's container sandbox (its ``orkexa-sandbox`` image, which the operator builds
+        from Orkexa's digest-pinned ``docker/sandbox.Dockerfile``; the self-test resolves the tag to an image id and
+        containers run that id, never the tag). Nodestro's runtime image is not used: building it needs the runtime's
+        Python environment manager, which an export does not carry. Untrusted tools run in it only once the daemon
+        passed the preflight and the in-container self-test, which a background monitor
         (:mod:`nodestro_runtime.docker_status`) checks; until then they are refused. The containers carry this
         installation's own owner label, so the monitor's reaper (expired containers only) never touches another
         installation's containers on the same daemon."""
