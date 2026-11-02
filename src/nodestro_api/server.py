@@ -16,12 +16,22 @@ sentence listing every problem (``profile.invalid``); nothing has a default that
     Executes queued runs, reaps runs of dead workers and fires schedules (:class:`nodestro_api.worker.ServerWorker`).
 ``nodestro-server create-tenant ID NAME`` / ``nodestro-server setup-link TENANT``
     Create a tenant, and print a one-time setup link that makes the person who opens it the tenant's first owner.
+``nodestro-server secrets reencrypt [--dry-run] [--tenant TENANT]``
+    Move every stored tenant secret (provider keys, MCP tokens, billing admin keys) to the active key of Axentra's
+    keyring (``NODESTRO_AXENTRA=on``, ``NODESTRO_SECRETS_FORMAT=axs1``). Resumable and idempotent; a value that
+    cannot be decrypted is left unchanged and reported (exit code 2).
+``nodestro-server axentra status``
+    Whether Axentra is switched on, its version and pending Axentra migrations.
 ``nodestro-server members TENANT`` / ``set-role TENANT USER ROLE`` / ``remove-member TENANT USER`` /
 ``revoke-sessions USER``
     Membership of a tenant (A-08): list it, add a member or change a role, remove a member (their sessions in the
     tenant end with it), and end every session of a user at once. ``USER`` is a user id (``u_…``), a verified
     e-mail address or the subject at the configured identity provider. A person is known once they logged in at
     least once (a login alone grants nothing); a tenant always keeps at least one owner.
+
+With ``NODESTRO_AXENTRA=on`` (off by default; see :mod:`nodestro_runtime.axentra_platform`) ``migrate`` also applies
+Axentra's migrations to the same database (after the one backup of the run), and ``check``, ``api`` and ``worker``
+require Axentra's schema to be current too.
 
 API and worker processes start only when the database schema is current and Docker is reachable: tool code runs
 only in containers on a server (ADR-0006), so a server without a container runtime does not start. Docker may be
@@ -234,11 +244,37 @@ def _require_containers(server: ServerEnvironment) -> None:
         )
 
 
+def _axentra(server: ServerEnvironment) -> Any:
+    """Axentra's services for this server (not started), ``None`` when ``NODESTRO_AXENTRA`` is off."""
+    config = server.settings.axentra
+    if not config.enabled:
+        return None
+    from nodestro_runtime.axentra_platform import AxentraServices
+
+    schema = os.environ.get("NODESTRO_DATABASE_SCHEMA", "").strip() or None
+    return AxentraServices(
+        config,
+        database_url=server.settings.database_url,
+        public_origin=server.settings.public_origin,
+        schema=schema,
+    )
+
+
+def _require_axentra_schema(server: ServerEnvironment) -> None:
+    services = _axentra(server)
+    if services is not None:
+        try:
+            services.require_current_schema()
+        finally:
+            services.close()
+
+
 def _ready(server: ServerEnvironment) -> Any:
     """The database, after checking that its schema is current and Docker is reachable."""
     database = _database(server)
     try:
         database.require_current_schema()
+        _require_axentra_schema(server)
         _require_containers(server)
     except BaseException:
         database.close()
@@ -343,6 +379,10 @@ def check(server: ServerEnvironment) -> list[str]:
     finally:
         database.close()
     try:
+        _require_axentra_schema(server)
+    except NodestroError as error:
+        problems.append(f"{error.code}: {error}")
+    try:
         _require_containers(server)
     except NodestroError as error:
         problems.append(f"{error.code}: {error}")
@@ -350,24 +390,87 @@ def check(server: ServerEnvironment) -> list[str]:
 
 
 def migrate(server: ServerEnvironment, *, backup_dir: Path | None, backup_taken: bool) -> int:
-    """Apply the migrations; returns the version the database had."""
-    database = _database(server)
+    """Apply the migrations (Nodestro's, then Axentra's when switched on); returns Nodestro's version before.
 
-    def before(current: int, target: int) -> None:
-        if backup_taken:
+    One backup covers the run: it is written before the first change, whichever runner needs it first."""
+    database = _database(server)
+    taken: list[Path] = []
+
+    def backup(label: str) -> None:
+        if backup_taken or taken:
             return
         if backup_dir is None:
             raise NodestroError(
                 "storage.backup_required",
-                f"The database has schema version {current}; take a backup before migrating to {target} "
+                f"The database needs a migration ({label}); take a backup first "
                 "(--backup-dir DIR runs pg_dump, --backup-taken states that you made one)",
             )
-        dump(server, backup_dir / f"pre-migration-{current}-to-{target}-{_stamp()}.dump")
+        taken.append(dump(server, backup_dir / f"pre-migration-{label}-{_stamp()}.dump"))
+
+    def before(current: int, target: int) -> None:
+        backup(f"{current}-to-{target}")
 
     try:
-        return int(database.migrate(before_migration=before))
+        version = int(database.migrate(before_migration=before))
     finally:
         database.close()
+    services = _axentra(server)
+    if services is not None:
+        try:
+            fresh = version == 0 and not taken  # a new database: nothing to back up (as for Nodestro's runner)
+            applied = services.migrate(None if fresh else (lambda pending: backup("axentra")))
+        finally:
+            services.close()
+        if applied:
+            logger.info("Applied %d Axentra migrations", len(applied))
+    return version
+
+
+def reencrypt_secrets(server: ServerEnvironment, *, dry_run: bool, tenant: str | None) -> dict[str, Any]:
+    """``nodestro-server secrets reencrypt``: see :func:`nodestro_runtime.axentra_platform.reencrypt_tenant_secrets`."""
+    from nodestro_runtime.axentra_platform import KeyringSecretBox, reencrypt_tenant_secrets
+
+    box = server.settings.secret_box()
+    if not isinstance(box, KeyringSecretBox) or box.write != "axs1":
+        raise NodestroError(
+            "secrets.keyring_required",
+            "Re-encryption needs NODESTRO_AXENTRA=on and NODESTRO_SECRETS_FORMAT=axs1 (the format new values use)",
+        )
+    database = _database(server)
+    try:
+        database.require_current_schema()
+        report = reencrypt_tenant_secrets(database, box, dry_run=dry_run, tenant=tenant)
+    finally:
+        database.close()
+    logger.info(
+        "Secret re-encryption%s: %d values, %d pending, %d re-encrypted, %d failed",
+        " (dry run)" if dry_run else "",
+        report.total,
+        report.pending,
+        report.reencrypted,
+        len(report.failed),
+    )
+    return report.as_dict()
+
+
+def axentra_status(server: ServerEnvironment) -> list[str]:
+    """``nodestro-server axentra status``: switch, package version, pending migrations."""
+    from nodestro_runtime.axentra_platform import available, axentra_version
+
+    config = server.settings.axentra
+    lines = [
+        f"axentra: {'on' if config.enabled else 'off'}",
+        f"package: {axentra_version() or 'not installed'}" + ("" if available() else " (not usable here)"),
+        f"secrets format: {config.secrets_format}",
+    ]
+    services = _axentra(server)
+    if services is not None:
+        try:
+            pending = services.pending_migrations()
+        finally:
+            services.close()
+        lines.append(f"pending migrations: {', '.join(pending) or 'none'}")
+    return lines
 
 
 def dump(server: ServerEnvironment, target: Path) -> Path:
@@ -624,6 +727,14 @@ def parser() -> argparse.ArgumentParser:
     removing.add_argument("user", help=user_help)
     revoking = commands.add_parser("revoke-sessions", help="End every session of a user (log them out everywhere)")
     revoking.add_argument("user", help=user_help)
+    secrets = commands.add_parser("secrets", help="Tenant secrets: re-encrypt them with Axentra's active key")
+    secrets_commands = secrets.add_subparsers(dest="secrets_command", required=True)
+    reencrypting = secrets_commands.add_parser("reencrypt", help="Re-encrypt stored tenant secrets (resumable)")
+    reencrypting.add_argument("--dry-run", action="store_true", help="Only count what would be re-encrypted")
+    reencrypting.add_argument("--tenant", help="Only this tenant")
+    platform = commands.add_parser("axentra", help="Axentra platform services")
+    platform_commands = platform.add_subparsers(dest="axentra_command", required=True)
+    platform_commands.add_parser("status", help="Switch, version and pending migrations of Axentra")
     pricing = commands.add_parser("pricing", help="Reference prices: status, sync, open reviews and their decisions")
     pricing_commands = pricing.add_subparsers(dest="pricing_command", required=True)
     pricing_commands.add_parser("status", help="Print the state of the reference prices and the open reviews")
@@ -680,6 +791,15 @@ def main(argv: Sequence[str] | None = None) -> None:
             print(remove_member(server, args.tenant_id, args.user))
         elif args.command == "revoke-sessions":
             print(revoke_sessions(server, args.user))
+        elif args.command == "secrets":
+            import json
+
+            report = reencrypt_secrets(server, dry_run=args.dry_run, tenant=args.tenant)
+            print(json.dumps(report, indent=2))
+            if report["failed"]:
+                raise SystemExit(2)
+        elif args.command == "axentra":
+            print("\n".join(axentra_status(server)))
         elif args.command == "pricing":
             print(pricing(server, args.pricing_command, getattr(args, "version", None), getattr(args, "note", None)))
     except NodestroError as error:
@@ -693,6 +813,7 @@ if __name__ == "__main__":  # pragma: no cover
 __all__ = [
     "DEFAULT_PORT",
     "ServerEnvironment",
+    "axentra_status",
     "check",
     "create_server_app",
     "create_tenant",
@@ -703,6 +824,7 @@ __all__ = [
     "members",
     "migrate",
     "pricing",
+    "reencrypt_secrets",
     "remove_member",
     "revoke_sessions",
     "run_worker",
