@@ -229,3 +229,115 @@ def test_the_mirrors_attach_to_the_server_and_reconcile_writes_older_records(
         database.platform_events = None
         services.close()
         database.close()
+
+
+# ---- identity on Axentra (NODESTRO_IDENTITY_BACKEND) ------------------------------------------------------------
+
+
+def _seed_identity(schema: str) -> dict[str, str]:
+    """A tenant with an owner and a viewer who are logged in (written by Nodestro's store alone)."""
+    from nodestro_runtime.identity_store import IdentityStore
+
+    database = PostgresDatabase(DSN, schema=schema)
+    try:
+        identity = IdentityStore(database)
+        identity.create_tenant("acme", "Acme")
+        owner = identity.login("https://login.example", "olga", email="olga@example.com", name="Olga")
+        viewer = identity.login("https://login.example", "viktor")
+        identity.set_role("acme", owner.id, "owner")
+        identity.set_role("acme", viewer.id, "viewer")
+        return {
+            "owner": owner.id,
+            "viewer": viewer.id,
+            "token": identity.create_session(viewer.id, "acme"),
+        }
+    finally:
+        database.close()
+
+
+def test_the_identity_switch_follows_the_backfill(
+    schema: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from nodestro_runtime.axentra_identity import AxentraIdentityStore
+    from nodestro_runtime.identity_store import IdentityStore
+
+    monkeypatch.setattr(command, "_require_containers", lambda _server: None)
+    for key, value in _environment(tmp_path).items():
+        monkeypatch.setenv(key, value)
+    command.main(["migrate"])
+    seeded = _seed_identity(schema)
+    # Switched to axentra before the backfill: the server refuses to start, and says why.
+    switched = command.load({**os.environ, "NODESTRO_IDENTITY_BACKEND": "axentra"})
+    problems = command.check(switched)
+    assert len(problems) == 1 and problems[0].startswith("identity.backfill_required")
+    capsys.readouterr()
+    with pytest.raises(SystemExit) as stopped:
+        command.main(["axentra", "reconcile-identity"])
+    assert stopped.value.code == 1
+    differences = json.loads(capsys.readouterr().out)
+    assert not differences["ok"] and "acme: not linked" in differences["differences"]["tenants"]
+    command.main(["axentra", "backfill-identity", "--dry-run"])
+    dry = json.loads(capsys.readouterr().out)
+    assert dry["dry_run"] and dry["users"]["created"] == 2 and dry["sessions"]["copied"] == 1
+    command.main(["axentra", "backfill-identity"])
+    done = json.loads(capsys.readouterr().out)
+    assert done["memberships"]["added"] == 2 and done["sessions"]["copied"] == 1
+    command.main(["axentra", "reconcile-identity"])
+    output = capsys.readouterr().out
+    assert json.loads(output)["ok"] is True
+    assert seeded["token"] not in output + json.dumps(done)
+    assert command.check(switched) == []
+    # Axentra answers now: the session from before the switch, the member commands, removal ends access.
+    database = PostgresDatabase(DSN, schema=schema)
+    services, identity = command._platform(switched, database)
+    try:
+        assert isinstance(identity, AxentraIdentityStore) and identity.mode == "axentra"
+        assert identity.session(seeded["token"]).role == "viewer"  # type: ignore[union-attr]
+        assert command.set_role(switched, "acme", seeded["viewer"], "editor").endswith("(was viewer)")
+        assert identity.session(seeded["token"]).role == "editor"  # type: ignore[union-attr]
+        assert sorted(line.split("\t")[1] for line in command.members(switched, "acme")) == ["editor", "owner"]
+        with pytest.raises(NodestroError) as caught:
+            command.remove_member(switched, "acme", "olga@example.com")
+        assert caught.value.code == "identity.last_owner"
+        command.remove_member(switched, "acme", seeded["viewer"])
+        assert identity.session(seeded["token"]) is None
+        assert any(line == "identity backend: axentra" for line in command.axentra_status(switched))
+    finally:
+        services.close()
+        database.close()
+    # Back to Nodestro's store (the rollback is a restart): its tables were kept current.
+    database = PostgresDatabase(DSN, schema=schema)
+    try:
+        assert IdentityStore(database).role("acme", seeded["viewer"]) is None
+    finally:
+        database.close()
+    command.main(["axentra", "reconcile-identity"])
+    assert json.loads(capsys.readouterr().out)["ok"] is True
+
+
+def test_the_identity_backfill_needs_axentra(schema: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    for key, value in _environment(tmp_path, NODESTRO_AXENTRA="off").items():
+        monkeypatch.setenv(key, value)
+    for arguments in (["axentra", "backfill-identity"], ["axentra", "reconcile-identity"]):
+        with pytest.raises(SystemExit) as stopped:
+            command.main(arguments)
+        assert str(stopped.value).startswith("axentra.disabled")
+    with pytest.raises(NodestroError) as caught:
+        command.load({**os.environ, "NODESTRO_IDENTITY_BACKEND": "mirror"})
+    assert caught.value.code == "profile.invalid"
+
+
+def test_mirror_mode_writes_both_sides_from_the_member_commands(
+    schema: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    for key, value in _environment(tmp_path, NODESTRO_IDENTITY_BACKEND="mirror").items():
+        monkeypatch.setenv(key, value)
+    command.main(["migrate"])
+    loaded = command.load()
+    command.create_tenant(loaded, "acme", "Acme")
+    link = command.setup_link(loaded, "acme")
+    assert "/api/auth/login?setup=" in link
+    capsys.readouterr()
+    command.main(["axentra", "reconcile-identity"])
+    report = json.loads(capsys.readouterr().out)
+    assert report["ok"] is True and report["counts"]["tenants"] == 1
