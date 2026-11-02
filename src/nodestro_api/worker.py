@@ -18,7 +18,15 @@ or more worker processes (:class:`ServerWorker`). Every worker:
   idempotent, so a second worker or a retry never counts or notifies twice);
 - deletes what is no longer needed while it holds the scheduler lock (:meth:`ServerWorker.clean_up`): expired
   sessions and abandoned login starts, finished jobs after :attr:`WorkerSettings.job_retention` and run events after
-  :attr:`WorkerSettings.event_retention` (the runs themselves stay).
+  :attr:`WorkerSettings.event_retention` (the runs themselves stay);
+- keeps the Docker sandbox's proof warm (:class:`DockerWatch`): from its start it reads the process's Docker monitor
+  (:mod:`nodestro_runtime.docker_status`) every :attr:`WorkerSettings.docker_every` seconds, well within the proof's
+  ``PROOF_TTL``, so a job after an idle spell is not refused with ``docker-checking`` only because the proof expired.
+  A read never waits and never forces a check: the monitor starts its background check only when its preflight is
+  older than ``PREFLIGHT_TTL``, never two at once, and runs the self-test again only for a changed daemon or after a
+  failure.
+  Nothing runs in Docker before the check passed (fail-closed, as before); the worker logs each change of the state
+  (proven, unavailable with its reason) once, with fixed texts and no host details.
 
 A suspended tenant (:meth:`nodestro_runtime.identity_store.IdentityStore.tenant_active`, answered by the identity
 backend) is closed for workers too: a claimed job of it fails with ``identity.tenant_suspended`` before its run starts
@@ -35,12 +43,15 @@ test series, assistant drafts and Python environment installations still run in 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable, Iterable
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import timedelta
 import logging
 from typing import Any
 
+from nodestro_runtime import docker_status
+from nodestro_runtime.docker_status import DockerMonitorLike, DockerStatus
 from nodestro_runtime.identity_store import IdentityStore, tenant_suspended
 from nodestro_runtime.jobs import (
     DEFAULT_MAX_RUNS,
@@ -58,6 +69,7 @@ from nodestro_runtime.jobs import (
 from .context import Nodestro
 from .identity import TenantWorkspaces
 from .pricing_setup import PriceSyncConfig, server_sync
+from .sandbox_status import PUBLIC_DETAILS
 from .schedules import TICK_SECONDS
 from .server_app import TenantFiles, close_tenant
 
@@ -92,6 +104,81 @@ class WorkerSettings:
     event_retention: timedelta = timedelta(days=2)
     #: How often the scheduler leader settles run usage and sweeps notifications into Axentra (seconds).
     platform_every: float = 30.0
+    #: How often the worker reads the Docker monitor's status to keep the sandbox's proof fresh (seconds; at most
+    #: half of ``PROOF_TTL``, 600 s). Each read costs at most one ``docker info`` in the monitor's thread.
+    docker_every: float = 120.0
+
+
+#: How often :class:`DockerWatch` reads the status while the check runs (seconds): below the monitor's
+#: ``PREFLIGHT_TTL`` (5 s), so the read after the check finished never starts another one.
+DOCKER_CHECKING_POLL = 2.0
+
+
+def uses_docker(context: Any) -> bool:
+    """Whether tool code of this workspace can run in Docker (:func:`nodestro_runtime.sandbox_selection.select`):
+    always outside the desktop profile (a server tenant), on the desktop in the ``docker`` and ``auto`` modes. In the
+    ``linux`` and ``subprocess`` modes Docker runs nothing, so its proof need not be kept warm."""
+    if context.sandbox_policy.profile != "desktop":
+        return True
+    return getattr(context.tools, "sandbox_mode", None) in ("docker", "auto")
+
+
+class DockerWatch:
+    """Keeps the process's Docker proof warm and reports its state (see the module documentation).
+
+    ``monitors`` returns the Docker monitors of the open workspaces that use Docker (one per process and daemon,
+    :func:`nodestro_runtime.docker_status.monitor_for`; duplicates are read once). The watch only reads
+    :meth:`~nodestro_runtime.docker_status.DockerMonitor.status`, which never blocks: it never waits for the daemon,
+    never forces a check or a self-test, and never changes what counts as proven."""
+
+    def __init__(self, monitors: Callable[[], Iterable[DockerMonitorLike]]) -> None:
+        self.monitors = monitors
+        #: The last reported ``(state, reason)`` per monitor (the monitor is kept, so its id is not reused).
+        self._reported: dict[int, tuple[DockerMonitorLike, tuple[str, str]]] = {}
+
+    def poll(self) -> list[DockerStatus]:
+        """Read every monitor once (starting a background check where one is due) and log state changes."""
+        found: dict[int, DockerMonitorLike] = {}
+        for monitor in self.monitors():
+            found.setdefault(id(monitor), monitor)
+        statuses = []
+        for monitor in found.values():
+            status = monitor.status()
+            self._report(monitor, status)
+            statuses.append(status)
+        return statuses
+
+    def _report(self, monitor: DockerMonitorLike, status: DockerStatus) -> None:
+        state = (status.state, status.reason)
+        last = self._reported.get(id(monitor))
+        if last is not None and last[1] == state:
+            return
+        self._reported[id(monitor)] = (monitor, state)
+        # Fixed texts only: the monitor's own detail can name socket paths or DOCKER_HOST addresses.
+        if status.state == "approved":
+            logger.info("Docker sandbox proven (preflight and self-test passed); tool code may run in it")
+        elif status.state == "checking":
+            logger.info("Docker sandbox check running (preflight and self-test); tool code is refused until it passed")
+        else:
+            logger.warning(
+                "Docker sandbox unavailable (%s): %s; tool code is refused until a check passes",
+                status.reason or "docker-unreachable",
+                PUBLIC_DETAILS.get(status.reason, "The Docker sandbox is not available"),
+            )
+
+    async def run(self, stop: asyncio.Event, every: float, checking_every: float = DOCKER_CHECKING_POLL) -> None:
+        """Poll until ``stop`` is set: at once (the warm-up), every ``checking_every`` seconds while a check runs,
+        otherwise every ``every`` seconds (at most half of ``PROOF_TTL``)."""
+        every = min(every, docker_status.PROOF_TTL / 2)
+        while not stop.is_set():
+            statuses: list[DockerStatus] = []
+            try:
+                statuses = self.poll()
+            except Exception:
+                logger.exception("Reading the Docker sandbox status failed")
+            pause = checking_every if any(status.state == "checking" for status in statuses) else every
+            with suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(stop.wait(), timeout=pause)
 
 
 class ServerWorker:
@@ -127,6 +214,12 @@ class ServerWorker:
         #: notifications (:class:`nodestro_runtime.axentra_notify.AxentraNotifications`).
         self.settlement: Any | None = None
         self.notifications: Any | None = None
+        self.docker = DockerWatch(self._docker_monitors)
+
+    def _docker_monitors(self) -> list[DockerMonitorLike]:
+        """The Docker monitors of the open contexts that use Docker (on a server: one, shared by every tenant)."""
+        contexts = [*self.scheduling.opened(), *self.executing.opened()]
+        return [context.docker_monitor for context in contexts if uses_docker(context)]
 
     def _executing(self, tenant_id: str) -> Nodestro:
         """The context a claimed job executes in; a suspended tenant's job fails here (before its run starts or
@@ -224,9 +317,12 @@ class ServerWorker:
 
         A run that is executing when ``stop`` is set is finished first (drain); a worker that is killed instead
         leaves its job to the reaper of another worker."""
-        # Overdue questions of paused runs expire before this worker continues any run (M6b).
+        # Overdue questions of paused runs expire before this worker continues any run (M6b). The sweep opens the
+        # active tenants' contexts, and with them the process's Docker monitor, whose first check starts then.
         await self.sweep_tool_waits()
         tasks = [
+            # Reads the Docker status at once and then periodically: the proof stays fresh while the worker runs.
+            asyncio.create_task(self.docker.run(stop, self.settings.docker_every), name="worker-docker"),
             asyncio.create_task(
                 self._every(stop, self.settings.reap_every, self.sweep_tool_waits), name="worker-tool-waits"
             ),
@@ -308,4 +404,4 @@ class ServerWorker:
             self.leader.release()
 
 
-__all__ = ["ServerWorker", "WorkerSettings"]
+__all__ = ["DOCKER_CHECKING_POLL", "DockerWatch", "ServerWorker", "WorkerSettings", "uses_docker"]

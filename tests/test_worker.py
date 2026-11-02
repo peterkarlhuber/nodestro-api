@@ -11,6 +11,7 @@ from collections.abc import Callable, Coroutine, Iterator
 from datetime import UTC, datetime, timedelta
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import queue
@@ -31,6 +32,7 @@ pytest.importorskip("jwt")
 from nodestro_runtime.identity_store import IdentityStore
 from nodestro_runtime.jobs import RUN_JOB, JobQueue
 from nodestro_runtime.storage_postgres import PostgresDatabase
+from nodestro_runtime.testing import StaticDockerMonitor
 import stub_oidc
 from test_identity import DSN, Server, _wait
 
@@ -558,3 +560,59 @@ def test_a_suspended_tenants_schedules_do_not_fire(server: Server, make_worker: 
     assert worker.call(worker.worker.fire_schedules()) == []
     server.identity.set_tenant_status("acme", "active")
     assert len(worker.call(worker.worker.fire_schedules())) == 1
+
+
+# ---- the Docker sandbox's proof ---------------------------------------------------------------------------------
+
+
+class CountingDockerMonitor(StaticDockerMonitor):
+    """The process's one Docker monitor in a test: counts status reads (no thread, no docker CLI)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.reads = 0
+
+    def status(self, *, refresh: bool = False, wait: float = 0.0) -> Any:
+        self.reads += 1
+        return super().status(refresh=refresh, wait=wait)
+
+
+def test_a_worker_checks_docker_from_its_start_and_stops_watching_with_stop(
+    server: Server,
+    make_worker: Callable[..., Background],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from nodestro_runtime import docker_status
+
+    monitor = CountingDockerMonitor()  # "Docker missing": every tool run is refused
+    monkeypatch.setattr(docker_status, "monitor_for", lambda *args, **kwargs: monitor)
+    caplog.set_level(logging.INFO, logger="nodestro_api.worker")
+    server.member("acme", "alice", "owner")
+    worker = make_worker(docker_every=0.05)
+    stop = asyncio.Event()
+    serving = worker.submit(worker.worker.serve(stop))
+
+    async def names() -> set[str]:
+        return {task.get_name() for task in asyncio.all_tasks() if not task.done()}
+
+    try:
+        # No job was queued: the tenant's context (and the monitor's check) opened at the start, the watch reads it.
+        deadline = time.monotonic() + 10
+        while monitor.reads < 3 and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert monitor.reads >= 3
+        assert "worker-docker" in worker.call(names())
+        assert worker.worker.executing.opened() == []  # no job ran
+    finally:
+        worker.loop.call_soon_threadsafe(stop.set)
+    serving.result(30)
+    assert "worker-docker" not in worker.call(names())
+    reads = monitor.reads
+    time.sleep(0.2)
+    assert monitor.reads == reads  # the watch stopped with ``stop``
+    logged = [r.getMessage() for r in caplog.records if r.name == "nodestro_api.worker" and "Docker" in r.getMessage()]
+    assert logged == [
+        "Docker sandbox unavailable (docker-missing): Docker is not installed; "
+        "tool code is refused until a check passes"
+    ]

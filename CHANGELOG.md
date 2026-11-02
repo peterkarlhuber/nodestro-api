@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Server worker keeps the Docker sandbox's proof warm (2026-11-02)
+
+- A server worker (`nodestro-server worker`) now reads the process's Docker monitor from its start and then every
+  `WorkerSettings.docker_every` seconds (default 120, at most half of the runtime's `PROOF_TTL` of 600 s), so the
+  monitor's background check starts when the worker starts and its proof stays fresh while the worker runs. A job
+  after an idle spell is no longer refused with `docker-checking` only because the proof expired.
+- No extra load and no change to the security model: the watch only reads the existing monitor's status (one monitor
+  per process; it checks in its own thread, at most one check at a time, `docker info` at most every 5 s, the
+  self-test again only for a changed daemon or after a failure). Tool code still runs only after the preflight and
+  the self-test passed; an unavailable daemon or a refusing self-test still refuses every tool run.
+- The worker logs each change of the Docker sandbox's state once (check running, proven, unavailable with its reason
+  code), with fixed texts and no host details (no socket paths or `DOCKER_HOST` addresses).
+- Only workspaces whose tool code can run in Docker are watched (on a server: every tenant; on a desktop the `docker`
+  and `auto` modes); the watch ends with `stop`.
+
 ### Stopping a suspended tenant's tool generation jobs (security review round 3, NF-1, 2026-11-02)
 
 - `server_app.stop_tenant_work` also stops the tenant's tool generation jobs (`POST /api/tools/jobs`), before its
