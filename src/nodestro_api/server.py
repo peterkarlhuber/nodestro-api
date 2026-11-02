@@ -376,6 +376,8 @@ def _observed(server: ServerEnvironment, database: Any, services: Any, identity:
         instrument_identity(identity)
         metrics = ServerMetrics(database, services)
     return services, notifications, metrics
+
+
 def _input_files(server: ServerEnvironment, database: Any, services: Any) -> Any:
     """Axentra's storage for the input files (``NODESTRO_FILES_BACKEND=axentra``; ``services`` started), else
     ``None`` (the data volume)."""
