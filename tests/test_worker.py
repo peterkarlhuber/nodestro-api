@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Coroutine, Iterator
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 import hashlib
 import json
 import os
@@ -288,7 +288,7 @@ def test_only_the_leader_fires_a_schedule_and_each_slot_fires_once(
     server: Server, make_worker: Callable[..., Background], connect: Callable[[], PostgresDatabase]
 ) -> None:
     alice = server.member("acme", "alice", "owner")
-    slot = datetime(2026, 10, 31, 8, 0, tzinfo=timezone.utc)
+    slot = datetime(2026, 10, 31, 8, 0, tzinfo=UTC)
     schedule_id = _due_schedule(server, alice, slot)
     first, second = make_worker(), make_worker()
     for background in (first, second):
@@ -549,7 +549,7 @@ def test_a_worker_stops_the_runs_of_a_tenant_suspended_while_they_execute(
 
 def test_a_suspended_tenants_schedules_do_not_fire(server: Server, make_worker: Callable[..., Background]) -> None:
     alice = server.member("acme", "alice", "owner")
-    slot = datetime(2026, 10, 31, 8, 0, tzinfo=timezone.utc)
+    slot = datetime(2026, 10, 31, 8, 0, tzinfo=UTC)
     _due_schedule(server, alice, slot)
     worker = make_worker()
     context = worker.call(_scheduling(worker, "acme"))

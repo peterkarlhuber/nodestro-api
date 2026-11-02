@@ -50,7 +50,7 @@ DSN = os.environ.get("NODESTRO_TEST_POSTGRES", "")
 @pytest.fixture(params=["nodestro", "mirror", "axentra"])
 def backend(request: pytest.FixtureRequest) -> str:
     if request.param != "nodestro":
-        pytest.importorskip("axentra", reason="Axentra needs Python 3.11+")
+        pytest.importorskip("axentra", reason="needs the axentra package (the server extra)")
     return str(request.param)
 
 
@@ -801,7 +801,7 @@ def test_logins_and_sessions_through_every_identity_switch_and_back(database: Po
     """nodestro -> mirror -> axentra -> mirror -> nodestro, one restart each, real OIDC callbacks in every mode:
     sessions survive, ended sessions stay ended, roles and removals apply at once, a tenant switch rotates the
     session, and nobody is merged by e-mail."""
-    pytest.importorskip("axentra", reason="Axentra needs Python 3.11+")
+    pytest.importorskip("axentra", reason="needs the axentra package (the server extra)")
     from nodestro_runtime.axentra_identity import AxentraIdentityStore, backfill_identity, reconcile_identity
     from nodestro_runtime.axentra_platform import AxentraLink
 

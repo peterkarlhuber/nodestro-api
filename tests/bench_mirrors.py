@@ -17,7 +17,7 @@ On the database of a server process (``before``: Axentra off, one role; ``after`
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 import json
 import logging
 import sys
@@ -143,7 +143,7 @@ def write_costs(found: ps.Setup, config: str, tenants: list[str], writes: int) -
 
 def seed_runs(found: ps.Setup, tenants: list[str], runs: int, *, start: int, age: timedelta) -> None:
     """``runs`` finished top-level runs (succeeded, usage with a complete cost), ``updated_at`` ``age`` ago."""
-    at = datetime.now(timezone.utc) - age
+    at = datetime.now(UTC) - age
     with psycopg.connect(found.owner_url, autocommit=True) as connection:
         connection.execute(sql.SQL("SET search_path TO {}").format(sql.Identifier(found.schema)))
         with connection.cursor().copy(

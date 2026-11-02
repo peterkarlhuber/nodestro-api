@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 import io
 import json
 from pathlib import Path
@@ -369,7 +369,7 @@ def test_files_are_kept_for_paused_runs_and_survive_a_restart(make_app: Callable
     )
     paused = wait(client, started.json()["id"])
     assert paused["status"] == "paused"
-    far_future = datetime.now(timezone.utc) + timedelta(days=400)
+    far_future = datetime.now(UTC) + timedelta(days=400)
     inputs: InputFiles = client.app.state.nodestro.inputs  # type: ignore[attr-defined]
     result = inputs.cleanup(older_than_days=1, at=far_future)
     assert result.kept_in_use == 1 and item["id"] in inputs
@@ -386,7 +386,7 @@ def test_storage_is_content_addressed_and_cleaned_up(tmp_path: Path) -> None:
     assert first.blob == second.blob and first.id != second.id
     assert inputs.storage().files == 2 and inputs.storage().unreferenced == 2
     assert inputs.cleanup().removed == 0  # within the grace period
-    later = datetime.now(timezone.utc) + timedelta(days=2)
+    later = datetime.now(UTC) + timedelta(days=2)
     assert inputs.cleanup(at=later).removed == 2
     assert not list((tmp_path / "inputs").rglob("*.bin")) or inputs.storage().files == 0
 
@@ -605,7 +605,7 @@ def test_docx_results_have_headings_tables_and_formatting() -> None:
     data = office.to_docx(
         REPORT,
         "Bericht",
-        datetime(2026, 1, 1, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, tzinfo=UTC),
     )
     archive = zipfile.ZipFile(io.BytesIO(data))
     document = archive.read("word/document.xml").decode()
@@ -613,7 +613,7 @@ def test_docx_results_have_headings_tables_and_formatting() -> None:
     assert data == office.to_docx(
         REPORT,
         "Bericht",
-        datetime(2026, 1, 1, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, tzinfo=UTC),
     )
 
 
@@ -622,7 +622,7 @@ def test_xlsx_results_have_typed_columns_and_several_sheets() -> None:
         "Rechnungen": [{"nr": "R-1", "betrag": 120.5, "bezahlt": True, "datum": "2026-01-31"}],
         "Kunden": [{"name": "=HACK()", "umsatz": 3}],
     }
-    data = office.to_xlsx(value, "Export", datetime(2026, 1, 1, tzinfo=timezone.utc))
+    data = office.to_xlsx(value, "Export", datetime(2026, 1, 1, tzinfo=UTC))
     archive = zipfile.ZipFile(io.BytesIO(data))
     workbook = archive.read("xl/workbook.xml").decode()
     assert "Rechnungen" in workbook and "Kunden" in workbook

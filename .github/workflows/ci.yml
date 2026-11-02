@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.10", "3.13"]
+        python: ["3.11", "3.13"]
     # Logins and tenant isolation (tests/test_identity.py) run against a real PostgreSQL; a missing one fails.
     services:
       postgres:

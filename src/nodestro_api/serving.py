@@ -1352,7 +1352,7 @@ class ServingCore:
                         return
                     try:
                         item = await asyncio.wait_for(queue.get(), timeout=15)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         yield ": keep-alive\n\n"
                         continue
                     if item is None:

@@ -9,7 +9,7 @@ description = "Nodestro API – the HTTP backend of Nodestro: studio REST API, r
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [{ name = "Peter Karlhuber" }]
 dependencies = [
     "nodestro-runtime @ git+https://github.com/peterkarlhuber/nodestro-runtime.git@0369132fadf3fd2b96ead8c03774f420aaf9d5b6",
@@ -23,7 +23,7 @@ dependencies = [
 [project.optional-dependencies]
 # The multi-tenant studio API with logins (nodestro_api.server_app): PostgreSQL and OpenID Connect.
 server = [
-    # The runtime's PostgreSQL store and, on Python 3.11+, Axentra (off unless NODESTRO_AXENTRA=on).
+    # The runtime's PostgreSQL store and Axentra (off unless NODESTRO_AXENTRA=on).
     "nodestro-runtime[postgres] @ git+https://github.com/peterkarlhuber/nodestro-runtime.git@0369132fadf3fd2b96ead8c03774f420aaf9d5b6",
     "psycopg[binary,pool]>=3.2",
     "PyJWT[crypto]>=2.9",
@@ -62,7 +62,7 @@ addopts = "-ra --strict-markers"
 
 [tool.ruff]
 line-length = 120
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
@@ -74,19 +74,13 @@ known-third-party = ["nodestro_runtime", "nodestro_examples"]
 known-local-folder = ["architect_script", "conftest", "test_runs", "test_flow", "test_files", "test_automation"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 strict = true
 packages = ["nodestro_api"]
 mypy_path = "src"
 
 [[tool.mypy.overrides]]
-# The MCP SDK needs Python 3.11+ (a runtime dependency with an environment marker); on 3.10 it is not installed and
-# the MCP server endpoint answers mcp.unavailable.
-module = ["mcp", "mcp.*", "mcp_types", "mcp_types.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-# Axentra needs Python 3.11+ (nodestro-runtime[postgres] installs it with an environment marker); on 3.10 the
-# Axentra switches stay off and these imports are never reached. On 3.11+ mypy checks them against the real package.
+# Axentra is optional (nodestro-runtime[postgres] installs it): mypy also runs where it is not installed, and without
+# it the Axentra switches stay off and these imports are never reached.
 module = ["axentra", "axentra.*"]
 ignore_missing_imports = true

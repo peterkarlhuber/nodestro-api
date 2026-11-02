@@ -65,7 +65,7 @@ class McpStats(BaseModel):
 
 
 class McpStatus(BaseModel):
-    #: The MCP SDK is installed (Python 3.11+); without it servers can be configured but not reached.
+    #: The MCP SDK is installed (a dependency); without it servers can be configured but not reached.
     available: bool
     #: Tokens can be stored (encrypted); otherwise they are kept for the session only.
     token_vault: bool

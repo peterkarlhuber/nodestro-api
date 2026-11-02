@@ -1,14 +1,12 @@
 """The API of connected MCP services (ADR-0007, WP-3): routes, permissions, tokens and tenant isolation.
 
 The desktop cases talk to a local MCP test server on the loopback interface (allowed per server on the desktop
-profile only). The MCP SDK needs Python 3.11+; on 3.10 the cases that connect are skipped and the status route reports
-``available: false``. The multi-tenant cases need PostgreSQL (see ``test_identity``).
+profile only). The multi-tenant cases need PostgreSQL (see ``test_identity``).
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-import importlib.util
 import sys
 from typing import Any
 
@@ -16,14 +14,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 MakeApp = Callable[..., TestClient]
-SDK = importlib.util.find_spec("mcp") is not None
-needs_sdk = pytest.mark.skipif(not SDK, reason="the MCP SDK needs Python 3.11+")
 TOKEN = "nodestro-secret-token-123456"
-
-
-def test_the_sdk_is_present_where_it_can_be() -> None:
-    # A skipped connection test is not a proof: on 3.11+ the SDK must be installed.
-    assert SDK is (sys.version_info >= (3, 11))
 
 
 @pytest.fixture
@@ -46,7 +37,7 @@ def test_the_status_describes_the_desktop_setup(make_app: MakeApp, monkeypatch: 
     monkeypatch.delenv("NODESTRO_MCP_UNATTENDED", raising=False)
     status = make_app().get("/api/mcp/status").json()
     assert status == {
-        "available": SDK,
+        "available": True,
         "token_vault": False,
         "endpoint_list": None,
         "loopback_possible": True,
@@ -54,6 +45,12 @@ def test_the_status_describes_the_desktop_setup(make_app: MakeApp, monkeypatch: 
         "write_tools_enabled": False,
         "stdio_possible": False,
     }
+
+
+def test_without_the_sdk_the_status_reports_mcp_unavailable(make_app: MakeApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The SDK is a dependency; an installation without it still answers (the code stays part of the contract).
+    monkeypatch.setitem(sys.modules, "mcp", None)  # import mcp raises ImportError
+    assert make_app().get("/api/mcp/status").json()["available"] is False
 
 
 def test_servers_are_added_changed_and_removed(make_app: MakeApp) -> None:
@@ -124,7 +121,6 @@ def test_tokens_are_sealed_with_the_desktop_vault_key(make_app: MakeApp, monkeyp
     assert ctx.mcp.token(stored) == TOKEN
 
 
-@needs_sdk
 def test_discovery_approval_and_the_tool_list(make_app: MakeApp, loopback: Any) -> None:
     client = make_app()
     server = _add(client, loopback.url)
@@ -182,7 +178,6 @@ def test_discovery_approval_and_the_tool_list(make_app: MakeApp, loopback: Any) 
     assert "tool_approved" in kinds and "tool_rejected" in kinds
 
 
-@needs_sdk
 def test_resources_are_read_through_an_approved_tool(make_app: MakeApp) -> None:
     from urllib.parse import quote
 
@@ -213,7 +208,6 @@ def test_resources_are_read_through_an_approved_tool(make_app: MakeApp) -> None:
         handle.stop()
 
 
-@needs_sdk
 def test_an_unreachable_server_is_reported_with_a_stable_code(make_app: MakeApp) -> None:
     from mcp_test_server import _free_port
 
@@ -235,7 +229,6 @@ def oauth_servers() -> Iterator[tuple[Any, Any]]:
     runner.should_exit = True
 
 
-@needs_sdk
 def test_an_oauth_server_is_signed_in_through_the_browser_callback(
     make_app: MakeApp, oauth_servers: tuple[Any, Any]
 ) -> None:

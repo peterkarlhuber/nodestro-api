@@ -58,7 +58,7 @@ async def architect_events(job_id: str, request: Request, ctx: Ctx) -> Streaming
                     return
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=access.wait)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield ": keep-alive\n\n"
                     continue
                 if event is None:

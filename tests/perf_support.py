@@ -20,7 +20,7 @@ from collections.abc import Iterator, Mapping
 import contextlib
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 import hashlib
 import json
 import os
@@ -215,7 +215,7 @@ def seed_identity(
             tenant: ("owner" if index < tenants and position == 0 else rng.choice(ROLES[1:]))
             for position, tenant in enumerate(chosen)
         }
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     rows = []
     found_sessions = []
     pairs = [(user, tenant) for user, held in memberships.items() for tenant in held]
@@ -358,7 +358,7 @@ def write_result(name: str, result: dict[str, Any]) -> Path:
     """Write ``result`` to ``OUT/<name>.json`` (and read it back: the target may be a network mount)."""
     OUT.mkdir(parents=True, exist_ok=True)
     target = OUT / f"{name}.json"
-    payload = {"benchmark": name, "at": datetime.now(timezone.utc).isoformat(), "machine": machine(), **result}
+    payload = {"benchmark": name, "at": datetime.now(UTC).isoformat(), "machine": machine(), **result}
     target.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
     json.loads(target.read_text(encoding="utf-8"))
     print(f"wrote {target}", file=sys.stderr)

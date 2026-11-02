@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import suppress
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 import hashlib
 import json
 import time
@@ -525,7 +525,7 @@ def _time(text: object) -> datetime | None:
         value = datetime.fromisoformat(str(text).replace("Z", "+00:00"))
     except ValueError:
         return None
-    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 def _conflict(current: Workflow) -> ApiError:
@@ -966,12 +966,12 @@ def list_runs(
 
 
 def _iso(value: datetime) -> str:
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _run_key(run: RunSummary) -> tuple[datetime, str]:
     """The order of the run list: by creation, then by id (two runs can share a time)."""
-    created = run.created_at if run.created_at.tzinfo is not None else run.created_at.replace(tzinfo=timezone.utc)
+    created = run.created_at if run.created_at.tzinfo is not None else run.created_at.replace(tzinfo=UTC)
     return created, run.id
 
 
@@ -1204,7 +1204,7 @@ async def run_events(run_id: str, request: Request, ctx: Ctx) -> StreamingRespon
                     return
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=access.wait)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield ": keep-alive\n\n"
                     continue
                 if event is None:
@@ -1346,7 +1346,7 @@ def usage(ctx: Ctx, days: int = Query(30, ge=1, le=365)) -> UsageReport:
         # The lean run has every field models_of_run reads (sub-workflow runs it reads in full itself).
         for model, model_usage in models_of_run(ctx, cast(Run, run)).items():
             _add(model_bucket(model), model_usage, run=True)
-    since = datetime.fromtimestamp(cutoff, tz=timezone.utc)
+    since = datetime.fromtimestamp(cutoff, tz=UTC)
     entries = ctx.usage_log.entries(since)
     for entry in entries:
         for bucket in (
