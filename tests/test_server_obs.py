@@ -339,15 +339,18 @@ _BAD_CURSORS = [
     _cursor(["\u0662\u0660\u0662\u0666-11-02T10:00:00+00:00", "msg_x"]),  # non-ASCII digits
     _cursor(["2026-11-02T10:00:00.1234567+00:00", "msg_x"]),  # more than microseconds
     _cursor(["2026-11-31T10:00:00+00:00", "msg_x"]),  # no such day
+    _cursor(["2026-11-02 10:00:00.123456+00:00", "msg_x"]),  # a space instead of T (not Axentra's form)
+    _cursor(["2026-11-02T10:00Z", "msg_x"]),  # no seconds
+    _cursor(["2026-11-02T10:00:00.5-05", "msg_x"]),  # an hour-only offset
+    _cursor(["2026-11-02T10:00:00+05:30:15", "msg_x"]),  # an offset with seconds
 ]
 
-#: Cursors in every shape the check lets through (Axentra's own ``str(datetime)`` form among them).
+#: Cursors in the shapes Axentra writes (``datetime.isoformat()`` of an aware value) and accepts back.
 _GOOD_CURSORS = [
     _cursor(["2026-11-02T10:00:00+00:00", "msg_x"]),
-    _cursor(["2026-11-02 10:00:00.123456+00:00", "msg_01JBX4Z6Q5ZC1RSV3E7D1W2K3M"]),
-    _cursor(["2026-11-02T10:00Z", "msg_x"]),
-    _cursor(["2026-11-02T10:00:00.5-05", "msg_x"]),
-    _cursor(["2026-11-02T10:00:00+05:30:15", "msg_x"]),
+    _cursor(["2026-11-02T10:00:00.123456+00:00", "msg_01JBX4Z6Q5ZC1RSV3E7D1W2K3M"]),
+    _cursor(["2026-11-02T10:00:00Z", "msg_x"]),
+    _cursor(["2026-11-02T10:00:00.5-05:00", "msg_x"]),
 ]
 
 

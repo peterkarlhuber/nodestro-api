@@ -10,8 +10,8 @@
 
 ### Security re-review fixes (SR-01a, SR-01b, SR-03a, SR-04a, SR-06a)
 
-Needs the nodestro-runtime commit with the same fixes (`RunChat.cancel_answers`, `PythonEnvironments.cancel_installs`,
-`AxentraServices.key_samples`); the runtime pin moves once it is merged.
+Runtime pin `0369132` (nodestro-runtime #87: the same fixes with `RunChat.cancel_answers`,
+`PythonEnvironments.cancel_installs` and `AxentraServices.key_samples`; Axentra `024da57`). Examples pin `b7a1d65` (examples #50).
 
 - `tests/test_tenant_filters.py` runs the runtime's stricter tenant check (names resolved where they are read, texts
   that start with an unknown part reported) over the API package; it still reports nothing.
@@ -22,7 +22,9 @@ Needs the nodestro-runtime commit with the same fixes (`RunChat.cancel_answers`,
   that only those columns use are refused (`profile.invalid`).
 - `/api/notifications` accepts only cursors whose timestamp and message id PostgreSQL reads the way Python does: a NUL
   byte, an ISO week date, an offset with a fraction, a comma fraction, non-ASCII digits or a lone surrogate is a 400
-  `notifications.invalid_cursor` (they were 500s), and the input is never echoed.
+  `notifications.invalid_cursor` (they were 500s), and the input is never echoed. The timestamp must have the exact
+  form Axentra writes and accepts since AX-R1 (`YYYY-MM-DDTHH:MM:SS[.ffffff]` plus `Z` or `±HH:MM`); Axentra's own
+  `InvalidCursor` maps to the same 400.
 
 ### Security review fixes (SR-01, SR-03 to SR-06, SR-09, SR-10)
 

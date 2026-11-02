@@ -26,9 +26,10 @@ MAX_CURSOR = 512
 #: The timestamp of a cursor as Axentra writes it (``str(datetime)``, or ISO 8601 with ``T``), in the subset that both
 #: Python and PostgreSQL read the same way: no week dates, no comma fractions, no fractional or other exotic offsets,
 #: ASCII digits only (security re-review SR-06a).
+# The exact form Axentra writes (``datetime.isoformat()`` of an aware value, or ``Z``) and accepts back since its
+# re-review fix AX-R1; any other shape is refused here before Axentra sees it.
 _CURSOR_TIME = re.compile(
-    r"[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}(:[0-9]{2}(\.[0-9]{1,6})?)?"
-    r"(Z|[+-][0-9]{2}(:[0-9]{2}(:[0-9]{2})?)?)"
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})"
 )
 #: A message id as Axentra makes them (``msg_<base32>``), ASCII only: no NUL byte, no lone surrogate.
 _CURSOR_ID = re.compile(r"[A-Za-z0-9_-]{1,200}")
@@ -120,8 +121,14 @@ def notifications_router(notifications: Any) -> APIRouter:
 
         who, product, tenant = found
         notify = link.services.platform.notify
+        from axentra.core.errors import InvalidCursor
+
         try:
             page = notify.list_inbox(who, product, tenant, unread_only=unread_only, limit=limit, cursor=cursor)
+        except InvalidCursor:  # Axentra's own check (AX-R1) as a second line: same answer as check_cursor
+            raise NodestroError(
+                "notifications.invalid_cursor", "The cursor is not valid; start again without it"
+            ) from None
         except Forbidden:  # a role without an inbox (viewer): nothing is ever sent to it
             return NotificationPage(items=[], unread=0)
         return NotificationPage(
