@@ -12,6 +12,11 @@ the worker's events from the database. Without a queue, runs execute in the API 
 Unlike the desktop, the API reference (``/api/docs``, ``/api/openapi.json``) needs a login (``read``), and
 ``/api/health`` also reports whether the process reaches its database (``503`` when not).
 
+``/api/metrics`` (Prometheus text format, :mod:`nodestro_runtime.axentra_metrics`) exists only when the operator set
+``NODESTRO_METRICS_TOKEN``; it checks no login but that bearer token, and its output holds no tenant data.
+``/api/notifications`` (the member's in-app inbox, :mod:`nodestro_api.api_notifications`) exists only with
+``NODESTRO_AXENTRA_NOTIFY=1``.
+
 ``nodestro-server api`` (:mod:`nodestro_api.server`) builds it from validated
 :class:`~nodestro_runtime.server_settings.ServerSettings`. Not part of it yet: the published workflow APIs
 (tenant-bound keys) and backups (``install``; operators use ``pg_dump``). Schedules fire in the worker process that
@@ -30,9 +35,9 @@ from pathlib import Path
 import threading
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.openapi.docs import get_swagger_ui_html
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from nodestro_runtime.bedrock import BedrockOperatorConfig
 from nodestro_runtime.extensions import Integration
 from nodestro_runtime.identity_store import IdentityStore
@@ -66,7 +71,7 @@ from .identity import (
     redact_auth_logs,
     secure_url,
 )
-from .permissions import READ, check_routes
+from .permissions import PUBLIC, READ, check_routes
 from .pricing_setup import PRICE_REFERENCE_TENANT
 from .serving import PREFIX as PUBLISHED_PREFIX
 
@@ -100,6 +105,12 @@ class TenantComposition:
     endpoints: tuple[str, ...] = ()
     #: The operator's Amazon Bedrock roles per tenant (``None``: Bedrock is not available to tenants).
     bedrock: BedrockOperatorConfig | None = None
+    #: ``GET /api/metrics``: the metrics (:class:`nodestro_runtime.axentra_metrics.ServerMetrics`) and the check of
+    #: the scraper's ``Authorization`` header (``None``: no metrics endpoint).
+    metrics: Any | None = None
+    metrics_authorized: Callable[[str | None], bool] | None = None
+    #: In-app notifications (:class:`nodestro_runtime.axentra_notify.AxentraNotifications`; ``None``: no inbox).
+    notifications: Any | None = None
 
 
 @dataclass
@@ -210,6 +221,12 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
     app.include_router(run_chat_router)
     app.include_router(router)
     app.include_router(data_router)
+    if composition.notifications is not None:
+        from .api_notifications import notifications_router
+
+        app.include_router(notifications_router(composition.notifications))
+    if composition.metrics is not None and composition.metrics_authorized is not None:
+        _metrics(app, composition.metrics, composition.metrics_authorized)
     _api_reference(app)
     check_routes(app)
     if composition.static_dir is not None and (composition.static_dir / "index.html").is_file():
@@ -263,6 +280,25 @@ class DatabaseHealth:
             logger.warning("Health check: the database is not reachable (%s)", type(exc).__name__)
             return False
         return True
+
+
+def _metrics(app: FastAPI, metrics: Any, authorized: Callable[[str | None], bool]) -> None:
+    """``GET /api/metrics`` for the operator's scraper: no login, the bearer token instead (``401`` without it)."""
+
+    # PUBLIC: no principal is checked; the handler checks the operator's token (constant-time) before anything else.
+    @app.get("/api/metrics", dependencies=PUBLIC, include_in_schema=False)
+    def metrics_endpoint(request: Request) -> PlainTextResponse:
+        if not authorized(request.headers.get("authorization")):
+            return PlainTextResponse(
+                "metrics.unauthorized: send the operator's metrics token as a bearer token\n",
+                status_code=401,
+                headers={"WWW-Authenticate": 'Bearer realm="metrics"', "Cache-Control": "no-store"},
+            )
+        return PlainTextResponse(
+            metrics.render(),
+            media_type="text/plain; version=0.0.4; charset=utf-8",
+            headers={"Cache-Control": "no-store"},
+        )
 
 
 def _api_reference(app: FastAPI) -> None:

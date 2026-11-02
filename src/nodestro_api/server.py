@@ -18,10 +18,12 @@ sentence listing every problem (``profile.invalid``); nothing has a default that
     Create a tenant, and print a one-time setup link that makes the person who opens it the tenant's first owner.
 ``nodestro-server secrets reencrypt [--dry-run] [--tenant TENANT]``
     Move every stored tenant secret (provider keys, MCP tokens, billing admin keys) to the active key of Axentra's
-    keyring (``NODESTRO_AXENTRA=on``, ``NODESTRO_SECRETS_FORMAT=axs1``). Resumable and idempotent; a value that
-    cannot be decrypted is left unchanged and reported (exit code 2).
+    keyring (``NODESTRO_AXENTRA=on``, ``NODESTRO_SECRETS_FORMAT=axs1``), or back to v1 with
+    ``NODESTRO_SECRETS_FORMAT=v1`` (the rollback, before Axentra is switched off). Resumable and idempotent; a value
+    that cannot be decrypted is left unchanged and reported (exit code 2).
 ``nodestro-server axentra status``
-    Whether Axentra is switched on, its version and pending Axentra migrations.
+    The embedding state: switches, package version, schema state of both runners, keyring key ids (never keys),
+    stored secrets by format, identity backend and its readiness, and the reconciliation backlog (counts only).
 ``nodestro-server axentra backfill-identity [--dry-run]`` / ``nodestro-server axentra reconcile-identity``
     Copy users, tenants, memberships and live sessions into Axentra (idempotent, resumable; run it in a maintenance
     window before ``NODESTRO_IDENTITY_BACKEND=mirror``), and compare both sides (exit code 1 on any difference; ids
@@ -42,7 +44,9 @@ require Axentra's schema to be current too. ``NODESTRO_IDENTITY_BACKEND`` (``nod
 ``axentra``) chooses the identity store of ``api``, ``worker`` and the member commands (:func:`_platform`);
 ``axentra`` refuses to start before the backfill.
 
-API and worker processes start only when the database schema is current and Docker is reachable: tool code runs
+API and worker processes start only when the database schema is current, every stored tenant secret is readable with
+the configured keys (``profile.invalid`` otherwise, e.g. ``NODESTRO_AXENTRA=off`` while ``axs1`` values exist; see
+:func:`nodestro_runtime.axentra_platform.require_readable_secrets`) and Docker is reachable: tool code runs
 only in containers on a server (ADR-0006), so a server without a container runtime does not start. Docker may be
 local (socket) or remote (``DOCKER_HOST``); containers need no bind mounts
 (:class:`nodestro_runtime.container_images.StreamedSandbox`).
@@ -103,6 +107,8 @@ class ServerEnvironment:
     #: role. ``None`` or no role for a tenant: Bedrock is not available to it (the server's own AWS chain is never
     #: used for a tenant). Each tenant's workspace receives only its own entry.
     bedrock: BedrockOperatorConfig | None = None
+    #: ``NODESTRO_METRICS_TOKEN`` (``GET /api/metrics``; unset: no endpoint).
+    metrics: Any = None
 
 
 def _capacity(environ: Mapping[str, str], problems: list[dict[str, str]]) -> dict[str, int]:
@@ -197,6 +203,9 @@ def load(environ: Mapping[str, str] | None = None) -> ServerEnvironment:
                 }
             )
     capacity = _capacity(environ, problems)
+    from nodestro_runtime.axentra_metrics import MetricsConfig
+
+    metrics = MetricsConfig.from_env(environ, problems)
     price_sync = PriceSyncConfig()
     try:
         price_sync = PriceSyncConfig.from_env(environ)
@@ -229,6 +238,7 @@ def load(environ: Mapping[str, str] | None = None) -> ServerEnvironment:
         price_sync=price_sync,
         capacity=capacity,
         bedrock=bedrock,
+        metrics=metrics,
     )
 
 
@@ -279,6 +289,13 @@ def _require_axentra_schema(server: ServerEnvironment) -> None:
             services.close()
 
 
+def _require_readable_secrets(server: ServerEnvironment, database: Any) -> None:
+    """Refuse a configuration that cannot read every stored tenant secret (a rollback switched too early)."""
+    from nodestro_runtime.axentra_platform import require_readable_secrets
+
+    require_readable_secrets(database, server.settings.axentra)
+
+
 def _attach_mirrors(server: ServerEnvironment, database: Any) -> Any:
     """Start Axentra and attach the audit/usage mirrors to ``database`` when ``NODESTRO_AXENTRA_AUDIT`` or
     ``NODESTRO_AXENTRA_USAGE`` is on (see :mod:`nodestro_runtime.platform_events`); the started services or ``None``.
@@ -324,6 +341,31 @@ def _platform(server: ServerEnvironment, database: Any) -> tuple[Any, Any]:
         raise
 
 
+def _observed(server: ServerEnvironment, database: Any, services: Any, identity: Any) -> tuple[Any, Any, Any]:
+    """The process's notifications (``NODESTRO_AXENTRA_NOTIFY``) and metrics (``NODESTRO_METRICS_TOKEN``), each
+    ``None`` when off; Axentra's services are started here when only the notifications need them.
+
+    Returns ``(services, notifications, metrics)``; the identity store is instrumented (counted) when metrics are on.
+    """
+    notifications = None
+    if server.settings.axentra.notify:
+        from nodestro_runtime.axentra_notify import AxentraNotifications
+        from nodestro_runtime.axentra_platform import AxentraLink
+
+        if services is None:
+            services = _axentra(server)
+            services.start()
+        notifications = AxentraNotifications(AxentraLink(services, database))
+        notifications.ensure_templates()
+    metrics = None
+    if server.metrics is not None and server.metrics.enabled:
+        from nodestro_runtime.axentra_metrics import ServerMetrics, instrument_identity
+
+        instrument_identity(identity)
+        metrics = ServerMetrics(database, services)
+    return services, notifications, metrics
+
+
 @contextmanager
 def _identity(server: ServerEnvironment, database: Any) -> Iterator[Any]:
     """The identity store for one operator command (Axentra services closed afterwards)."""
@@ -342,6 +384,7 @@ def _ready(server: ServerEnvironment) -> Any:
     try:
         database.require_current_schema()
         _require_axentra_schema(server)
+        _require_readable_secrets(server, database)
         _require_containers(server)
     except BaseException:
         database.close()
@@ -362,7 +405,8 @@ def create_server_app() -> Any:
 
     server = load()
     database = _ready(server)
-    _services, identity = _platform(server, database)  # open for the life of the process, as the database
+    services, identity = _platform(server, database)  # open for the life of the process, as the database
+    services, notifications, metrics = _observed(server, database, services, identity)
     settings = server.settings
     oidc_settings = OidcSettings(
         issuer=settings.oidc_issuer,
@@ -390,6 +434,9 @@ def create_server_app() -> Any:
             static_dir=server.static_dir,
             endpoints=server.endpoints,
             bedrock=server.bedrock,
+            metrics=metrics,
+            metrics_authorized=server.metrics.authorized if metrics is not None else None,
+            notifications=notifications,
         )
     )
 
@@ -404,6 +451,7 @@ async def run_worker(server: ServerEnvironment) -> None:
 
     database = _ready(server)
     mirrors, identity = _platform(server, database)
+    mirrors, notifications, _metrics = _observed(server, database, mirrors, identity)
     files = TenantFiles(
         database=database,
         data_root=server.profile.data_dir,
@@ -420,6 +468,11 @@ async def run_worker(server: ServerEnvironment) -> None:
         **timing,  # type: ignore[arg-type]
     )
     worker = ServerWorker(files, identity, settings)
+    # Axentra duties (each off unless switched on): run usage settlement and inbox notifications.
+    events = database.platform_events
+    if events is not None and getattr(events, "run_usage_enabled", False):
+        worker.settlement = events
+    worker.notifications = notifications
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for signum in (signal.SIGTERM, signal.SIGINT):
@@ -446,6 +499,7 @@ def check(server: ServerEnvironment) -> list[str]:
         return [f"{error.code}: {error}"]
     try:
         database.require_current_schema()
+        _require_readable_secrets(server, database)
     except NodestroError as error:
         problems.append(f"{error.code}: {error}")
     finally:
@@ -513,10 +567,11 @@ def reencrypt_secrets(server: ServerEnvironment, *, dry_run: bool, tenant: str |
     from nodestro_runtime.axentra_platform import KeyringSecretBox, reencrypt_tenant_secrets
 
     box = server.settings.secret_box()
-    if not isinstance(box, KeyringSecretBox) or box.write != "axs1":
+    if not isinstance(box, KeyringSecretBox):
         raise NodestroError(
             "secrets.keyring_required",
-            "Re-encryption needs NODESTRO_AXENTRA=on and NODESTRO_SECRETS_FORMAT=axs1 (the format new values use)",
+            "Re-encryption needs NODESTRO_AXENTRA=on with the keyring; NODESTRO_SECRETS_FORMAT says which format the "
+            "values move to (axs1: the active key; v1: back to NODESTRO_SECRET_KEY before switching Axentra off)",
         )
     database = _database(server)
     try:
@@ -605,25 +660,78 @@ def reconcile_identity(server: ServerEnvironment) -> dict[str, Any]:
 
 
 def axentra_status(server: ServerEnvironment) -> list[str]:
-    """``nodestro-server axentra status``: switch, package version, pending migrations."""
-    from nodestro_runtime.axentra_platform import available, axentra_version
+    """``nodestro-server axentra status``: the embedding state, for operators (ids, versions and counts only).
+
+    Switches, package, both schema runners, the keyring's key ids (never a key), stored secrets by format (and
+    whether this configuration can read all of them), the identity backend and whether it would start, and the
+    reconciliation backlog (what ``axentra reconcile`` would write). Read-only; it never applies anything."""
+    from nodestro_runtime.axentra_platform import (
+        available,
+        axentra_version,
+        reconciliation_backlog,
+        secrets_rollback_problems,
+        stored_secret_formats,
+    )
+    from nodestro_runtime.storage_postgres import POSTGRES_SCHEMA_VERSION
 
     config = server.settings.axentra
+
+    def on(value: bool) -> str:
+        return "on" if value else "off"
+
     lines = [
-        f"axentra: {'on' if config.enabled else 'off'}",
+        f"axentra: {on(config.enabled)}",
         f"package: {axentra_version() or 'not installed'}" + ("" if available() else " (not usable here)"),
         f"secrets format: {config.secrets_format}",
-        f"audit mirror: {'on' if config.audit else 'off'}",
-        f"usage mirror: {'on' if config.usage else 'off'}",
+        f"audit mirror: {on(config.audit)}",
+        f"usage mirror: {on(config.usage)}",
+        f"run usage mirror: {on(config.run_usage)}",
+        f"notifications (inbox): {on(config.notify)}",
         f"identity backend: {config.identity_backend}",
+        f"metrics endpoint: {on(bool(server.metrics and server.metrics.enabled))}",
     ]
-    services = _axentra(server)
-    if services is not None:
-        try:
-            pending = services.pending_migrations()
-        finally:
-            services.close()
-        lines.append(f"pending migrations: {', '.join(pending) or 'none'}")
+    if config.enabled and available():
+        from axentra.config.secrets import Keyring
+
+        kids = Keyring.parse(config.keyring).kids
+        lines.append(f"keyring: {kids[0]} (active)" + "".join(f", {kid}" for kid in kids[1:]))
+    try:
+        database = _database(server)
+    except NodestroError as error:
+        lines.append(f"database: {error.code}")
+        return lines
+    try:
+        version = database.schema_version
+        state = "current" if version == POSTGRES_SCHEMA_VERSION else "MIGRATION NEEDED"
+        lines.append(f"nodestro schema: {version} of {POSTGRES_SCHEMA_VERSION} ({state})")
+        formats = stored_secret_formats(database)
+        lines.append("stored secrets: " + (", ".join(f"{kind} {n}" for kind, n in formats.items()) or "none"))
+        for problem in secrets_rollback_problems(config, formats):
+            lines.append(f"secrets: NOT READABLE: {problem['reason']}")
+        services = _axentra(server)
+        if services is not None:
+            try:
+                pending = services.pending_migrations()
+                problems = services.schema_problems()
+                lines.append(
+                    "axentra schema: " + ("current" if not problems else f"NOT CURRENT ({len(pending)} pending)")
+                )
+                if not problems and version == POSTGRES_SCHEMA_VERSION:
+                    services.start()
+                    backlog = reconciliation_backlog(services)
+                    lines.append("reconcile backlog: " + ", ".join(f"{kind} {n}" for kind, n in backlog.items()))
+            finally:
+                services.close()
+            if config.identity_backend != "nodestro" and not problems:
+                try:
+                    with _identity(server, database):
+                        pass
+                    lines.append("identity backend ready: yes")
+                except NodestroError as error:
+                    lines.append(f"identity backend ready: no ({error.code})")
+            lines.append(f"pending migrations: {', '.join(pending) or 'none'}")
+    finally:
+        database.close()
     return lines
 
 
@@ -904,7 +1012,9 @@ def parser() -> argparse.ArgumentParser:
     reencrypting.add_argument("--tenant", help="Only this tenant")
     platform = commands.add_parser("axentra", help="Axentra platform services")
     platform_commands = platform.add_subparsers(dest="axentra_command", required=True)
-    platform_commands.add_parser("status", help="Switch, version and pending migrations of Axentra")
+    platform_commands.add_parser(
+        "status", help="Embedding state: switches, schemas, keyring ids, secrets, identity, reconcile backlog"
+    )
     reconciling = platform_commands.add_parser(
         "reconcile", help="Write audit/usage mirrors missing in Axentra (idempotent)"
     )

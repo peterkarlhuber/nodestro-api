@@ -12,6 +12,10 @@ or more worker processes (:class:`ServerWorker`). Every worker:
   (:class:`nodestro_runtime.jobs.ScheduleFirings`);
 - syncs the server's reference prices when they are due, under the price-sync lock: one worker at a time
   (:mod:`nodestro_api.pricing_setup`; only with :attr:`WorkerSettings.price_sync` switched on);
+- with Axentra switched on (each off by default): settles the usage of finished runs into Axentra's meters
+  (``NODESTRO_AXENTRA_RUN_USAGE``) and puts failed runs and pending approvals into the members' in-app inbox
+  (``NODESTRO_AXENTRA_NOTIFY``), while it holds the scheduler lock (:meth:`ServerWorker.platform_duties`; both are
+  idempotent, so a second worker or a retry never counts or notifies twice);
 - deletes what is no longer needed while it holds the scheduler lock (:meth:`ServerWorker.clean_up`): expired
   sessions and abandoned login starts, finished jobs after :attr:`WorkerSettings.job_retention` and run events after
   :attr:`WorkerSettings.event_retention` (the runs themselves stay).
@@ -84,6 +88,8 @@ class WorkerSettings:
     job_retention: timedelta = timedelta(days=7)
     #: Run events are kept this long: live streams and waits read them; a run's own record keeps its results.
     event_retention: timedelta = timedelta(days=2)
+    #: How often the scheduler leader settles run usage and sweeps notifications into Axentra (seconds).
+    platform_every: float = 30.0
 
 
 class ServerWorker:
@@ -113,6 +119,11 @@ class ServerWorker:
         )
         self.leader = LeaderLock(files.database)
         self.price_sync = server_sync(files.database, self.settings.price_sync)
+        #: Axentra duties, set by ``nodestro-server worker`` when switched on (``None``: off): the run usage
+        #: settlement (:meth:`nodestro_runtime.axentra_platform.AxentraEvents.settle_runs`) and the inbox
+        #: notifications (:class:`nodestro_runtime.axentra_notify.AxentraNotifications`).
+        self.settlement: Any | None = None
+        self.notifications: Any | None = None
 
     def _executing(self, tenant_id: str) -> Nodestro:
         """The context a claimed job executes in; a suspended tenant's job fails here (before its run starts or
@@ -179,9 +190,31 @@ class ServerWorker:
                 PostgresEventLog.cleanup, database, older_than=self.settings.event_retention
             ),
         }
+        if self.notifications is not None:
+            purged = await asyncio.to_thread(self.notifications.purge)
+            removed["notification_contents"] = int(purged.get("content_erased", 0))
         if any(removed.values()):
             logger.info("Cleanup removed %s", ", ".join(f"{count} {name}" for name, count in removed.items()))
         return removed
+
+    async def platform_duties(self) -> dict[str, Any]:
+        """Settle finished runs' usage and send due inbox notifications while this worker leads (empty: off, or
+        another worker leads). Both read what changed since their last pass and are idempotent per record."""
+        if self.settlement is None and self.notifications is None:
+            return {}
+        if not await asyncio.to_thread(self.leader.acquire):
+            return {}
+        done: dict[str, Any] = {}
+        if self.settlement is not None:
+            done["run_usage"] = await asyncio.to_thread(self.settlement.settle_runs)
+            if done["run_usage"].get("written") or done["run_usage"].get("failed"):
+                logger.info("Run usage settled into Axentra: %s", done["run_usage"])
+        if self.notifications is not None:
+            report = await asyncio.to_thread(self.notifications.sweep)
+            done["notifications"] = report.as_dict()
+            if report.sent or report.failed:
+                logger.info("Inbox notifications: %s", done["notifications"])
+        return done
 
     async def serve(self, stop: asyncio.Event) -> None:
         """Execute jobs, reap and fire schedules until ``stop`` is set, then close every context.
@@ -206,6 +239,12 @@ class ServerWorker:
         tasks.append(
             asyncio.create_task(self._every(stop, self.settings.cleanup_every, self.clean_up), name="worker-cleanup")
         )
+        if self.settlement is not None or self.notifications is not None:
+            tasks.append(
+                asyncio.create_task(
+                    self._every(stop, self.settings.platform_every, self.platform_duties), name="worker-platform"
+                )
+            )
         if self.settings.price_sync.enabled:
             tasks.append(
                 asyncio.create_task(
