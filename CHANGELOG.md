@@ -15,6 +15,7 @@
   `budget_decision_hours` and the read-only `operator_max_run_budget_usd` (`NODESTRO_MAX_RUN_BUDGET_USD`).
 - Published API runs, schedules, batches and test series never wait for a budget decision: they fail as before.
 - New `tests/test_budget_api.py`; the OpenAPI contract is regenerated.
+- Pins nodestro-runtime `64895e6` (runtime #84) and nodestro-examples `59fc96b` (examples #47).
 
 ### Pins (Axentra completion cascade, 2026-11-02)
 
