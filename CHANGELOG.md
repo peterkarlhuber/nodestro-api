@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Pins: Docker sandbox security review fixes (2026-11-02)
+
+- Runtime pin `bf9af7d` (nodestro-runtime #85: review fixes DS-1..DS-5, DS-7, DS-9, DS-11; Orkexa `3364fb8`, DS-10),
+  examples pin `9669439` (nodestro-examples #48, the same runtime). The settings accept the new sandbox mode `linux`
+  (the built-in Linux sandbox, only when chosen); in `auto` AI-created code runs only in Docker. A reinstall without
+  code takes its trust from the stored tool, so an unsaved or AI-created tool's libraries are never installed on the
+  host.
+
 ### Run budget decisions (BUDGET-1, 2026-11-02)
 
 - New `api_budget.py`: `GET /api/runs/{run_id}/budget` (read; the run's budget, its open decision, earlier ones and
