@@ -12,6 +12,7 @@ import base64
 import binascii
 from datetime import datetime
 import json
+import re
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
@@ -22,12 +23,23 @@ from .permissions import READ, Principal
 
 #: The longest cursor accepted (a cursor holds a timestamp and a message id).
 MAX_CURSOR = 512
+#: The timestamp of a cursor as Axentra writes it (``str(datetime)``, or ISO 8601 with ``T``), in the subset that both
+#: Python and PostgreSQL read the same way: no week dates, no comma fractions, no fractional or other exotic offsets,
+#: ASCII digits only (security re-review SR-06a).
+_CURSOR_TIME = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}(:[0-9]{2}(\.[0-9]{1,6})?)?"
+    r"(Z|[+-][0-9]{2}(:[0-9]{2}(:[0-9]{2})?)?)"
+)
+#: A message id as Axentra makes them (``msg_<base32>``), ASCII only: no NUL byte, no lone surrogate.
+_CURSOR_ID = re.compile(r"[A-Za-z0-9_-]{1,200}")
 
 
 def check_cursor(cursor: str | None) -> None:
     """Refuse a cursor that is not one this API handed out (``400 notifications.invalid_cursor``, security review
-    SR-06): base64url JSON of ``[ISO timestamp, message id]``. Axentra only checks that it is a JSON list, and a
-    malformed one failed in the database as ``500``. The cursor is never echoed into the answer or the log."""
+    SR-06, SR-06a): base64url JSON of ``[timestamp, message id]``. Axentra only checks that it is a JSON list, and a
+    malformed one failed in the database as ``500``; so does a value Python reads but PostgreSQL does not (a NUL byte,
+    an ISO week date, an offset with a fraction, a comma fraction) or one that cannot be encoded (a lone surrogate).
+    Only the shapes both read alike pass. The cursor is never echoed into the answer or the log."""
     if not cursor:
         return
     problem = NodestroError("notifications.invalid_cursor", "The cursor is not valid; start again without it")
@@ -35,15 +47,18 @@ def check_cursor(cursor: str | None) -> None:
         raise problem
     try:
         value = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
-    except (ValueError, binascii.Error):
+    except (ValueError, binascii.Error):  # UnicodeDecodeError and JSONDecodeError are ValueErrors
         raise problem from None
     if not (isinstance(value, list) and len(value) == 2 and all(isinstance(part, str) for part in value)):
         raise problem
+    at, message_id = value
+    if not _CURSOR_TIME.fullmatch(at) or not _CURSOR_ID.fullmatch(message_id):
+        raise problem
     try:
-        at = datetime.fromisoformat(value[0])
-    except ValueError:
+        parsed = datetime.fromisoformat(at)
+    except ValueError:  # a day or an hour out of range
         raise problem from None
-    if at.tzinfo is None or not value[1] or len(value[1]) > 200:
+    if parsed.tzinfo is None:
         raise problem
 
 

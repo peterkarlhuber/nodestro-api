@@ -8,6 +8,22 @@
   `a8ea5d5`); examples pin `c3ef412` (examples #49). The runtime's `AxentraServices.start` now requires the
   process's database pool.
 
+### Security re-review fixes (SR-01a, SR-01b, SR-03a, SR-04a, SR-06a)
+
+Needs the nodestro-runtime commit with the same fixes (`RunChat.cancel_answers`, `PythonEnvironments.cancel_installs`,
+`AxentraServices.key_samples`); the runtime pin moves once it is merged.
+
+- `tests/test_tenant_filters.py` runs the runtime's stricter tenant check (names resolved where they are read, texts
+  that start with an unknown part reported) over the API package; it still reports nothing.
+- A suspended tenant's live run chat answers and Python environment installations stop too
+  (`server_app.stop_tenant_work`, `identity.tenant_suspended`): the question fails at once and a late answer is not
+  stored; an installation stops before its next step.
+- The start's key-bytes check also decrypts samples of Axentra's own keyring columns, so other bytes under a key id
+  that only those columns use are refused (`profile.invalid`).
+- `/api/notifications` accepts only cursors whose timestamp and message id PostgreSQL reads the way Python does: a NUL
+  byte, an ISO week date, an offset with a fraction, a comma fraction, non-ASCII digits or a lone surrogate is a 400
+  `notifications.invalid_cursor` (they were 500s), and the input is never echoed.
+
 ### Security review fixes (SR-01, SR-03 to SR-06, SR-09, SR-10)
 
 - `tests/test_tenant_filters.py` runs the runtime's static tenant check over the API package.
