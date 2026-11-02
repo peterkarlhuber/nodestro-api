@@ -865,8 +865,9 @@ def preview(body: PreviewRequest, ctx: Ctx) -> ContextPreview:
 
 
 @router.post("/workflows/{workflow_id}/runs", status_code=201, dependencies=RUN)
-async def start_run(workflow_id: str, body: RunIn, ctx: Ctx) -> Run:
-    return await launch(ctx, _workflow(ctx, workflow_id), body)
+async def start_run(workflow_id: str, body: RunIn, ctx: Ctx, request: Request) -> Run:
+    # Who started the run decides its budget requests (BUDGET-1), besides administrators.
+    return await launch(ctx, _workflow(ctx, workflow_id), body, started_by=actor_id(request))
 
 
 @router.get(
@@ -1086,9 +1087,11 @@ def resume_plan(run_id: str, ctx: Ctx) -> ResumePlan:
 
 
 @router.post("/runs/{run_id}/resume", status_code=201, dependencies=RUN)
-async def resume_run(run_id: str, body: ResumeRequest, ctx: Ctx) -> Run:
+async def resume_run(run_id: str, body: ResumeRequest, ctx: Ctx, request: Request) -> Run:
     """A new run linked to the failed one, reusing its safe results (the failed run stays as it was)."""
-    return await resume_from(ctx, run_id, mode=body.mode, confirm=body.confirm_side_effects)
+    return await resume_from(
+        ctx, run_id, mode=body.mode, confirm=body.confirm_side_effects, started_by=actor_id(request)
+    )
 
 
 @router.get("/approvals", dependencies=READ)

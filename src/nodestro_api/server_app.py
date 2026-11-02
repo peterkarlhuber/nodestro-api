@@ -51,6 +51,7 @@ from .api import install_error_handlers, router
 from .api_architect import router as architect_router
 from .api_assistant import router as assistant_router
 from .api_automation import router as automation_router
+from .api_budget import router as budget_router
 from .api_data import router as data_router
 from .api_inputs import router as inputs_router
 from .api_mcp import router as mcp_router
@@ -226,6 +227,7 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
     app.include_router(inputs_router)
     app.include_router(pricing_router)
     app.include_router(mcp_router)
+    app.include_router(budget_router)
     app.include_router(tool_approvals_router)
     app.include_router(run_chat_router)
     app.include_router(router)

@@ -177,6 +177,7 @@ unsafe value is listed at once (`profile.invalid`), and nothing has a default th
 | `NODESTRO_BEDROCK_DATA_RESIDENCY`, `NODESTRO_BEDROCK_ALLOWED_REGIONS` | `eu_only` forces EU-only data residency for every tenant (they cannot relax it); a comma-separated list limits the regions tenants may choose (with `eu_only` only EU regions) |
 | `NODESTRO_WORKER_LEASE_SECONDS`, `…_POLL_SECONDS`, `…_REAP_SECONDS` | worker timing (defaults 60, 1, 15) |
 | `NODESTRO_WORKER_MAX_RUNS`, `NODESTRO_WORKER_MAX_WAITING` | runs one worker holds at once, and how many of them may wait for a person's tool approval (defaults 2 and 1; waiting must stay below the runs, so one slot always executes) |
+| `NODESTRO_MAX_RUN_BUDGET_USD` | The highest limit a budget decision may set for one run (BUDGET-1), on top of the tenant setting `max_run_budget_usd`; the lower one applies. Empty: no operator maximum |
 | `NODESTRO_TOOL_APPROVALS` | `1` asks a person before tool calls that change or reach out. Off by default. Order: first `POST /api/tool-approvals/legacy` (once; stamps existing bindings of workflows, versions and published releases, whose digest changes once), review the report, then set this and restart, only after the security acceptance |
 | `NODESTRO_PRICE_SYNC`, `NODESTRO_PRICE_LITELLM`, `NODESTRO_PRICE_SNAPSHOT_FILE` | reference price sync of the workers (`on`/`off`, default `on`; LiteLLM's cost map `on`/`off`; a reviewed Orkexa snapshot file), see "Model prices" |
 
