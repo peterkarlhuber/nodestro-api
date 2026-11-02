@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Identity completion (Axentra migration M5; off by default)
+
+- `NODESTRO_IDENTITY_BACKEND=axentra`: Axentra runs the OIDC login (`AxentraLoginFlow`, Axentra's `OidcService` behind
+  the same routes, cookies and error codes; new codes `identity.account_disabled` 403 and `identity.rate_limited` 429).
+  `nodestro`/`mirror` keep Nodestro's own client. Permissions of `axentra` mode come from Axentra's role definitions.
+- Suspended tenants are closed: `403 identity.tenant_suspended` for sessions, logins, switches and setup links;
+  `/api/auth/me` lists active tenants only; workers neither start nor continue their runs and fire none of their
+  schedules. New commands `suspend-tenant` and `resume-tenant`.
+- Session rotation on login: the session the browser held before ends.
+- Tests: `test_identity.py` runs every server case in `nodestro`, `mirror` and `axentra` mode, plus a full
+  `nodestro -> mirror -> axentra -> mirror -> nodestro` walk with real OIDC callbacks.
+
 ### Axentra platform services in `nodestro-server` (2026-11-02; everything off by default)
 
 - `migrate` applies Axentra's migrations after Nodestro's with one shared backup; `check`, `api` and `worker` refuse

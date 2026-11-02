@@ -16,6 +16,12 @@ or more worker processes (:class:`ServerWorker`). Every worker:
   sessions and abandoned login starts, finished jobs after :attr:`WorkerSettings.job_retention` and run events after
   :attr:`WorkerSettings.event_retention` (the runs themselves stay).
 
+A suspended tenant (:meth:`nodestro_runtime.identity_store.IdentityStore.tenant_active`, answered by the identity
+backend) is closed for workers too: a claimed job of it fails with ``identity.tenant_suspended`` before its run starts
+or continues (the orphan sweep later marks the run interrupted, so it can be continued once the tenant is resumed),
+runs it executes here stop within :attr:`WorkerSettings.reap_every` without storing more (as after a lost lease), and
+its schedules and tool-wait sweeps do not run.
+
 ``nodestro-server worker`` (:mod:`nodestro_api.server`) runs one. Only runs go through the queue so far; batches,
 test series, assistant drafts and Python environment installations still run in the API process that started them.
 """
@@ -29,7 +35,7 @@ from datetime import timedelta
 import logging
 from typing import Any
 
-from nodestro_runtime.identity_store import IdentityStore
+from nodestro_runtime.identity_store import IdentityStore, tenant_suspended
 from nodestro_runtime.jobs import (
     DEFAULT_MAX_RUNS,
     DEFAULT_MAX_WAITING,
@@ -99,7 +105,7 @@ class ServerWorker:
         self.scheduling = TenantWorkspaces(self._open_scheduling, close_tenant)
         self.runner = RunWorker(
             self.queue,
-            self.executing.get,
+            self._executing,
             name=self.name,
             poll=self.settings.poll,
             max_runs=self.settings.max_runs,
@@ -107,6 +113,32 @@ class ServerWorker:
         )
         self.leader = LeaderLock(files.database)
         self.price_sync = server_sync(files.database, self.settings.price_sync)
+
+    def _executing(self, tenant_id: str) -> Nodestro:
+        """The context a claimed job executes in; a suspended tenant's job fails here (before its run starts or
+        continues)."""
+        if not self.identity.tenant_active(tenant_id):
+            raise tenant_suspended(tenant_id)
+        context: Nodestro = self.executing.get(tenant_id)
+        return context
+
+    async def _active_tenants(self) -> list[str]:
+        return [t.id for t in await asyncio.to_thread(self.identity.tenants) if t.status == "active"]
+
+    async def stop_suspended(self) -> list[str]:
+        """Stop the runs this worker executes for tenants that are suspended now (nothing more is stored; the job
+        ends as ``run.fence_lost`` and the run is marked interrupted later); returns the stopped runs."""
+        stopped: list[str] = []
+        for tenant_id, context in self.executing.items():
+            runs = context.runs.live_runs()
+            if not runs or await asyncio.to_thread(self.identity.tenant_active, tenant_id):
+                continue
+            for run in runs:
+                if context.runs.abandon(run.id, because="identity.tenant_suspended: the tenant was suspended"):
+                    stopped.append(run.id)
+        if stopped:
+            logger.warning("Stopped %s runs of suspended tenants", len(stopped))
+        return stopped
 
     def _open_scheduling(self, tenant_id: str) -> Nodestro:
         context = self.files.open(tenant_id)
@@ -127,11 +159,11 @@ class ServerWorker:
         if not await asyncio.to_thread(self.leader.acquire):
             return []
         started: list[str] = []
-        for tenant in await asyncio.to_thread(self.identity.tenants):
+        for tenant_id in await self._active_tenants():  # a suspended tenant's schedules do not fire
             try:
-                started += await self.scheduling.get(tenant.id).schedules.tick()
+                started += await self.scheduling.get(tenant_id).schedules.tick()
             except Exception:
-                logger.exception("Firing the schedules of tenant %s failed", tenant.id)
+                logger.exception("Firing the schedules of tenant %s failed", tenant_id)
         return started
 
     async def clean_up(self) -> dict[str, int]:
@@ -165,6 +197,9 @@ class ServerWorker:
             asyncio.create_task(self.runner.serve(stop), name="worker-runs"),
             asyncio.create_task(self._every(stop, self.settings.reap_every, self._reap_once), name="worker-reaper"),
             asyncio.create_task(
+                self._every(stop, self.settings.reap_every, self.stop_suspended), name="worker-suspended"
+            ),
+            asyncio.create_task(
                 self._every(stop, self.settings.schedule_every, self.fire_schedules), name="worker-scheduler"
             ),
         ]
@@ -197,11 +232,11 @@ class ServerWorker:
         runs are queued again (a worker continues them under its lease), and with the switch off open questions
         are closed. Runs once before this worker claims anything, then periodically."""
         continued: list[str] = []
-        for tenant in await asyncio.to_thread(self.identity.tenants):
+        for tenant_id in await self._active_tenants():  # a suspended tenant's paused runs stay as they are
             try:
-                continued += self.scheduling.get(tenant.id).runs.sweep_tool_waits()
+                continued += self.scheduling.get(tenant_id).runs.sweep_tool_waits()
             except Exception:
-                logger.exception("Sweeping the runs of tenant %s paused at tool calls failed", tenant.id)
+                logger.exception("Sweeping the runs of tenant %s paused at tool calls failed", tenant_id)
         return continued
 
     async def _reap_once(self) -> list[Any]:

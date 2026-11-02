@@ -32,6 +32,9 @@ sentence listing every problem (``profile.invalid``); nothing has a default that
     tenant end with it), and end every session of a user at once. ``USER`` is a user id (``u_…``), a verified
     e-mail address or the subject at the configured identity provider. A person is known once they logged in at
     least once (a login alone grants nothing); a tenant always keeps at least one owner.
+``nodestro-server suspend-tenant TENANT`` / ``resume-tenant TENANT``
+    Close a tenant until it is resumed (``403 identity.tenant_suspended`` for its sessions and logins; workers neither
+    start nor continue its runs) and open it again. Nothing is deleted.
 
 With ``NODESTRO_AXENTRA=on`` (off by default; see :mod:`nodestro_runtime.axentra_platform`) ``migrate`` also applies
 Axentra's migrations to the same database (after the one backup of the run), and ``check``, ``api`` and ``worker``
@@ -354,21 +357,25 @@ def create_server_app() -> Any:
     import httpx
     from nodestro_runtime.jobs import JobQueue
 
-    from .identity import OidcClient, OidcSettings
+    from .identity import OidcClient, OidcSettings, axentra_login_flow
     from .server_app import TenantComposition, create_tenant_app
 
     server = load()
     database = _ready(server)
     _services, identity = _platform(server, database)  # open for the life of the process, as the database
     settings = server.settings
-    oidc = OidcClient(
-        OidcSettings(
-            issuer=settings.oidc_issuer,
-            client_id=settings.oidc_client_id,
-            client_secret=settings.oidc_client_secret,
-            redirect_uri=settings.redirect_uri,
-        ),
-        http=httpx.Client(timeout=15.0),
+    oidc_settings = OidcSettings(
+        issuer=settings.oidc_issuer,
+        client_id=settings.oidc_client_id,
+        client_secret=settings.oidc_client_secret,
+        redirect_uri=settings.redirect_uri,
+    )
+    # One identity service answers: in axentra mode Axentra also runs the login (its OidcService behind Nodestro's
+    # routes, cookies and error codes); otherwise Nodestro's own client does.
+    oidc: Any = (
+        axentra_login_flow(identity, oidc_settings)
+        if getattr(identity, "mode", None) == "axentra"
+        else OidcClient(oidc_settings, http=httpx.Client(timeout=15.0))
     )
     return create_tenant_app(
         TenantComposition(
@@ -764,6 +771,21 @@ def set_role(server: ServerEnvironment, tenant_id: str, who: str, role: str) -> 
     return f"{user.id} is {role} in {tenant_id}" + (f" (was {before})" if before and before != role else "")
 
 
+def set_tenant_status(server: ServerEnvironment, tenant_id: str, status: str) -> str:
+    """Suspend or resume a tenant (both sides with Axentra identity). A suspended tenant is closed at once: its
+    sessions are refused, nobody logs in to it, its setup links wait, and workers neither start nor continue its
+    runs. Nothing is deleted."""
+    database = _database(server)
+    try:
+        with _identity(server, database) as identity:
+            _require_tenant(identity, tenant_id)
+            identity.set_tenant_status(tenant_id, status)
+    finally:
+        database.close()
+    logger.info("Operator set the status of tenant %s: %s", tenant_id, status)
+    return f"tenant {tenant_id} is {status}"
+
+
 def remove_member(server: ServerEnvironment, tenant_id: str, who: str) -> str:
     """Remove a user from a tenant; their sessions in the tenant end at once (the last owner stays)."""
     database = _database(server)
@@ -864,6 +886,12 @@ def parser() -> argparse.ArgumentParser:
     role.add_argument("tenant_id")
     role.add_argument("user", help=user_help)
     role.add_argument("role", choices=ROLES)
+    for name, text in (
+        ("suspend-tenant", "Suspend a tenant: close it until it is resumed"),
+        ("resume-tenant", "Resume a suspended tenant"),
+    ):
+        status_command = commands.add_parser(name, help=text)
+        status_command.add_argument("tenant_id")
     removing = commands.add_parser("remove-member", help="Remove a member from a tenant and end their sessions there")
     removing.add_argument("tenant_id")
     removing.add_argument("user", help=user_help)
@@ -932,6 +960,9 @@ def main(argv: Sequence[str] | None = None) -> None:
             asyncio.run(run_worker(server))
         elif args.command == "backup":
             print(dump(server, args.directory / f"nodestro-{_stamp()}.dump"))
+        elif args.command in ("suspend-tenant", "resume-tenant"):
+            status = "suspended" if args.command == "suspend-tenant" else "active"
+            print(set_tenant_status(server, args.tenant_id, status))
         elif args.command == "create-tenant":
             create_tenant(server, args.tenant_id, args.name)
             print(f"created tenant {args.tenant_id}")

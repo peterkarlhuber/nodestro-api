@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import secrets
 import shutil
+from typing import Any
 import uuid
 
 import pytest
@@ -287,6 +288,19 @@ def test_the_identity_switch_follows_the_backfill(
     assert json.loads(output)["ok"] is True
     assert seeded["token"] not in output + json.dumps(done)
     assert command.check(switched) == []
+    # The API process of axentra mode lets Axentra run the login (one identity service).
+    import nodestro_api.identity as identity_module
+
+    flows: list[Any] = []
+    original = identity_module.axentra_login_flow
+    monkeypatch.setattr(
+        identity_module, "axentra_login_flow", lambda *a, **k: flows.append(original(*a, **k)) or flows[-1]
+    )
+    monkeypatch.setenv("NODESTRO_IDENTITY_BACKEND", "axentra")
+    command.create_server_app()
+    monkeypatch.delenv("NODESTRO_IDENTITY_BACKEND")
+    assert len(flows) == 1 and isinstance(flows[0], identity_module.AxentraLoginFlow)
+    assert flows[0].service.redirect_uri("nodestro") == switched.settings.redirect_uri
     # Axentra answers now: the session from before the switch, the member commands, removal ends access.
     database = PostgresDatabase(DSN, schema=schema)
     services, identity = command._platform(switched, database)
@@ -341,3 +355,8 @@ def test_mirror_mode_writes_both_sides_from_the_member_commands(
     command.main(["axentra", "reconcile-identity"])
     report = json.loads(capsys.readouterr().out)
     assert report["ok"] is True and report["counts"]["tenants"] == 1
+    # Suspending writes both sides too.
+    command.main(["suspend-tenant", "acme"])
+    capsys.readouterr()
+    command.main(["axentra", "reconcile-identity"])
+    assert json.loads(capsys.readouterr().out)["ok"] is True

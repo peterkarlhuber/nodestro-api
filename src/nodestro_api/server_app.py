@@ -57,6 +57,7 @@ from .api_tool_approvals import router as tool_approvals_router
 from .context import AppConfig, Nodestro
 from .frontend import mount_frontend
 from .identity import (
+    LoginFlow,
     OidcClient,
     SameOriginMiddleware,
     SessionResolver,
@@ -78,7 +79,8 @@ class TenantComposition:
 
     database: PostgresDatabase
     identity: IdentityStore
-    oidc: OidcClient
+    #: The login flow: Nodestro's own client, or Axentra's (``identity.AxentraLoginFlow``, identity backend axentra).
+    oidc: OidcClient | LoginFlow
     #: The studio's own origin as browsers see it (``https://nodestro.example.com``), for the CSRF check.
     origin: str
     #: Files of each tenant live in ``<data_root>/tenants/<tenant id>``.
