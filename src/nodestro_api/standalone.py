@@ -33,6 +33,7 @@ from typing import Any, Literal
 from fastapi import FastAPI, Request
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
+from nodestro_runtime import docker_status
 from nodestro_runtime.agent_builder import AgentBuilder
 from nodestro_runtime.engine import RunEnvironment, RunManager
 from nodestro_runtime.input_files import FileCatalog, InputFiles
@@ -182,7 +183,7 @@ class StandaloneHost:
         self.memory = MemorySpaces(database)
         sandbox: Sandbox
         if settings.tool_sandbox == "docker":
-            sandbox = DockerSandbox(timeout=settings.tool_timeout_seconds)
+            sandbox = self._docker_sandbox(data_dir)
         else:
             sandbox = SubprocessSandbox(
                 timeout=settings.tool_timeout_seconds, python=sys.executable, env=_TOOL_ENV, acknowledge_unsafe=True
@@ -258,6 +259,23 @@ class StandaloneHost:
                     continue  # the project's own memory already has content: never overwritten
                 for item in seed.get("files", []):
                     space.write(item["path"], item["content"])
+
+    def _docker_sandbox(self, data_dir: Path) -> DockerSandbox:
+        """``TOOL_SANDBOX=docker``: Orkexa's container sandbox (its ``orkexa-sandbox`` image). Untrusted tools run in
+        it only once the daemon passed the preflight and the in-container self-test, which a background monitor
+        (:mod:`nodestro_runtime.docker_status`) checks; until then they are refused. The containers carry this
+        installation's own owner label, so the monitor's reaper (expired containers only) never touches another
+        installation's containers on the same daemon."""
+        owner = docker_status.installation_owner(data_dir)
+        timeout = self.settings.tool_timeout_seconds
+
+        def make() -> DockerSandbox:
+            return DockerSandbox(timeout=timeout, owner=owner)
+
+        self.docker_monitor = docker_status.monitor_for(make, owner=owner)
+        self.docker_monitor.start_reaper(remove_all_first=False)
+        self.docker_monitor.status()  # the first check starts in the background
+        return make()
 
     def close(self) -> None:
         self.knowledge.close()

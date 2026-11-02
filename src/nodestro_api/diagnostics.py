@@ -23,7 +23,7 @@ from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.providers import PROVIDERS, MissingApiKeyError, provider_of
 from orkexa import AuthenticationError, ProviderConnectionError, ProviderError
 from orkexa import __version__ as library_version
-from orkexa.dynamic import DockerSandbox, DynamicAgentError
+from orkexa.dynamic import DynamicAgentError
 from orkexa.providers import ProviderConfig, create_provider
 from pydantic import BaseModel, Field, SecretStr
 
@@ -157,14 +157,35 @@ def _directories(nodestro: Nodestro) -> list[DiagnosticCheck]:
     return found
 
 
+#: Seconds the diagnosis waits at most for a running Docker check (the first one after the start).
+DOCKER_WAIT = 5.0
+
+
+def _docker(nodestro: Nodestro, kind: str) -> DiagnosticCheck:
+    """The Docker sandbox as the background check found it (``Workspace.docker_status``): ``available`` only after
+    the preflight and the in-container self-test passed; ``checks`` lists each step (``name``, ``ok``,
+    ``detail``)."""
+    status = nodestro.docker_status(wait=DOCKER_WAIT)
+    params: dict[str, Any] = {
+        "sandbox": kind,
+        "state": status.state,
+        "reason": status.reason,
+        "checks": [check.model_dump(mode="json") for check in status.checks],
+    }
+    if status.available:
+        return _check("docker", "ok", "available", status.detail, **params)
+    if status.state == "checking":
+        return _check("docker", "warning" if kind == "docker" else "ok", "checking", status.detail, **params)
+    if kind == "docker":
+        return _check("docker", "error", "unreachable", status.detail, **params)
+    code = "not_installed" if status.reason == "docker-missing" else "unavailable"
+    return _check("docker", "ok", code, status.detail, **params)
+
+
 def _sandbox(nodestro: Nodestro) -> list[DiagnosticCheck]:
     found = []
     kind = nodestro.settings().sandbox
-    docker = DockerSandbox.available()
-    if kind == "docker" and not docker:
-        found.append(_check("docker", "error", "unreachable"))
-    else:
-        found.append(_check("docker", "ok", "available" if docker else "not_installed", sandbox=kind))
+    found.append(_docker(nodestro, kind))
     started = time.monotonic()
     try:
         result = nodestro.tools.registry.sandbox.validate(_PROBE_CODE, _PROBE_TESTS, "add_numbers")

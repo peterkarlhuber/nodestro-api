@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Docker sandbox status and self-test routes (Docker-first plan A1, 2026-11-02)
+
+- New `GET /api/sandbox/status` (permission `read`): the Docker sandbox as the runtime's background check last found
+  it (`SandboxBackendStatus`, the `docker` row of the settings' `sandbox_backends`, with `state`, `reason`, `checks`,
+  `engine`, `rootless`, `cgroup_version`, `tested_at`). It never waits for the daemon; `refresh=1` starts a new check
+  (the self-test included) in the background and answers at once; `wait` (seconds, at most 5) waits that long at most.
+- New `POST /api/sandbox/self-test` (permission `admin`): runs the checks again now, the in-container self-test
+  included, and waits at most `timeout` seconds (default 30, at most 60); a longer check (the first image build) goes
+  on in the background and the answer says `checking`. A forced check starts at most every 10 s per Docker monitor
+  (one serves every tenant of a server); within that the current status is returned.
+- `GET /api/settings` reads the Docker rows from that check and never runs `docker info` (the first settings read on
+  Windows used to wait up to 10 s for it).
+- Diagnostics: the `docker` check comes from the same status (no blocking `docker info`) with `params.state`,
+  `params.reason` and `params.checks`; new codes `checking` and `unavailable` besides `available`, `not_installed`
+  and `unreachable`.
+- Export (`TOOL_SANDBOX=docker`): untrusted tools run only after the daemon passed Orkexa's preflight and the
+  in-container self-test, checked in the background at the start (with the runtime of plan R2 they were refused for
+  good, because nothing proved the daemon); the containers carry the installation's own owner label and only expired
+  ones are reaped. The README says what the container sandbox needs and enforces.
+- Contract (`openapi/nodestro-api.json`), all additions: the two routes, `SandboxCheck`, the new optional fields of
+  `SandboxBackendStatus` and its state `checking`.
+- Tests: `tests/test_sandbox_status_api.py`; workspaces in tests get a static "Docker missing" monitor unless marked
+  `real_docker_status`. The runtime pin is unchanged (these routes need nodestro-runtime with plan R2, `docker-r34`).
+
 ### Axentra platform services in `nodestro-server` (2026-11-02; everything off by default)
 
 - `migrate` applies Axentra's migrations after Nodestro's with one shared backup; `check`, `api` and `worker` refuse

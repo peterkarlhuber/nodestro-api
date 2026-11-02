@@ -14627,9 +14627,32 @@
             "title": "Available",
             "type": "boolean"
           },
+          "cgroup_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cgroup Version"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/SandboxCheck"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
           "detail": {
             "default": "",
             "title": "Detail",
+            "type": "string"
+          },
+          "engine": {
+            "default": "",
+            "title": "Engine",
             "type": "string"
           },
           "isolation": {
@@ -14663,6 +14686,17 @@
             "title": "Reason",
             "type": "string"
           },
+          "rootless": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rootless"
+          },
           "state": {
             "default": "unavailable",
             "enum": [
@@ -14670,16 +14704,53 @@
               "experimental",
               "unavailable",
               "not-isolating",
-              "not-applicable"
+              "not-applicable",
+              "checking"
             ],
             "title": "State",
             "type": "string"
+          },
+          "tested_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tested At"
           }
         },
         "required": [
           "name"
         ],
         "title": "SandboxBackendStatus",
+        "type": "object"
+      },
+      "SandboxCheck": {
+        "description": "One check behind a backend's state, e.g. ``preflight`` or ``self-test`` of the Docker sandbox.",
+        "properties": {
+          "detail": {
+            "default": "",
+            "title": "Detail",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "ok": {
+            "default": false,
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "SandboxCheck",
         "type": "object"
       },
       "SandboxSelection": {
@@ -27723,6 +27794,102 @@
         "summary": "Decide Tool Approval"
       }
     },
+    "/api/sandbox/self-test": {
+      "post": {
+        "description": "Run the Docker sandbox's checks again now, the in-container self-test included, and wait at most\n``timeout`` seconds (default 30, at most 60) for the result. A check that takes longer (the first start builds\nthe runtime image) goes on in the background: the answer then says ``checking`` and ``GET\n/api/sandbox/status`` shows the result later. Within 10 s of the last forced check no new one starts; the\nanswer is the status of the running or last check.",
+        "operationId": "post_sandbox_self_test_api_sandbox_self_test_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "timeout",
+            "required": false,
+            "schema": {
+              "default": 30.0,
+              "maximum": 60.0,
+              "minimum": 0,
+              "title": "Timeout",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SandboxBackendStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Sandbox Self Test"
+      }
+    },
+    "/api/sandbox/status": {
+      "get": {
+        "description": "The Docker sandbox of the computer the API runs on, as the background check last found it (the ``docker``\nrow of the settings' ``sandbox_backends``). It never waits for the daemon: ``state`` is ``checking`` until the\nfirst check after the start finished, and ``approved`` only after the preflight and the in-container self-test\npassed (``checks`` lists each step).\n\n``refresh=1`` starts a new check in the background, the self-test included (at most every 10 s; otherwise the\ncurrent status is returned), and answers at once with the current status; ``wait`` (seconds, at most 5) waits\nthat long at most for a running check.",
+        "operationId": "get_sandbox_status_api_sandbox_status_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "refresh",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Refresh",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "default": 0.0,
+              "maximum": 5.0,
+              "minimum": 0,
+              "title": "Wait",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SandboxBackendStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Sandbox Status"
+      }
+    },
     "/api/schedules": {
       "get": {
         "operationId": "list_schedules_api_schedules_get",
@@ -28114,6 +28281,7 @@
     },
     "/api/settings": {
       "get": {
+        "description": "The settings; the Docker rows come from the background check (``Workspace.docker_status``) and never wait\nfor the daemon (``checking`` until the first check after the start finished).",
         "operationId": "get_settings_api_settings_get",
         "responses": {
           "200": {
