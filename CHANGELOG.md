@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Security review fixes (SR-01, SR-03 to SR-06, SR-09, SR-10)
+
+- `tests/test_tenant_filters.py` runs the runtime's static tenant check over the API package.
+- A suspended tenant's batches, benchmarks, assistant answers and architect drafts stop
+  (`server_app.stop_tenant_work`, checked every 5 s), with `stop_code` `identity.tenant_suspended`.
+- `/api/notifications` refuses a malformed cursor with 400 `notifications.invalid_cursor`.
+- `secrets reencrypt` without `--tenant` also re-encrypts Axentra's columns (`axentra` in the report); the start
+  checks the keys of stored values.
+- `nodestro-server files cleanup [--dry-run] [--tenant]`; `files` exits with 2 when a report is not `ok`.
+- `set-role`, `remove-member`, `revoke-sessions`: an e-mail address needs the operator to type the user id on a
+  terminal (`identity.user_confirm` otherwise); an ambiguous address lists every identity.
+- `backup`: an empty storage archive before the first upload, the gzip header names the archive, and a clear error
+  when `pg_dump` runs without the owner role.
+
 ### Run budget decisions (BUDGET-1, 2026-11-02)
 
 - New `api_budget.py`: `GET /api/runs/{run_id}/budget` (read; the run's budget, its open decision, earlier ones and
