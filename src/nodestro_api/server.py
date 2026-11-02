@@ -29,11 +29,13 @@ sentence listing every problem (``profile.invalid``); nothing has a default that
 ``nodestro-server axentra status``
     The embedding state: switches, package version, schema state of both runners, keyring key ids (never keys),
     stored secrets by format, identity backend and its readiness, and the reconciliation backlog (counts only).
-``nodestro-server files migrate|verify|remove-source|export-volume [--dry-run] [--tenant TENANT]``
+``nodestro-server files migrate|verify|cleanup|remove-source|export-volume [--dry-run] [--tenant TENANT]``
     Input file bytes in Axentra's storage (``NODESTRO_FILES_BACKEND=axentra``): copy volume files into it (resumable,
-    idempotent, SHA-256 checked, the volume file is kept), verify every object, remove migrated volume files after
-    the fallback period (only with ``NODESTRO_FILES_SOURCE_REMOVAL=1``), or copy them back for a rollback. Exit code 2
-    when a file failed. See :mod:`nodestro_runtime.axentra_storage`.
+    idempotent, SHA-256 checked, the volume file is kept), verify every object and report leftovers (objects without
+    a mapping, mappings no input file uses, e.g. after a delete while the backend was ``volume``), delete those
+    leftovers, remove migrated volume files after the fallback period (only with ``NODESTRO_FILES_SOURCE_REMOVAL=1``),
+    or copy them back for a rollback. Exit code 2 when a file failed or ``verify`` found a leftover.
+    See :mod:`nodestro_runtime.axentra_storage`.
 ``nodestro-server axentra backfill-identity [--dry-run]`` / ``nodestro-server axentra reconcile-identity``
     Copy users, tenants, memberships and live sessions into Axentra (idempotent, resumable; run it in a maintenance
     window before ``NODESTRO_IDENTITY_BACKEND=mirror``), and compare both sides (exit code 1 on any difference; ids
@@ -890,13 +892,13 @@ def _files_tools(server: ServerEnvironment) -> Iterator[Any]:
         database.close()
 
 
-FILES_COMMANDS = ("migrate", "verify", "remove-source", "export-volume")
+FILES_COMMANDS = ("migrate", "verify", "cleanup", "remove-source", "export-volume")
 
 
 def files_command(
     server: ServerEnvironment, command: str, *, dry_run: bool = False, tenant: str | None = None
 ) -> dict[str, Any]:
-    """``nodestro-server files migrate|verify|remove-source|export-volume`` (see
+    """``nodestro-server files migrate|verify|cleanup|remove-source|export-volume`` (see
     :class:`nodestro_runtime.axentra_storage.AxentraFiles`); ids and counts only."""
     root = server.profile.data_dir
     with _files_tools(server) as files:
@@ -904,6 +906,8 @@ def files_command(
             report = files.migrate(root, tenant=tenant, dry_run=dry_run)
         elif command == "verify":
             report = files.verify(root, tenant=tenant)
+        elif command == "cleanup":
+            report = files.cleanup(tenant=tenant, dry_run=dry_run)
         elif command == "remove-source":
             report = files.remove_sources(root, tenant=tenant, dry_run=dry_run)
         elif command == "export-volume":
@@ -929,21 +933,40 @@ def archive_files(server: ServerEnvironment, directory: Path) -> Path | None:
     finally:
         services.close()
     if not source.is_dir():
-        raise NodestroError("storage.backup_failed", f"Axentra's storage directory {source} does not exist")
+        if _stored_files(server):
+            raise NodestroError("storage.backup_failed", f"Axentra's storage directory {source} does not exist")
+        source = None  # nothing was stored yet (a fresh installation): an empty archive
+    import gzip
     import tarfile
 
     directory.mkdir(parents=True, exist_ok=True)
     target = directory / f"nodestro-files-{_stamp()}.tar.gz"
     partial = target.with_name(target.name + ".partial")
     try:
-        with tarfile.open(partial, "w:gz") as archive:
-            # Temporary upload files (.tmp-*) of uploads in progress are left out: their rows are still pending.
-            archive.add(source, arcname=".", filter=lambda info: None if "/.tmp-" in f"/{info.name}" else info)
+        # The gzip header names the archive itself, not the temporary file it is written to.
+        with (
+            partial.open("wb") as raw,
+            gzip.GzipFile(filename=target.name, mode="wb", fileobj=raw) as compressed,
+            tarfile.open(fileobj=compressed, mode="w") as archive,
+        ):
+            if source is not None:
+                # Temporary upload files (.tmp-*) of uploads in progress are left out: their rows are still pending.
+                archive.add(source, arcname=".", filter=lambda info: None if "/.tmp-" in f"/{info.name}" else info)
         partial.replace(target)
     except BaseException:
         partial.unlink(missing_ok=True)
         raise
     return target
+
+
+def _stored_files(server: ServerEnvironment) -> int:
+    """How many file rows Axentra's storage has (any status), read as the owner role."""
+    database = _database(server, owner=True)
+    try:
+        rows = database._query("SELECT count(*) FROM axentra_files")
+    finally:
+        database.close()
+    return int(rows[0][0])
 
 
 def runtime_role(server: ServerEnvironment) -> str:
@@ -1034,6 +1057,12 @@ def dump(server: ServerEnvironment, target: Path) -> Path:
     )
     if completed.returncode != 0:
         target.unlink(missing_ok=True)
+        if "row-level security" in completed.stderr:
+            raise NodestroError(
+                "storage.backup_failed",
+                "pg_dump cannot read tables with row-level security as this role: the backup needs "
+                "NODESTRO_DATABASE_MIGRATION_URL (the owner role)",
+            )
         raise NodestroError("storage.backup_failed", f"pg_dump failed: {completed.stderr.strip()[-500:]}")
     return target
 
@@ -1307,7 +1336,8 @@ def parser() -> argparse.ArgumentParser:
     files_commands = files.add_subparsers(dest="files_command", required=True)
     for name, text in (
         ("migrate", "Copy volume files into Axentra's storage (resumable, SHA-256 checked, volume kept)"),
-        ("verify", "Read every stored file back and compare its SHA-256 (exit code 2 on a failure)"),
+        ("verify", "Read every stored file back and compare its SHA-256; report leftovers (exit code 2 on either)"),
+        ("cleanup", "Delete leftovers in Axentra: objects without a mapping, mappings no input file uses"),
         ("remove-source", "Delete migrated, verified volume files after the fallback period (needs the switch)"),
         ("export-volume", "Copy files stored only in Axentra back to the volume (before switching back)"),
     ):
@@ -1375,7 +1405,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 server, args.files_command, dry_run=getattr(args, "dry_run", False), tenant=args.tenant
             )
             print(json.dumps(report, indent=2))
-            if report["failed"]:
+            if not report["ok"]:
                 raise SystemExit(2)
         elif args.command in ("suspend-tenant", "resume-tenant"):
             status = "suspended" if args.command == "suspend-tenant" else "active"

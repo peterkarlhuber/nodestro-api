@@ -315,3 +315,26 @@ def test_a_shared_e_mail_address_needs_the_user_id(
         assert identity.members("acme") == []
     finally:
         database.close()
+
+
+def test_a_backup_as_a_role_that_row_level_security_limits_names_the_owner_role(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """pg_dump as the runtime role fails on Axentra's forced row-level security: the error says what to set."""
+    import subprocess as process
+
+    loaded = command.load(_environment(tmp_path))
+    stderr = (
+        "pg_dump: error: query failed: ERROR:  query would be affected by row-level security policy for table "
+        '"axentra_files"\nHINT:  To disable the policy for the table\'s owner, use ALTER TABLE NO FORCE ROW LEVEL '
+        "SECURITY.\n"
+    )
+    monkeypatch.setattr(command.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(
+        command.subprocess, "run", lambda *args, **kwargs: process.CompletedProcess(args, 1, stdout="", stderr=stderr)
+    )
+    with pytest.raises(NodestroError) as caught:
+        command.dump(loaded, tmp_path / "backups" / "nodestro.dump")
+    assert caught.value.code == "storage.backup_failed"
+    assert "NODESTRO_DATABASE_MIGRATION_URL (the owner role)" in str(caught.value)
+    assert not (tmp_path / "backups" / "nodestro.dump").exists()
