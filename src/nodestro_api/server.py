@@ -314,7 +314,14 @@ def _require_readable_secrets(server: ServerEnvironment, database: Any) -> None:
     with other bytes under a known key id)."""
     from nodestro_runtime.axentra_platform import require_readable_secrets
 
-    require_readable_secrets(database, server.settings.axentra, server.settings.secret_box())
+    kids = None
+    services = _axentra(server, database)
+    if services is not None:  # Axentra's own keyring columns need their keys too (SR-05)
+        try:
+            kids = services.kids_in_use()
+        finally:
+            services.close()
+    require_readable_secrets(database, server.settings.axentra, server.settings.secret_box(), kids)
 
 
 def _require_runtime_role(server: ServerEnvironment, database: Any) -> None:
@@ -678,20 +685,41 @@ def reencrypt_secrets(server: ServerEnvironment, *, dry_run: bool, tenant: str |
             "values move to (axs1: the active key; v1: back to NODESTRO_SECRET_KEY before switching Axentra off)",
         )
     database = _database(server)
+    axentra: dict[str, Any] | None = None
     try:
         database.require_current_schema()
         report = reencrypt_tenant_secrets(database, box, dry_run=dry_run, tenant=tenant)
+        # Axentra's own keyring columns (login states, webhook secrets, notification messages and the inbox) use the
+        # same keyring: they move to its active key too, or removing the old key would lose them (SR-05). They
+        # belong to no Nodestro tenant, so --tenant leaves them for a run without it.
+        if tenant is None:
+            _require_axentra_schema(server, database)
+            services = _axentra(server, database)
+            if services is not None:
+                try:
+                    axentra = services.reencrypt_columns(dry_run=dry_run)
+                finally:
+                    services.close()
     finally:
         database.close()
     logger.info(
-        "Secret re-encryption%s: %d values, %d pending, %d re-encrypted, %d failed",
+        "Secret re-encryption%s: %d values, %d pending, %d re-encrypted, %d failed; Axentra's columns: %s",
         " (dry run)" if dry_run else "",
         report.total,
         report.pending,
         report.reencrypted,
         len(report.failed),
+        "skipped (--tenant)" if axentra is None else f"{axentra['pending']} pending, {axentra['failed']} failed",
     )
-    return report.as_dict()
+    result = report.as_dict()
+    result["axentra"] = axentra
+    if axentra is not None:
+        # One answer for the operator: pending and failed cover both stores (the old key may go at pending: 0).
+        result["nodestro_pending"], result["nodestro_failed"] = result["pending"], result["failed"]
+        result["pending"] = result["pending"] + int(axentra["pending"])
+        if axentra["failed"]:
+            result["failed"] = [*result["failed"], f"axentra: {axentra['failed']} values"]
+    return result
 
 
 def reconcile_mirrors(server: ServerEnvironment, *, dry_run: bool, tenant: str | None) -> dict[str, Any]:

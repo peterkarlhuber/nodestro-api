@@ -367,3 +367,82 @@ def test_mirror_mode_writes_both_sides_from_the_member_commands(
     capsys.readouterr()
     command.main(["axentra", "reconcile-identity"])
     assert json.loads(capsys.readouterr().out)["ok"] is True
+
+
+def _seed_axentra_login_state(schema: str, ring: str) -> None:
+    """A value in one of Axentra's own keyring columns (an OIDC login start), under the key of ``ring``."""
+    from datetime import datetime, timedelta, timezone
+
+    from axentra.config.secrets import Keyring
+    from axentra.config.secrets import SecretBox as AxentraSecretBox
+    import psycopg
+    from psycopg import sql
+
+    box = AxentraSecretBox(Keyring.parse(ring))
+    state = "ab" * 32
+    with psycopg.connect(DSN, autocommit=True) as connection:
+        connection.execute(sql.SQL("SET search_path TO {}").format(sql.Identifier(schema)))
+        connection.execute(
+            "INSERT INTO axentra_login_states (state_hash, provider, nonce, code_verifier, return_to, expires_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s)",
+            (
+                state,
+                "default",
+                box.encrypt("n", f"axentra_login_states:{state}:nonce"),
+                box.encrypt("v", f"axentra_login_states:{state}:code_verifier"),
+                "/",
+                datetime.now(timezone.utc) + timedelta(hours=1),
+            ),
+        )
+
+
+def _axentra_kids(schema: str) -> list[str]:
+    import psycopg
+    from psycopg import sql
+
+    with psycopg.connect(DSN, autocommit=True) as connection:
+        connection.execute(sql.SQL("SET search_path TO {}").format(sql.Identifier(schema)))
+        rows = connection.execute("SELECT nonce, code_verifier FROM axentra_login_states").fetchall()
+    return sorted({value.split(".")[1] for row in rows for value in row})
+
+
+def test_axentras_own_keyring_values_are_reencrypted_and_their_keys_checked_at_start(
+    schema: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SR-05: ``secrets reencrypt`` covered only Nodestro's documents. Axentra's own keyring columns (login states,
+    webhook secrets, notification messages, the inbox) use the same keyring, so a removed old key silently lost them;
+    and the start check did not know their key ids."""
+    monkeypatch.setattr(command, "_require_containers", lambda _server: None)
+    old = _ring()
+    for key, value in _environment(tmp_path, NODESTRO_AXENTRA_KEYRING=old).items():
+        monkeypatch.setenv(key, value)
+    command.main(["migrate"])
+    _seed_axentra_login_state(schema, old)
+    new = "k2:" + base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("=")
+
+    # The old key removed too early: only Axentra's values need it, and the start refuses.
+    monkeypatch.setenv("NODESTRO_AXENTRA_KEYRING", new)
+    with pytest.raises(NodestroError) as caught:
+        command._ready(command.load())
+    assert caught.value.code == "profile.invalid" and "k1 (2 values)" in str(caught.value)
+
+    # The rotation: new key in front, old one behind; reencrypt moves Axentra's values too.
+    monkeypatch.setenv("NODESTRO_AXENTRA_KEYRING", f"{new},{old}")
+    command._ready(command.load()).close()
+    capsys.readouterr()
+    command.main(["secrets", "reencrypt", "--dry-run"])
+    dry = json.loads(capsys.readouterr().out)
+    assert dry["axentra"]["by_kid"] == {"k1": 2} and dry["pending"] == 2 and dry["nodestro_pending"] == 0
+    command.main(["secrets", "reencrypt"])
+    done = json.loads(capsys.readouterr().out)
+    assert done["axentra"]["reencrypted"] == 2 and done["failed"] == []
+    assert _axentra_kids(schema) == ["k2"]
+    command.main(["secrets", "reencrypt", "--dry-run"])
+    assert json.loads(capsys.readouterr().out)["pending"] == 0
+    # --tenant leaves Axentra's columns (they belong to no Nodestro tenant).
+    command.main(["secrets", "reencrypt", "--dry-run", "--tenant", "acme"])
+    assert json.loads(capsys.readouterr().out)["axentra"] is None
+
+    # Now the old key may go.
+    monkeypatch.setenv("NODESTRO_AXENTRA_KEYRING", new)
+    command._ready(command.load()).close()
