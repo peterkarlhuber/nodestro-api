@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Platform pins: Axentra migration completion
+
+- Runtime pin `50edcf7` (nodestro-runtime #86: security review fixes, performance fixes, M12 cleanup, Axentra
+  `a8ea5d5`). The runtime's `AxentraServices.start` now requires the process's database pool.
+
 ### Security review fixes (SR-01, SR-03 to SR-06, SR-09, SR-10)
 
 - `tests/test_tenant_filters.py` runs the runtime's static tenant check over the API package.
@@ -15,6 +20,18 @@
   terminal (`identity.user_confirm` otherwise); an ambiguous address lists every identity.
 - `backup`: an empty storage archive before the first upload, the gzip header names the archive, and a clear error
   when `pg_dump` runs without the owner role.
+### Pins: Docker sandbox security review fixes (2026-11-02)
+
+- Runtime pin `bf9af7d` (nodestro-runtime #85: review fixes DS-1..DS-5, DS-7, DS-9, DS-11; Orkexa `3364fb8`, DS-10),
+  examples pin `9669439` (nodestro-examples #48, the same runtime). The settings accept the new sandbox mode `linux`
+  (the built-in Linux sandbox, only when chosen); in `auto` AI-created code runs only in Docker. A reinstall without
+  code takes its trust from the stored tool, so an unsaved or AI-created tool's libraries are never installed on the
+  host.
+- Fix: `api`, `worker` and `check` of a server refused to start on a fresh Docker daemon (no sandbox image yet): since
+  Orkexa #31 the start-up check ran the full probe (image and self-test). It now asks Orkexa's preflight only (daemon
+  reachable, Linux containers, enforced limits, seccomp, cgroup v2 when rootless; `sandbox.unavailable` with the
+  reason `docker-<reason>` otherwise); the image and the in-container self-test stay with the runtime's Docker
+  monitor, which refuses every container run until they passed.
 
 ### Run budget decisions (BUDGET-1, 2026-11-02)
 
@@ -30,6 +47,24 @@
 - Published API runs, schedules, batches and test series never wait for a budget decision: they fail as before.
 - New `tests/test_budget_api.py`; the OpenAPI contract is regenerated.
 - Pins nodestro-runtime `64895e6` (runtime #84) and nodestro-examples `59fc96b` (examples #47).
+
+### Docker sandbox status: admin-only checks, redaction, bounded waits (security review DS-6, DS-8, DS-12)
+
+- `GET /api/sandbox/status?refresh=1` starts a check only for callers with `admin`; a reader's `refresh` is ignored
+  (`refresh_ignored: true`) and starts no container or image build (DS-6). The status refresh and `POST
+  /api/sandbox/self-test` have separate 10 s windows per Docker monitor, so neither starves the other.
+- Both routes answer the new `SandboxStatus` (a superset of `SandboxBackendStatus`; additive OpenAPI change) with
+  `check_started`, `throttled` and `retry_after` (seconds; when a forced check was asked for but none started),
+  `refresh_ignored`, `wait_skipped` and `redacted`. A self-test that did not run now says so (`throttled: true`,
+  `check_started: false`) instead of looking like a fresh result (DS-13).
+- Callers without `admin` no longer see the Docker host's details in `GET /api/sandbox/status` and `GET
+  /api/settings` (DS-8): `detail` is a fixed English text per `reason`, the checks keep `name` and `ok` with an empty
+  `detail` (no CLI path, image ID, daemon error output with socket paths or `tcp://` addresses), `engine` is empty,
+  and on a server `rootless` and `cgroup_version` are `null`. The settings' `sandbox_selection.detail` no longer
+  quotes the Docker detail either. Administrators keep the full detail.
+- `wait` and the self-test's `timeout` block a worker thread: at most 4 status requests and 2 self-tests wait at
+  once per process; the others answer at once with the current status (`wait_skipped: true`) (DS-12).
+- Tests: `tests/test_sandbox_status_api.py`.
 
 ### Pins (Axentra completion cascade, 2026-11-02)
 

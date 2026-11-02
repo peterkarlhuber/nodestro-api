@@ -275,6 +275,9 @@ def test_conflicts_and_unknown_packages_are_explained(make_app: Callable[..., Te
 def test_failed_installation_keeps_the_old_environment(make_app: Callable[..., TestClient], uv: FakeUv) -> None:
     client = make_app(python_runner=uv)
     assert _approve_tool(client)["install"]["status"] == "installed"
+    # A reinstall carries no code: the scope's trust comes from the stored tool (a person's own tool keeps its host
+    # environment; an unsaved or AI-created one needs the container sandbox since Docker-first, runtime #85).
+    client.post("/api/tools", json={"function_name": "join_cells", "code": TOOL, "tests": TESTS})
     uv.fail_sync = "error: Failed to fetch: https://pypi.org/simple/tabulate/"
     client.post("/api/python/environments/tool/join_cells/install")
     env = _wait_env(client, "tool", "join_cells")
@@ -283,6 +286,21 @@ def test_failed_installation_keeps_the_old_environment(make_app: Callable[..., T
     uv.fail_sync = None
     result = client.post("/api/tools/check", json={"function_name": "join_cells", "code": TOOL, "tests": TESTS})
     assert result.json()["ok"]
+
+
+def test_a_reinstall_of_an_unsaved_tool_needs_the_container_sandbox(
+    make_app: Callable[..., TestClient], uv: FakeUv
+) -> None:
+    """Without code in the request and without a stored tool, the scope is untrusted: no host environment is built
+    for it (Docker-first), the install is refused with the isolation reason instead."""
+    client = make_app(python_runner=uv)
+    assert _approve_tool(client)["install"]["status"] == "installed"
+    syncs = uv.syncs
+    client.post("/api/python/environments/tool/join_cells/install")
+    env = _wait_env(client, "tool", "join_cells")
+    assert env["install"]["status"] == "failed"
+    assert env["install"]["error"]["code"] == "sandbox.isolation_required"
+    assert uv.syncs == syncs  # nothing ran on the host
 
 
 def test_export_import_needs_new_approval_and_restores(make_app: Callable[..., TestClient], uv: FakeUv) -> None:

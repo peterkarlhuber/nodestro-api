@@ -12,7 +12,7 @@
 | P0 Critical | 0 |
 | P1 High | 0 |
 | P2 Medium | 6 |
-| P3 Low | 15 |
+| P3 Low | 16 |
 | P4 Optional | 4 |
 
 **Release blockers:** None for this repository.
@@ -206,14 +206,28 @@ None known.
 - **Priority:** P3 Low · **Status:** Open · **Refs:** Docker-first plan A1, `GET /api/sandbox/status`,
   `POST /api/sandbox/self-test`, nodestro-runtime RT-033/RT-034
 - **What:** Both routes answer the runtime's background check (`Workspace.docker_status`, a `SandboxBackendStatus`);
-  `GET /api/settings` never waits for Docker. A forced check (`refresh=1`, the self-test) starts at most every 10 s
-  per Docker monitor, which one server's tenants share. Open: the studio does not show the status and the new
+  `GET /api/settings` never waits for Docker. A forced check (`refresh=1` by an admin, the self-test) starts at most
+  every 10 s per path and Docker monitor, which one server's tenants share (see API-028). Open: the studio does not show the status and the new
   diagnostics codes `docker.checking` and `docker.unavailable` yet (nodestro-studio ST1); the export
   (`TOOL_SANDBOX=docker`) still uses Orkexa's `orkexa-sandbox` image, because building Nodestro's runtime image
   needs the Python environment manager, which an export does not carry; the routes were tested with stand-ins only
   (no Docker daemon in the development container).
 - **Next step:** Wire the status into the studio (ST1); decide how an export gets a sandbox image without a hand
   build; a real-daemon test of both routes in the CI `docker` job.
+- **Depends on:** nodestro-studio ST1, nodestro-sdk S1
+
+### API-028 · Docker sandbox status: residual risks after the security review (DS-6, DS-8, DS-12)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** security review DS-6, DS-8, DS-12, DS-13;
+  `src/nodestro_api/sandbox_status.py`
+- **What:** Readers no longer start checks, see host details or block more than 4 worker threads. Left: on a server
+  "admin" is a tenant admin, so every tenant's admins still see the shared host's Docker detail and share one 10 s
+  window per path (one tenant admin polling `refresh=1` throttles another's status refresh, not the self-test); the
+  diagnosis (`GET /api/diagnostics`, permission `install`) still waits up to 5 s outside the waiter cap; the runtime's
+  periodic preflight (TTL) is still started by any status read, as before.
+- **Next step:** Decide whether Docker host detail on a server goes to the operator only (a server-operator
+  permission instead of tenant `admin`), and whether the windows should be per tenant; studio and SDK show
+  `throttled`/`retry_after`, `refresh_ignored` and `redacted` (nodestro-studio ST1, nodestro-sdk S1).
 - **Depends on:** nodestro-studio ST1, nodestro-sdk S1
 
 ## Tests and quality assurance

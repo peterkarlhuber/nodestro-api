@@ -15402,6 +15402,7 @@
             "enum": [
               "auto",
               "subprocess",
+              "linux",
               "docker"
             ],
             "title": "Mode",
@@ -15434,6 +15435,152 @@
           }
         },
         "title": "SandboxSelection",
+        "type": "object"
+      },
+      "SandboxStatus": {
+        "description": "The Docker row of the settings' ``sandbox_backends``, and what this request did about it.",
+        "properties": {
+          "available": {
+            "default": false,
+            "title": "Available",
+            "type": "boolean"
+          },
+          "cgroup_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cgroup Version"
+          },
+          "check_started": {
+            "default": false,
+            "title": "Check Started",
+            "type": "boolean"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/SandboxCheck"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "detail": {
+            "default": "",
+            "title": "Detail",
+            "type": "string"
+          },
+          "engine": {
+            "default": "",
+            "title": "Engine",
+            "type": "string"
+          },
+          "isolation": {
+            "default": "none",
+            "title": "Isolation",
+            "type": "string"
+          },
+          "maturity": {
+            "default": "stable",
+            "title": "Maturity",
+            "type": "string"
+          },
+          "memory": {
+            "default": "none",
+            "title": "Memory",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          },
+          "redacted": {
+            "default": false,
+            "title": "Redacted",
+            "type": "boolean"
+          },
+          "refresh_ignored": {
+            "default": false,
+            "title": "Refresh Ignored",
+            "type": "boolean"
+          },
+          "retry_after": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry After"
+          },
+          "rootless": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rootless"
+          },
+          "state": {
+            "default": "unavailable",
+            "enum": [
+              "approved",
+              "experimental",
+              "unavailable",
+              "not-isolating",
+              "not-applicable",
+              "checking"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "tested_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tested At"
+          },
+          "throttled": {
+            "default": false,
+            "title": "Throttled",
+            "type": "boolean"
+          },
+          "wait_skipped": {
+            "default": false,
+            "title": "Wait Skipped",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "SandboxStatus",
         "type": "object"
       },
       "SanitizeReport": {
@@ -16151,6 +16298,7 @@
             "enum": [
               "auto",
               "subprocess",
+              "linux",
               "docker"
             ],
             "title": "Sandbox",
@@ -16347,6 +16495,7 @@
                 "enum": [
                   "auto",
                   "subprocess",
+                  "linux",
                   "docker"
                 ],
                 "type": "string"
@@ -28625,7 +28774,7 @@
     },
     "/api/sandbox/self-test": {
       "post": {
-        "description": "Run the Docker sandbox's checks again now, the in-container self-test included, and wait at most\n``timeout`` seconds (default 30, at most 60) for the result. A check that takes longer (the first start builds\nthe runtime image) goes on in the background: the answer then says ``checking`` and ``GET\n/api/sandbox/status`` shows the result later. Within 10 s of the last forced check no new one starts; the\nanswer is the status of the running or last check.",
+        "description": "Run the Docker sandbox's checks again now, the in-container self-test included, and wait at most\n``timeout`` seconds (default 30, at most 60) for the result. A check that takes longer (the first start builds\nthe runtime image) goes on in the background: the answer then says ``checking`` and ``GET\n/api/sandbox/status`` shows the result later. Within 10 s of the last self-test no new one starts: the answer is\nthe status of the running or last check with ``throttled`` and ``retry_after`` (``check_started`` false).\nReaders cannot start checks, and ``refresh`` on the status has a window of its own, so neither delays this.",
         "operationId": "post_sandbox_self_test_api_sandbox_self_test_post",
         "parameters": [
           {
@@ -28646,7 +28795,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SandboxBackendStatus"
+                  "$ref": "#/components/schemas/SandboxStatus"
                 }
               }
             },
@@ -28668,7 +28817,7 @@
     },
     "/api/sandbox/status": {
       "get": {
-        "description": "The Docker sandbox of the computer the API runs on, as the background check last found it (the ``docker``\nrow of the settings' ``sandbox_backends``). It never waits for the daemon: ``state`` is ``checking`` until the\nfirst check after the start finished, and ``approved`` only after the preflight and the in-container self-test\npassed (``checks`` lists each step).\n\n``refresh=1`` starts a new check in the background, the self-test included (at most every 10 s; otherwise the\ncurrent status is returned), and answers at once with the current status; ``wait`` (seconds, at most 5) waits\nthat long at most for a running check.",
+        "description": "The Docker sandbox of the computer the API runs on, as the background check last found it (the ``docker``\nrow of the settings' ``sandbox_backends``). It never waits for the daemon: ``state`` is ``checking`` until the\nfirst check after the start finished, and ``approved`` only after the preflight and the in-container self-test\npassed (``checks`` lists each step).\n\n``refresh=1`` starts a new check in the background, the self-test included, and answers at once with the\ncurrent status; only administrators start one (otherwise ``refresh_ignored``), at most every 10 s (otherwise\n``throttled`` with ``retry_after``); ``check_started`` says whether this request started one. ``wait`` (seconds,\nat most 5) waits that long at most for a running check, unless too many requests wait already\n(``wait_skipped``). Without ``admin`` host details are left out (``redacted``).",
         "operationId": "get_sandbox_status_api_sandbox_status_get",
         "parameters": [
           {
@@ -28699,7 +28848,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SandboxBackendStatus"
+                  "$ref": "#/components/schemas/SandboxStatus"
                 }
               }
             },
@@ -29110,7 +29259,7 @@
     },
     "/api/settings": {
       "get": {
-        "description": "The settings; the Docker rows come from the background check (``Workspace.docker_status``) and never wait\nfor the daemon (``checking`` until the first check after the start finished).",
+        "description": "The settings; the Docker rows come from the background check (``Workspace.docker_status``) and never wait\nfor the daemon (``checking`` until the first check after the start finished). Without the permission ``admin``\nthe Docker row carries no host details (see ``GET /api/sandbox/status``).",
         "operationId": "get_settings_api_settings_get",
         "responses": {
           "200": {
