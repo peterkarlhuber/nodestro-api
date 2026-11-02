@@ -331,17 +331,18 @@ def _require_axentra_schema(server: ServerEnvironment, database: Any) -> None:
 
 def _require_readable_secrets(server: ServerEnvironment, database: Any) -> None:
     """Refuse a configuration that cannot read every stored tenant secret (a rollback switched too early, or a key
-    with other bytes under a known key id)."""
+    with other bytes under a known key id, also one that only Axentra's own keyring columns use)."""
     from nodestro_runtime.axentra_platform import require_readable_secrets
 
-    kids = None
+    kids = samples = None
     services = _axentra(server, database)
-    if services is not None:  # Axentra's own keyring columns need their keys too (SR-05)
+    if services is not None:  # Axentra's own keyring columns need their keys too (SR-05), with their bytes (SR-04a)
         try:
             kids = services.kids_in_use()
+            samples = services.key_samples()
         finally:
             services.close()
-    require_readable_secrets(database, server.settings.axentra, server.settings.secret_box(), kids)
+    require_readable_secrets(database, server.settings.axentra, server.settings.secret_box(), kids, samples)
 
 
 def _require_runtime_role(server: ServerEnvironment, database: Any) -> None:

@@ -2,7 +2,8 @@
 
 Requests of a suspended tenant are refused at once (``test_identity.py``), and its runs stop in the worker at their
 next step (runtime ``test_job_delivery.py``). Work a tenant's context had started in the API process before
-(batches, benchmarks with their judge, assistant answers, architect drafts) is stopped by
+(batches, benchmarks with their judge, assistant answers, architect drafts, live run chat answers and Python
+environment installations; SR-03a) is stopped by
 :func:`nodestro_api.server_app.stop_tenant_work`, which the tenant app's suspension check calls for every opened
 tenant that is suspended now (:func:`nodestro_api.server_app.stop_suspended_tenants`).
 """
@@ -12,13 +13,16 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
+from types import SimpleNamespace
 from typing import Any
 
 from fastapi.testclient import TestClient
+from test_run_chat_api import CHAT, message, setup
 
 from nodestro_api.identity import TenantWorkspaces
 from nodestro_api.server_app import TENANT_SUSPENDED, stop_suspended_tenants, stop_tenant_work
 
+from conftest import text
 from test_automation import answer, form_workflow, poll, verdict
 
 
@@ -72,6 +76,36 @@ def test_a_suspension_stops_a_benchmark_before_its_judge_calls_again(make_app: A
     assert client.get(f"/api/benchmark-runs/{bench['id']}").json()["status"] == "cancelled"
 
 
+def test_a_suspension_stops_a_run_chat_answer(make_app: Any) -> None:
+    entered, release = threading.Event(), threading.Event()
+
+    def blocking_answer(_request: dict[str, Any]) -> Any:
+        entered.set()
+        release.wait(20)
+        return text("an answer after the suspension")
+
+    client, run_id = setup(make_app, {CHAT: [blocking_answer]})
+    asked = client.post(
+        f"/api/runs/{run_id}/chat/messages",
+        json={"kind": "question", "target_run_id": run_id, "node_id": "lead", "content": "Where are we?"},
+    )
+    assert asked.status_code == 201, asked.text
+    question_id = asked.json()["id"]
+    assert entered.wait(20), "the answer was never asked for"
+    try:
+        assert question_id in _stop(client)
+        found = message(client, run_id, question_id)
+        assert (found["status"], found["code"]) == ("failed", TENANT_SUSPENDED)
+    finally:
+        release.set()
+    time.sleep(0.3)  # the model's late answer arrives meanwhile: it is not stored
+    found = message(client, run_id, question_id)
+    assert (found["status"], found["code"]) == ("failed", TENANT_SUSPENDED)
+    view = client.get(f"/api/runs/{run_id}/chat").json()
+    assert [item["kind"] for item in view["messages"]] == ["question"]
+    assert question_id not in _stop(client)  # idempotent
+
+
 class _Work:
     """A tenant context's background services, recording what was stopped."""
 
@@ -105,6 +139,16 @@ class _Context:
         else:
             self.architect.cancel_all = self.architect._sync  # type: ignore[attr-defined]
 
+        def stopped_with(name: str) -> Any:
+            def stop(code: str) -> list[str]:
+                log.append(f"{tenant}-{name}:{code}")
+                return [f"{tenant}-{name}"]
+
+            return stop
+
+        self.runs = SimpleNamespace(chat=SimpleNamespace(cancel_answers=stopped_with("chat")))
+        self.python = SimpleNamespace(cancel_installs=stopped_with("python"))
+
 
 class _Identity:
     def __init__(self, suspended: set[str]) -> None:
@@ -132,8 +176,14 @@ async def _only_suspended() -> None:
         tenants.get(tenant)
     stopped = await stop_suspended_tenants(tenants, _Identity({"beta"}))  # type: ignore[arg-type]
     # beta's architect fails to stop: the rest of beta is stopped anyway; acme and the unknown status are untouched.
-    assert stopped == ["beta-benchmarks", "beta-batches", "beta-assistant"]
-    assert log == [f"beta-benchmarks:{TENANT_SUSPENDED}", f"beta-batches:{TENANT_SUSPENDED}", "beta-assistant"]
+    assert stopped == ["beta-benchmarks", "beta-batches", "beta-assistant", "beta-chat", "beta-python"]
+    assert log == [
+        f"beta-benchmarks:{TENANT_SUSPENDED}",
+        f"beta-batches:{TENANT_SUSPENDED}",
+        "beta-assistant",
+        f"beta-chat:{TENANT_SUSPENDED}",
+        f"beta-python:{TENANT_SUSPENDED}",
+    ]
     log.clear()
     assert await stop_suspended_tenants(tenants, _Identity(set())) == []  # type: ignore[arg-type]
     assert log == []

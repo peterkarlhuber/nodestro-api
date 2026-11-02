@@ -301,8 +301,10 @@ def test_failed_runs_reach_the_members_inbox_and_the_worker_settles_run_usage(
             refused = browser.get("/api/notifications", params={"cursor": cursor})
             assert refused.status_code == 400, cursor
             assert refused.json()["code"] == "notifications.invalid_cursor" and cursor not in refused.text
-        good = _cursor(["2026-11-02T10:00:00+00:00", "msg_x"])
-        assert browser.get("/api/notifications", params={"cursor": good}).status_code == 200
+        for good in _GOOD_CURSORS:  # every shape that passes the check is one PostgreSQL reads (SR-06a)
+            assert browser.get("/api/notifications", params={"cursor": good}).status_code == 200, good
+        if page.get("next_cursor"):
+            assert browser.get("/api/notifications", params={"cursor": page["next_cursor"]}).status_code == 200
         marked = browser.post("/api/notifications/read", json={}, headers={"Origin": "https://studio.test"})
         assert marked.status_code == 200 and marked.json() == {"marked": 1}
         assert browser.get("/api/notifications").json()["unread"] == 0
@@ -326,6 +328,29 @@ _BAD_CURSORS = [
     _cursor([1, 2]),
     _cursor(["2026-11-02T10:00:00+00:00", ""]),
     "A" * 600,
+    # SR-06a: values Python's fromisoformat reads but PostgreSQL rejects (each was a 500), and lone surrogates.
+    _cursor(["2026-11-02T10:00:00+00:00", "msg\x00x"]),  # a NUL byte in the id
+    _cursor(["2026-11-02T10:00:00\x00+00:00", "msg_x"]),  # a NUL byte in the time
+    _cursor(["2026-W45-1T10:00:00+00:00", "msg_x"]),  # an ISO week date
+    _cursor(["2026-11-02T10:00:00+01:00:00.123456", "msg_x"]),  # an offset with microseconds
+    _cursor(["2026-11-02T10:00:00,5+00:00", "msg_x"]),  # a comma fraction
+    _cursor(["2026-11-02T10:00:00+00:00", "msg_\ud800"]),  # a lone surrogate in the id
+    _cursor(["2026-11-02T10:00:00\ud800+00:00", "msg_x"]),  # a lone surrogate in the time
+    _cursor(["\u0662\u0660\u0662\u0666-11-02T10:00:00+00:00", "msg_x"]),  # non-ASCII digits
+    _cursor(["2026-11-02T10:00:00.1234567+00:00", "msg_x"]),  # more than microseconds
+    _cursor(["2026-11-31T10:00:00+00:00", "msg_x"]),  # no such day
+    _cursor(["2026-11-02 10:00:00.123456+00:00", "msg_x"]),  # a space instead of T (not Axentra's form)
+    _cursor(["2026-11-02T10:00Z", "msg_x"]),  # no seconds
+    _cursor(["2026-11-02T10:00:00.5-05", "msg_x"]),  # an hour-only offset
+    _cursor(["2026-11-02T10:00:00+05:30:15", "msg_x"]),  # an offset with seconds
+]
+
+#: Cursors in the shapes Axentra writes (``datetime.isoformat()`` of an aware value) and accepts back.
+_GOOD_CURSORS = [
+    _cursor(["2026-11-02T10:00:00+00:00", "msg_x"]),
+    _cursor(["2026-11-02T10:00:00.123456+00:00", "msg_01JBX4Z6Q5ZC1RSV3E7D1W2K3M"]),
+    _cursor(["2026-11-02T10:00:00Z", "msg_x"]),
+    _cursor(["2026-11-02T10:00:00.5-05:00", "msg_x"]),
 ]
 
 
@@ -337,7 +362,11 @@ def test_a_notification_cursor_is_checked_before_axentra_reads_it() -> None:
     check_cursor(None)
     check_cursor("")
     check_cursor(_cursor(["2026-11-02T10:00:00.123456+00:00", "msg_1"]))
-    for cursor in _BAD_CURSORS:
+    for cursor in _GOOD_CURSORS:
+        check_cursor(cursor)
+    for cursor in [*_BAD_CURSORS, "\x00", "\ud800", "eyJ\ud800"]:  # raw NUL bytes and lone surrogates too
         with pytest.raises(NodestroError) as caught:
             check_cursor(cursor)
         assert caught.value.code == "notifications.invalid_cursor"
+        assert str(caught.value) == "The cursor is not valid; start again without it"  # the input is never echoed
+        assert caught.value.params == {}

@@ -446,3 +446,27 @@ def test_axentras_own_keyring_values_are_reencrypted_and_their_keys_checked_at_s
     # Now the old key may go.
     monkeypatch.setenv("NODESTRO_AXENTRA_KEYRING", new)
     command._ready(command.load()).close()
+
+
+def test_the_start_checks_the_key_bytes_of_axentras_own_keyring_columns(
+    schema: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SR-04a: the key-bytes check sampled only Nodestro's documents, so other bytes under a key id that only
+    Axentra's own columns use (here a login state) started and left those values unreadable."""
+    monkeypatch.setattr(command, "_require_containers", lambda _server: None)
+    old = _ring()
+    for key, value in _environment(tmp_path, NODESTRO_AXENTRA_KEYRING=old).items():
+        monkeypatch.setenv(key, value)
+    command.main(["migrate"])
+    _seed_axentra_login_state(schema, old)
+    command._ready(command.load()).close()  # the right key
+
+    impostor = _ring()  # k1 again, other bytes
+    monkeypatch.setenv("NODESTRO_AXENTRA_KEYRING", impostor)
+    with pytest.raises(NodestroError) as caught:
+        command._ready(command.load())
+    assert caught.value.code == "profile.invalid"
+    (problem,) = caught.value.params["problems"]
+    assert (problem["field"], problem["value"]) == ("NODESTRO_AXENTRA_KEYRING", "k1")
+    assert "axentra_login_states" in problem["reason"]
+    assert impostor.split(":", 1)[1] not in str(caught.value) and old.split(":", 1)[1] not in str(caught.value)
