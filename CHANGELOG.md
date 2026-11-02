@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Docker sandbox status: admin-only checks, redaction, bounded waits (security review DS-6, DS-8, DS-12)
+
+- `GET /api/sandbox/status?refresh=1` starts a check only for callers with `admin`; a reader's `refresh` is ignored
+  (`refresh_ignored: true`) and starts no container or image build (DS-6). The status refresh and `POST
+  /api/sandbox/self-test` have separate 10 s windows per Docker monitor, so neither starves the other.
+- Both routes answer the new `SandboxStatus` (a superset of `SandboxBackendStatus`; additive OpenAPI change) with
+  `check_started`, `throttled` and `retry_after` (seconds; when a forced check was asked for but none started),
+  `refresh_ignored`, `wait_skipped` and `redacted`. A self-test that did not run now says so (`throttled: true`,
+  `check_started: false`) instead of looking like a fresh result (DS-13).
+- Callers without `admin` no longer see the Docker host's details in `GET /api/sandbox/status` and `GET
+  /api/settings` (DS-8): `detail` is a fixed English text per `reason`, the checks keep `name` and `ok` with an empty
+  `detail` (no CLI path, image ID, daemon error output with socket paths or `tcp://` addresses), `engine` is empty,
+  and on a server `rootless` and `cgroup_version` are `null`. The settings' `sandbox_selection.detail` no longer
+  quotes the Docker detail either. Administrators keep the full detail.
+- `wait` and the self-test's `timeout` block a worker thread: at most 4 status requests and 2 self-tests wait at
+  once per process; the others answer at once with the current status (`wait_skipped: true`) (DS-12).
+- Tests: `tests/test_sandbox_status_api.py`.
+
 ### Pins (Axentra completion cascade, 2026-11-02)
 
 - Runtime pin `95114ae` (nodestro-runtime #82: Axentra `f6ae01d` across the version chain), examples pin `9cdc1f5`
