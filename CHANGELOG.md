@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Platform pins: security review round 4 (2026-11-02)
+
+- Pins nodestro-runtime bcfea7f (runtime #95: no tool-job install starts after a stop, R4-7; static tenant SQL check
+  R4-3 to R4-6; #94: orkexa 0861c1b; Axentra 2767a2e) and nodestro-examples 9dd0c1a (examples #54).
+- `docs/TODO.md` API-041 now also records the `suspension_check` window and approvals committed before a stop.
+
 ### Server worker keeps the Docker sandbox's proof warm (2026-11-02)
 
 - A server worker (`nodestro-server worker`) now reads the process's Docker monitor from its start and then every
