@@ -82,3 +82,9 @@ mypy_path = "src"
 # the MCP server endpoint answers mcp.unavailable.
 module = ["mcp", "mcp.*", "mcp_types", "mcp_types.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Axentra needs Python 3.11+ (nodestro-runtime[postgres] installs it with an environment marker); on 3.10 the
+# Axentra switches stay off and these imports are never reached. On 3.11+ mypy checks them against the real package.
+module = ["axentra", "axentra.*"]
+ignore_missing_imports = true
