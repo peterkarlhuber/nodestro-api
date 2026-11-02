@@ -7,6 +7,15 @@
 - Runtime pin `95114ae` (nodestro-runtime #82: Axentra `f6ae01d` across the version chain), examples pin `9cdc1f5`
   (nodestro-examples #45).
 
+### Performance benches (Axentra migration, requirement 15)
+
+- `tests/bench_identity.py`, `bench_api.py`, `bench_pool_load.py`, `bench_mirrors.py`, `bench_migrations.py`,
+  `bench_workers.py` (shared set-up in `tests/perf_support.py`): before/after measurements on a throwaway PostgreSQL
+  schema (session resolution, API latency, pool and connections under API plus worker load, mirror write cost and
+  run usage settlement, migration commands with a SIGKILL and resume, worker throughput and a killed worker, process
+  memory). Run with `python tests/bench_x.py`; not collected by pytest. Results: nodestro-runtime `docs/AXENTRA.md`,
+  "Performance".
+
 ### Identity completion (Axentra migration M5; off by default)
 
 - `NODESTRO_IDENTITY_BACKEND=axentra`: Axentra runs the OIDC login (`AxentraLoginFlow`, Axentra's `OidcService` behind
