@@ -8,8 +8,9 @@
   Python environment installations: the job is `failed` at once with `message_code` `identity.tenant_suspended`
   (no new status), sends no further model request, has a running sandbox test killed, stops waiting for a decision
   (a late decision gets `400 job.not_awaiting`) and never registers its tool. Other tenants' jobs are untouched.
-- Needs the runtime with `ToolLibrary.cancel_jobs` (developed against the local runtime worktree; the pin is bumped
-  when the runtime PR is merged).
+- Pins nodestro-runtime 96f14ef (runtime #93: `ToolLibrary.cancel_jobs`, static tenant SQL check round-3 gaps #89,
+  Axentra f3ed8d2) and nodestro-examples cacf6b5 (examples #53). The API's own tenant SQL test passes the stricter
+  check. Request-bound work that is not cancelled is recorded as accepted risk API-041 in `docs/TODO.md`.
 
 ### Platform pins: Docker-first follow-up (2026-11-02)
 
