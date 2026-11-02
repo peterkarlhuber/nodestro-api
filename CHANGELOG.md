@@ -55,7 +55,8 @@
 - Contract (`openapi/nodestro-api.json`), all additions: the two routes, `SandboxCheck`, the new optional fields of
   `SandboxBackendStatus` and its state `checking`.
 - Tests: `tests/test_sandbox_status_api.py`; workspaces in tests get a static "Docker missing" monitor unless marked
-  `real_docker_status`. Runtime pin `b608f90` (nodestro-runtime #83: Docker-first plan R1-R4, Orkexa `e220f70`).
+  `real_docker_status`. Runtime pin `b608f90` (nodestro-runtime #83: Docker-first plan R1-R4, Orkexa `e220f70`); examples pin
+  `50552a0` (nodestro-examples #46, the same runtime).
 
 ### Axentra platform services in `nodestro-server` (2026-11-02; everything off by default)
 

@@ -13,7 +13,7 @@ requires-python = ">=3.10"
 authors = [{ name = "Peter Karlhuber" }]
 dependencies = [
     "nodestro-runtime @ git+https://github.com/peterkarlhuber/nodestro-runtime.git@b608f907c28ac54c719cf77246610f05c6bf33f1",
-    "nodestro-examples @ git+https://github.com/peterkarlhuber/nodestro-examples.git@9cdc1f5928f13a2b447546cfc9019fa3e664ab1e",
+    "nodestro-examples @ git+https://github.com/peterkarlhuber/nodestro-examples.git@50552a0c9ba71f935b77d084c7dcd649fb149aee",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "python-multipart>=0.0.9",
