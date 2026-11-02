@@ -9,6 +9,11 @@
   (the built-in Linux sandbox, only when chosen); in `auto` AI-created code runs only in Docker. A reinstall without
   code takes its trust from the stored tool, so an unsaved or AI-created tool's libraries are never installed on the
   host.
+- Fix: `api`, `worker` and `check` of a server refused to start on a fresh Docker daemon (no sandbox image yet): since
+  Orkexa #31 the start-up check ran the full probe (image and self-test). It now asks Orkexa's preflight only (daemon
+  reachable, Linux containers, enforced limits, seccomp, cgroup v2 when rootless; `sandbox.unavailable` with the
+  reason `docker-<reason>` otherwise); the image and the in-container self-test stay with the runtime's Docker
+  monitor, which refuses every container run until they passed.
 
 ### Run budget decisions (BUDGET-1, 2026-11-02)
 

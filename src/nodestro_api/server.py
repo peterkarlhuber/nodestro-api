@@ -271,12 +271,27 @@ def _database(server: ServerEnvironment, *, owner: bool = False) -> Any:
 
 
 def _require_containers(server: ServerEnvironment) -> None:
-    from orkexa.dynamic import DockerSandbox
+    """A server runs tool code only in containers: the daemon must answer and pass Orkexa's preflight (Linux
+    containers, enforced memory/CPU/process limits, a seccomp profile, cgroup v2 when rootless).
 
-    if not DockerSandbox.available(server.docker):
+    The image build and the in-container self-test are not part of the start: a fresh daemon has no image yet. The
+    runtime's Docker monitor runs them in the background, and every container run is refused until they passed
+    (fail closed); before orkexa #31 the start only checked that the daemon answered."""
+    from orkexa.dynamic.docker import DockerProbeError, inspect_host, preflight
+
+    try:
+        probe = preflight(inspect_host(server.docker))
+    except DockerProbeError as exc:
         raise NodestroError(
             "sandbox.unavailable",
             "Docker is not reachable (local socket or DOCKER_HOST); a server runs tool code only in containers",
+            reason=f"docker-{exc.reason}",
+        ) from None
+    if not probe.available:
+        raise NodestroError(
+            "sandbox.unavailable",
+            f"The Docker daemon cannot isolate tool code ({probe.reason}): {probe.detail}",
+            reason=f"docker-{probe.reason}",
         )
 
 
