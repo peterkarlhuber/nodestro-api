@@ -148,14 +148,21 @@ def test_secrets_reencrypt_moves_v1_values_to_the_keyring(
     assert box.decrypt("acme", "providers.openai.api_key", _stored(schema)) == "sk-1"
 
 
-def test_secrets_reencrypt_is_refused_while_new_values_are_still_written_as_v1(
-    schema: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_secrets_reencrypt_with_v1_is_the_rollback_and_keeps_v1_values(
+    schema: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    # NODESTRO_SECRETS_FORMAT=v1 (the default) with the keyring: re-encryption moves axs1 values back to v1 and leaves
+    # v1 values alone (see test_server_obs.py for the whole rollback).
     for key, value in _environment(tmp_path).items():
         monkeypatch.setenv(key, value)
-    with pytest.raises(SystemExit) as stopped:
-        command.main(["secrets", "reencrypt"])
-    assert str(stopped.value).startswith("secrets.keyring_required")
+    command.main(["migrate"])
+    _seed_v1_secret(schema)
+    before = _stored(schema)
+    capsys.readouterr()
+    command.main(["secrets", "reencrypt"])
+    report = json.loads(capsys.readouterr().out)
+    assert (report["pending"], report["reencrypted"], report["active_kid"]) == (0, 0, "v1")
+    assert _stored(schema) == before
 
 
 def test_an_unreadable_secret_fails_the_command_and_stays(
