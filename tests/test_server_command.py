@@ -277,6 +277,20 @@ def test_operators_manage_members_roles_and_sessions(
         assert identity.role("acme", owner.id) == "owner"
         with pytest.raises(SystemExit):
             command.main(["set-role", "acme", bob.id, "superuser"])  # not a role
+
+        # A tenant is suspended and resumed without SQL; its sessions are refused meanwhile.
+        session = identity.create_session(owner.id, "acme")
+        command.main(["suspend-tenant", "acme"])
+        assert capsys.readouterr().out.strip() == "tenant acme is suspended"
+        assert not identity.tenant_active("acme")
+        with pytest.raises(NodestroError):
+            identity.session(session)
+        command.main(["resume-tenant", "acme"])
+        assert capsys.readouterr().out.strip() == "tenant acme is active"
+        assert identity.session(session) is not None
+        with pytest.raises(SystemExit) as stopped:
+            command.main(["suspend-tenant", "other"])
+        assert str(stopped.value.code).startswith("identity.tenant_unknown:")
     finally:
         database.close()
 
