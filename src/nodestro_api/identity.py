@@ -16,6 +16,13 @@ A login is bound to the browser that starts it: ``/api/auth/login`` gives the br
 with a callback URL started elsewhere). Setup tokens and sign-in codes are kept out of the access log
 (:func:`redact_auth_logs`).
 
+Two login flows serve the same routes, cookies and error codes (:class:`LoginFlow`): Nodestro's own OpenID Connect
+client (:class:`NodestroLoginFlow`, identity backends ``nodestro`` and ``mirror``) and Axentra's
+:class:`~axentra.identity.oidc.OidcService` (:class:`AxentraLoginFlow`, backend ``axentra``: Axentra keeps the login
+state, verifies the provider's answer, finds or creates the user and audits the login; Nodestro starts the session
+in the chosen tenant). A login ends the session the browser held before, and a tenant switch issues a new session
+and ends the old one (session rotation). A suspended tenant is closed (``403 identity.tenant_suspended``).
+
 Changing requests must come from the studio's own origin (:class:`SameOriginMiddleware`): the session cookie is
 sent by the browser automatically, so the ``Origin`` header protects against cross-site requests. It is not a
 replacement for the login.
@@ -36,14 +43,14 @@ from urllib.parse import urlencode, urlsplit
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
-from nodestro_runtime.identity_store import ROLES, IdentityStore, Role
+from nodestro_runtime.identity_store import ROLE_GRANTS, ROLES, IdentityStore, Role
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.storage_postgres import TENANT_ID
 from pydantic import BaseModel
 from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from .permissions import PUBLIC, READ, Permission, Principal
+from .permissions import PUBLIC, READ, AccessError, Permission, Principal
 
 logger = logging.getLogger(__name__)
 
@@ -61,17 +68,21 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
     "viewer": frozenset({Permission.READ}),
 }
 assert set(ROLE_PERMISSIONS) == set(ROLES)
+assert all(ROLE_PERMISSIONS[role] == {Permission(p) for p in ROLE_GRANTS[role]} for role in ROLES)
+#: The tenant permissions a session may carry from the identity backend (never ``install``).
+_TENANT_PERMISSIONS = frozenset({Permission.READ, Permission.EDIT, Permission.RUN, Permission.ADMIN})
 #: Signature algorithms accepted for ID tokens (asymmetric only: never ``none`` or a shared secret).
 ALGORITHMS = ("RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512", "EdDSA")
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 
 class LoginError(Exception):
-    """A login that cannot continue; ``code`` is shown, the details only logged."""
+    """A login that cannot continue; ``code`` (and ``status``) is shown, the details only logged."""
 
-    def __init__(self, code: str, detail: str) -> None:
+    def __init__(self, code: str, detail: str, status: int = 400) -> None:
         super().__init__(detail)
         self.code = code
+        self.status = status
 
 
 _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
@@ -252,6 +263,211 @@ class OidcClient:
         raise LoginError("identity.login_failed", "The ID token was signed with an unknown key")
 
 
+# ---- login flows -----------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class StartedLogin:
+    """Where to send the browser, and the ``state`` the login cookie binds to it."""
+
+    url: str
+    state: str
+
+
+@dataclass(frozen=True)
+class FinishedLogin:
+    """A verified callback: who logged in and what the login started with."""
+
+    issuer: str
+    subject: str
+    #: Only an address the provider marked verified.
+    email: str | None
+    name: str | None
+    return_to: str
+    tenant_id: str | None = None
+    bootstrap_hash: bytes | None = None
+    #: The Axentra user the flow found or created (:class:`AxentraLoginFlow`); checked against Nodestro's link.
+    account: str | None = None
+
+
+class LoginFlow:
+    """Starts and finishes OpenID Connect logins for :func:`auth_router` (raises :class:`LoginError`)."""
+
+    def start(
+        self, *, return_to: str, tenant_id: str | None, bootstrap_token: str | None, ip: str | None
+    ) -> StartedLogin:
+        raise NotImplementedError
+
+    def finish(
+        self, *, state: str, code: str, error: str | None, bound: str, ip: str | None, user_agent: str
+    ) -> FinishedLogin:
+        raise NotImplementedError
+
+
+class NodestroLoginFlow(LoginFlow):
+    """Nodestro's own client (:class:`OidcClient`) with login states in ``nodestro_login_states``."""
+
+    def __init__(self, identity: IdentityStore, oidc: OidcClient) -> None:
+        self.identity = identity
+        self.oidc = oidc
+
+    def start(
+        self, *, return_to: str, tenant_id: str | None, bootstrap_token: str | None, ip: str | None
+    ) -> StartedLogin:
+        verifier = secrets.token_urlsafe(48)
+        nonce = secrets.token_urlsafe(24)
+        state = self.identity.create_login_state(
+            nonce=nonce,
+            code_verifier=verifier,
+            return_to=return_to,
+            tenant_id=tenant_id,
+            bootstrap_token=bootstrap_token,
+        )
+        url = self.oidc.authorization_url(state=state, nonce=nonce, code_verifier=verifier)
+        return StartedLogin(url=url, state=state)
+
+    def finish(
+        self, *, state: str, code: str, error: str | None, bound: str, ip: str | None, user_agent: str
+    ) -> FinishedLogin:
+        started = self.identity.take_login_state(state)
+        if started is None:
+            raise LoginError("identity.login_expired", "unknown, used or expired login state")
+        if not bound or not secrets.compare_digest(bound.encode(), state.encode()):
+            # A callback URL that another browser started (login CSRF), or a browser that lost the login cookie.
+            raise LoginError("identity.login_expired", "a login callback came from a browser that did not start it")
+        if error or not code:
+            raise LoginError(
+                "identity.login_failed", f"the identity provider refused the login: {(error or 'no code')[:200]}"
+            )
+        claims = self.oidc.exchange(code=code, code_verifier=started.code_verifier, nonce=started.nonce)
+        return FinishedLogin(
+            issuer=str(claims["iss"]),
+            subject=str(claims["sub"]),
+            email=claims.get("email") if claims.get("email_verified") is True else None,
+            name=claims.get("name"),
+            return_to=started.return_to,
+            tenant_id=started.tenant_id,
+            bootstrap_hash=started.bootstrap_hash,
+        )
+
+
+#: Axentra's login error codes -> Nodestro's (and their HTTP status).
+_AXENTRA_LOGIN_ERRORS: dict[str, tuple[str, int]] = {
+    "login_expired": ("identity.login_expired", 400),
+    "access_denied": ("identity.login_failed", 400),
+    "login_failed": ("identity.login_failed", 400),
+    "email_not_verified": ("identity.login_failed", 400),
+    "domain_not_allowed": ("identity.login_failed", 400),
+    "signup_disabled": ("identity.login_failed", 400),
+    "provider_unavailable": ("identity.provider", 400),
+    "account_disabled": ("identity.account_disabled", 403),
+    "rate_limited": ("identity.rate_limited", 429),
+}
+#: The provider id of Nodestro's identity provider in Axentra.
+AXENTRA_PROVIDER = "nodestro"
+
+
+class AxentraLoginFlow(LoginFlow):
+    """Axentra's :class:`~axentra.identity.oidc.OidcService` behind Nodestro's routes, cookies and error codes.
+
+    Axentra stores the login state (its nonce, PKCE verifier and Nodestro's context, encrypted), consumes it once,
+    checks the browser binding, exchanges the code, verifies the ID token and finds or creates the Axentra user of
+    the identity ``(issuer, subject)`` (never linked by e-mail; a user without a verified address is allowed, as in
+    Nodestro). It starts no session: Nodestro starts one in the chosen tenant (:meth:`IdentityStore.create_session`
+    writes both sides)."""
+
+    def __init__(self, service: Any, provider_id: str = AXENTRA_PROVIDER) -> None:
+        self.service = service
+        self.provider_id = provider_id
+
+    @staticmethod
+    def _error(exc: Any) -> LoginError:
+        code, status = _AXENTRA_LOGIN_ERRORS.get(exc.code, ("identity.login_failed", 400))
+        return LoginError(code, f"{exc.code}: {exc}", status)
+
+    def start(
+        self, *, return_to: str, tenant_id: str | None, bootstrap_token: str | None, ip: str | None
+    ) -> StartedLogin:
+        from axentra.identity.oidc import OidcLoginError
+
+        context = {}
+        if tenant_id is not None:
+            context["tenant"] = tenant_id
+        if bootstrap_token:
+            # Only the hash, as in Nodestro's own login states: the setup token itself is never stored.
+            context["bootstrap"] = hashlib.sha256(bootstrap_token.encode("utf-8")).hexdigest()
+        try:
+            started = self.service.start(self.provider_id, return_to=return_to, ip=ip, context=context)
+        except OidcLoginError as exc:
+            raise self._error(exc) from None
+        return StartedLogin(url=started.authorization_url, state=started.state)
+
+    def finish(
+        self, *, state: str, code: str, error: str | None, bound: str, ip: str | None, user_agent: str
+    ) -> FinishedLogin:
+        from axentra.identity.oidc import OidcLoginError
+
+        try:
+            result = self.service.finish(
+                self.provider_id,
+                state=state,
+                code=code or None,
+                error=error,
+                browser_state=bound,
+                ip=ip,
+                user_agent=user_agent,
+                start_session=False,
+            )
+        except OidcLoginError as exc:
+            raise self._error(exc) from None
+        found = result.identity
+        bootstrap = result.context.get("bootstrap")
+        return FinishedLogin(
+            issuer=found.provider,
+            subject=found.subject,
+            email=found.email or None,
+            name=found.name or None,
+            return_to=safe_return_path(result.return_to),
+            tenant_id=result.context.get("tenant"),
+            bootstrap_hash=bytes.fromhex(bootstrap) if bootstrap else None,
+            account=result.user_id,
+        )
+
+
+def axentra_login_flow(identity: Any, settings: OidcSettings, *, transport: Any | None = None) -> AxentraLoginFlow:
+    """The :class:`AxentraLoginFlow` of an :class:`~nodestro_runtime.axentra_identity.AxentraIdentityStore`: one
+    Axentra provider entry built from Nodestro's OIDC settings (same issuer, client, callback URL and scopes;
+    sign-up of unknown identities on, never linked by e-mail, users without a verified address allowed: exactly
+    Nodestro's rules). ``transport`` replaces the network in tests."""
+    if not secure_url(settings.issuer):
+        raise ValueError("The identity provider must be reached over https (http only on localhost)")
+    from axentra.config.settings import OidcProviderSettings
+    from axentra.identity.oidc import OidcService
+
+    platform = identity.platform
+    provider = OidcProviderSettings(
+        id=AXENTRA_PROVIDER,
+        name="Nodestro",
+        issuer=settings.issuer,
+        client_id=settings.client_id,
+        client_secret=settings.client_secret,
+        scopes=list(settings.scopes),
+        allow_signup=True,
+        allow_signup_without_email=True,
+        link_by_verified_email=False,
+    )
+    service = OidcService(
+        platform.db,
+        platform.settings.model_copy(update={"oidc": [provider]}),
+        platform.identity,
+        platform.secrets,
+        redirect_uri=lambda _provider: settings.redirect_uri,
+    )
+    if transport is not None:
+        service.use_transport(transport)
+    return AxentraLoginFlow(service)
+
+
 # ---- sessions and principals ---------------------------------------------------------------------
 
 
@@ -265,15 +481,19 @@ class SessionResolver:
         token = connection.cookies.get(SESSION_COOKIE)
         if not token:
             return None
-        session = self.identity.session(token)
+        try:
+            session = self.identity.session(token)
+        except NodestroError as exc:
+            if exc.code == "identity.tenant_suspended":
+                raise AccessError(403, exc.code, "This tenant is suspended") from None
+            raise
         if session is None:
             return None
-        return Principal(
-            id=session.user_id,
-            permissions=ROLE_PERMISSIONS[session.role],
-            tenant_id=session.tenant_id,
-            role=session.role,
-        )
+        if session.permissions is None:
+            permissions = ROLE_PERMISSIONS[session.role]
+        else:  # decided by the identity backend (axentra mode: Axentra's role definitions)
+            permissions = frozenset(Permission(p) for p in session.permissions) & _TENANT_PERMISSIONS
+        return Principal(id=session.user_id, permissions=permissions, tenant_id=session.tenant_id, role=session.role)
 
 
 def set_session_cookie(response: Response, token: str, max_age: int) -> None:
@@ -379,6 +599,11 @@ class TenantWorkspaces:
         with self._lock:
             return list(self._open.values())
 
+    def items(self) -> list[tuple[str, Any]]:
+        """``(tenant id, context)`` of every opened context."""
+        with self._lock:
+            return list(self._open.items())
+
     async def aclose(self) -> None:
         for context in self.opened():
             try:
@@ -415,74 +640,94 @@ def _login_error(code: str, status: int = 400) -> JSONResponse:
         "identity.no_tenant": "This account has no access to Nodestro yet; ask an administrator",
         "identity.bootstrap_invalid": "This setup link is invalid, used or expired",
         "identity.not_a_member": "This account has no access to this tenant",
+        "identity.tenant_suspended": "This tenant is suspended",
+        "identity.account_disabled": "This account is disabled",
+        "identity.rate_limited": "Too many logins were started; please wait a minute",
     }
     return JSONResponse({"detail": messages.get(code, code), "code": code, "params": {}}, status_code=status)
 
 
-def auth_router(identity: IdentityStore, oidc: OidcClient) -> APIRouter:
-    """``/api/auth``: start a login, the provider's callback, the current session, switching tenants, logout."""
+def _client_ip(request: Request) -> str | None:
+    return request.client.host if request.client is not None else None
+
+
+def auth_router(identity: IdentityStore, oidc: OidcClient | LoginFlow) -> APIRouter:
+    """``/api/auth``: start a login, the provider's callback, the current session, switching tenants, logout.
+
+    ``oidc`` is the login flow (an :class:`OidcClient` is Nodestro's own flow, :class:`NodestroLoginFlow`)."""
+    flow = oidc if isinstance(oidc, LoginFlow) else NodestroLoginFlow(identity, oidc)
     router = APIRouter(prefix="/api/auth")
     lifetime = int(identity.session_lifetime.total_seconds())
     login_lifetime = int(identity.login_lifetime.total_seconds())
 
     @router.get("/login", dependencies=PUBLIC, include_in_schema=False)
-    def login(return_to: str | None = None, tenant: str | None = None, setup: str | None = None) -> Response:
+    def login(
+        request: Request, return_to: str | None = None, tenant: str | None = None, setup: str | None = None
+    ) -> Response:
         if tenant is not None and not TENANT_ID.fullmatch(tenant):
             tenant = None
-        verifier = secrets.token_urlsafe(48)
-        nonce = secrets.token_urlsafe(24)
-        state = identity.create_login_state(
-            nonce=nonce,
-            code_verifier=verifier,
-            return_to=safe_return_path(return_to),
-            tenant_id=tenant,
-            bootstrap_token=setup or None,
-        )
         try:
-            url = oidc.authorization_url(state=state, nonce=nonce, code_verifier=verifier)
+            started = flow.start(
+                return_to=safe_return_path(return_to),
+                tenant_id=tenant,
+                bootstrap_token=setup or None,
+                ip=_client_ip(request),
+            )
         except LoginError as exc:
             logger.warning("Login could not start: %s", exc)
-            return _login_error(exc.code, 502)
-        answer = RedirectResponse(url, status_code=303, headers={"Cache-Control": "no-store"})
-        set_login_cookie(answer, state, login_lifetime)
+            return _login_error(exc.code, 429 if exc.status == 429 else 502)
+        answer = RedirectResponse(started.url, status_code=303, headers={"Cache-Control": "no-store"})
+        set_login_cookie(answer, started.state, login_lifetime)
         return answer
 
     @router.get("/callback", dependencies=PUBLIC, include_in_schema=False)
     def callback(request: Request, state: str = "", code: str = "", error: str | None = None) -> Response:
-        answer = _callback(request.cookies.get(LOGIN_COOKIE, ""), state, code, error)
+        answer = _callback(request, state, code, error)
         clear_login_cookie(answer)
         return answer
 
-    def _callback(bound: str, state: str, code: str, error: str | None) -> Response:
-        started = identity.take_login_state(state)
-        if started is None:
-            return _login_error("identity.login_expired")
-        if not bound or not secrets.compare_digest(bound.encode(), state.encode()):
-            # A callback URL that another browser started (login CSRF), or a browser that lost the login cookie.
-            logger.warning("A login callback came from a browser that did not start this login")
-            return _login_error("identity.login_expired")
-        if error or not code:
-            logger.info("The identity provider refused the login: %s", (error or "no code")[:200])
-            return _login_error("identity.login_failed")
+    def _callback(request: Request, state: str, code: str, error: str | None) -> Response:
         try:
-            claims = oidc.exchange(code=code, code_verifier=started.code_verifier, nonce=started.nonce)
+            finished = flow.finish(
+                state=state,
+                code=code,
+                error=error,
+                bound=request.cookies.get(LOGIN_COOKIE, ""),
+                ip=_client_ip(request),
+                user_agent=request.headers.get("user-agent", "")[:400],
+            )
         except LoginError as exc:
             logger.warning("Login failed: %s", exc)
-            return _login_error(exc.code)
-        email = claims.get("email") if claims.get("email_verified") is True else None
-        user = identity.login(str(claims["iss"]), str(claims["sub"]), email=email, name=claims.get("name"))
+            return _login_error(exc.code, exc.status)
+        user = identity.login(finished.issuer, finished.subject, email=finished.email, name=finished.name)
+        if finished.account is not None:
+            link = getattr(identity, "link", None)
+            linked = link.lookup("user", user.id) if link is not None else None
+            if linked != finished.account:
+                logger.error("Login of %s: Axentra found another user than Nodestro's link", user.id)
+                return _login_error("identity.login_failed")
         try:
-            if started.bootstrap_hash is not None:
-                tenant_id = identity.use_bootstrap(started.bootstrap_hash, user.id)
+            if finished.bootstrap_hash is not None:
+                tenant_id = identity.use_bootstrap(finished.bootstrap_hash, user.id)
             else:
-                memberships = {item.tenant_id for item in identity.memberships(user.id)}
+                memberships = identity.memberships(user.id)
                 if not memberships:
                     return _login_error("identity.no_tenant", 403)
-                tenant_id = started.tenant_id if started.tenant_id in memberships else sorted(memberships)[0]
+                active = {item.tenant_id for item in memberships if item.tenant_status == "active"}
+                if finished.tenant_id in active:
+                    tenant_id = str(finished.tenant_id)
+                elif not active or finished.tenant_id in {item.tenant_id for item in memberships}:
+                    # Only suspended tenants, or the one asked for is suspended.
+                    return _login_error("identity.tenant_suspended", 403)
+                else:
+                    tenant_id = sorted(active)[0]
             token = identity.create_session(user.id, tenant_id)
         except NodestroError as exc:
             return _login_error(exc.code, 403)
-        answer = RedirectResponse(started.return_to, status_code=303, headers={"Cache-Control": "no-store"})
+        previous = request.cookies.get(SESSION_COOKIE)
+        if previous:
+            identity.end_session(previous)  # rotation: the session this browser held before ends with the login
+        answer = RedirectResponse(finished.return_to, status_code=303, headers={"Cache-Control": "no-store"})
         set_session_cookie(answer, token, lifetime)
         return answer
 
@@ -497,7 +742,12 @@ def auth_router(identity: IdentityStore, oidc: OidcClient) -> APIRouter:
             tenant_id=principal.tenant_id,
             role=principal.role or "",
             permissions=sorted(item.value for item in principal.permissions),
-            tenants={item.tenant_id: item.role for item in identity.memberships(principal.id)},
+            # Suspended tenants are closed: they are not offered.
+            tenants={
+                item.tenant_id: item.role
+                for item in identity.memberships(principal.id)
+                if item.tenant_status == "active"
+            },
         )
 
     @router.post("/switch", dependencies=READ)
@@ -505,7 +755,9 @@ def auth_router(identity: IdentityStore, oidc: OidcClient) -> APIRouter:
         principal: Principal = request.state.principal
         try:
             token = identity.create_session(principal.id, body.tenant_id)
-        except NodestroError:
+        except NodestroError as exc:
+            if exc.code == "identity.tenant_suspended":  # only for a member (the membership is checked first)
+                return _login_error(exc.code, 403)
             # The same answer for unknown tenants and tenants of others: nothing about them is revealed.
             return _login_error("identity.not_a_member", 404)
         identity.end_session(request.cookies.get(SESSION_COOKIE, ""))
@@ -527,18 +779,25 @@ def auth_router(identity: IdentityStore, oidc: OidcClient) -> APIRouter:
 
 __all__ = [
     "ALGORITHMS",
+    "AXENTRA_PROVIDER",
     "LOGIN_COOKIE",
     "ROLE_PERMISSIONS",
     "SESSION_COOKIE",
+    "AxentraLoginFlow",
+    "FinishedLogin",
     "LoginError",
+    "LoginFlow",
     "Me",
+    "NodestroLoginFlow",
     "OidcClient",
     "OidcSettings",
     "RedactAuthSecrets",
     "SameOriginMiddleware",
     "SessionResolver",
+    "StartedLogin",
     "TenantWorkspaces",
     "auth_router",
+    "axentra_login_flow",
     "clear_login_cookie",
     "clear_session_cookie",
     "redact_auth_logs",

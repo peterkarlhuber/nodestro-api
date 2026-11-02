@@ -37,6 +37,8 @@ class _Grant:
 
 @dataclass
 class StubProvider:
+    #: The provider's issuer (a second provider in a test uses another one).
+    issuer: str = ISSUER
     key: Any = field(default_factory=lambda: rsa.generate_private_key(public_exponent=65537, key_size=2048))
     kid: str = "key-1"
     grants: dict[str, _Grant] = field(default_factory=dict)
@@ -51,27 +53,28 @@ class StubProvider:
 
     def _handle(self, request: httpx.Request) -> httpx.Response:
         url = str(request.url)
-        if url == f"{ISSUER}/.well-known/openid-configuration":
+        issuer = self.issuer
+        if url == f"{issuer}/.well-known/openid-configuration":
             return httpx.Response(
                 200,
                 json={
-                    "issuer": ISSUER,
-                    "authorization_endpoint": f"{ISSUER}/authorize",
-                    "token_endpoint": f"{ISSUER}/token",
-                    "jwks_uri": f"{ISSUER}/jwks",
+                    "issuer": issuer,
+                    "authorization_endpoint": f"{issuer}/authorize",
+                    "token_endpoint": f"{issuer}/token",
+                    "jwks_uri": f"{issuer}/jwks",
                 },
             )
-        if url == f"{ISSUER}/jwks":
+        if url == f"{issuer}/jwks":
             jwk = json.loads(RSAAlgorithm.to_jwk(self.key.public_key()))
             return httpx.Response(200, json={"keys": [{**jwk, "kid": self.kid, "use": "sig", "alg": "RS256"}]})
-        if url == f"{ISSUER}/token" and request.method == "POST":
+        if url == f"{issuer}/token" and request.method == "POST":
             return self._token(request)
         return httpx.Response(404)
 
     def authorize(self, location: str, subject: str, **claims: Any) -> str:
         """What the provider does after the person logged in: the callback URL with a fresh code."""
         query = {key: values[0] for key, values in parse_qs(urlparse(location).query).items()}
-        assert location.startswith(f"{ISSUER}/authorize?")
+        assert location.startswith(f"{self.issuer}/authorize?")
         assert query["client_id"] == CLIENT_ID and query["redirect_uri"] == REDIRECT_URI
         assert query["code_challenge_method"] == "S256" and query["response_type"] == "code"
         code = secrets.token_urlsafe(16)
@@ -92,7 +95,7 @@ class StubProvider:
             return httpx.Response(400, json={"error": "invalid_grant", "error_description": "PKCE"})
         now = int(time.time())
         claims = {
-            "iss": ISSUER,
+            "iss": self.issuer,
             "aud": CLIENT_ID,
             "sub": grant.subject,
             "nonce": grant.nonce,

@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+### Pins (Axentra completion cascade, 2026-11-02)
+
+- Runtime pin `95114ae` (nodestro-runtime #82: Axentra `f6ae01d` across the version chain), examples pin `9cdc1f5`
+  (nodestro-examples #45).
+
+### Identity completion (Axentra migration M5; off by default)
+
+- `NODESTRO_IDENTITY_BACKEND=axentra`: Axentra runs the OIDC login (`AxentraLoginFlow`, Axentra's `OidcService` behind
+  the same routes, cookies and error codes; new codes `identity.account_disabled` 403 and `identity.rate_limited` 429).
+  `nodestro`/`mirror` keep Nodestro's own client. Permissions of `axentra` mode come from Axentra's role definitions.
+- Suspended tenants are closed: `403 identity.tenant_suspended` for sessions, logins, switches and setup links;
+  `/api/auth/me` lists active tenants only; workers neither start nor continue their runs and fire none of their
+  schedules. New commands `suspend-tenant` and `resume-tenant`.
+- Session rotation on login: the session the browser held before ends.
+- Tests: `test_identity.py` runs every server case in `nodestro`, `mirror` and `axentra` mode, plus a full
+  `nodestro -> mirror -> axentra -> mirror -> nodestro` walk with real OIDC callbacks.
+
+### Database roles and one connection pool (Axentra migration, work package dbinfra)
+
+- `NODESTRO_DATABASE_MIGRATION_URL[_FILE]` (optional): `migrate`, `backup` and the pre-migration `pg_dump` run as
+  that owner role; `api`, `worker`, `check` and the operator commands as the runtime role of
+  `NODESTRO_DATABASE_URL`. `migrate` refuses a runtime role that bypasses row-level security or owns tables before
+  changing anything, and grants it its privileges afterwards. New commands `db grant-runtime-role [ROLE]` and
+  `db roles` (exit code 3 when RLS does not fully apply to the runtime role). `check`, `api` and `worker` refuse such a
+  role (`storage.role_unsafe`) with `NODESTRO_AXENTRA=on` (unless `NODESTRO_AXENTRA_ALLOW_SUPERUSER=1`) or a separate
+  migration role. Without the new variable nothing changes.
+- Axentra borrows the process's Nodestro pool (one connection budget, `NODESTRO_DATABASE_POOL_SIZE`); its schema gate
+  reads through it, so serving processes need no owner credentials.
+- With `NODESTRO_DATABASE_SCHEMA`, `backup` and the pre-migration dump contain that schema only.
+- Tests: `tests/test_server_roles.py`.
+
 ### Docker sandbox status and self-test routes (Docker-first plan A1, 2026-11-02)
 
 - New `GET /api/sandbox/status` (permission `read`): the Docker sandbox as the runtime's background check last found
@@ -24,9 +55,17 @@
 - Contract (`openapi/nodestro-api.json`), all additions: the two routes, `SandboxCheck`, the new optional fields of
   `SandboxBackendStatus` and its state `checking`.
 - Tests: `tests/test_sandbox_status_api.py`; workspaces in tests get a static "Docker missing" monitor unless marked
-  `real_docker_status`. The runtime pin is unchanged (these routes need nodestro-runtime with plan R2, `docker-r34`).
+  `real_docker_status`. Runtime pin `b608f90` (nodestro-runtime #83: Docker-first plan R1-R4, Orkexa `e220f70`).
 
 ### Axentra platform services in `nodestro-server` (2026-11-02; everything off by default)
+
+- Observability and rollback safety: `GET /api/metrics` (Prometheus text, only with `NODESTRO_METRICS_TOKEN`, bearer
+  token, no tenant labels); `axentra status` shows switches, both schemas, keyring key ids, stored secrets by format
+  and readability, identity readiness and the reconcile backlog; `check`, `api` and `worker` refuse a configuration
+  that cannot read the stored secrets (`profile.invalid`); `secrets reencrypt` with `NODESTRO_SECRETS_FORMAT=v1`
+  moves `axs1` values back to v1. With `NODESTRO_AXENTRA_NOTIFY=1`: `GET /api/notifications` and
+  `POST /api/notifications/read` (the member's own inbox) and the worker's inbox sweep; with
+  `NODESTRO_AXENTRA_RUN_USAGE=1` the worker settles finished runs' usage into Axentra (both under the scheduler lock).
 
 - `migrate` applies Axentra's migrations after Nodestro's with one shared backup; `check`, `api` and `worker` refuse
   a schema that is behind. New commands: `secrets reencrypt [--dry-run] [--tenant]`, `axentra status`,
@@ -34,6 +73,11 @@
   `axentra reconcile-identity`. The API and worker attach the audit/usage mirrors (`NODESTRO_AXENTRA_AUDIT`,
   `_USAGE`) and use the identity backend `NODESTRO_IDENTITY_BACKEND` (`nodestro` default, `mirror`, `axentra`;
   `axentra` refuses to start before the backfill). Routes, cookies, error codes and the OpenAPI document are unchanged.
+- Input files in Axentra's storage (M8, `NODESTRO_FILES_BACKEND=axentra`, default `volume`): API and worker open
+  the tenants' input files through it; new commands `files migrate|verify|remove-source|export-volume [--dry-run]
+  [--tenant]` (exit code 2 when a file failed); `backup` also archives Axentra's local storage directory; `check`
+  refuses a relative `storage.local_path`; `GET /api/inputs/{id}/content` serves a file kept inert as
+  `application/octet-stream`. Tests: `tests/test_server_files.py` (commands, restore drill, API/worker contexts).
 - Runtime pin `95dbdfa` (nodestro-runtime #79), examples pin `0ae5ad4` (nodestro-examples #44). The `server` and `dev` extras install `nodestro-runtime[postgres]`,
   which brings Axentra on Python 3.11+ only.
 - Tests: `tests/test_server_axentra.py`; `tests/test_identity.py` runs every server case with identity on Axentra too.

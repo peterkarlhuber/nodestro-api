@@ -495,3 +495,66 @@ def test_the_leader_deletes_expired_sessions_logins_old_jobs_and_events(
     refs = {row[0] for row in database._query("SELECT ref FROM nodestro_jobs")}
     assert refs == {"run_recent", "run_waiting"} and queued is not None
     assert database._query("SELECT seq FROM nodestro_run_events") == [(2,)]
+
+
+# ---- suspended tenants ----------------------------------------------------------------------------------
+
+
+def test_a_worker_does_not_start_a_run_of_a_suspended_tenant(
+    server: Server, make_worker: Callable[..., Background], connect: Callable[[], PostgresDatabase]
+) -> None:
+    alice = server.member("acme", "alice", "owner")
+    run_id = _start(alice)
+    server.identity.set_tenant_status("acme", "suspended")
+    called: list[bool] = []
+
+    def must_not_run(_request: dict[str, Any]) -> Any:
+        called.append(True)
+        return text("must not run")
+
+    worker = make_worker({"ALPHA": [must_not_run]}, lease=timedelta(milliseconds=200))
+    job = worker.call(worker.worker.runner.run_once())
+    assert job is not None and job.ref == run_id and not called  # no model call
+    stored = JobQueue(connect()).database._query("SELECT status, error FROM nodestro_jobs WHERE id = %s", (job.id,))
+    assert stored[0][0] == "failed" and stored[0][1].startswith("identity.tenant_suspended")
+    # Resumed, the orphan sweep marks the run interrupted: a person can continue it, nothing ran twice.
+    server.identity.set_tenant_status("acme", "active")
+    time.sleep(0.5)
+    worker.call(asyncio.to_thread(worker.worker.reap))
+    run = alice.get(f"/api/runs/{run_id}").json()
+    assert run["error_code"] == "run.interrupted" and not called
+
+
+def test_a_worker_stops_the_runs_of_a_tenant_suspended_while_they_execute(
+    server: Server, make_worker: Callable[..., Background], connect: Callable[[], PostgresDatabase]
+) -> None:
+    release, started = threading.Event(), threading.Event()
+    alice = server.member("acme", "alice", "owner")
+    run_id = _start(alice)
+    worker = make_worker({"ALPHA": [_blocking(release, started)]})
+    executing = worker.submit(worker.worker.runner.run_once())
+    try:
+        assert started.wait(15)
+        assert worker.call(worker.worker.stop_suspended()) == []  # active: nothing happens
+        server.identity.set_tenant_status("acme", "suspended")
+        assert worker.call(worker.worker.stop_suspended()) == [run_id]
+    finally:
+        release.set()
+    job = executing.result(30)
+    rows = connect()._query("SELECT status, error FROM nodestro_jobs WHERE id = %s", (job.id,))
+    assert rows[0][0] == "failed" and "fence_lost" in rows[0][1]
+    server.identity.set_tenant_status("acme", "active")
+    assert alice.get(f"/api/runs/{run_id}").json()["status"] != "succeeded"  # its outcome was not stored
+
+
+def test_a_suspended_tenants_schedules_do_not_fire(server: Server, make_worker: Callable[..., Background]) -> None:
+    alice = server.member("acme", "alice", "owner")
+    slot = datetime(2026, 10, 31, 8, 0, tzinfo=timezone.utc)
+    _due_schedule(server, alice, slot)
+    worker = make_worker()
+    context = worker.call(_scheduling(worker, "acme"))
+    context.schedules.clock = lambda: slot + timedelta(minutes=1)
+    server.identity.set_tenant_status("acme", "suspended")
+    assert worker.call(worker.worker.fire_schedules()) == []
+    server.identity.set_tenant_status("acme", "active")
+    assert len(worker.call(worker.worker.fire_schedules())) == 1
