@@ -43,9 +43,12 @@ sentence listing every problem (``profile.invalid``); nothing has a default that
 ``nodestro-server members TENANT`` / ``set-role TENANT USER ROLE`` / ``remove-member TENANT USER`` /
 ``revoke-sessions USER``
     Membership of a tenant (A-08): list it, add a member or change a role, remove a member (their sessions in the
-    tenant end with it), and end every session of a user at once. ``USER`` is a user id (``u_…``), a verified
-    e-mail address or the subject at the configured identity provider. A person is known once they logged in at
-    least once (a login alone grants nothing); a tenant always keeps at least one owner.
+    tenant end with it), and end every session of a user at once. ``USER`` is a user id (``u_…``) or the subject at
+    the configured identity provider. An e-mail address only looks the user up: the command shows the matching user
+    with their identity (provider, subject) and goes on only when the operator types that user id; without a
+    terminal it stops and names the user id to use (``identity.user_confirm``); an address shared by several users is
+    refused (``identity.user_ambiguous``). A person is known once they logged in at least once (a login alone grants
+    nothing); a tenant always keeps at least one owner.
 ``nodestro-server suspend-tenant TENANT`` / ``resume-tenant TENANT``
     Close a tenant until it is resumed (``403 identity.tenant_suspended`` for its sessions and logins; workers neither
     start nor continue its runs) and open it again. Nothing is deleted.
@@ -68,7 +71,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -929,9 +932,10 @@ def archive_files(server: ServerEnvironment, directory: Path) -> Path | None:
         storage = services.settings.storage
         if storage.backend != "local":
             return None
-        source = Path(storage.local_path)
+        source: Path | None = Path(storage.local_path)
     finally:
         services.close()
+    assert source is not None
     if not source.is_dir():
         if _stored_files(server):
             raise NodestroError("storage.backup_failed", f"Axentra's storage directory {source} does not exist")
@@ -1102,18 +1106,38 @@ def create_tenant(server: ServerEnvironment, tenant_id: str, name: str) -> None:
 _USER_ID = re.compile(r"u_[0-9a-f]{24}")
 
 
-def find_user(server: ServerEnvironment, database: Any, who: str) -> Any:
-    """The user named by an id (``u_…``), a verified e-mail address or a subject at the configured provider."""
+#: Asked before an operator command acts on a user named by an e-mail address: gets the one matching user (with
+#: their identity), returns ``True`` only when the operator confirmed exactly that user.
+Confirm = Callable[[Any], bool]
+
+
+def describe_user(user: Any) -> str:
+    """A user with the identity that logged in (provider and subject), for an operator to check."""
+    return (
+        f"{user.id}: provider {user.issuer}, subject {user.subject}, e-mail {user.email or '-'}, "
+        f"name {user.name or '-'}"
+    )
+
+
+def find_user(server: ServerEnvironment, database: Any, who: str, *, confirm: Confirm | None = None) -> Any:
+    """The user named by an id (``u_…``), a subject at the configured provider or an e-mail address.
+
+    An e-mail address is the latest claim of an identity provider, so it never names a user by itself (security
+    review SR-10): an address shared by several users is refused (``identity.user_ambiguous``), and the one
+    matching user is used only when ``confirm`` accepts them; otherwise ``identity.user_confirm`` lists the user
+    with their identity and asks for the user id."""
     from nodestro_runtime.identity_store import IdentityStore, User
 
     who = who.strip()
     identity = IdentityStore(database)
+    by_email = False
     if _USER_ID.fullmatch(who):
         found = identity.user(who)
         if found is not None:
             return found
         rows: list[Any] = []
     elif "@" in who:
+        by_email = True
         rows = database._query(
             "SELECT id, issuer, subject, email, name FROM nodestro_users WHERE lower(email) = lower(%s) ORDER BY id",
             (who,),
@@ -1130,14 +1154,38 @@ def find_user(server: ServerEnvironment, database: Any, who: str) -> Any:
             "then run this command again",
             user=who,
         )
-    if len(rows) > 1:
+    users = [User(id=row[0], issuer=row[1], subject=row[2], email=row[3], name=row[4]) for row in rows]
+    if len(users) > 1:
         raise NodestroError(
             "identity.user_ambiguous",
-            f"{who!r} names {len(rows)} users; use the user id ({', '.join(row[0] for row in rows)})",
+            f"{who!r} names {len(users)} users; use the user id of the right one: "
+            + "; ".join(describe_user(user) for user in users),
             user=who,
+            users=[user.id for user in users],
         )
-    row = rows[0]
-    return User(id=row[0], issuer=row[1], subject=row[2], email=row[3], name=row[4])
+    user = users[0]
+    if by_email and (confirm is None or not confirm(user)):
+        raise NodestroError(
+            "identity.user_confirm",
+            f"{who!r} is an e-mail address, which names nobody by itself; check the user and run the command again "
+            f"with the user id: {describe_user(user)}",
+            user=who,
+            users=[user.id],
+        )
+    return user
+
+
+def _confirm_on_terminal(user: Any) -> bool:
+    """Show the user an e-mail address matched and accept them only when the operator types their user id (never
+    without a terminal)."""
+    if not (sys.stdin.isatty() and sys.stderr.isatty()):
+        return False
+    print(f"The e-mail address names {describe_user(user)}", file=sys.stderr)
+    try:
+        answer = input("Type this user id to confirm: ")
+    except EOFError:
+        return False
+    return bool(answer.strip() == user.id)
 
 
 def _require_tenant(identity: Any, tenant_id: str) -> None:
@@ -1164,7 +1212,7 @@ def members(server: ServerEnvironment, tenant_id: str) -> list[str]:
         database.close()
 
 
-def set_role(server: ServerEnvironment, tenant_id: str, who: str, role: str) -> str:
+def set_role(server: ServerEnvironment, tenant_id: str, who: str, role: str, *, confirm: Confirm | None = None) -> str:
     """Give a user a role in a tenant (adds the member); takes effect with their next request."""
     from nodestro_runtime.identity_store import ROLES
 
@@ -1175,7 +1223,7 @@ def set_role(server: ServerEnvironment, tenant_id: str, who: str, role: str) -> 
         database.require_current_schema()
         with _identity(server, database) as identity:
             _require_tenant(identity, tenant_id)
-            user = find_user(server, database, who)
+            user = find_user(server, database, who, confirm=confirm)
             before = identity.role(tenant_id, user.id)
             identity.set_role(tenant_id, user.id, role)
     finally:
@@ -1199,14 +1247,14 @@ def set_tenant_status(server: ServerEnvironment, tenant_id: str, status: str) ->
     return f"tenant {tenant_id} is {status}"
 
 
-def remove_member(server: ServerEnvironment, tenant_id: str, who: str) -> str:
+def remove_member(server: ServerEnvironment, tenant_id: str, who: str, *, confirm: Confirm | None = None) -> str:
     """Remove a user from a tenant; their sessions in the tenant end at once (the last owner stays)."""
     database = _database(server)
     try:
         database.require_current_schema()
         with _identity(server, database) as identity:
             _require_tenant(identity, tenant_id)
-            user = find_user(server, database, who)
+            user = find_user(server, database, who, confirm=confirm)
             if identity.role(tenant_id, user.id) is None:
                 raise NodestroError(
                     "identity.not_a_member", f"{user.id} is not a member of {tenant_id}", tenant=tenant_id
@@ -1218,12 +1266,12 @@ def remove_member(server: ServerEnvironment, tenant_id: str, who: str) -> str:
     return f"removed {user.id} from {tenant_id}"
 
 
-def revoke_sessions(server: ServerEnvironment, who: str) -> str:
+def revoke_sessions(server: ServerEnvironment, who: str, *, confirm: Confirm | None = None) -> str:
     """End every session of a user in every tenant (memberships stay; a new login starts a new session)."""
     database = _database(server)
     try:
         database.require_current_schema()
-        user = find_user(server, database, who)
+        user = find_user(server, database, who, confirm=confirm)
         with _identity(server, database) as identity:
             ended = identity.end_sessions(user.id)
     finally:
@@ -1294,7 +1342,10 @@ def parser() -> argparse.ArgumentParser:
     link.add_argument("tenant_id")
     listing = commands.add_parser("members", help="List the members of a tenant with their roles")
     listing.add_argument("tenant_id")
-    user_help = "user id (u_...), verified e-mail address or subject at the identity provider"
+    user_help = (
+        "user id (u_...), subject at the identity provider, or e-mail address (then the matching user is shown and "
+        "must be confirmed by typing their user id; without a terminal the command asks for the user id)"
+    )
     role = commands.add_parser("set-role", help="Add a member to a tenant or change their role")
     role.add_argument("tenant_id")
     role.add_argument("user", help=user_help)
@@ -1418,11 +1469,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         elif args.command == "members":
             print("\n".join(members(server, args.tenant_id)) or f"tenant {args.tenant_id} has no members")
         elif args.command == "set-role":
-            print(set_role(server, args.tenant_id, args.user, args.role))
+            print(set_role(server, args.tenant_id, args.user, args.role, confirm=_confirm_on_terminal))
         elif args.command == "remove-member":
-            print(remove_member(server, args.tenant_id, args.user))
+            print(remove_member(server, args.tenant_id, args.user, confirm=_confirm_on_terminal))
         elif args.command == "revoke-sessions":
-            print(revoke_sessions(server, args.user))
+            print(revoke_sessions(server, args.user, confirm=_confirm_on_terminal))
         elif args.command == "secrets":
             import json
 

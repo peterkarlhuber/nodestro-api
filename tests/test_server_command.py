@@ -240,7 +240,7 @@ def test_operators_manage_members_roles_and_sessions(
         bob = identity.login("https://login.example", "bob-sub", email="Bob@Example.com")
         capsys.readouterr()
 
-        command.main(["set-role", "acme", "bob@example.com", "editor"])
+        command.main(["set-role", "acme", bob.id, "editor"])
         assert capsys.readouterr().out.strip() == f"{bob.id} is editor in acme"
         assert identity.role("acme", bob.id) == "editor"
         command.main(["set-role", "acme", "bob-sub", "viewer"])  # the subject at the configured provider
@@ -260,7 +260,7 @@ def test_operators_manage_members_roles_and_sessions(
         assert identity.session(session) is None and identity.role("acme", bob.id) == "viewer"
 
         session = identity.create_session(bob.id, "acme")
-        command.main(["remove-member", "acme", "bob@example.com"])
+        command.main(["remove-member", "acme", bob.id])
         assert capsys.readouterr().out.strip() == f"removed {bob.id} from acme"
         assert identity.role("acme", bob.id) is None and identity.session(session) is None
 
@@ -295,6 +295,58 @@ def test_operators_manage_members_roles_and_sessions(
         database.close()
 
 
+def test_an_e_mail_address_alone_never_changes_a_users_access(
+    schema: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SR-10: an e-mail address is the latest claim of an identity provider. Someone whose provider lets them set
+    any address could otherwise be given the role meant for the address's owner."""
+    from nodestro_runtime.identity_store import IdentityStore
+
+    for key, value in _environment(tmp_path).items():
+        monkeypatch.setenv(key, value)
+    command.main(["migrate"])
+    command.main(["create-tenant", "acme", "Acme"])
+    database = PostgresDatabase(DSN, schema=schema)
+    try:
+        identity = IdentityStore(database)
+        owner = identity.login("https://login.example", "owner-sub", email="owner@example.com")
+        identity.set_role("acme", owner.id, "owner")
+        # The person meant never logged in; someone else claims the address at the provider.
+        claimer = identity.login("https://login.example", "claimer-sub", email="ceo@example.com", name="Mallory")
+        session = identity.create_session(owner.id, "acme")
+        for argv in (
+            ["set-role", "acme", "ceo@example.com", "owner"],
+            ["remove-member", "acme", "owner@example.com"],
+            ["revoke-sessions", "owner@example.com"],
+        ):
+            with pytest.raises(SystemExit) as stopped:
+                command.main(argv)  # no terminal: never confirmed
+            message = str(stopped.value.code)
+            assert message.startswith("identity.user_confirm:"), argv
+            assert "subject" in message and "https://login.example" in message
+        assert f"{owner.id}: provider https://login.example, subject owner-sub" in str(stopped.value.code)
+        assert identity.role("acme", claimer.id) is None and identity.role("acme", owner.id) == "owner"
+        assert identity.session(session) is not None
+
+        # On a terminal the operator sees the identity and types the user id; anything else changes nothing.
+        shown: list[str] = []
+        monkeypatch.setattr(command.sys.stdin, "isatty", lambda: True, raising=False)
+        monkeypatch.setattr(command.sys.stderr, "isatty", lambda: True, raising=False)
+        for answer in ("yes", owner.id, ""):
+            monkeypatch.setattr("builtins.input", lambda prompt, answer=answer: shown.append(prompt) or answer)
+            with pytest.raises(SystemExit) as stopped:
+                command.main(["set-role", "acme", "ceo@example.com", "viewer"])
+            assert str(stopped.value.code).startswith("identity.user_confirm:")
+        assert identity.role("acme", claimer.id) is None
+        assert "Mallory" in capsys.readouterr().err and len(shown) == 3
+        monkeypatch.setattr("builtins.input", lambda prompt: claimer.id)
+        command.main(["set-role", "acme", "ceo@example.com", "viewer"])
+        assert capsys.readouterr().out.strip() == f"{claimer.id} is viewer in acme"
+        assert identity.role("acme", claimer.id) == "viewer"
+    finally:
+        database.close()
+
+
 def test_a_shared_e_mail_address_needs_the_user_id(
     schema: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -311,7 +363,9 @@ def test_a_shared_e_mail_address_needs_the_user_id(
         identity.login("https://other.example", "two", email="team@example.com")
         with pytest.raises(SystemExit) as stopped:
             command.main(["set-role", "acme", "team@example.com", "viewer"])
-        assert str(stopped.value.code).startswith("identity.user_ambiguous:")
+        message = str(stopped.value.code)
+        assert message.startswith("identity.user_ambiguous:")
+        assert "https://login.example, subject one" in message and "https://other.example, subject two" in message
         assert identity.members("acme") == []
     finally:
         database.close()

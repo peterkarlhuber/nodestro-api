@@ -318,7 +318,7 @@ def test_the_identity_switch_follows_the_backfill(
         assert identity.session(seeded["token"]).role == "editor"  # type: ignore[union-attr]
         assert sorted(line.split("\t")[1] for line in command.members(switched, "acme")) == ["editor", "owner"]
         with pytest.raises(NodestroError) as caught:
-            command.remove_member(switched, "acme", "olga@example.com")
+            command.remove_member(switched, "acme", "olga@example.com", confirm=lambda user: True)
         assert caught.value.code == "identity.last_owner"
         command.remove_member(switched, "acme", seeded["viewer"])
         assert identity.session(seeded["token"]) is None
