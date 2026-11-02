@@ -8,13 +8,43 @@ their own messages of the session's tenant. The member's Axentra user and tenant
 
 from __future__ import annotations
 
+import base64
+import binascii
 from datetime import datetime
+import json
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
+from nodestro_runtime.problems import NodestroError
 from pydantic import BaseModel, Field
 
 from .permissions import READ, Principal
+
+#: The longest cursor accepted (a cursor holds a timestamp and a message id).
+MAX_CURSOR = 512
+
+
+def check_cursor(cursor: str | None) -> None:
+    """Refuse a cursor that is not one this API handed out (``400 notifications.invalid_cursor``, security review
+    SR-06): base64url JSON of ``[ISO timestamp, message id]``. Axentra only checks that it is a JSON list, and a
+    malformed one failed in the database as ``500``. The cursor is never echoed into the answer or the log."""
+    if not cursor:
+        return
+    problem = NodestroError("notifications.invalid_cursor", "The cursor is not valid; start again without it")
+    if len(cursor) > MAX_CURSOR:
+        raise problem
+    try:
+        value = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
+    except (ValueError, binascii.Error):
+        raise problem from None
+    if not (isinstance(value, list) and len(value) == 2 and all(isinstance(part, str) for part in value)):
+        raise problem
+    try:
+        at = datetime.fromisoformat(value[0])
+    except ValueError:
+        raise problem from None
+    if at.tzinfo is None or not value[1] or len(value[1]) > 200:
+        raise problem
 
 
 class Notification(BaseModel):
@@ -67,6 +97,7 @@ def notifications_router(notifications: Any) -> APIRouter:
         cursor: str | None = None,
     ) -> NotificationPage:
         """The current member's notifications in the session's tenant, newest first."""
+        check_cursor(cursor)
         found = scope(request)
         if found is None:
             return NotificationPage(items=[], unread=0)
@@ -112,4 +143,4 @@ def notifications_router(notifications: Any) -> APIRouter:
     return router
 
 
-__all__ = ["notifications_router"]
+__all__ = ["check_cursor", "notifications_router"]
