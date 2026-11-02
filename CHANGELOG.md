@@ -13,6 +13,19 @@
 - Session rotation on login: the session the browser held before ends.
 - Tests: `test_identity.py` runs every server case in `nodestro`, `mirror` and `axentra` mode, plus a full
   `nodestro -> mirror -> axentra -> mirror -> nodestro` walk with real OIDC callbacks.
+### Database roles and one connection pool (Axentra migration, work package dbinfra)
+
+- `NODESTRO_DATABASE_MIGRATION_URL[_FILE]` (optional): `migrate`, `backup` and the pre-migration `pg_dump` run as
+  that owner role; `api`, `worker`, `check` and the operator commands as the runtime role of
+  `NODESTRO_DATABASE_URL`. `migrate` refuses a runtime role that bypasses row-level security or owns tables before
+  changing anything, and grants it its privileges afterwards. New commands `db grant-runtime-role [ROLE]` and
+  `db roles` (exit code 3 when RLS does not fully apply to the runtime role). `check`, `api` and `worker` refuse such a
+  role (`storage.role_unsafe`) with `NODESTRO_AXENTRA=on` (unless `NODESTRO_AXENTRA_ALLOW_SUPERUSER=1`) or a separate
+  migration role. Without the new variable nothing changes.
+- Axentra borrows the process's Nodestro pool (one connection budget, `NODESTRO_DATABASE_POOL_SIZE`); its schema gate
+  reads through it, so serving processes need no owner credentials.
+- With `NODESTRO_DATABASE_SCHEMA`, `backup` and the pre-migration dump contain that schema only.
+- Tests: `tests/test_server_roles.py`.
 
 ### Axentra platform services in `nodestro-server` (2026-11-02; everything off by default)
 
