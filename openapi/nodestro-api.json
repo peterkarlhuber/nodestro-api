@@ -14619,6 +14619,126 @@
         "title": "SampleInfo",
         "type": "object"
       },
+      "SandboxBackendStatus": {
+        "description": "One sandbox backend of the computer the runtime runs on, as the policy sees it.",
+        "properties": {
+          "available": {
+            "default": false,
+            "title": "Available",
+            "type": "boolean"
+          },
+          "detail": {
+            "default": "",
+            "title": "Detail",
+            "type": "string"
+          },
+          "isolation": {
+            "default": "none",
+            "title": "Isolation",
+            "type": "string"
+          },
+          "maturity": {
+            "default": "stable",
+            "title": "Maturity",
+            "type": "string"
+          },
+          "memory": {
+            "default": "none",
+            "title": "Memory",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          },
+          "state": {
+            "default": "unavailable",
+            "enum": [
+              "approved",
+              "experimental",
+              "unavailable",
+              "not-isolating",
+              "not-applicable"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "SandboxBackendStatus",
+        "type": "object"
+      },
+      "SandboxSelection": {
+        "description": "Where tool code runs now on the computer the runtime runs on (not the browser's).",
+        "properties": {
+          "arch": {
+            "default": "",
+            "title": "Arch",
+            "type": "string"
+          },
+          "blocked": {
+            "default": false,
+            "title": "Blocked",
+            "type": "boolean"
+          },
+          "detail": {
+            "default": "",
+            "title": "Detail",
+            "type": "string"
+          },
+          "mode": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "subprocess",
+              "docker"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "os": {
+            "default": "",
+            "title": "Os",
+            "type": "string"
+          },
+          "profile": {
+            "default": "desktop",
+            "title": "Profile",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          },
+          "untrusted": {
+            "default": "",
+            "title": "Untrusted",
+            "type": "string"
+          },
+          "user_authored": {
+            "default": "",
+            "title": "User Authored",
+            "type": "string"
+          }
+        },
+        "title": "SandboxSelection",
+        "type": "object"
+      },
       "SanitizeReport": {
         "description": "What a sanitized trace export removed; travels in the exported file as ``sanitized``.",
         "properties": {
@@ -15303,13 +15423,24 @@
             "type": "array"
           },
           "sandbox": {
-            "default": "subprocess",
+            "default": "auto",
             "enum": [
+              "auto",
               "subprocess",
               "docker"
             ],
             "title": "Sandbox",
             "type": "string"
+          },
+          "sandbox_backends": {
+            "items": {
+              "$ref": "#/components/schemas/SandboxBackendStatus"
+            },
+            "title": "Sandbox Backends",
+            "type": "array"
+          },
+          "sandbox_selection": {
+            "$ref": "#/components/schemas/SandboxSelection"
           }
         },
         "title": "Settings",
@@ -15450,6 +15581,7 @@
             "anyOf": [
               {
                 "enum": [
+                  "auto",
                   "subprocess",
                   "docker"
                 ],
