@@ -8,6 +8,8 @@ from contextlib import suppress
 from datetime import datetime, timezone
 import hashlib
 import json
+import threading
+import time
 from typing import Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, Depends, FastAPI, File, Form, Header, Query, Request, UploadFile
@@ -44,6 +46,7 @@ from nodestro_runtime.schemas import (
     Run,
     RunIn,
     RunSummary,
+    SandboxBackendStatus,
     Settings,
     SettingsIn,
     Usage,
@@ -217,7 +220,74 @@ def get_model_capabilities(model: Annotated[str, Query(min_length=1, max_length=
 
 @router.get("/settings", dependencies=READ)
 def get_settings(ctx: Ctx) -> Settings:
+    """The settings; the Docker rows come from the background check (``Workspace.docker_status``) and never wait
+    for the daemon (``checking`` until the first check after the start finished)."""
     return ctx.settings()
+
+
+#: The longest ``wait`` of ``GET /api/sandbox/status`` and the longest ``timeout`` of ``POST
+#: /api/sandbox/self-test`` (seconds).
+SANDBOX_STATUS_MAX_WAIT = 5.0
+SANDBOX_SELF_TEST_MAX_WAIT = 60.0
+#: A new check (``refresh`` or the self-test) starts at most this often per Docker monitor (seconds); within it the
+#: current status is returned. One monitor serves every tenant of a server, so no caller can keep the daemon busy.
+SANDBOX_CHECK_INTERVAL = 10.0
+_sandbox_checks: dict[int, float] = {}
+_sandbox_checks_lock = threading.Lock()
+
+
+def _may_check_sandbox(ctx: Nodestro) -> bool:
+    """Whether a forced Docker check may start now (at most every :data:`SANDBOX_CHECK_INTERVAL` seconds)."""
+    key = id(ctx.docker_monitor)
+    moment = time.monotonic()
+    with _sandbox_checks_lock:
+        last = _sandbox_checks.get(key)
+        if last is not None and moment - last < SANDBOX_CHECK_INTERVAL:
+            return False
+        _sandbox_checks[key] = moment
+        return True
+
+
+@router.get("/sandbox/status", dependencies=READ)
+def get_sandbox_status(
+    ctx: Ctx,
+    refresh: Annotated[bool, Query()] = False,
+    wait: Annotated[float, Query(ge=0, le=SANDBOX_STATUS_MAX_WAIT)] = 0.0,
+) -> SandboxBackendStatus:
+    """The Docker sandbox of the computer the API runs on, as the background check last found it (the ``docker``
+    row of the settings' ``sandbox_backends``). It never waits for the daemon: ``state`` is ``checking`` until the
+    first check after the start finished, and ``approved`` only after the preflight and the in-container self-test
+    passed (``checks`` lists each step).
+
+    ``refresh=1`` starts a new check in the background, the self-test included (at most every 10 s; otherwise the
+    current status is returned), and answers at once with the current status; ``wait`` (seconds, at most 5) waits
+    that long at most for a running check."""
+    if refresh and not _may_check_sandbox(ctx):
+        refresh = False
+    return ctx.docker_status(refresh, wait=wait)
+
+
+@router.post("/sandbox/self-test", dependencies=ADMIN)
+def post_sandbox_self_test(
+    ctx: Ctx, timeout: Annotated[float, Query(ge=0, le=SANDBOX_SELF_TEST_MAX_WAIT)] = 30.0
+) -> SandboxBackendStatus:
+    """Run the Docker sandbox's checks again now, the in-container self-test included, and wait at most
+    ``timeout`` seconds (default 30, at most 60) for the result. A check that takes longer (the first start builds
+    the runtime image) goes on in the background: the answer then says ``checking`` and ``GET
+    /api/sandbox/status`` shows the result later. Within 10 s of the last forced check no new one starts; the
+    answer is the status of the running or last check."""
+    deadline = time.monotonic() + timeout
+    before = ctx.docker_status()
+    if not _may_check_sandbox(ctx):
+        return ctx.docker_status(wait=timeout)
+    found = ctx.docker_status(True, wait=timeout)
+    # A check that was already running when the self-test was asked for may have passed its self-test step before:
+    # the forced one then runs right after it (once).
+    remaining = deadline - time.monotonic()
+    reached = any(check.name in ("image", "self-test") for check in found.checks)
+    if remaining > 0 and reached and found.tested_at == before.tested_at:
+        found = ctx.docker_status(True, wait=remaining)
+    return found
 
 
 @router.put("/settings", dependencies=ADMIN)
