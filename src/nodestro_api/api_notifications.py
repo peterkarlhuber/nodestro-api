@@ -55,7 +55,9 @@ def notifications_router(notifications: Any) -> APIRouter:
         tenant = link.tenant(principal.tenant_id)
         if user is None or tenant is None:
             return None
-        return AxentraPrincipal(actor=Actor(ActorKind.USER, user, "nodestro")), link.services.product_id, tenant
+        # The ignore: mypy checks for Python 3.10, where Axentra's StrEnum (3.11+) is not known.
+        actor = Actor(ActorKind.USER, user, "nodestro")  # type: ignore[arg-type,unused-ignore]
+        return AxentraPrincipal(actor=actor), link.services.product_id, tenant
 
     @router.get("", dependencies=READ)
     def list_notifications(

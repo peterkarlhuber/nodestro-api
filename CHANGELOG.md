@@ -4,6 +4,14 @@
 
 ### Axentra platform services in `nodestro-server` (2026-11-02; everything off by default)
 
+- Observability and rollback safety: `GET /api/metrics` (Prometheus text, only with `NODESTRO_METRICS_TOKEN`, bearer
+  token, no tenant labels); `axentra status` shows switches, both schemas, keyring key ids, stored secrets by format
+  and readability, identity readiness and the reconcile backlog; `check`, `api` and `worker` refuse a configuration
+  that cannot read the stored secrets (`profile.invalid`); `secrets reencrypt` with `NODESTRO_SECRETS_FORMAT=v1`
+  moves `axs1` values back to v1. With `NODESTRO_AXENTRA_NOTIFY=1`: `GET /api/notifications` and
+  `POST /api/notifications/read` (the member's own inbox) and the worker's inbox sweep; with
+  `NODESTRO_AXENTRA_RUN_USAGE=1` the worker settles finished runs' usage into Axentra (both under the scheduler lock).
+
 - `migrate` applies Axentra's migrations after Nodestro's with one shared backup; `check`, `api` and `worker` refuse
   a schema that is behind. New commands: `secrets reencrypt [--dry-run] [--tenant]`, `axentra status`,
   `axentra reconcile [--dry-run] [--tenant]` (audit/usage mirrors), `axentra backfill-identity [--dry-run]` and
