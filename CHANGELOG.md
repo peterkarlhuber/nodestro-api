@@ -5,7 +5,8 @@
 ### Platform pins: Axentra migration completion
 
 - Runtime pin `50edcf7` (nodestro-runtime #86: security review fixes, performance fixes, M12 cleanup, Axentra
-  `a8ea5d5`). The runtime's `AxentraServices.start` now requires the process's database pool.
+  `a8ea5d5`); examples pin `c3ef412` (examples #49). The runtime's `AxentraServices.start` now requires the
+  process's database pool.
 
 ### Security review fixes (SR-01, SR-03 to SR-06, SR-09, SR-10)
 
