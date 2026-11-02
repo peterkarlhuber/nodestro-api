@@ -216,10 +216,8 @@ def _run_backend(tmp_path: Path, fd: str, **popen: object) -> dict[str, object]:
         stderr=subprocess.PIPE,
         **popen,  # type: ignore[arg-type]
     )
-    if process.stdin is not None:
-        process.stdin.write(PAYLOAD)
-        process.stdin.close()
-    out, err = process.communicate(timeout=120)
+    # communicate() writes the payload and closes the pipe (Python 3.10 cannot flush a pipe closed by hand).
+    out, err = process.communicate(PAYLOAD if process.stdin is not None else None, timeout=120)
     assert process.returncode == 0, err.decode()
     return json.loads(out)  # type: ignore[no-any-return]
 
