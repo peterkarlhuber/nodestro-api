@@ -1,7 +1,8 @@
 """The per-launch secret of the desktop app: only the window the app opened can use the studio API.
 
-The desktop app (``nodestro-desktop``) starts the backend on a free loopback port with a random secret in
-``NODESTRO_LAUNCH_SECRET`` and opens its window on ``/api/launch?token=<secret>``. That request is
+The desktop app (``nodestro-desktop``) starts the backend on a free loopback port, hands it a random secret through
+a pipe (:mod:`nodestro_api.handoff`, never the environment or the command line) and opens its window on
+``/api/launch?token=<secret>``. That request is
 answered once: the backend sets a session cookie (``HttpOnly``, ``SameSite=Strict``) and a small page
 moves on to the studio. From then on every request needs that cookie. Other programs and users of this computer, and
 web pages in the user's browser, reach the port too, but have neither the secret nor the cookie:
@@ -14,9 +15,10 @@ web pages in the user's browser, reach the port too, but have neither the secret
 Open without the cookie: the health check (``/api/health``, the app waits for it) and the published
 workflow APIs (``/api/published``, protected by their own keys).
 
-Without ``NODESTRO_LAUNCH_SECRET`` nothing changes (the ``nodestro`` command in a terminal). This is the
-desktop's protection against other local processes; it is not a user login and does not make the studio
-API fit for the network (:func:`nodestro_api.local_access.require_loopback_only` still applies).
+An operator can set the secret in ``NODESTRO_LAUNCH_SECRET`` instead. Without either, nothing changes (the
+``nodestro`` command in a terminal). This is the desktop's protection against other local processes; it is not a user
+login and does not make the studio API fit for the network (:func:`nodestro_api.local_access.require_loopback_only`
+still applies).
 
 Nodestro Local Docker (the ``local-container`` profile, :mod:`nodestro_api.local_container`) uses the same
 middleware with a persistent *access key* instead of a one-time secret (``reusable``): the link
@@ -41,6 +43,7 @@ from urllib.parse import parse_qs
 from nodestro_runtime.problems import NodestroError
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from . import handoff
 from .local_access import split_host
 
 ENV_VAR = "NODESTRO_LAUNCH_SECRET"
@@ -68,11 +71,16 @@ _taken: object | str | None = _UNSET
 
 
 def launch_secret_from_env() -> str | None:
-    """``NODESTRO_LAUNCH_SECRET``, removed from the environment on the first call so that no process the
-    backend starts (uv, OCR, tools) inherits it; later calls return the same value."""
+    """The launch secret: the desktop app's handoff (:mod:`nodestro_api.handoff`, never the environment), otherwise
+    ``NODESTRO_LAUNCH_SECRET`` (an operator's setting), removed from the environment on the first call so that no
+    process the backend starts (uv, OCR, tools) inherits it; later calls return the same value."""
     global _taken
     if _taken is _UNSET:
         _taken = os.environ.pop(ENV_VAR, None) or None
+    received = handoff.received()
+    if received is not None:
+        os.environ.pop(ENV_VAR, None)
+        return received.launch_secret
     return _taken  # type: ignore[return-value]
 
 

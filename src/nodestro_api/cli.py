@@ -24,6 +24,14 @@ def parser(prog: str, description: str) -> argparse.ArgumentParser:
         "a server starts with nodestro-server; also NODESTRO_PROFILE",
     )
     found.add_argument("--reload", action="store_true", help="Restart on code changes (development)")
+    found.add_argument(
+        "--secrets-fd",
+        type=int,
+        default=None,
+        metavar="FD",
+        help="Read the launch secret and the MCP token vault key as one JSON object from this inherited file "
+        "descriptor (0: standard input) and close it; the desktop app uses it instead of environment variables",
+    )
     return found
 
 
@@ -32,7 +40,10 @@ def prepare(args: argparse.Namespace) -> str:
 
     Stops when the operating profile cannot be started (before anything is created on disk) and when
     another Nodestro process already uses the data directory.
+
+    The secrets on ``--secrets-fd`` are read first, before anything else runs (:mod:`nodestro_api.handoff`).
     """
+    _receive_secrets(getattr(args, "secrets_fd", None))
     if args.data_dir:
         os.environ["NODESTRO_DATA_DIR"] = str(Path(args.data_dir).expanduser().resolve())
     if getattr(args, "profile", None):
@@ -51,10 +62,12 @@ def serve(factory: str, args: argparse.Namespace) -> None:
     Stops with one sentence instead of a traceback when the studio API would be offered to the network
     without a login (``create_app`` refuses it as well).
     """
+    from nodestro_runtime.mcp.vault import vault_box_from_env
     from nodestro_runtime.problems import NodestroError
     import uvicorn
 
     from .context import AppConfig
+    from .handoff import VAULT_KEY_ENV, received
     from .launch import check_secret
     from .local_access import require_loopback_only
     from .local_container import require_safe_configuration
@@ -68,13 +81,30 @@ def serve(factory: str, args: argparse.Namespace) -> None:
             require_safe_configuration(config.access_key, config.allowed_hosts, config.browser_host)
         check_secret(config.launch_secret)
         check_secret(config.access_key)
-        if config.launch_secret is not None and args.reload:
-            # The reloading child process would start without the secret, i.e. unprotected.
-            raise NodestroError("access.launch_secret_reload", "--reload cannot be used with NODESTRO_LAUNCH_SECRET")
+        if config.vault_key is not None:
+            # A malformed key is refused before the server starts, as the workspace would refuse it.
+            vault_box_from_env({VAULT_KEY_ENV: config.vault_key})
+        if (config.launch_secret is not None or received() is not None) and args.reload:
+            # The reloading child process would start without the secrets, i.e. unprotected.
+            raise NodestroError(
+                "access.launch_secret_reload", "--reload cannot be used with NODESTRO_LAUNCH_SECRET or --secrets-fd"
+            )
     except NodestroError as error:
         raise SystemExit(str(error)) from None
 
     uvicorn.run(factory, factory=True, host=args.host, port=args.port, reload=args.reload, log_level="info")
+
+
+def _receive_secrets(fd: int | None) -> None:
+    """Read the desktop app's handoff once; stop with one sentence when it is not usable."""
+    from nodestro_runtime.problems import NodestroError
+
+    from . import handoff
+
+    try:
+        handoff.receive(fd)
+    except NodestroError as error:
+        raise SystemExit(str(error)) from None
 
 
 def _refuse_an_unavailable_profile() -> None:

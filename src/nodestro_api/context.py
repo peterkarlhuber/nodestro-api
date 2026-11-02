@@ -16,12 +16,13 @@ from pathlib import Path
 from typing import Any, Literal
 
 from nodestro_runtime.extensions import Integration
+from nodestro_runtime.mcp.vault import VAULT_KEY_ENV, TokenVault, vault_box_from_env
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.profile import ProfileKind, RuntimeProfile
 from nodestro_runtime.schemas import Run
 from nodestro_runtime.workspace import Workspace, WorkspaceStorage
 
-from . import exporter
+from . import exporter, handoff
 from .api_keys import ApiKeys
 from .architect import WorkflowArchitect
 from .assistant import Assistant
@@ -72,9 +73,13 @@ class AppConfig:
     #: The operating profile (``NODESTRO_PROFILE``): ``desktop`` (default), ``local-container`` (Nodestro Local
     #: Docker, :mod:`nodestro_api.local_container`) or ``server``, see :attr:`profile`.
     profile_kind: ProfileKind = "desktop"
-    #: The desktop app's per-launch secret (``NODESTRO_LAUNCH_SECRET``); with it, only the window that
-    #: opened ``/api/launch`` can use the studio API, see :mod:`nodestro_api.launch`. ``None``: not required.
+    #: The desktop app's per-launch secret (its handoff, :mod:`nodestro_api.handoff`, or an operator's
+    #: ``NODESTRO_LAUNCH_SECRET``); with it, only the window that opened ``/api/launch`` can use the studio API, see
+    #: :mod:`nodestro_api.launch`. ``None``: not required.
     launch_secret: str | None = field(default=None, repr=False)
+    #: The MCP token vault key of a desktop (base64, from the desktop app's handoff or ``NODESTRO_VAULT_KEY``, see
+    #: :mod:`nodestro_api.handoff`); seals tokens of connected MCP services. ``None``: the runtime's own lookup.
+    vault_key: str | None = field(default=None, repr=False)
     #: Nodestro Local Docker's persistent access key (``NODESTRO_ACCESS_KEY_FILE``); required in the
     #: ``local-container`` profile, see :mod:`nodestro_api.local_container`.
     access_key: str | None = field(default=None, repr=False)
@@ -117,6 +122,7 @@ class AppConfig:
             allowed_hosts=[item.strip() for item in allowed.split(",") if item.strip()],
             profile_kind=profile.kind,
             launch_secret=launch_secret_from_env(),
+            vault_key=handoff.vault_key(),
             access_key=access_key_from_env(),
             browser_host=browser_host_from_env() if local else None,
             host_port=host_port_from_env() if local else 8765,
@@ -157,6 +163,10 @@ class Nodestro(Workspace):
         )
 
     def compose(self) -> None:
+        if self.config.vault_key is not None and not self.shared_storage:
+            # The desktop's key lives in this process's memory only (never in os.environ, where every child process
+            # would inherit it); a server tenant keeps its own secret box.
+            self.mcp.vault = TokenVault(vault_box_from_env({VAULT_KEY_ENV: self.config.vault_key}), self.tenant_id)
         self.organize = Organizer(self.store)
         self.assistants = Assistants(self.tools, capabilities=self.builder.capabilities)
         self.batches = Batches(self)
