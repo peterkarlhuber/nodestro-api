@@ -12,7 +12,7 @@ license-files = ["LICENSE"]
 requires-python = ">=3.10"
 authors = [{ name = "Peter Karlhuber" }]
 dependencies = [
-    "nodestro-runtime @ git+https://github.com/peterkarlhuber/nodestro-runtime.git@7fd8761e5d91256af9ca3b35b78861f70e880038",
+    "nodestro-runtime @ git+https://github.com/peterkarlhuber/nodestro-runtime.git@95dbdfa76e37ebe6320053f9e95b9a6c74b2756e",
     "nodestro-examples @ git+https://github.com/peterkarlhuber/nodestro-examples.git@f1c64037f5f719e8e613b23646f72ac355e1d1ba",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
@@ -23,11 +23,14 @@ dependencies = [
 [project.optional-dependencies]
 # The multi-tenant studio API with logins (nodestro_api.server_app): PostgreSQL and OpenID Connect.
 server = [
+    # The runtime's PostgreSQL store and, on Python 3.11+, Axentra (off unless NODESTRO_AXENTRA=on).
+    "nodestro-runtime[postgres] @ git+https://github.com/peterkarlhuber/nodestro-runtime.git@95dbdfa76e37ebe6320053f9e95b9a6c74b2756e",
     "psycopg[binary,pool]>=3.2",
     "PyJWT[crypto]>=2.9",
     "httpx>=0.27",
 ]
 dev = [
+    "nodestro-runtime[postgres] @ git+https://github.com/peterkarlhuber/nodestro-runtime.git@95dbdfa76e37ebe6320053f9e95b9a6c74b2756e",
     "httpx>=0.27",
     "psycopg[binary,pool]>=3.2",
     "PyJWT[crypto]>=2.9",
