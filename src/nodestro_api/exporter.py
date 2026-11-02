@@ -1380,12 +1380,15 @@ All settings come from environment variables or `.env` (see `app/config.py`):
 | `TOOL_SANDBOX` | `subprocess` (default) or `docker`, see below. |
 
 `TOOL_SANDBOX=subprocess` runs only tools a person wrote in the tool editor, as a process of this server.
-`TOOL_SANDBOX=docker` runs every own tool in an isolated container (needs Docker and Orkexa's `orkexa-sandbox`
-image, see Orkexa's README; Nodestro's studio uses its own runtime image instead, which an export does not build).
-A container has no network, a read-only file system, no capabilities and an unprivileged user; tools run in it only
-after the Docker daemon passed Orkexa's preflight and the in-container self-test (checked in the background at the
-start). AI-generated tools run only with `docker`; without it, or until that check passed, runs that use them are
-refused.
+`TOOL_SANDBOX=docker` runs every own tool in an isolated container. It needs Docker and Orkexa's sandbox image
+`orkexa-sandbox`, which you build once from Orkexa's repository at the commit of the installed `orkexa`
+(`docker build -t orkexa-sandbox -f docker/sandbox.Dockerfile .`; its base image is pinned by digest and its
+packages by hash) and check with `python -m orkexa.dynamic.docker --self-test`. Nodestro's studio uses its own
+runtime image instead, which an export cannot build. A container has no network, a read-only file system, no
+capabilities and an unprivileged user; tools run in it only after the Docker daemon passed Orkexa's preflight and
+the in-container self-test (checked in the background at the start), and always by the id of the image that passed,
+never by the tag. AI-generated tools run only with `docker`; without it, or until that check passed, runs that use
+them are refused.
 
 ### API keys
 
@@ -1533,13 +1536,15 @@ Alle Einstellungen kommen aus Umgebungsvariablen oder `.env` (siehe `app/config.
 | `TOOL_SANDBOX` | `subprocess` (Standard) oder `docker`, siehe unten. |
 
 `TOOL_SANDBOX=subprocess` führt nur Tools aus, die eine Person im Tool-Editor geschrieben hat, als Prozess
-dieses Servers. `TOOL_SANDBOX=docker` führt jedes eigene Tool in einem isolierten Container aus (braucht Docker
-und Orkexas Image `orkexa-sandbox`, siehe Orkexas README; Nodestros Studio nutzt stattdessen sein eigenes
-Runtime-Image, das ein Export nicht baut). Ein Container hat kein Netzwerk, ein schreibgeschütztes Dateisystem,
-keine Capabilities und einen Benutzer ohne Rechte; Tools laufen darin erst, nachdem der Docker-Daemon Orkexas
-Vorabprüfung und den Selbsttest im Container bestanden hat (beim Start im Hintergrund geprüft). KI-generierte Tools
-laufen nur mit `docker`; ohne, oder solange diese Prüfung nicht bestanden ist, werden Läufe, die sie nutzen,
-abgelehnt.
+dieses Servers. `TOOL_SANDBOX=docker` führt jedes eigene Tool in einem isolierten Container aus. Dafür braucht es
+Docker und Orkexas Sandbox-Image `orkexa-sandbox`, das du einmal aus Orkexas Repository im Commit des installierten
+`orkexa` baust (`docker build -t orkexa-sandbox -f docker/sandbox.Dockerfile .`; sein Basis-Image ist per Digest,
+seine Pakete per Hash festgelegt) und mit `python -m orkexa.dynamic.docker --self-test` prüfst. Nodestros Studio
+nutzt stattdessen sein eigenes Runtime-Image, das ein Export nicht bauen kann. Ein Container hat kein Netzwerk, ein
+schreibgeschütztes Dateisystem, keine Capabilities und einen Benutzer ohne Rechte; Tools laufen darin erst, nachdem
+der Docker-Daemon Orkexas Vorabprüfung und den Selbsttest im Container bestanden hat (beim Start im Hintergrund
+geprüft), und immer über die ID des geprüften Images, nie über den Tag. KI-generierte Tools laufen nur mit
+`docker`; ohne, oder solange diese Prüfung nicht bestanden ist, werden Läufe, die sie nutzen, abgelehnt.
 
 ### API-Schlüssel
 

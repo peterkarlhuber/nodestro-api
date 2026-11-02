@@ -146,7 +146,8 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # run: + deciding a run's budget request (BUDGET-1; the route also checks starter or admin)
         "run": 33,  # + deciding a tool call (S-2b); - the tool panel's test run (review H-1)
         # admin: + the Docker sandbox's self-test (A1)
-        "admin": 44,  # + price sync, reviews, overrides, billing keys and reconciliation (PRICING-1); gate (Q-3);
+        # admin: + adopting an AI-generated tool as one's own (R-4, desktop only)
+        "admin": 45,  # + price sync, reviews, overrides, billing keys and reconciliation (PRICING-1); gate (Q-3);
         # MCP add, change, remove, discover, decision, events (WP-3); pre-grants, audit, activation (S-2b);
         # MCP OAuth start, callback, sign-out (WP-6); MCP stdio package plan (WP-8); MCP stats (WP-7);
         # Amazon Bedrock verification (a settings action)
@@ -200,6 +201,7 @@ SENSITIVE = {
     ("GET", "/api/runs/{run_id}/chat/messages/{message_id}"): "read",
     ("POST", "/api/tools/jobs"): "run",
     ("POST", "/api/tools/{name}/run"): "edit",  # and run, checked in the route (review H-1)
+    ("POST", "/api/tools/{name}/adopt"): "admin",  # and owner or admin role, desktop only (R-4)
     ("POST", "/api/tools/drafts/{draft_id}/test"): "run",
     ("POST", "/api/schedules"): "run",
     ("POST", "/api/assistant/conversations/{conversation_id}/messages"): "run",

@@ -54,6 +54,7 @@ from nodestro_runtime.schemas import (
     WorkflowSummary,
     now,
 )
+from nodestro_runtime.tool_adoption import adopt_tool as run_adoption
 from nodestro_runtime.tool_legacy import keep_only_inherited
 from nodestro_runtime.tool_library import (
     CUSTOM_TESTS_TEMPLATE,
@@ -74,7 +75,18 @@ from . import __version__, sandbox_status
 from .assistants import AgentDraft, MemorySeed
 from .benchmarks import SuiteIn, TestCase
 from .context import Nodestro
-from .permissions import ADMIN, EDIT, PUBLIC, READ, RUN, AccessError, Permission, Principal, StreamAccess
+from .permissions import (
+    ADMIN,
+    EDIT,
+    LOCAL_OWNER,
+    PUBLIC,
+    READ,
+    RUN,
+    AccessError,
+    Permission,
+    Principal,
+    StreamAccess,
+)
 from .publishing import PUBLICATIONS, RELEASES
 from .references import Reference, ReferenceKind, references
 from .search import readable_documents, stored_workflows
@@ -1657,6 +1669,59 @@ def run_tool(name: str, body: ToolRunRequest, ctx: Ctx, request: Request) -> Too
         raise AccessError(403, "access.forbidden", "This needs the permission 'run'", permission=Permission.RUN.value)
     output, is_error = ctx.tools.run(name, body.input, sandbox=tool_run_sandbox(ctx.tools, ctx.python, name))
     return ToolRunResult(output=output, is_error=is_error)
+
+
+class ToolAdoptRequest(BaseModel):
+    #: The ``content_hash`` of the tool as it was shown (code and tests): the adoption names exactly that content.
+    content_hash: str = Field(min_length=1, max_length=128)
+
+
+#: How a refused adoption is answered (ADR-0006, R-4); other codes are 400.
+ADOPTION_STATUS = {
+    "tool.adoption_desktop_only": 403,
+    "tool.adoption_forbidden": 403,
+    "tool.adoption_stale": 409,
+    "tool.adoption_not_needed": 409,
+}
+
+
+def adopter_role(principal: Principal | None) -> str:
+    """The role an adoption is recorded with: ``owner`` for the desktop's local owner, a tenant member's role
+    otherwise (only ``admin`` may adopt; the runtime refuses everything else with ``tool.adoption_forbidden``)."""
+    if principal is None:
+        return ""
+    if principal.id == LOCAL_OWNER.id and principal.role is None and principal.tenant_id == LOCAL_OWNER.tenant_id:
+        return "owner"
+    return principal.role or ""
+
+
+@router.post("/tools/{name}/adopt", dependencies=ADMIN)
+def adopt_tool(name: str, body: ToolAdoptRequest, ctx: Ctx, request: Request) -> ToolInfo:
+    """Adopt an AI-generated tool as your own code (ADR-0006, decision R-4): after this it is ``user-authored`` and
+    may run on this computer without isolation.
+
+    Desktop only (``403 tool.adoption_desktop_only`` on a server and in Nodestro Local Docker, whose trust policy
+    never changes), only for the local owner or an administrator (``403 tool.adoption_forbidden``), and only for the
+    content that was shown: ``content_hash`` from ``GET /api/tools/{name}`` (``409 tool.adoption_stale`` when the
+    tool changed since). ``409 tool.adoption_not_needed`` for a tool that is not ``untrusted``. Every adoption and
+    every refused one is written to the audit trail (``GET /api/tool-approvals/audit``). A later AI-written version
+    of the tool ends the adoption."""
+    principal: Principal | None = getattr(request.state, "principal", None)
+    try:
+        run_adoption(
+            ctx.tools,
+            ctx.store,
+            name,
+            actor=actor_id(request),
+            role=adopter_role(principal),
+            expected_hash=body.content_hash,
+        )
+    except NodestroError as problem:
+        status = ADOPTION_STATUS.get(problem.code)
+        if status is None:
+            raise
+        raise ApiError(status, problem.code, str(problem), **problem.params) from problem
+    return ctx.tools.get(name)
 
 
 # ---- references -----------------------------------------------------------------
