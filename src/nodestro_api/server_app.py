@@ -17,6 +17,10 @@ Unlike the desktop, the API reference (``/api/docs``, ``/api/openapi.json``) nee
 ``/api/notifications`` (the member's in-app inbox, :mod:`nodestro_api.api_notifications`) exists only with
 ``NODESTRO_AXENTRA_NOTIFY=1``.
 
+A suspended tenant's requests are refused at once (every request checks the tenant). Work its context started in the
+background before (batches, benchmarks with their judge, assistant answers, architect drafts) is stopped within
+:attr:`TenantComposition.suspension_check` seconds (:func:`stop_tenant_work`, security review SR-03).
+
 ``nodestro-server api`` (:mod:`nodestro_api.server`) builds it from validated
 :class:`~nodestro_runtime.server_settings.ServerSettings`. Not part of it yet: the published workflow APIs
 (tenant-bound keys) and backups (``install``; operators use ``pg_dump``). Schedules fire in the worker process that
@@ -28,7 +32,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Callable, Iterable
 from concurrent.futures import Future
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field, replace
 import logging
 from pathlib import Path
@@ -111,6 +115,8 @@ class TenantComposition:
     metrics_authorized: Callable[[str | None], bool] | None = None
     #: In-app notifications (:class:`nodestro_runtime.axentra_notify.AxentraNotifications`; ``None``: no inbox).
     notifications: Any | None = None
+    #: How often the opened tenants are checked for a suspension that stops their background work (seconds).
+    suspension_check: float = 5.0
     #: Input file bytes in Axentra's storage (:class:`nodestro_runtime.axentra_storage.AxentraFiles`,
     #: ``NODESTRO_FILES_BACKEND=axentra``); ``None``: on the data volume.
     files: Any | None = None
@@ -165,6 +171,45 @@ async def close_tenant(context: Nodestro) -> None:
     context.close()
 
 
+#: The stop code of work stopped because its tenant was suspended.
+TENANT_SUSPENDED = "identity.tenant_suspended"
+
+
+async def stop_tenant_work(context: Nodestro) -> list[str]:
+    """Stop the background work a tenant's context runs in this process (its tenant was suspended): benchmarks
+    (their judge too), batches, assistant answers and architect drafts. Idempotent; returns the ids stopped."""
+    stopped: list[str] = []
+    # Benchmarks first: a benchmark follows its batch and would judge the batch's results once it is cancelled.
+    for name, stop in (("benchmarks", context.benchmarks.cancel_all), ("batches", context.batches.cancel_all)):
+        try:
+            stopped += await stop(stop_code=TENANT_SUSPENDED)
+        except Exception:
+            logger.exception("Stopping the %s of a suspended tenant failed", name)
+    for name, sync_stop in (("assistant", context.assistant.cancel_all), ("architect", context.architect.cancel_all)):
+        try:
+            stopped += sync_stop()
+        except Exception:
+            logger.exception("Stopping the %s of a suspended tenant failed", name)
+    return stopped
+
+
+async def stop_suspended_tenants(tenants: TenantWorkspaces, identity: IdentityStore) -> list[str]:
+    """:func:`stop_tenant_work` for every opened tenant that is suspended now; returns the ids stopped."""
+    stopped: list[str] = []
+    for tenant_id, context in tenants.items():
+        try:
+            active = await asyncio.to_thread(identity.tenant_active, tenant_id)
+        except Exception:
+            logger.exception("Checking whether tenant %s is active failed", tenant_id)
+            continue
+        if not active:
+            found = await stop_tenant_work(context)
+            if found:
+                logger.warning("Stopped %s background tasks of suspended tenant %s", len(found), tenant_id)
+            stopped += found
+    return stopped
+
+
 def create_tenant_app(composition: TenantComposition) -> FastAPI:
     """The studio API with logins and one context per tenant (see the module documentation)."""
     if not _secure_origin(composition.origin):
@@ -192,11 +237,23 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
 
     tenants = TenantWorkspaces(open_tenant, close_tenant)
 
+    async def watch_suspensions() -> None:
+        while True:
+            await asyncio.sleep(composition.suspension_check)
+            try:
+                await stop_suspended_tenants(tenants, composition.identity)
+            except Exception:
+                logger.exception("The suspension check failed")
+
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        watcher = asyncio.get_running_loop().create_task(watch_suspensions(), name="nodestro-suspensions")
         try:
             yield
         finally:
+            watcher.cancel()
+            with suppress(asyncio.CancelledError):
+                await watcher
             await tenants.aclose()
 
     # The API reference needs a login on a server (A-09): FastAPI's own public routes are off, and
@@ -326,4 +383,14 @@ def _secure_origin(origin: str) -> bool:
     return secure_url(origin)
 
 
-__all__ = ["DatabaseHealth", "TenantComposition", "TenantFiles", "close_tenant", "create_tenant_app", "mount_frontend"]
+__all__ = [
+    "TENANT_SUSPENDED",
+    "DatabaseHealth",
+    "TenantComposition",
+    "TenantFiles",
+    "close_tenant",
+    "create_tenant_app",
+    "mount_frontend",
+    "stop_suspended_tenants",
+    "stop_tenant_work",
+]

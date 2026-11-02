@@ -23,8 +23,10 @@ or more worker processes (:class:`ServerWorker`). Every worker:
 A suspended tenant (:meth:`nodestro_runtime.identity_store.IdentityStore.tenant_active`, answered by the identity
 backend) is closed for workers too: a claimed job of it fails with ``identity.tenant_suspended`` before its run starts
 or continues (the orphan sweep later marks the run interrupted, so it can be continued once the tenant is resumed),
-runs it executes here stop within :attr:`WorkerSettings.reap_every` without storing more (as after a lost lease), and
-its schedules and tool-wait sweeps do not run.
+runs it executes here stop before their next model request or tool call (``RunWorker.owns`` asks the identity
+backend, reusing an "active" answer for at most ``TENANT_CHECK_SECONDS``; a model call already in flight finishes)
+and at the latest within :attr:`WorkerSettings.reap_every` (a run waiting for a person), without storing more (as
+after a lost lease), and its schedules and tool-wait sweeps do not run.
 
 ``nodestro-server worker`` (:mod:`nodestro_api.server`) runs one. Only runs go through the queue so far; batches,
 test series, assistant drafts and Python environment installations still run in the API process that started them.
@@ -116,6 +118,7 @@ class ServerWorker:
             poll=self.settings.poll,
             max_runs=self.settings.max_runs,
             max_waiting=self.settings.max_waiting,
+            tenant_active=self.identity.tenant_active,
         )
         self.leader = LeaderLock(files.database)
         self.price_sync = server_sync(files.database, self.settings.price_sync)

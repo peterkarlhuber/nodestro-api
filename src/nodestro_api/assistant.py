@@ -711,6 +711,15 @@ class Assistant:
         self._finish(live, "cancelled")
         return live
 
+    def cancel_all(self) -> list[str]:
+        """Stop every answer being written (a suspended tenant, security review SR-03); returns their ids."""
+        with self._lock:
+            live = [(message.conversation_id, message_id) for message_id, message in self._live.items()]
+        for conversation_id, message_id in live:
+            with suppress(KeyError):
+                self.cancel(conversation_id, message_id)
+        return [message_id for _conversation, message_id in live]
+
     def _busy(self, conversation_id: str) -> bool:
         with self._lock:
             return any(message.conversation_id == conversation_id for message in self._live.values())

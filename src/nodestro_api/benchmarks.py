@@ -34,6 +34,7 @@ and it keeps where it came from (``TestCase.origin``).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from datetime import datetime
 import json
 import logging
@@ -541,6 +542,24 @@ class Benchmarks:
         if bench.batch_id and bench.status == "running":
             await self.ctx.batches.cancel(bench.batch_id)
         return self.run(run_id)
+
+    async def cancel_all(self, *, stop_code: str) -> list[str]:
+        """Stop every benchmark this process follows, the judge's model calls included (a suspended tenant,
+        security review SR-03): the following task is cancelled and the benchmark ends as cancelled; its batch is
+        cancelled by :meth:`Batches.cancel_all`. Returns the stopped benchmarks."""
+        stopped = []
+        for bench_id, task in list(self._tasks.items()):
+            if task.done():
+                continue
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
+            bench = self.ctx.store.get(RUNS, bench_id, BenchmarkRun)
+            if bench is not None and bench.status in ("running", "evaluating"):
+                bench.status, bench.stop_code, bench.finished_at = "cancelled", stop_code, now()
+                self.ctx.store.put(RUNS, bench.id, bench)
+            stopped.append(bench_id)
+        return stopped
 
     async def wait(self, run_id: str) -> BenchmarkRun:
         task = self._tasks.get(run_id)

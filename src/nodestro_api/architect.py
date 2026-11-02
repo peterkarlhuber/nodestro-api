@@ -515,6 +515,14 @@ class WorkflowArchitect:
         self.finish(job, "cancelled")
         return job
 
+    def cancel_all(self) -> list[str]:
+        """Stop every running job (a suspended tenant, security review SR-03); returns their ids."""
+        with self._lock:
+            running = [job_id for job_id, job in self.jobs.items() if job.status == "running"]
+        for job_id in running:
+            self.cancel(job_id)
+        return running
+
     def accept(self, job_id: str, *, name: str | None = None) -> ArchitectJob:
         """Mark a ready draft as taken; ``create`` stores it as a new workflow (version 1)."""
         from nodestro_runtime.schemas import Workflow
