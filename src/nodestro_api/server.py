@@ -569,11 +569,15 @@ def check(server: ServerEnvironment) -> list[str]:
             database.require_current_schema,
             lambda: _require_axentra_schema(server, database),
             lambda: _require_runtime_role(server, database),
-            lambda: _require_readable_secrets(server, database),
         )
         for step in steps:
             try:
                 step()
+            except NodestroError as error:
+                problems.append(f"{error.code}: {error}")
+        if not problems:  # the stored secrets can only be read from a current schema
+            try:
+                _require_readable_secrets(server, database)
             except NodestroError as error:
                 problems.append(f"{error.code}: {error}")
     finally:
@@ -804,10 +808,11 @@ def axentra_status(server: ServerEnvironment) -> list[str]:
         version = database.schema_version
         state = "current" if version == POSTGRES_SCHEMA_VERSION else "MIGRATION NEEDED"
         lines.append(f"nodestro schema: {version} of {POSTGRES_SCHEMA_VERSION} ({state})")
-        formats = stored_secret_formats(database)
-        lines.append("stored secrets: " + (", ".join(f"{kind} {n}" for kind, n in formats.items()) or "none"))
-        for problem in secrets_rollback_problems(config, formats):
-            lines.append(f"secrets: NOT READABLE: {problem['reason']}")
+        if version:  # an empty database has no stored secrets (and no table to read them from)
+            formats = stored_secret_formats(database)
+            lines.append("stored secrets: " + (", ".join(f"{kind} {n}" for kind, n in formats.items()) or "none"))
+            for problem in secrets_rollback_problems(config, formats):
+                lines.append(f"secrets: NOT READABLE: {problem['reason']}")
         services = _axentra(server, database)
         if services is not None:
             try:
