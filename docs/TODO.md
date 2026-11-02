@@ -302,12 +302,15 @@ None known.
 
 ### API-041 · Request-bound work of a suspended tenant runs to its own timeout
 
-- **Priority:** P4 Optional · **Status:** Accepted risk · **Refs:** security review NF-1 (#69);
+- **Priority:** P4 Optional · **Status:** Accepted risk · **Refs:** security review NF-1 (#69), R4-7;
   `server_app.stop_tenant_work`
 - **What:** `stop_tenant_work` stops all background work of a suspended tenant (batches, benchmarks, assistant,
   architect, tool generation jobs, run chat, Python installs). Work that a route runs with `asyncio.to_thread` while
   its request is open (agent tester, tool check and save, tool-draft tests, backups, OCR) is not cancelled; it ends
   at its own timeout. A model request already in flight in a stopped tool job finishes and its answer is dropped.
+  Until the next `suspension_check` (default 5 s) sees the suspension, a tool job keeps working and an install of
+  libraries approved before the suspension may start; once stopped, no install starts (runtime R4-7 check under the
+  install lock). An approval or rejection committed before the stop is still carried out, by design.
 - **Next step:** None. New requests of the tenant are refused at once; cancelling a running worker thread would need
   cooperative cancel points in each of those paths.
 
