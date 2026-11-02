@@ -111,6 +111,9 @@ class TenantComposition:
     metrics_authorized: Callable[[str | None], bool] | None = None
     #: In-app notifications (:class:`nodestro_runtime.axentra_notify.AxentraNotifications`; ``None``: no inbox).
     notifications: Any | None = None
+    #: Input file bytes in Axentra's storage (:class:`nodestro_runtime.axentra_storage.AxentraFiles`,
+    #: ``NODESTRO_FILES_BACKEND=axentra``); ``None``: on the data volume.
+    files: Any | None = None
 
 
 @dataclass
@@ -129,8 +132,12 @@ class TenantFiles:
     endpoints: tuple[str, ...] = ()
     #: The operator's Amazon Bedrock roles; a tenant's workspace receives only its own entry (``for_tenant``).
     bedrock: BedrockOperatorConfig | None = None
+    #: Input file bytes in Axentra's storage (``AxentraFiles``); ``None``: on the data volume.
+    files: Any | None = None
 
     def open(self, tenant_id: str) -> Nodestro:
+        files = self.files
+        blobs = None if files is None else (lambda root: files.blobs(tenant_id, root))
         return Nodestro(
             # A tenant is served by the server profile (AD-05: /api/meta says so; single-user fallbacks such as
             # provider keys from the environment stay off).
@@ -143,6 +150,7 @@ class TenantFiles:
             storage=replace(
                 tenant_storage(self.database, tenant_id, self.secrets, self.endpoints, bedrock=self.bedrock),
                 price_reference=self.database.store(PRICE_REFERENCE_TENANT),
+                input_blobs=blobs,
             ),
         )
 
@@ -172,6 +180,7 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
         secrets=composition.secrets,
         endpoints=composition.endpoints,
         bedrock=composition.bedrock,
+        files=composition.files,
     )
     queue = composition.queue
 

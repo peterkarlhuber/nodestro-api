@@ -144,10 +144,12 @@ def input_file(file_id: str, ctx: Ctx) -> InputFileOut:
 @router.get("/inputs/{file_id}/content", dependencies=READ)
 def input_content(file_id: str, ctx: Ctx) -> Response:
     item = ctx.inputs.get(file_id)
+    # A type the file storage keeps as an inert attachment (NODESTRO_FILES_BACKEND=axentra) is served as opaque bytes.
+    media_type = ctx.inputs.download_type(file_id)
     return Response(
         content=ctx.inputs.data(file_id),
-        media_type=item.media_type,
-        headers=uploaded_file_headers(item.name, item.media_type, inline=False),
+        media_type=media_type,
+        headers=uploaded_file_headers(item.name, media_type, inline=False),
     )
 
 

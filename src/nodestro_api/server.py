@@ -24,6 +24,11 @@ sentence listing every problem (``profile.invalid``); nothing has a default that
 ``nodestro-server axentra status``
     The embedding state: switches, package version, schema state of both runners, keyring key ids (never keys),
     stored secrets by format, identity backend and its readiness, and the reconciliation backlog (counts only).
+``nodestro-server files migrate|verify|remove-source|export-volume [--dry-run] [--tenant TENANT]``
+    Input file bytes in Axentra's storage (``NODESTRO_FILES_BACKEND=axentra``): copy volume files into it (resumable,
+    idempotent, SHA-256 checked, the volume file is kept), verify every object, remove migrated volume files after
+    the fallback period (only with ``NODESTRO_FILES_SOURCE_REMOVAL=1``), or copy them back for a rollback. Exit code 2
+    when a file failed. See :mod:`nodestro_runtime.axentra_storage`.
 ``nodestro-server axentra backfill-identity [--dry-run]`` / ``nodestro-server axentra reconcile-identity``
     Copy users, tenants, memberships and live sessions into Axentra (idempotent, resumable; run it in a maintenance
     window before ``NODESTRO_IDENTITY_BACKEND=mirror``), and compare both sides (exit code 1 on any difference; ids
@@ -327,6 +332,13 @@ def _platform(server: ServerEnvironment, database: Any) -> tuple[Any, Any]:
     config = server.settings.axentra
     services = _attach_mirrors(server, database)
     if config.identity_backend == "nodestro":
+        if services is None and config.files_backend == "axentra":
+            services = _axentra(server)
+            try:
+                services.start()
+            except BaseException:
+                services.close()
+                raise
         return services, IdentityStore(database)
     try:
         if services is None:
@@ -364,6 +376,14 @@ def _observed(server: ServerEnvironment, database: Any, services: Any, identity:
         instrument_identity(identity)
         metrics = ServerMetrics(database, services)
     return services, notifications, metrics
+def _input_files(server: ServerEnvironment, database: Any, services: Any) -> Any:
+    """Axentra's storage for the input files (``NODESTRO_FILES_BACKEND=axentra``; ``services`` started), else
+    ``None`` (the data volume)."""
+    if server.settings.axentra.files_backend != "axentra":
+        return None
+    from nodestro_runtime.axentra_storage import open_files
+
+    return open_files(services, database)
 
 
 @contextmanager
@@ -437,6 +457,7 @@ def create_server_app() -> Any:
             metrics=metrics,
             metrics_authorized=server.metrics.authorized if metrics is not None else None,
             notifications=notifications,
+            files=_input_files(server, database, services),
         )
     )
 
@@ -459,6 +480,7 @@ async def run_worker(server: ServerEnvironment) -> None:
         secrets=server.settings.secret_box(),
         endpoints=server.endpoints,
         bedrock=server.bedrock,
+        files=_input_files(server, database, mirrors),
     )
     timing = dict(server.worker)
     settings = WorkerSettings(
@@ -518,6 +540,12 @@ def check(server: ServerEnvironment) -> list[str]:
             problems.append(f"{error.code}: {error}")
         finally:
             database.close()
+    if not problems and server.settings.axentra.files_backend == "axentra":
+        try:
+            with _files_tools(server):
+                pass
+        except NodestroError as error:
+            problems.append(f"{error.code}: {error}")
     try:
         _require_containers(server)
     except NodestroError as error:
@@ -689,6 +717,7 @@ def axentra_status(server: ServerEnvironment) -> list[str]:
         f"notifications (inbox): {on(config.notify)}",
         f"identity backend: {config.identity_backend}",
         f"metrics endpoint: {on(bool(server.metrics and server.metrics.enabled))}",
+        f"files backend: {config.files_backend}",
     ]
     if config.enabled and available():
         from axentra.config.secrets import Keyring
@@ -733,6 +762,83 @@ def axentra_status(server: ServerEnvironment) -> list[str]:
     finally:
         database.close()
     return lines
+
+
+@contextmanager
+def _files_tools(server: ServerEnvironment) -> Iterator[Any]:
+    """Axentra's storage of the input files for one operator command (closed afterwards)."""
+    if server.settings.axentra.files_backend != "axentra":
+        raise NodestroError(
+            "files.backend_off", "The files commands need NODESTRO_AXENTRA=on and NODESTRO_FILES_BACKEND=axentra"
+        )
+    from nodestro_runtime.axentra_storage import open_files
+
+    database = _database(server)
+    services = _axentra(server)
+    try:
+        database.require_current_schema()
+        services.require_current_schema()
+        services.start()
+        yield open_files(services, database)
+    finally:
+        services.close()
+        database.close()
+
+
+FILES_COMMANDS = ("migrate", "verify", "remove-source", "export-volume")
+
+
+def files_command(
+    server: ServerEnvironment, command: str, *, dry_run: bool = False, tenant: str | None = None
+) -> dict[str, Any]:
+    """``nodestro-server files migrate|verify|remove-source|export-volume`` (see
+    :class:`nodestro_runtime.axentra_storage.AxentraFiles`); ids and counts only."""
+    root = server.profile.data_dir
+    with _files_tools(server) as files:
+        if command == "migrate":
+            report = files.migrate(root, tenant=tenant, dry_run=dry_run)
+        elif command == "verify":
+            report = files.verify(root, tenant=tenant)
+        elif command == "remove-source":
+            report = files.remove_sources(root, tenant=tenant, dry_run=dry_run)
+        elif command == "export-volume":
+            report = files.export_to_volume(root, tenant=tenant, dry_run=dry_run)
+        else:  # pragma: no cover - argparse limits the choices
+            raise NodestroError("files.command", f"Unknown files command {command!r}")
+    result: dict[str, Any] = report.as_dict()
+    return result
+
+
+def archive_files(server: ServerEnvironment, directory: Path) -> Path | None:
+    """With ``NODESTRO_FILES_BACKEND=axentra`` on Axentra's local backend: a ``tar.gz`` of its directory next to the
+    database dump (``None`` otherwise; S3 buckets are backed up with the bucket's own versioning or replication)."""
+    config = server.settings.axentra
+    if config.files_backend != "axentra":
+        return None
+    services = _axentra(server)
+    try:
+        storage = services.settings.storage
+        if storage.backend != "local":
+            return None
+        source = Path(storage.local_path)
+    finally:
+        services.close()
+    if not source.is_dir():
+        raise NodestroError("storage.backup_failed", f"Axentra's storage directory {source} does not exist")
+    import tarfile
+
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / f"nodestro-files-{_stamp()}.tar.gz"
+    partial = target.with_name(target.name + ".partial")
+    try:
+        with tarfile.open(partial, "w:gz") as archive:
+            # Temporary upload files (.tmp-*) of uploads in progress are left out: their rows are still pending.
+            archive.add(source, arcname=".", filter=lambda info: None if "/.tmp-" in f"/{info.name}" else info)
+        partial.replace(target)
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
+    return target
 
 
 def dump(server: ServerEnvironment, target: Path) -> Path:
@@ -1027,6 +1133,18 @@ def parser() -> argparse.ArgumentParser:
     platform_commands.add_parser(
         "reconcile-identity", help="Compare identity records of Nodestro and Axentra (exit code 1 on differences)"
     )
+    files = commands.add_parser("files", help="Input file bytes in Axentra's storage (NODESTRO_FILES_BACKEND=axentra)")
+    files_commands = files.add_subparsers(dest="files_command", required=True)
+    for name, text in (
+        ("migrate", "Copy volume files into Axentra's storage (resumable, SHA-256 checked, volume kept)"),
+        ("verify", "Read every stored file back and compare its SHA-256 (exit code 2 on a failure)"),
+        ("remove-source", "Delete migrated, verified volume files after the fallback period (needs the switch)"),
+        ("export-volume", "Copy files stored only in Axentra back to the volume (before switching back)"),
+    ):
+        command = files_commands.add_parser(name, help=text)
+        if name != "verify":
+            command.add_argument("--dry-run", action="store_true", help="Only count what would change")
+        command.add_argument("--tenant", help="Only this tenant")
     pricing = commands.add_parser("pricing", help="Reference prices: status, sync, open reviews and their decisions")
     pricing_commands = pricing.add_subparsers(dest="pricing_command", required=True)
     pricing_commands.add_parser("status", help="Print the state of the reference prices and the open reviews")
@@ -1070,6 +1188,18 @@ def main(argv: Sequence[str] | None = None) -> None:
             asyncio.run(run_worker(server))
         elif args.command == "backup":
             print(dump(server, args.directory / f"nodestro-{_stamp()}.dump"))
+            archived = archive_files(server, args.directory)
+            if archived is not None:
+                print(archived)
+        elif args.command == "files":
+            import json
+
+            report = files_command(
+                server, args.files_command, dry_run=getattr(args, "dry_run", False), tenant=args.tenant
+            )
+            print(json.dumps(report, indent=2))
+            if report["failed"]:
+                raise SystemExit(2)
         elif args.command in ("suspend-tenant", "resume-tenant"):
             status = "suspended" if args.command == "suspend-tenant" else "active"
             print(set_tenant_status(server, args.tenant_id, status))
@@ -1126,12 +1256,14 @@ if __name__ == "__main__":  # pragma: no cover
 __all__ = [
     "DEFAULT_PORT",
     "ServerEnvironment",
+    "archive_files",
     "axentra_status",
     "backfill_identity",
     "check",
     "create_server_app",
     "create_tenant",
     "dump",
+    "files_command",
     "find_user",
     "load",
     "main",
