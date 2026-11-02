@@ -17843,6 +17843,60 @@
         "title": "TestResult",
         "type": "object"
       },
+      "ToolAdoptRequest": {
+        "properties": {
+          "content_hash": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Content Hash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content_hash"
+        ],
+        "title": "ToolAdoptRequest",
+        "type": "object"
+      },
+      "ToolAdoption": {
+        "description": "A person's confirmed adoption of one version of an AI-generated tool as their own code (ADR-0006, R-4).",
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "content_hash",
+          "actor",
+          "role"
+        ],
+        "title": "ToolAdoption",
+        "type": "object"
+      },
       "ToolApprovalDecision": {
         "properties": {
           "arguments_hash": {
@@ -17917,7 +17971,10 @@
               "executed",
               "stale",
               "result_lost",
-              "switch_off"
+              "switch_off",
+              "tool_adopted",
+              "tool_adoption_refused",
+              "tool_adoption_revoked"
             ],
             "title": "Kind",
             "type": "string"
@@ -18705,6 +18762,16 @@
       },
       "ToolInfo": {
         "properties": {
+          "adoption": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolAdoption"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "capability": {
             "$ref": "#/components/schemas/ToolCapability",
             "default": {
@@ -18723,6 +18790,17 @@
               }
             ],
             "title": "Code"
+          },
+          "content_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Hash"
           },
           "created_at": {
             "anyOf": [
@@ -30134,6 +30212,56 @@
           }
         },
         "summary": "Get Tool"
+      }
+    },
+    "/api/tools/{name}/adopt": {
+      "post": {
+        "description": "Adopt an AI-generated tool as your own code (ADR-0006, decision R-4): after this it is ``user-authored`` and\nmay run on this computer without isolation.\n\nDesktop only (``403 tool.adoption_desktop_only`` on a server and in Nodestro Local Docker, whose trust policy\nnever changes), only for the local owner or an administrator (``403 tool.adoption_forbidden``), and only for the\ncontent that was shown: ``content_hash`` from ``GET /api/tools/{name}`` (``409 tool.adoption_stale`` when the\ntool changed since). ``409 tool.adoption_not_needed`` for a tool that is not ``untrusted``. Every adoption and\nevery refused one is written to the audit trail (``GET /api/tool-approvals/audit``). A later AI-written version\nof the tool ends the adoption.",
+        "operationId": "adopt_tool_api_tools__name__adopt_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToolAdoptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Adopt Tool"
       }
     },
     "/api/tools/{name}/run": {
