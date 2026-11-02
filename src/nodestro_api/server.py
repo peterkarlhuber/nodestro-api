@@ -16,12 +16,28 @@ sentence listing every problem (``profile.invalid``); nothing has a default that
     Executes queued runs, reaps runs of dead workers and fires schedules (:class:`nodestro_api.worker.ServerWorker`).
 ``nodestro-server create-tenant ID NAME`` / ``nodestro-server setup-link TENANT``
     Create a tenant, and print a one-time setup link that makes the person who opens it the tenant's first owner.
+``nodestro-server secrets reencrypt [--dry-run] [--tenant TENANT]``
+    Move every stored tenant secret (provider keys, MCP tokens, billing admin keys) to the active key of Axentra's
+    keyring (``NODESTRO_AXENTRA=on``, ``NODESTRO_SECRETS_FORMAT=axs1``). Resumable and idempotent; a value that
+    cannot be decrypted is left unchanged and reported (exit code 2).
+``nodestro-server axentra status``
+    Whether Axentra is switched on, its version and pending Axentra migrations.
+``nodestro-server axentra backfill-identity [--dry-run]`` / ``nodestro-server axentra reconcile-identity``
+    Copy users, tenants, memberships and live sessions into Axentra (idempotent, resumable; run it in a maintenance
+    window before ``NODESTRO_IDENTITY_BACKEND=mirror``), and compare both sides (exit code 1 on any difference; ids
+    and counts only). See :mod:`nodestro_runtime.axentra_identity`.
 ``nodestro-server members TENANT`` / ``set-role TENANT USER ROLE`` / ``remove-member TENANT USER`` /
 ``revoke-sessions USER``
     Membership of a tenant (A-08): list it, add a member or change a role, remove a member (their sessions in the
     tenant end with it), and end every session of a user at once. ``USER`` is a user id (``u_…``), a verified
     e-mail address or the subject at the configured identity provider. A person is known once they logged in at
     least once (a login alone grants nothing); a tenant always keeps at least one owner.
+
+With ``NODESTRO_AXENTRA=on`` (off by default; see :mod:`nodestro_runtime.axentra_platform`) ``migrate`` also applies
+Axentra's migrations to the same database (after the one backup of the run), and ``check``, ``api`` and ``worker``
+require Axentra's schema to be current too. ``NODESTRO_IDENTITY_BACKEND`` (``nodestro`` by default, ``mirror``,
+``axentra``) chooses the identity store of ``api``, ``worker`` and the member commands (:func:`_platform`);
+``axentra`` refuses to start before the backfill.
 
 API and worker processes start only when the database schema is current and Docker is reachable: tool code runs
 only in containers on a server (ADR-0006), so a server without a container runtime does not start. Docker may be
@@ -33,7 +49,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import logging
@@ -234,11 +251,94 @@ def _require_containers(server: ServerEnvironment) -> None:
         )
 
 
+def _axentra(server: ServerEnvironment) -> Any:
+    """Axentra's services for this server (not started), ``None`` when ``NODESTRO_AXENTRA`` is off."""
+    config = server.settings.axentra
+    if not config.enabled:
+        return None
+    from nodestro_runtime.axentra_platform import AxentraServices
+
+    schema = os.environ.get("NODESTRO_DATABASE_SCHEMA", "").strip() or None
+    return AxentraServices(
+        config,
+        database_url=server.settings.database_url,
+        public_origin=server.settings.public_origin,
+        schema=schema,
+    )
+
+
+def _require_axentra_schema(server: ServerEnvironment) -> None:
+    services = _axentra(server)
+    if services is not None:
+        try:
+            services.require_current_schema()
+        finally:
+            services.close()
+
+
+def _attach_mirrors(server: ServerEnvironment, database: Any) -> Any:
+    """Start Axentra and attach the audit/usage mirrors to ``database`` when ``NODESTRO_AXENTRA_AUDIT`` or
+    ``NODESTRO_AXENTRA_USAGE`` is on (see :mod:`nodestro_runtime.platform_events`); the started services or ``None``.
+    """
+    config = server.settings.axentra
+    if not (config.enabled and (config.audit or config.usage)):
+        return None
+    from nodestro_runtime.axentra_platform import AxentraLink, attach_platform_events
+
+    services = _axentra(server)
+    try:
+        services.start()
+        attach_platform_events(database, AxentraLink(services, database))
+    except BaseException:
+        services.close()
+        raise
+    return services
+
+
+def _platform(server: ServerEnvironment, database: Any) -> tuple[Any, Any]:
+    """The started Axentra services of this process (``None`` when nothing needs them) and its identity store.
+
+    One set of services serves the audit/usage mirrors and the identity store. ``NODESTRO_IDENTITY_BACKEND=nodestro``
+    (the default) is Nodestro's :class:`~nodestro_runtime.identity_store.IdentityStore`; ``mirror``/``axentra`` use
+    :class:`~nodestro_runtime.axentra_identity.AxentraIdentityStore` (``axentra`` refuses to start before the
+    backfill, ``identity.backfill_required``)."""
+    from nodestro_runtime.identity_store import IdentityStore
+
+    config = server.settings.axentra
+    services = _attach_mirrors(server, database)
+    if config.identity_backend == "nodestro":
+        return services, IdentityStore(database)
+    try:
+        if services is None:
+            services = _axentra(server)
+            services.start()
+        from nodestro_runtime.axentra_identity import open_identity_store
+
+        return services, open_identity_store(database, config, services)
+    except BaseException:
+        if services is not None:
+            services.close()
+        raise
+
+
+@contextmanager
+def _identity(server: ServerEnvironment, database: Any) -> Iterator[Any]:
+    """The identity store for one operator command (Axentra services closed afterwards)."""
+    services, identity = _platform(server, database)
+    try:
+        yield identity
+    finally:
+        database.platform_events = None
+        if services is not None:
+            services.close()
+
+
 def _ready(server: ServerEnvironment) -> Any:
     """The database, after checking that its schema is current and Docker is reachable."""
     database = _database(server)
     try:
         database.require_current_schema()
+        _require_axentra_schema(server)
         _require_containers(server)
     except BaseException:
         database.close()
@@ -252,7 +352,6 @@ def _ready(server: ServerEnvironment) -> Any:
 def create_server_app() -> Any:
     """The studio API of a server, built from the environment (``uvicorn --factory``)."""
     import httpx
-    from nodestro_runtime.identity_store import IdentityStore
     from nodestro_runtime.jobs import JobQueue
 
     from .identity import OidcClient, OidcSettings
@@ -260,6 +359,7 @@ def create_server_app() -> Any:
 
     server = load()
     database = _ready(server)
+    _services, identity = _platform(server, database)  # open for the life of the process, as the database
     settings = server.settings
     oidc = OidcClient(
         OidcSettings(
@@ -273,7 +373,7 @@ def create_server_app() -> Any:
     return create_tenant_app(
         TenantComposition(
             database=database,
-            identity=IdentityStore(database),
+            identity=identity,
             oidc=oidc,
             origin=settings.public_origin,
             data_root=server.profile.data_dir,
@@ -292,12 +392,11 @@ def create_server_app() -> Any:
 
 async def run_worker(server: ServerEnvironment) -> None:
     """Serve as a worker until SIGTERM or SIGINT; a running run is finished first."""
-    from nodestro_runtime.identity_store import IdentityStore
-
     from .server_app import TenantFiles
     from .worker import ServerWorker, WorkerSettings
 
     database = _ready(server)
+    mirrors, identity = _platform(server, database)
     files = TenantFiles(
         database=database,
         data_root=server.profile.data_dir,
@@ -313,7 +412,7 @@ async def run_worker(server: ServerEnvironment) -> None:
         **server.capacity,  # type: ignore[arg-type]
         **timing,  # type: ignore[arg-type]
     )
-    worker = ServerWorker(files, IdentityStore(database), settings)
+    worker = ServerWorker(files, identity, settings)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for signum in (signal.SIGTERM, signal.SIGINT):
@@ -323,6 +422,8 @@ async def run_worker(server: ServerEnvironment) -> None:
         await worker.serve(stop)
     finally:
         database.close()
+        if mirrors is not None:
+            mirrors.close()
         logger.info("Worker %s stopped", worker.name)
 
 
@@ -343,6 +444,20 @@ def check(server: ServerEnvironment) -> list[str]:
     finally:
         database.close()
     try:
+        _require_axentra_schema(server)
+    except NodestroError as error:
+        problems.append(f"{error.code}: {error}")
+    if not problems and server.settings.axentra.identity_backend != "nodestro":
+        # The identity backend starts as api and worker would (axentra: refused before the backfill).
+        database = _database(server)
+        try:
+            with _identity(server, database):
+                pass
+        except NodestroError as error:
+            problems.append(f"{error.code}: {error}")
+        finally:
+            database.close()
+    try:
         _require_containers(server)
     except NodestroError as error:
         problems.append(f"{error.code}: {error}")
@@ -350,24 +465,159 @@ def check(server: ServerEnvironment) -> list[str]:
 
 
 def migrate(server: ServerEnvironment, *, backup_dir: Path | None, backup_taken: bool) -> int:
-    """Apply the migrations; returns the version the database had."""
-    database = _database(server)
+    """Apply the migrations (Nodestro's, then Axentra's when switched on); returns Nodestro's version before.
 
-    def before(current: int, target: int) -> None:
-        if backup_taken:
+    One backup covers the run: it is written before the first change, whichever runner needs it first."""
+    database = _database(server)
+    taken: list[Path] = []
+
+    def backup(label: str) -> None:
+        if backup_taken or taken:
             return
         if backup_dir is None:
             raise NodestroError(
                 "storage.backup_required",
-                f"The database has schema version {current}; take a backup before migrating to {target} "
+                f"The database needs a migration ({label}); take a backup first "
                 "(--backup-dir DIR runs pg_dump, --backup-taken states that you made one)",
             )
-        dump(server, backup_dir / f"pre-migration-{current}-to-{target}-{_stamp()}.dump")
+        taken.append(dump(server, backup_dir / f"pre-migration-{label}-{_stamp()}.dump"))
+
+    def before(current: int, target: int) -> None:
+        backup(f"{current}-to-{target}")
 
     try:
-        return int(database.migrate(before_migration=before))
+        version = int(database.migrate(before_migration=before))
     finally:
         database.close()
+    services = _axentra(server)
+    if services is not None:
+        try:
+            fresh = version == 0 and not taken  # a new database: nothing to back up (as for Nodestro's runner)
+            applied = services.migrate(None if fresh else (lambda pending: backup("axentra")))
+        finally:
+            services.close()
+        if applied:
+            logger.info("Applied %d Axentra migrations", len(applied))
+    return version
+
+
+def reencrypt_secrets(server: ServerEnvironment, *, dry_run: bool, tenant: str | None) -> dict[str, Any]:
+    """``nodestro-server secrets reencrypt``: see :func:`nodestro_runtime.axentra_platform.reencrypt_tenant_secrets`."""
+    from nodestro_runtime.axentra_platform import KeyringSecretBox, reencrypt_tenant_secrets
+
+    box = server.settings.secret_box()
+    if not isinstance(box, KeyringSecretBox) or box.write != "axs1":
+        raise NodestroError(
+            "secrets.keyring_required",
+            "Re-encryption needs NODESTRO_AXENTRA=on and NODESTRO_SECRETS_FORMAT=axs1 (the format new values use)",
+        )
+    database = _database(server)
+    try:
+        database.require_current_schema()
+        report = reencrypt_tenant_secrets(database, box, dry_run=dry_run, tenant=tenant)
+    finally:
+        database.close()
+    logger.info(
+        "Secret re-encryption%s: %d values, %d pending, %d re-encrypted, %d failed",
+        " (dry run)" if dry_run else "",
+        report.total,
+        report.pending,
+        report.reencrypted,
+        len(report.failed),
+    )
+    return report.as_dict()
+
+
+def reconcile_mirrors(server: ServerEnvironment, *, dry_run: bool, tenant: str | None) -> dict[str, Any]:
+    """``nodestro-server axentra reconcile``: write the audit/usage mirrors that are missing in Axentra
+    (:meth:`nodestro_runtime.axentra_platform.AxentraEvents.reconcile`; idempotent, Nodestro's records only read)."""
+    config = server.settings.axentra
+    if not (config.enabled and (config.audit or config.usage)):
+        raise NodestroError(
+            "axentra.mirrors_off",
+            "Reconciling needs NODESTRO_AXENTRA=on and NODESTRO_AXENTRA_AUDIT=1 or NODESTRO_AXENTRA_USAGE=1",
+        )
+    database = _database(server)
+    try:
+        database.require_current_schema()
+        _require_axentra_schema(server)
+        services = _attach_mirrors(server, database)
+        try:
+            report: dict[str, Any] = database.platform_events.reconcile(dry_run=dry_run, tenant=tenant)
+        finally:
+            database.platform_events = None
+            services.close()
+    finally:
+        database.close()
+    logger.info("Axentra reconcile%s: %s", " (dry run)" if dry_run else "", report)
+    return report
+
+
+@contextmanager
+def _identity_tools(server: ServerEnvironment) -> Iterator[Any]:
+    """An :class:`~nodestro_runtime.axentra_identity.AxentraIdentityStore` for the backfill and the reconciliation,
+    whatever ``NODESTRO_IDENTITY_BACKEND`` is (they run before the switch); needs ``NODESTRO_AXENTRA=on``."""
+    services = _axentra(server)
+    if services is None:
+        raise NodestroError("axentra.disabled", "The identity backfill needs NODESTRO_AXENTRA=on")
+    database = _database(server)
+    try:
+        database.require_current_schema()
+        services.require_current_schema()
+        services.start()
+        from nodestro_runtime.axentra_identity import AxentraIdentityStore
+        from nodestro_runtime.axentra_platform import AxentraLink
+
+        store = AxentraIdentityStore(database, AxentraLink(services, database), mode="mirror")
+        problems = store.configuration_problems()
+        if problems:
+            raise NodestroError("profile.invalid", "; ".join(problems), problems=problems)
+        yield store
+    finally:
+        services.close()
+        database.close()
+
+
+def backfill_identity(server: ServerEnvironment, *, dry_run: bool) -> dict[str, Any]:
+    """``axentra backfill-identity``: see :func:`nodestro_runtime.axentra_identity.backfill_identity`."""
+    from nodestro_runtime.axentra_identity import backfill_identity as run
+
+    with _identity_tools(server) as store:
+        report: dict[str, Any] = run(store, dry_run=dry_run).as_dict()
+    logger.info("Identity backfill%s: %s", " (dry run)" if dry_run else "", report)
+    return report
+
+
+def reconcile_identity(server: ServerEnvironment) -> dict[str, Any]:
+    """``nodestro-server axentra reconcile-identity``: compare both sides (read-only; ids and counts only)."""
+    from nodestro_runtime.axentra_identity import reconcile_identity as run
+
+    with _identity_tools(server) as store:
+        report: dict[str, Any] = run(store).as_dict()
+    return report
+
+
+def axentra_status(server: ServerEnvironment) -> list[str]:
+    """``nodestro-server axentra status``: switch, package version, pending migrations."""
+    from nodestro_runtime.axentra_platform import available, axentra_version
+
+    config = server.settings.axentra
+    lines = [
+        f"axentra: {'on' if config.enabled else 'off'}",
+        f"package: {axentra_version() or 'not installed'}" + ("" if available() else " (not usable here)"),
+        f"secrets format: {config.secrets_format}",
+        f"audit mirror: {'on' if config.audit else 'off'}",
+        f"usage mirror: {'on' if config.usage else 'off'}",
+        f"identity backend: {config.identity_backend}",
+    ]
+    services = _axentra(server)
+    if services is not None:
+        try:
+            pending = services.pending_migrations()
+        finally:
+            services.close()
+        lines.append(f"pending migrations: {', '.join(pending) or 'none'}")
+    return lines
 
 
 def dump(server: ServerEnvironment, target: Path) -> Path:
@@ -405,26 +655,24 @@ def setup_link(server: ServerEnvironment, tenant_id: str) -> str:
     """A one-time link (24 hours) that makes the person who logs in with it the first owner of ``tenant_id``."""
     from urllib.parse import urlencode
 
-    from nodestro_runtime.identity_store import IdentityStore
-
     database = _database(server)
     try:
         database.require_current_schema()
-        token = IdentityStore(database).create_bootstrap_token(tenant_id)
+        with _identity(server, database) as identity:
+            token = identity.create_bootstrap_token(tenant_id)
     finally:
         database.close()
     return f"{server.settings.public_origin}/api/auth/login?{urlencode({'setup': token})}"
 
 
 def create_tenant(server: ServerEnvironment, tenant_id: str, name: str) -> None:
-    from nodestro_runtime.identity_store import IdentityStore
-
     if tenant_id == PRICE_REFERENCE_TENANT:  # the server's reference prices live under this id
         raise NodestroError("identity.tenant_id", f"The tenant id {tenant_id!r} is reserved", tenant=tenant_id)
     database = _database(server)
     try:
         database.require_current_schema()
-        IdentityStore(database).create_tenant(tenant_id, name)
+        with _identity(server, database) as identity:
+            identity.create_tenant(tenant_id, name)
     finally:
         database.close()
 
@@ -479,20 +727,18 @@ def _require_tenant(identity: Any, tenant_id: str) -> None:
 
 def members(server: ServerEnvironment, tenant_id: str) -> list[str]:
     """One line per member of a tenant: user id, role, e-mail address, name and subject."""
-    from nodestro_runtime.identity_store import IdentityStore
-
     database = _database(server)
     try:
         database.require_current_schema()
-        identity = IdentityStore(database)
-        _require_tenant(identity, tenant_id)
-        lines = []
-        for member in identity.members(tenant_id):
-            user = identity.user(member.user_id)
-            email = (user.email if user else None) or "-"
-            name = (user.name if user else None) or "-"
-            subject = user.subject if user else "-"
-            lines.append(f"{member.user_id}\t{member.role}\t{email}\t{name}\t{subject}")
+        with _identity(server, database) as identity:
+            _require_tenant(identity, tenant_id)
+            lines = []
+            for member in identity.members(tenant_id):
+                user = identity.user(member.user_id)
+                email = (user.email if user else None) or "-"
+                name = (user.name if user else None) or "-"
+                subject = user.subject if user else "-"
+                lines.append(f"{member.user_id}\t{member.role}\t{email}\t{name}\t{subject}")
         return lines
     finally:
         database.close()
@@ -500,18 +746,18 @@ def members(server: ServerEnvironment, tenant_id: str) -> list[str]:
 
 def set_role(server: ServerEnvironment, tenant_id: str, who: str, role: str) -> str:
     """Give a user a role in a tenant (adds the member); takes effect with their next request."""
-    from nodestro_runtime.identity_store import ROLES, IdentityStore
+    from nodestro_runtime.identity_store import ROLES
 
     if role not in ROLES:
         raise NodestroError("identity.role", f"Unknown role {role!r} (one of {', '.join(ROLES)})", role=role)
     database = _database(server)
     try:
         database.require_current_schema()
-        identity = IdentityStore(database)
-        _require_tenant(identity, tenant_id)
-        user = find_user(server, database, who)
-        before = identity.role(tenant_id, user.id)
-        identity.set_role(tenant_id, user.id, role)
+        with _identity(server, database) as identity:
+            _require_tenant(identity, tenant_id)
+            user = find_user(server, database, who)
+            before = identity.role(tenant_id, user.id)
+            identity.set_role(tenant_id, user.id, role)
     finally:
         database.close()
     logger.info("Operator set the role of %s in tenant %s: %s -> %s", user.id, tenant_id, before or "-", role)
@@ -520,17 +766,17 @@ def set_role(server: ServerEnvironment, tenant_id: str, who: str, role: str) -> 
 
 def remove_member(server: ServerEnvironment, tenant_id: str, who: str) -> str:
     """Remove a user from a tenant; their sessions in the tenant end at once (the last owner stays)."""
-    from nodestro_runtime.identity_store import IdentityStore
-
     database = _database(server)
     try:
         database.require_current_schema()
-        identity = IdentityStore(database)
-        _require_tenant(identity, tenant_id)
-        user = find_user(server, database, who)
-        if identity.role(tenant_id, user.id) is None:
-            raise NodestroError("identity.not_a_member", f"{user.id} is not a member of {tenant_id}", tenant=tenant_id)
-        identity.remove_member(tenant_id, user.id)
+        with _identity(server, database) as identity:
+            _require_tenant(identity, tenant_id)
+            user = find_user(server, database, who)
+            if identity.role(tenant_id, user.id) is None:
+                raise NodestroError(
+                    "identity.not_a_member", f"{user.id} is not a member of {tenant_id}", tenant=tenant_id
+                )
+            identity.remove_member(tenant_id, user.id)
     finally:
         database.close()
     logger.info("Operator removed %s from tenant %s", user.id, tenant_id)
@@ -539,13 +785,12 @@ def remove_member(server: ServerEnvironment, tenant_id: str, who: str) -> str:
 
 def revoke_sessions(server: ServerEnvironment, who: str) -> str:
     """End every session of a user in every tenant (memberships stay; a new login starts a new session)."""
-    from nodestro_runtime.identity_store import IdentityStore
-
     database = _database(server)
     try:
         database.require_current_schema()
         user = find_user(server, database, who)
-        ended = IdentityStore(database).end_sessions(user.id)
+        with _identity(server, database) as identity:
+            ended = identity.end_sessions(user.id)
     finally:
         database.close()
     logger.info("Operator ended %d sessions of %s", ended, user.id)
@@ -624,6 +869,26 @@ def parser() -> argparse.ArgumentParser:
     removing.add_argument("user", help=user_help)
     revoking = commands.add_parser("revoke-sessions", help="End every session of a user (log them out everywhere)")
     revoking.add_argument("user", help=user_help)
+    secrets = commands.add_parser("secrets", help="Tenant secrets: re-encrypt them with Axentra's active key")
+    secrets_commands = secrets.add_subparsers(dest="secrets_command", required=True)
+    reencrypting = secrets_commands.add_parser("reencrypt", help="Re-encrypt stored tenant secrets (resumable)")
+    reencrypting.add_argument("--dry-run", action="store_true", help="Only count what would be re-encrypted")
+    reencrypting.add_argument("--tenant", help="Only this tenant")
+    platform = commands.add_parser("axentra", help="Axentra platform services")
+    platform_commands = platform.add_subparsers(dest="axentra_command", required=True)
+    platform_commands.add_parser("status", help="Switch, version and pending migrations of Axentra")
+    reconciling = platform_commands.add_parser(
+        "reconcile", help="Write audit/usage mirrors missing in Axentra (idempotent)"
+    )
+    reconciling.add_argument("--dry-run", action="store_true", help="Only count what is missing")
+    reconciling.add_argument("--tenant", help="Only this tenant")
+    backfilling = platform_commands.add_parser(
+        "backfill-identity", help="Copy users, tenants, memberships and sessions into Axentra (idempotent)"
+    )
+    backfilling.add_argument("--dry-run", action="store_true", help="Only report what would be copied")
+    platform_commands.add_parser(
+        "reconcile-identity", help="Compare identity records of Nodestro and Axentra (exit code 1 on differences)"
+    )
     pricing = commands.add_parser("pricing", help="Reference prices: status, sync, open reviews and their decisions")
     pricing_commands = pricing.add_subparsers(dest="pricing_command", required=True)
     pricing_commands.add_parser("status", help="Print the state of the reference prices and the open reviews")
@@ -680,6 +945,33 @@ def main(argv: Sequence[str] | None = None) -> None:
             print(remove_member(server, args.tenant_id, args.user))
         elif args.command == "revoke-sessions":
             print(revoke_sessions(server, args.user))
+        elif args.command == "secrets":
+            import json
+
+            report = reencrypt_secrets(server, dry_run=args.dry_run, tenant=args.tenant)
+            print(json.dumps(report, indent=2))
+            if report["failed"]:
+                raise SystemExit(2)
+        elif args.command == "axentra" and args.axentra_command == "reconcile":
+            import json
+
+            report = reconcile_mirrors(server, dry_run=args.dry_run, tenant=args.tenant)
+            print(json.dumps(report, indent=2))
+            if report["failed"]:
+                raise SystemExit(2)
+        elif args.command == "axentra" and args.axentra_command == "backfill-identity":
+            import json
+
+            print(json.dumps(backfill_identity(server, dry_run=args.dry_run), indent=2))
+        elif args.command == "axentra" and args.axentra_command == "reconcile-identity":
+            import json
+
+            compared = reconcile_identity(server)
+            print(json.dumps(compared, indent=2))
+            if not compared["ok"]:
+                raise SystemExit(1)
+        elif args.command == "axentra":
+            print("\n".join(axentra_status(server)))
         elif args.command == "pricing":
             print(pricing(server, args.pricing_command, getattr(args, "version", None), getattr(args, "note", None)))
     except NodestroError as error:
@@ -693,6 +985,8 @@ if __name__ == "__main__":  # pragma: no cover
 __all__ = [
     "DEFAULT_PORT",
     "ServerEnvironment",
+    "axentra_status",
+    "backfill_identity",
     "check",
     "create_server_app",
     "create_tenant",
@@ -703,6 +997,9 @@ __all__ = [
     "members",
     "migrate",
     "pricing",
+    "reconcile_identity",
+    "reconcile_mirrors",
+    "reencrypt_secrets",
     "remove_member",
     "revoke_sessions",
     "run_worker",

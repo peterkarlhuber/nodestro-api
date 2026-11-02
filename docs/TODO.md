@@ -63,10 +63,13 @@ None known.
 
 ### API-005 · Rotation of the server secret key
 
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** #52
+- **Priority:** P2 Medium · **Status:** In progress · **Refs:** #52, nodestro-runtime `docs/AXENTRA.md`
 - **What:** `NODESTRO_SECRET_KEY` encrypts all tenant secrets, and it cannot be rotated.
-- **Next step:** Add a `nodestro-server` command that re-encrypts each tenant's secrets with a new key, with the old
-  key accepted during the switch.
+- **Done (2026-11-02):** with `NODESTRO_AXENTRA=on` and `NODESTRO_SECRETS_FORMAT=axs1`, `nodestro-server secrets
+  reencrypt [--dry-run] [--tenant]` moves every tenant secret to the active key of Axentra's keyring (several keys,
+  rotation; unreadable values are reported, never overwritten; exit code 2).
+- **Next step:** Rotation without Axentra (v1 format) stays impossible; decide whether new servers default to the
+  keyring, and rehearse the procedure on a staging copy (nodestro-server SRV-019).
 - **Depends on:** nodestro-runtime RT-010 (`SecretBox` support for an old key)
 
 ## Bugs and reliability

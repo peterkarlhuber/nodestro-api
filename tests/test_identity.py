@@ -3,6 +3,10 @@
 The app is built by ``create_tenant_app`` against a stub
 OpenID Connect provider (``stub_oidc``). The PostgreSQL cases need ``NODESTRO_TEST_POSTGRES``; with
 ``NODESTRO_REQUIRE_POSTGRES=1`` (CI) a missing database fails instead of skipping.
+
+Every case with a server runs twice: with Nodestro's identity store (``NODESTRO_IDENTITY_BACKEND=nodestro``, the
+default) and with identity on Axentra (``axentra``: Axentra answers, both sides are written in one transaction;
+needs the ``axentra`` package). Routes, cookies, error codes and answers must be the same.
 """
 
 from __future__ import annotations
@@ -35,6 +39,13 @@ from nodestro_api.server_app import TenantComposition, create_tenant_app
 DSN = os.environ.get("NODESTRO_TEST_POSTGRES", "")
 
 
+@pytest.fixture(params=["nodestro", "axentra"])
+def backend(request: pytest.FixtureRequest) -> str:
+    if request.param == "axentra":
+        pytest.importorskip("axentra", reason="Axentra needs Python 3.11+")
+    return str(request.param)
+
+
 @pytest.fixture
 def database() -> Iterator[PostgresDatabase]:
     if not DSN:
@@ -47,6 +58,7 @@ def database() -> Iterator[PostgresDatabase]:
     schema = f"nodestro_test_{uuid.uuid4().hex[:16]}"
     opened = PostgresDatabase(DSN, schema=schema)
     opened.migrate()
+    opened.test_schema = schema  # type: ignore[attr-defined]
     yield opened
     opened.close()
     with psycopg.connect(DSN, autocommit=True) as connection:
@@ -89,7 +101,33 @@ class Server:
 
 
 @pytest.fixture
-def server(database: PostgresDatabase, tmp_path: Path) -> Iterator[Server]:
+def identity(database: PostgresDatabase, backend: str) -> Iterator[IdentityStore]:
+    if backend == "nodestro":
+        yield IdentityStore(database)
+        return
+    import base64
+    import secrets
+
+    from nodestro_runtime.axentra_identity import AxentraIdentityStore
+    from nodestro_runtime.axentra_platform import AxentraConfig, AxentraLink, AxentraServices
+
+    ring = "k1:" + base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("=")
+    services = AxentraServices(
+        AxentraConfig(enabled=True, keyring=ring, allow_superuser=True, identity_backend="axentra"),
+        database_url=DSN,
+        public_origin=stub_oidc.ORIGIN,
+        schema=database.test_schema,  # type: ignore[attr-defined]
+    )
+    services.migrate()
+    services.start()
+    store = AxentraIdentityStore(database, AxentraLink(services, database), mode="axentra")
+    store.prepare()
+    yield store
+    services.close()
+
+
+@pytest.fixture
+def server(database: PostgresDatabase, identity: IdentityStore, tmp_path: Path) -> Iterator[Server]:
     provider = stub_oidc.StubProvider()
     oidc = OidcClient(
         OidcSettings(
@@ -100,7 +138,6 @@ def server(database: PostgresDatabase, tmp_path: Path) -> Iterator[Server]:
         ),
         http=httpx.Client(transport=provider.transport()),
     )
-    identity = IdentityStore(database)
     scripted = ScriptedClient({"ALPHA": [text("Alpha result")] * 5})
     app = create_tenant_app(
         TenantComposition(
