@@ -8,7 +8,12 @@ sentence listing every problem (``profile.invalid``); nothing has a default that
     Settings, database (reachable, schema current) and the container sandbox (Docker reachable); exit code 0 or 1.
 ``nodestro-server migrate [--backup-dir DIR | --backup-taken]``
     Apply the database migrations. A database that already has tables needs a backup first: ``--backup-dir`` runs
-    ``pg_dump`` into that directory, ``--backup-taken`` states that the operator made one.
+    ``pg_dump`` into that directory, ``--backup-taken`` states that the operator made one. Runs as the owner role
+    (``NODESTRO_DATABASE_MIGRATION_URL``, default ``NODESTRO_DATABASE_URL``), as do ``backup`` and ``db ...``.
+``nodestro-server db grant-runtime-role [ROLE]`` / ``nodestro-server db roles``
+    Give the runtime role (default: the role of ``NODESTRO_DATABASE_URL``) data access to every Nodestro and Axentra
+    table, now and for later migrations (idempotent; refuses a superuser, ``BYPASSRLS`` or owning role), and show how
+    row-level security applies to both roles. See :func:`nodestro_runtime.storage_postgres.grant_runtime_role`.
 ``nodestro-server api [--host HOST] [--port PORT]``
     The studio API with logins (OpenID Connect), one context per tenant and the built studio interface
     (``NODESTRO_STATIC_DIR``). Runs are queued for workers. Behind a TLS-terminating reverse proxy in production.
@@ -229,12 +234,18 @@ def load(environ: Mapping[str, str] | None = None) -> ServerEnvironment:
     )
 
 
-def _database(server: ServerEnvironment) -> Any:
+def _schema() -> str | None:
+    return os.environ.get("NODESTRO_DATABASE_SCHEMA", "").strip() or None
+
+
+def _database(server: ServerEnvironment, *, owner: bool = False) -> Any:
+    """The runtime role's database; ``owner``: the owner role's (``NODESTRO_DATABASE_MIGRATION_URL``), for migrations,
+    backups and grants."""
     from nodestro_runtime.storage_postgres import PostgresDatabase
 
-    schema = os.environ.get("NODESTRO_DATABASE_SCHEMA", "").strip() or None
+    url = server.settings.migration_url if owner else server.settings.database_url
     try:
-        return PostgresDatabase(server.settings.database_url, schema=schema)
+        return PostgresDatabase(url, schema=_schema(), pool_size=2 if owner else None)
     except NodestroError:
         raise
     except Exception as exc:  # psycopg errors name the host but never the password
@@ -251,29 +262,60 @@ def _require_containers(server: ServerEnvironment) -> None:
         )
 
 
-def _axentra(server: ServerEnvironment) -> Any:
-    """Axentra's services for this server (not started), ``None`` when ``NODESTRO_AXENTRA`` is off."""
+def _axentra(server: ServerEnvironment, database: Any = None) -> Any:
+    """Axentra's services for this server (not started), ``None`` when ``NODESTRO_AXENTRA`` is off.
+
+    ``database``: the process's runtime database; Axentra then borrows its pool (one connection budget per process,
+    the runtime role). Without it (``migrate``), only Axentra's migration runner is used, as the owner role."""
     config = server.settings.axentra
     if not config.enabled:
         return None
     from nodestro_runtime.axentra_platform import AxentraServices
 
-    schema = os.environ.get("NODESTRO_DATABASE_SCHEMA", "").strip() or None
     return AxentraServices(
         config,
         database_url=server.settings.database_url,
         public_origin=server.settings.public_origin,
-        schema=schema,
+        schema=_schema(),
+        migration_url=server.settings.migration_url,
+        database=database,
     )
 
 
-def _require_axentra_schema(server: ServerEnvironment) -> None:
-    services = _axentra(server)
+def _require_axentra_schema(server: ServerEnvironment, database: Any) -> None:
+    services = _axentra(server, database)
     if services is not None:
         try:
             services.require_current_schema()
         finally:
             services.close()
+
+
+def _require_runtime_role(server: ServerEnvironment, database: Any) -> None:
+    """Refuse a runtime role that is not fit to serve: with ``NODESTRO_AXENTRA=on`` (unless
+    ``NODESTRO_AXENTRA_ALLOW_SUPERUSER=1``) or a separate migration role, row-level security must apply to it: no
+    superuser, no ``BYPASSRLS``, owns no table (``storage.role_unsafe``)."""
+    settings = server.settings
+    if not ((settings.axentra.enabled and not settings.axentra.allow_superuser) or settings.separate_migration_role):
+        return
+    info = database.role_info()
+    reasons = [
+        reason
+        for reason, flag in (
+            ("is a superuser", info["superuser"]),
+            ("has BYPASSRLS", info["bypass_rls"]),
+            ("owns tables of the schema", info["table_owner"]),
+        )
+        if flag
+    ]
+    if reasons:
+        raise NodestroError(
+            "storage.role_unsafe",
+            f"The runtime database role {info['role']!r} {' and '.join(reasons)}, so row-level security does not "
+            "protect it; run api and worker as a runtime role (nodestro-server db grant-runtime-role) and migrate as "
+            "the owner (NODESTRO_DATABASE_MIGRATION_URL)",
+            role=info["role"],
+        )
 
 
 def _attach_mirrors(server: ServerEnvironment, database: Any) -> Any:
@@ -285,7 +327,7 @@ def _attach_mirrors(server: ServerEnvironment, database: Any) -> Any:
         return None
     from nodestro_runtime.axentra_platform import AxentraLink, attach_platform_events
 
-    services = _axentra(server)
+    services = _axentra(server, database)
     try:
         services.start()
         attach_platform_events(database, AxentraLink(services, database))
@@ -310,7 +352,7 @@ def _platform(server: ServerEnvironment, database: Any) -> tuple[Any, Any]:
         return services, IdentityStore(database)
     try:
         if services is None:
-            services = _axentra(server)
+            services = _axentra(server, database)
             services.start()
         from nodestro_runtime.axentra_identity import open_identity_store
 
@@ -338,7 +380,8 @@ def _ready(server: ServerEnvironment) -> Any:
     database = _database(server)
     try:
         database.require_current_schema()
-        _require_axentra_schema(server)
+        _require_axentra_schema(server, database)
+        _require_runtime_role(server, database)
         _require_containers(server)
     except BaseException:
         database.close()
@@ -438,15 +481,18 @@ def check(server: ServerEnvironment) -> list[str]:
     except NodestroError as error:
         return [f"{error.code}: {error}"]
     try:
-        database.require_current_schema()
-    except NodestroError as error:
-        problems.append(f"{error.code}: {error}")
+        steps = (
+            database.require_current_schema,
+            lambda: _require_axentra_schema(server, database),
+            lambda: _require_runtime_role(server, database),
+        )
+        for step in steps:
+            try:
+                step()
+            except NodestroError as error:
+                problems.append(f"{error.code}: {error}")
     finally:
         database.close()
-    try:
-        _require_axentra_schema(server)
-    except NodestroError as error:
-        problems.append(f"{error.code}: {error}")
     if not problems and server.settings.axentra.identity_backend != "nodestro":
         # The identity backend starts as api and worker would (axentra: refused before the backfill).
         database = _database(server)
@@ -467,8 +513,29 @@ def check(server: ServerEnvironment) -> list[str]:
 def migrate(server: ServerEnvironment, *, backup_dir: Path | None, backup_taken: bool) -> int:
     """Apply the migrations (Nodestro's, then Axentra's when switched on); returns Nodestro's version before.
 
-    One backup covers the run: it is written before the first change, whichever runner needs it first."""
-    database = _database(server)
+    One backup covers the run: it is written before the first change, whichever runner needs it first. Everything runs
+    as the owner role (``NODESTRO_DATABASE_MIGRATION_URL``, default ``NODESTRO_DATABASE_URL``). With a separate owner
+    role, the runtime role (the user of ``NODESTRO_DATABASE_URL``) is checked before anything changes (refused when
+    it is a superuser, has ``BYPASSRLS`` or owns tables) and granted its privileges afterwards, so the tables of the
+    new migrations are usable at once (:func:`grant_runtime_role`)."""
+    runtime = None
+    if server.settings.separate_migration_role:
+        from nodestro_runtime.storage_postgres import inspect_role
+
+        runtime = runtime_role(server)
+        owner = _database(server, owner=True)
+        try:
+            found = inspect_role(owner, runtime)
+        finally:
+            owner.close()
+        if found["superuser"] or found["bypass_rls"] or found["owned_tables"] or runtime == found["owner"]:
+            raise NodestroError(
+                "storage.role_unsafe",
+                f"The runtime role {runtime!r} of NODESTRO_DATABASE_URL bypasses row-level security or owns tables; "
+                "nothing was migrated (docs/RUNBOOK.md, database roles)",
+                role=runtime,
+            )
+    database = _database(server, owner=True)
     taken: list[Path] = []
 
     def backup(label: str) -> None:
@@ -498,6 +565,8 @@ def migrate(server: ServerEnvironment, *, backup_dir: Path | None, backup_taken:
             services.close()
         if applied:
             logger.info("Applied %d Axentra migrations", len(applied))
+    if runtime is not None:
+        grant_runtime_role(server, runtime)
     return version
 
 
@@ -540,7 +609,7 @@ def reconcile_mirrors(server: ServerEnvironment, *, dry_run: bool, tenant: str |
     database = _database(server)
     try:
         database.require_current_schema()
-        _require_axentra_schema(server)
+        _require_axentra_schema(server, database)
         services = _attach_mirrors(server, database)
         try:
             report: dict[str, Any] = database.platform_events.reconcile(dry_run=dry_run, tenant=tenant)
@@ -557,10 +626,10 @@ def reconcile_mirrors(server: ServerEnvironment, *, dry_run: bool, tenant: str |
 def _identity_tools(server: ServerEnvironment) -> Iterator[Any]:
     """An :class:`~nodestro_runtime.axentra_identity.AxentraIdentityStore` for the backfill and the reconciliation,
     whatever ``NODESTRO_IDENTITY_BACKEND`` is (they run before the switch); needs ``NODESTRO_AXENTRA=on``."""
-    services = _axentra(server)
-    if services is None:
+    if not server.settings.axentra.enabled:
         raise NodestroError("axentra.disabled", "The identity backfill needs NODESTRO_AXENTRA=on")
     database = _database(server)
+    services = _axentra(server, database)
     try:
         database.require_current_schema()
         services.require_current_schema()
@@ -620,6 +689,61 @@ def axentra_status(server: ServerEnvironment) -> list[str]:
     return lines
 
 
+def runtime_role(server: ServerEnvironment) -> str:
+    """The role ``api`` and ``worker`` connect as (the user of ``NODESTRO_DATABASE_URL``)."""
+    database = _database(server)
+    try:
+        return str(database.role_info()["role"])
+    finally:
+        database.close()
+
+
+def grant_runtime_role(server: ServerEnvironment, role: str | None = None) -> dict[str, Any]:
+    """``nodestro-server db grant-runtime-role [ROLE]``: as the owner role, give the runtime role (default: the role of
+    ``NODESTRO_DATABASE_URL``) data access to every table, now and for later migrations; idempotent. Needs a separate
+    owner connection (``NODESTRO_DATABASE_MIGRATION_URL``)."""
+    from nodestro_runtime.storage_postgres import grant_runtime_role as grant
+
+    if not server.settings.separate_migration_role:
+        raise NodestroError(
+            "storage.role_unsafe",
+            "NODESTRO_DATABASE_MIGRATION_URL is not set (or equals NODESTRO_DATABASE_URL): the runtime role would be "
+            "the owner of the tables; create a separate owner role first (docs/RUNBOOK.md, database roles)",
+        )
+    target = role or runtime_role(server)
+    owner = _database(server, owner=True)
+    try:
+        report = grant(owner, target)
+    finally:
+        owner.close()
+    logger.info("Granted the runtime role %s data access to schema %s", target, report["schema"])
+    return report
+
+
+def database_roles(server: ServerEnvironment) -> dict[str, Any]:
+    """``nodestro-server db roles``: how row-level security applies to the runtime and the owner role (read-only)."""
+    from nodestro_runtime.storage_postgres import inspect_role
+
+    runtime = _database(server)
+    try:
+        runtime_info = runtime.role_info()
+    finally:
+        runtime.close()
+    owner = _database(server, owner=True)
+    try:
+        owner_info = owner.role_info()
+        report = inspect_role(owner, runtime_info["role"])
+    finally:
+        owner.close()
+    return {
+        "runtime": {**runtime_info, **{key: report[key] for key in ("connect", "can_create", "restricted")}},
+        "owner": owner_info,
+        "separate": server.settings.separate_migration_role,
+        # pg_dump reads every row: the backup role must bypass the forced row-level security of Axentra's tables.
+        "owner_can_back_up": bool(owner_info["superuser"] or owner_info["bypass_rls"]),
+    }
+
+
 def dump(server: ServerEnvironment, target: Path) -> Path:
     """Write a ``pg_dump`` (custom format) of the server's database to ``target``."""
     pg_dump = shutil.which("pg_dump")
@@ -628,14 +752,24 @@ def dump(server: ServerEnvironment, target: Path) -> Path:
     from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
     target.parent.mkdir(parents=True, exist_ok=True)
-    # The password goes to pg_dump in its environment, never on the command line (visible to other users).
-    parts = conninfo_to_dict(server.settings.database_url)
+    # As the owner role: it can read every table (with BYPASSRLS, Axentra's forced row-level security too). The
+    # password goes to pg_dump in its environment, never on the command line (visible to other users).
+    parts = conninfo_to_dict(server.settings.migration_url)
     password = parts.pop("password", None)
     environment = {key: value for key, value in os.environ.items() if not key.startswith("NODESTRO_")}
     if password is not None:
         environment["PGPASSWORD"] = str(password)
+    # With NODESTRO_DATABASE_SCHEMA the server's tables (Nodestro's and Axentra's) are that schema: dump only it.
+    schema = [f"--schema={_schema()}"] if _schema() else []
     completed = subprocess.run(
-        [pg_dump, "--format=custom", "--no-owner", f"--file={target}", f"--dbname={make_conninfo('', **parts)}"],
+        [
+            pg_dump,
+            "--format=custom",
+            "--no-owner",
+            *schema,
+            f"--file={target}",
+            f"--dbname={make_conninfo('', **parts)}",
+        ],
         capture_output=True,
         text=True,
         check=False,
@@ -889,6 +1023,13 @@ def parser() -> argparse.ArgumentParser:
     platform_commands.add_parser(
         "reconcile-identity", help="Compare identity records of Nodestro and Axentra (exit code 1 on differences)"
     )
+    db = commands.add_parser("db", help="Database roles (as the owner role, NODESTRO_DATABASE_MIGRATION_URL)")
+    db_commands = db.add_subparsers(dest="db_command", required=True)
+    granting = db_commands.add_parser(
+        "grant-runtime-role", help="Give the runtime role data access to every table, now and later (idempotent)"
+    )
+    granting.add_argument("role", nargs="?", help="Default: the role of NODESTRO_DATABASE_URL")
+    db_commands.add_parser("roles", help="Show how row-level security applies to the runtime and the owner role")
     pricing = commands.add_parser("pricing", help="Reference prices: status, sync, open reviews and their decisions")
     pricing_commands = pricing.add_subparsers(dest="pricing_command", required=True)
     pricing_commands.add_parser("status", help="Print the state of the reference prices and the open reviews")
@@ -972,6 +1113,17 @@ def main(argv: Sequence[str] | None = None) -> None:
                 raise SystemExit(1)
         elif args.command == "axentra":
             print("\n".join(axentra_status(server)))
+        elif args.command == "db" and args.db_command == "grant-runtime-role":
+            import json
+
+            print(json.dumps(grant_runtime_role(server, args.role), indent=2))
+        elif args.command == "db":
+            import json
+
+            roles = database_roles(server)
+            print(json.dumps(roles, indent=2))
+            if not roles["runtime"]["restricted"]:
+                raise SystemExit(3)
         elif args.command == "pricing":
             print(pricing(server, args.pricing_command, getattr(args, "version", None), getattr(args, "note", None)))
     except NodestroError as error:
@@ -990,8 +1142,10 @@ __all__ = [
     "check",
     "create_server_app",
     "create_tenant",
+    "database_roles",
     "dump",
     "find_user",
+    "grant_runtime_role",
     "load",
     "main",
     "members",
@@ -1003,6 +1157,7 @@ __all__ = [
     "remove_member",
     "revoke_sessions",
     "run_worker",
+    "runtime_role",
     "set_role",
     "setup_link",
 ]
