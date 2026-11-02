@@ -10,7 +10,7 @@
   `axentra reconcile-identity`. The API and worker attach the audit/usage mirrors (`NODESTRO_AXENTRA_AUDIT`,
   `_USAGE`) and use the identity backend `NODESTRO_IDENTITY_BACKEND` (`nodestro` default, `mirror`, `axentra`;
   `axentra` refuses to start before the backfill). Routes, cookies, error codes and the OpenAPI document are unchanged.
-- Runtime pin `95dbdfa` (nodestro-runtime #79). The `server` and `dev` extras install `nodestro-runtime[postgres]`,
+- Runtime pin `95dbdfa` (nodestro-runtime #79), examples pin `0ae5ad4` (nodestro-examples #44). The `server` and `dev` extras install `nodestro-runtime[postgres]`,
   which brings Axentra on Python 3.11+ only.
 - Tests: `tests/test_server_axentra.py`; `tests/test_identity.py` runs every server case with identity on Axentra too.
 
