@@ -3,7 +3,7 @@
 Requests of a suspended tenant are refused at once (``test_identity.py``), and its runs stop in the worker at their
 next step (runtime ``test_job_delivery.py``). Work a tenant's context had started in the API process before
 (batches, benchmarks with their judge, assistant answers, architect drafts, live run chat answers and Python
-environment installations; SR-03a) is stopped by
+environment installations, SR-03a; tool generation jobs, NF-1) is stopped by
 :func:`nodestro_api.server_app.stop_tenant_work`, which the tenant app's suspension check calls for every opened
 tenant that is suspended now (:func:`nodestro_api.server_app.stop_suspended_tenants`).
 """
@@ -22,8 +22,24 @@ from test_run_chat_api import CHAT, message, setup
 from nodestro_api.identity import TenantWorkspaces
 from nodestro_api.server_app import TENANT_SUSPENDED, stop_suspended_tenants, stop_tenant_work
 
-from conftest import text
+from conftest import isolate, parsed, text
 from test_automation import answer, form_workflow, poll, verdict
+
+CODER = "expert Python developer"  # in the Coding Agent's system prompt
+TOOL = '''def add_numbers(a: int, b: int) -> int:
+    """Add two numbers.
+
+    Args:
+        a: The first number.
+        b: The second number.
+
+    Returns:
+        The sum.
+    """
+    return a + b
+'''
+TESTS = "from tool import add_numbers\n\n\ndef test_add():\n    assert add_numbers(2, 3) == 5\n"
+PROPOSAL = parsed(lambda model: model(function_name="add_numbers", description="Adds numbers.", code=TOOL, tests=TESTS))
 
 
 def _stop(client: TestClient) -> list[str]:
@@ -106,6 +122,73 @@ def test_a_suspension_stops_a_run_chat_answer(make_app: Any) -> None:
     assert question_id not in _stop(client)  # idempotent
 
 
+def _job(client: TestClient, job_id: str, *states: str) -> dict[str, Any]:
+    """The tool job now, or once it reaches one of ``states`` (at most 20 s)."""
+    deadline = time.monotonic() + 20
+    while True:
+        job: dict[str, Any] = client.get(f"/api/tools/jobs/{job_id}").json()
+        if not states or job["status"] in states or time.monotonic() > deadline:
+            return job
+        time.sleep(0.05)
+
+
+def _stopped(job: dict[str, Any]) -> bool:
+    return (job["status"], job["message_code"], job["tool_name"], job["approval"]) == (
+        "failed",
+        TENANT_SUSPENDED,
+        None,
+        None,
+    ) and job["finished_at"] is not None
+
+
+def test_a_suspension_stops_the_tenants_tool_jobs_and_only_them(make_app: Any) -> None:
+    # NF-1: two contexts stand for two tenants; each has a job waiting for its approval.
+    suspended, other = make_app({CODER: [PROPOSAL]}), make_app({CODER: [PROPOSAL]})
+    for client in (suspended, other):
+        isolate(client)
+    jobs = [
+        client.post("/api/tools/jobs", json={"requirement": "Add two numbers"}).json() for client in (suspended, other)
+    ]
+    for client, job in zip((suspended, other), jobs, strict=True):
+        assert _job(client, job["id"], "awaiting_approval")["status"] == "awaiting_approval"
+    assert jobs[0]["id"] in _stop(suspended)
+    assert _stopped(client_job := _job(suspended, jobs[0]["id"])), client_job  # final at once
+    late = suspended.post(f"/api/tools/jobs/{jobs[0]['id']}/decision", json={"approved": True})
+    assert late.status_code == 400 and late.json()["code"] == "job.not_awaiting", late.text
+    time.sleep(0.3)  # the job's thread ends meanwhile: nothing changes
+    assert _stopped(_job(suspended, jobs[0]["id"]))
+    assert suspended.get("/api/tools/add_numbers").status_code == 404  # never registered
+    assert _stop(suspended) == []  # idempotent
+    # The other tenant's job still waits for its decision and is carried out.
+    assert _job(other, jobs[1]["id"])["status"] == "awaiting_approval"
+    other.post(f"/api/tools/jobs/{jobs[1]['id']}/decision", json={"approved": True})
+    assert _job(other, jobs[1]["id"], "approved")["status"] == "approved"
+    assert other.get("/api/tools/add_numbers").status_code == 200
+
+
+def test_a_suspension_stops_a_tool_job_in_its_model_loop(make_app: Any) -> None:
+    entered, release = threading.Event(), threading.Event()
+
+    def blocking_proposal(request: dict[str, Any]) -> Any:
+        entered.set()
+        release.wait(20)
+        return PROPOSAL(request)
+
+    client = make_app({CODER: [blocking_proposal, PROPOSAL]})
+    container = isolate(client)
+    job = client.post("/api/tools/jobs", json={"requirement": "Add two numbers"}).json()
+    assert entered.wait(20), "the Coding Agent was never asked"
+    try:
+        assert job["id"] in _stop(client)
+        assert _stopped(_job(client, job["id"]))
+    finally:
+        release.set()
+    time.sleep(0.5)  # the model's late answer arrives meanwhile: it is not tested, the job stays stopped
+    final = _job(client, job["id"])
+    assert _stopped(final) and final["attempts"] == []
+    assert container.calls == [] and len(client.fake.messages.calls) == 1  # no further model request
+
+
 class _Work:
     """A tenant context's background services, recording what was stopped."""
 
@@ -146,6 +229,7 @@ class _Context:
 
             return stop
 
+        self.tools = SimpleNamespace(cancel_jobs=stopped_with("tools"))
         self.runs = SimpleNamespace(chat=SimpleNamespace(cancel_answers=stopped_with("chat")))
         self.python = SimpleNamespace(cancel_installs=stopped_with("python"))
 
@@ -176,11 +260,13 @@ async def _only_suspended() -> None:
         tenants.get(tenant)
     stopped = await stop_suspended_tenants(tenants, _Identity({"beta"}))  # type: ignore[arg-type]
     # beta's architect fails to stop: the rest of beta is stopped anyway; acme and the unknown status are untouched.
-    assert stopped == ["beta-benchmarks", "beta-batches", "beta-assistant", "beta-chat", "beta-python"]
+    # Tool jobs before installations: a stopped job starts no installation, cancel_installs stops a running one.
+    assert stopped == ["beta-benchmarks", "beta-batches", "beta-assistant", "beta-tools", "beta-chat", "beta-python"]
     assert log == [
         f"beta-benchmarks:{TENANT_SUSPENDED}",
         f"beta-batches:{TENANT_SUSPENDED}",
         "beta-assistant",
+        f"beta-tools:{TENANT_SUSPENDED}",
         f"beta-chat:{TENANT_SUSPENDED}",
         f"beta-python:{TENANT_SUSPENDED}",
     ]

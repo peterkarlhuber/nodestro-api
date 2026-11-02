@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Stopping a suspended tenant's tool generation jobs (security review round 3, NF-1, 2026-11-02)
+
+- `server_app.stop_tenant_work` also stops the tenant's tool generation jobs (`POST /api/tools/jobs`), before its
+  Python environment installations: the job is `failed` at once with `message_code` `identity.tenant_suspended`
+  (no new status), sends no further model request, has a running sandbox test killed, stops waiting for a decision
+  (a late decision gets `400 job.not_awaiting`) and never registers its tool. Other tenants' jobs are untouched.
+- Needs the runtime with `ToolLibrary.cancel_jobs` (developed against the local runtime worktree; the pin is bumped
+  when the runtime PR is merged).
+
 ### Platform pins: Docker-first follow-up (2026-11-02)
 
 - Pins: nodestro-runtime `958be1d` (#90 R-1 source builds only on the desktop, R-5 container shape checks; #91 MCP
