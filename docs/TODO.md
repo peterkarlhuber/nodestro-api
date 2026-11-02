@@ -275,15 +275,6 @@ None known.
 - **Next step:** Install anonymously, keep the token optional or remove it, fix the comments, then consider
   Dependabot for pip.
 
-### API-025 · Supported Python versions
-
-- **Priority:** P3 Low · **Status:** Needs decision · **Refs:** `pyproject.toml` (`requires-python = ">=3.10"`), CI matrix 3.10/3.13
-- **What:** Python 3.10 reached end of life in October 2026, and Python 3.14 is not tested. The MCP tests already
-  skip on 3.10.
-- **Next step:** Follow the platform decision in nodestro-runtime RT-022, then update `requires-python`, the CI
-  matrix and the README.
-- **Depends on:** nodestro-runtime RT-022
-
 ## Later optimizations
 
 None known.
@@ -314,7 +305,6 @@ None known.
 | API-021 | nodestro-runtime | RT-015 | runtime change first |
 | API-023 | nodestro-server | SRV-013 (PostgreSQL load test) | load test runs there |
 | API-024 | all Nodestro repositories | NODESTRO_READ in CI (runtime RT-029) | same fix in each repo |
-| API-025 | nodestro-runtime | RT-022 | one platform decision, held in runtime |
 | (pointer) | nodestro-local-docker | LD-010 (session hardening) | implementation would be here; tracked there |
 | API-001, API-002, API-005, API-006, API-010, API-019 | nodestro-server | RUNBOOK limitations (pointer rows in its table) | server documents the current limits until these land |
 | (pointer) | nodestro-runtime | X-01 / RT-005 | full entry in runtime |

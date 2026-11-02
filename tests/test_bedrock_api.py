@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 import io
 import json
 import logging
@@ -468,7 +468,7 @@ class StsFactory:
                     "AccessKeyId": "ASIASTSFAKEALPHA0001",
                     "SecretAccessKey": "sts-secret-alpha",
                     "SessionToken": "sts-token-alpha-0000000000000000",
-                    "Expiration": datetime.now(timezone.utc) + timedelta(minutes=30),
+                    "Expiration": datetime.now(UTC) + timedelta(minutes=30),
                 },
                 "AssumedRoleUser": {
                     "AssumedRoleId": "AROAEXAMPLE:nodestro-alpha",

@@ -1747,7 +1747,7 @@ name = "orkexa"
 version = "{library_version}"
 description = "Provider-independent agents (included in this exported project)."
 license = "MIT"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
 {deps}
 ]

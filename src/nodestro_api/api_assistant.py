@@ -142,7 +142,7 @@ async def message_events(conversation_id: str, message_id: str, request: Request
                     return
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=access.wait)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield ": keep-alive\n\n"
                     continue
                 if event is None:

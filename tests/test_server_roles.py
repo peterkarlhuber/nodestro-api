@@ -21,7 +21,7 @@ import pytest
 
 pytest.importorskip("psycopg")
 pytest.importorskip("jwt")
-pytest.importorskip("axentra", reason="Axentra needs Python 3.11+")
+pytest.importorskip("axentra", reason="needs the axentra package (the server extra)")
 
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.storage_postgres import POSTGRES_SCHEMA_VERSION

@@ -74,7 +74,7 @@ import asyncio
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 import logging
 import os
 from pathlib import Path
@@ -1088,7 +1088,7 @@ def dump(server: ServerEnvironment, target: Path) -> Path:
 
 
 def _stamp() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
 def setup_link(server: ServerEnvironment, tenant_id: str) -> str:

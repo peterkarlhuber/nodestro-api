@@ -6,6 +6,7 @@ Every agent answers from a script; no test calls the Anthropic API.
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import UTC
 import json
 import time
 from typing import Any
@@ -608,11 +609,11 @@ def test_deleting_the_workflow_ends_its_api(published: Callable[..., Any]) -> No
 
 def test_old_idempotency_records_are_deleted(published: Callable[..., Any]) -> None:
     """A-09: Idempotency-Key records past their 24 hours do not stay forever."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     client, publication, token = published()
     store = client.app.state.nodestro.store  # type: ignore[attr-defined]
-    old = (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat()
+    old = (datetime.now(UTC) - timedelta(hours=25)).isoformat()
     store.put_raw("api_idempotency", "old-record", {"run_id": "run_old", "request": "x", "at": old})
     headers = {**auth(token), "Idempotency-Key": "order-1"}
     first = client.post(f"{PUBLISHED}/{publication['slug']}/runs", json={"values": {"customer": "A"}}, headers=headers)

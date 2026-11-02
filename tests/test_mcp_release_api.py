@@ -8,7 +8,6 @@ packages of a local server through the Python environments; it runs only in the 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-import importlib.util
 import json
 from typing import Any
 
@@ -21,8 +20,6 @@ from conftest import text, tool_use
 from test_flow import edge, save
 from test_runs import agent_node
 
-SDK = importlib.util.find_spec("mcp") is not None
-needs_sdk = pytest.mark.skipif(not SDK, reason="the MCP SDK needs Python 3.11+")
 TOOL = "mcp__docs__search"
 
 
@@ -60,7 +57,6 @@ def script() -> dict[str, list[Any]]:
     return {"FINDER": [tool_use(TOOL, {"query": "invoices"}), text("done")] * 4}
 
 
-@needs_sdk
 def test_a_release_freezes_its_mcp_tools_without_address_or_token(
     make_app: Callable[..., TestClient], loopback: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -110,7 +106,6 @@ def test_a_release_freezes_its_mcp_tools_without_address_or_token(
     assert "mcp.release_tool_changed" in final.model_dump_json(), stopped
 
 
-@needs_sdk
 def test_unusable_mcp_tools_block_publishing_and_exports_refuse_them(
     make_app: Callable[..., TestClient], loopback: Any
 ) -> None:

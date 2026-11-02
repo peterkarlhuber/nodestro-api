@@ -92,13 +92,13 @@ def seed(found: ps.Setup, args: argparse.Namespace) -> dict[str, Any]:
 
 def _seed_records(found: ps.Setup, tenants: list[str], count: int) -> None:
     """Approval audit events and AI usage entries written by Nodestro (no mirror yet), and finished runs."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import UTC, datetime, timedelta
 
     from nodestro_runtime.schemas import Usage
     from nodestro_runtime.tool_approvals import AUDIT, ToolApprovalEvent
     from nodestro_runtime.usage_log import UsageEntry
 
-    at = datetime.now(timezone.utc) - timedelta(days=2)
+    at = datetime.now(UTC) - timedelta(days=2)
     with (
         _owner(found) as connection,
         connection.cursor().copy(

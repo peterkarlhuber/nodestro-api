@@ -7,7 +7,6 @@ copy that cannot be made leaves no workflow, knowledge file or input file behind
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-import importlib.util
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -15,9 +14,6 @@ import nodestro_examples as library
 from nodestro_runtime.testing import AnswerAllClient
 import pytest
 from test_library import TeamsClient, wait_run
-
-SDK = importlib.util.find_spec("mcp") is not None
-needs_sdk = pytest.mark.skipif(not SDK, reason="the MCP SDK needs Python 3.11+")
 
 
 def nodestro(client: TestClient) -> Any:
@@ -207,7 +203,6 @@ def add_server(client: TestClient, url: str, decisions: dict[str, str | None]) -
     return server_id
 
 
-@needs_sdk
 def test_a_connected_integration_gives_the_agent_the_approved_read_tools(
     make_app: Callable[..., TestClient], erp: Any
 ) -> None:
@@ -236,7 +231,6 @@ def test_an_offline_copy_has_no_mcp_tools_and_says_so(make_app: Callable[..., Te
         assert library.texts(template_id, "en").integrations[integration].offline in workflow["description"]
 
 
-@needs_sdk
 @pytest.mark.parametrize(
     ("decisions", "missing", "not_read_only"),
     [
@@ -270,7 +264,6 @@ def test_unknown_integrations_and_servers_are_refused(make_app: Callable[..., Te
     stored_nothing(client)
 
 
-@needs_sdk
 def test_tests_and_integrations_cannot_be_combined(make_app: Callable[..., TestClient], erp: Any) -> None:
     client = make_app(client=AnswerAllClient())
     server_id = add_server(client, erp.url, {"get_order": "read"})

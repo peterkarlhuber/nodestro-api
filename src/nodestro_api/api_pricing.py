@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 import os
 from typing import TYPE_CHECKING, Annotated, Any, Literal
@@ -390,7 +390,7 @@ def _reconcile(ctx: Nodestro, body: ReconciliationIn) -> ReconciliationReport:
 
 
 def _default_period() -> tuple[date, date]:
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     return today - timedelta(days=30), today + timedelta(days=1)
 
 

@@ -1,8 +1,8 @@
 """``nodestro-server files ...`` and backups with input file bytes in Axentra's storage (``NODESTRO_FILES_BACKEND``).
 
 The command and restore-drill cases need ``NODESTRO_TEST_POSTGRES``, ``pg_dump``/``pg_restore`` and the ``axentra``
-package (Python 3.11+). Each drill uses databases of its own (created and dropped here), so a dump never contains
-another test's schema.
+package. Each drill uses databases of its own (created and dropped here), so a dump never contains another test's
+schema.
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ def databases(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[], str]]:
         if os.environ.get("NODESTRO_REQUIRE_POSTGRES") == "1":
             pytest.fail("NODESTRO_REQUIRE_POSTGRES=1 but NODESTRO_TEST_POSTGRES names no database")
         pytest.skip("NODESTRO_TEST_POSTGRES is not set")
-    pytest.importorskip("axentra", reason="Axentra needs Python 3.11+")
+    pytest.importorskip("axentra", reason="needs the axentra package (the server extra)")
     import psycopg
     from psycopg import sql
 

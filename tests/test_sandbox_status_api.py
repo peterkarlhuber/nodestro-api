@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 import sys
 import threading
 import time
@@ -44,7 +44,7 @@ class RecordingMonitor(StaticDockerMonitor):
         if refresh:
             self.refreshes += 1
             # A forced check runs the self-test again: a new time.
-            self.current = replace(docker_status.approved_status(), tested_at=datetime.now(timezone.utc))
+            self.current = replace(docker_status.approved_status(), tested_at=datetime.now(UTC))
         return self.current
 
 
@@ -182,7 +182,7 @@ def test_a_check_already_running_is_followed_by_the_forced_one(make_app: Callabl
                         "",
                         "passed now",
                         checks=(SandboxCheck("self-test", True),),
-                        tested_at=datetime.now(timezone.utc),
+                        tested_at=datetime.now(UTC),
                     )
             return self.current
 

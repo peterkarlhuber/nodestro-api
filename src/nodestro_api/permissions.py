@@ -40,7 +40,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 import time
 from typing import Any, cast
 
@@ -55,7 +55,7 @@ from .serving import KEY_AUTHENTICATED_ROUTES, KeyAuthenticatedRoute
 from .serving import PREFIX as PUBLISHED_PREFIX
 
 
-class Permission(str, Enum):
+class Permission(StrEnum):
     READ = "read"
     EDIT = "edit"
     RUN = "run"

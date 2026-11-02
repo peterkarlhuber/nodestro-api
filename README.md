@@ -347,7 +347,7 @@ The tests run against the real application with scripted provider clients (`node
 call a paid provider. They cover the REST API, published APIs, keys, approvals, continued runs, batches, schedules,
 files, Python libraries, backups, the network listener, the Host/Origin guard and the export; the exported project
 passes its own tests. `NODESTRO_NETWORK_TESTS=1` enables the test that installs a real package from PyPI. CI runs on
-Python 3.10 and 3.13, builds the wheel and the source distribution, installs the wheel into a fresh environment and
+Python 3.11 and 3.13, builds the wheel and the source distribution, installs the wheel into a fresh environment and
 calls the started server over HTTP. It needs the repository secret `NODESTRO_READ` (read access to orkexa and the
 Nodestro repositories).
 

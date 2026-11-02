@@ -14,7 +14,7 @@ as for ``POST /api/published/{slug}/runs``. There is no second engine and no sec
 at an approval step answers with its id and status; it is decided in Nodestro or through the published API.
 
 Like the other published endpoints here, it answers only clients on this computer (the network listener does not
-serve it). Without the MCP SDK (Python 3.10) it answers ``mcp.unavailable``.
+serve it). Without the MCP SDK (an incomplete installation) it answers ``mcp.unavailable``.
 """
 
 from __future__ import annotations
@@ -141,7 +141,7 @@ class McpServerEndpoint:
         from nodestro_runtime.mcp.hub import sdk_available
 
         if not sdk_available():
-            raise ApiError(503, "mcp.unavailable", "The MCP server needs Python 3.11 or later")
+            raise ApiError(503, "mcp.unavailable", "The MCP server needs the 'mcp' package")
         token = _IDENTITY.set(identity)
         try:
             return await self._serve(request)

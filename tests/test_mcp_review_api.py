@@ -9,7 +9,6 @@ call. Every case counts the calls that reached the MCP server.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-import importlib.util
 import time
 from typing import Any
 
@@ -21,8 +20,6 @@ from nodestro_api.identity import ROLE_PERMISSIONS
 from nodestro_api.permissions import LOCAL_OWNER, Principal
 
 from conftest import text, tool_use
-
-pytestmark = pytest.mark.skipif(importlib.util.find_spec("mcp") is None, reason="the MCP SDK needs Python 3.11+")
 
 MakeApp = Callable[..., TestClient]
 DELETE = "mcp__docs__delete_page"

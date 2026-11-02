@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 import time
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -344,7 +344,7 @@ def test_test_series_reject_invalid_checks(make_app: Any) -> None:
 
 
 def utc(*parts: int) -> datetime:
-    return datetime(*parts, tzinfo=timezone.utc)  # type: ignore[misc]
+    return datetime(*parts, tzinfo=UTC)  # type: ignore[misc]
 
 
 def test_daily_schedules_keep_their_wall_clock_time_across_dst() -> None:

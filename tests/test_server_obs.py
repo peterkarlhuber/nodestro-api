@@ -1,7 +1,7 @@
 """``nodestro-server`` observability and rollback safety: ``axentra status``, ``/api/metrics``, the inbox, the run
 usage settlement of the worker and the start checks for stored secrets (M7, req. 4.5).
 
-Needs ``NODESTRO_TEST_POSTGRES`` and the ``axentra`` package (Python 3.11+, ``nodestro-runtime[postgres]``).
+Needs ``NODESTRO_TEST_POSTGRES`` and the ``axentra`` package (``nodestro-runtime[postgres]``).
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import pytest
 
 pytest.importorskip("psycopg")
 pytest.importorskip("jwt")
-pytest.importorskip("axentra", reason="Axentra needs Python 3.11+")
+pytest.importorskip("axentra", reason="needs the axentra package (the server extra)")
 
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.schemas import now

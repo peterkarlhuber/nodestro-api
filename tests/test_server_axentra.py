@@ -1,6 +1,6 @@
 """``nodestro-server`` with the Axentra platform services switched on (``NODESTRO_AXENTRA=on``).
 
-Needs ``NODESTRO_TEST_POSTGRES`` and the ``axentra`` package (Python 3.11+, ``nodestro-runtime[postgres]``).
+Needs ``NODESTRO_TEST_POSTGRES`` and the ``axentra`` package (``nodestro-runtime[postgres]``).
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ import pytest
 
 pytest.importorskip("psycopg")
 pytest.importorskip("jwt")
-pytest.importorskip("axentra", reason="Axentra needs Python 3.11+")
+pytest.importorskip("axentra", reason="needs the axentra package (the server extra)")
 
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.server_settings import ENCRYPTED_PREFIX, SecretBox
@@ -371,7 +371,7 @@ def test_mirror_mode_writes_both_sides_from_the_member_commands(
 
 def _seed_axentra_login_state(schema: str, ring: str) -> None:
     """A value in one of Axentra's own keyring columns (an OIDC login start), under the key of ``ring``."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import UTC, datetime, timedelta
 
     from axentra.config.secrets import Keyring
     from axentra.config.secrets import SecretBox as AxentraSecretBox
@@ -391,7 +391,7 @@ def _seed_axentra_login_state(schema: str, ring: str) -> None:
                 box.encrypt("n", f"axentra_login_states:{state}:nonce"),
                 box.encrypt("v", f"axentra_login_states:{state}:code_verifier"),
                 "/",
-                datetime.now(timezone.utc) + timedelta(hours=1),
+                datetime.now(UTC) + timedelta(hours=1),
             ),
         )
 

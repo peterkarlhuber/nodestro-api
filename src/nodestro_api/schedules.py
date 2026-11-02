@@ -28,7 +28,7 @@ import asyncio
 import builtins
 from collections.abc import Callable
 import contextlib
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 import logging
 from typing import TYPE_CHECKING, Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
@@ -149,7 +149,7 @@ def _at(day: date, clock: time, tz: ZoneInfo) -> datetime:
     """The UTC instant of a wall-clock time; skipped times move forward, repeated ones take the first."""
     # fold=0: a repeated time is its first occurrence; a skipped time is read with the offset
     # before the change, which lands one hour later on the clock (02:30 -> 03:30).
-    return datetime.combine(day, clock, tzinfo=tz).astimezone(timezone.utc)
+    return datetime.combine(day, clock, tzinfo=tz).astimezone(UTC)
 
 
 def _last_day(year: int, month: int) -> int:
@@ -208,7 +208,7 @@ class Schedules:
 
     def __init__(self, ctx: Nodestro, *, clock: Any = None) -> None:
         self.ctx = ctx
-        self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.clock = clock or (lambda: datetime.now(UTC))
         self._task: asyncio.Task[None] | None = None
         #: Records that a slot fires, once across every process (``(schedule_id, slot)`` -> ``False`` when it
         #: fired already); the server's :class:`~nodestro_runtime.jobs.ScheduleFirings`. ``None``: this process

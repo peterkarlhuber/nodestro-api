@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Iterator
-import importlib.util
 import json
 import socket
 import threading
@@ -21,8 +20,6 @@ from test_published_api import auth, form_workflow, new_key, publish
 
 from conftest import text
 
-SDK = importlib.util.find_spec("mcp") is not None
-needs_sdk = pytest.mark.skipif(not SDK, reason="the MCP SDK needs Python 3.11+")
 ENDPOINT = "/api/published/_mcp"
 HEADERS = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
 
@@ -59,7 +56,6 @@ def test_the_mcp_server_is_off_by_default(offered: Callable[..., Any], monkeypat
     assert answer.status_code == 404 and answer.json()["error"]["code"] == "mcp_server.disabled"
 
 
-@needs_sdk
 def test_only_offered_publications_of_the_key_are_tools(
     offered: Callable[..., Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -88,7 +84,6 @@ def test_only_offered_publications_of_the_key_are_tools(
     assert rpc(client, token, "tools/list").json()["result"]["tools"] == []
 
 
-@needs_sdk
 def test_a_tool_call_is_an_ordinary_run_of_the_published_api(
     offered: Callable[..., Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -154,7 +149,6 @@ def served_app(
     thread.join(timeout=5)
 
 
-@needs_sdk
 def test_the_official_mcp_client_lists_and_calls_published_workflows(
     served_app: tuple[str, dict[str, Any], str],
 ) -> None:
