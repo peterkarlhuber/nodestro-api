@@ -12,7 +12,7 @@
 | P0 Critical | 0 |
 | P1 High | 0 |
 | P2 Medium | 6 |
-| P3 Low | 14 |
+| P3 Low | 15 |
 | P4 Optional | 4 |
 
 **Release blockers:** None for this repository.
@@ -209,6 +209,14 @@ None known.
   callback in the access log (D-02).
 - **Next step:** Add PostgreSQL-backed multi-process tests for C-09 and an access-log test for the MCP OAuth
   callback. Test C-15 and C-16 with a forced crash.
+
+### API-040 · Run budget decisions: browser and server image checks
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** BUDGET-1, `api_budget.py`, runtime `docs/BUDGET.md`
+- **What:** The routes are tested with the desktop app, simulated principals and a PostgreSQL server (tenants,
+  roles). The decision flow through a real worker process of the server image and a browser session is covered by
+  the Studio and server suites, not here. Only simulated model calls are used.
+- **Next step:** Keep the server image e2e of budget decisions green with every pin bump.
 
 ## Platform coverage
 

@@ -195,13 +195,19 @@ class ServerWorker:
     async def sweep_tool_waits(self) -> list[str]:
         """The deadline sweep of runs paused at tool calls (M6b) for every tenant: overdue questions expire, decided
         runs are queued again (a worker continues them under its lease), and with the switch off open questions
-        are closed. Runs once before this worker claims anything, then periodically."""
+        are closed. Runs once before this worker claims anything, then periodically. The budget-decision sweep
+        (BUDGET-1) runs with it."""
         continued: list[str] = []
         for tenant in await asyncio.to_thread(self.identity.tenants):
             try:
                 continued += self.scheduling.get(tenant.id).runs.sweep_tool_waits()
             except Exception:
                 logger.exception("Sweeping the runs of tenant %s paused at tool calls failed", tenant.id)
+            try:
+                # Runs waiting for a budget decision (BUDGET-1): overdue requests expire, decided runs continue.
+                continued += self.scheduling.get(tenant.id).runs.sweep_budget_waits()
+            except Exception:
+                logger.exception("Sweeping the runs of tenant %s waiting for a budget decision failed", tenant.id)
         return continued
 
     async def _reap_once(self) -> list[Any]:
