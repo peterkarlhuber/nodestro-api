@@ -100,7 +100,10 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     # (tool_checkpoints; runtime c86781b), and the tool call journal and the sandbox cancel binding that continuing
     # and cancelling runs use (tool_journal, sandbox_cancel; backend audit B-02, B-03).
     modules = check["runtime_modules"]
-    assert len(modules) == 45 and "nodestro_runtime.extensions" in modules  # + nodestro_runtime.run_chat (LRC-1)
+    assert len(modules) == 46 and "nodestro_runtime.extensions" in modules  # + nodestro_runtime.run_chat (LRC-1)
+    # The audit/usage hook protocol is exported (tool approvals and the usage log import it); the Axentra
+    # integration itself is server-only and never part of an export.
+    assert "nodestro_runtime.platform_events" in modules and "nodestro_runtime.axentra_platform" not in modules
     assert "nodestro_runtime.bedrock" in modules  # the exported runtime knows Amazon Bedrock
     assert "nodestro_runtime.tool_checkpoints" in modules
     assert {"nodestro_runtime.tool_journal", "nodestro_runtime.sandbox_cancel"} <= set(modules)
