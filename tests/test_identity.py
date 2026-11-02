@@ -4,8 +4,9 @@ The app is built by ``create_tenant_app`` against a stub
 OpenID Connect provider (``stub_oidc``). The PostgreSQL cases need ``NODESTRO_TEST_POSTGRES``; with
 ``NODESTRO_REQUIRE_POSTGRES=1`` (CI) a missing database fails instead of skipping.
 
-Every case with a server runs twice: with Nodestro's identity store (``NODESTRO_IDENTITY_BACKEND=nodestro``, the
-default) and with identity on Axentra (``axentra``: Axentra answers, both sides are written in one transaction;
+Every case with a server runs three times: with Nodestro's identity store (``NODESTRO_IDENTITY_BACKEND=nodestro``,
+the default), mirrored to Axentra (``mirror``: Nodestro answers, both sides are written in one transaction) and with
+identity on Axentra (``axentra``: Axentra answers and runs the login, its ``OidcService`` behind Nodestro's routes;
 needs the ``axentra`` package). Routes, cookies, error codes and answers must be the same.
 """
 
@@ -33,15 +34,22 @@ from nodestro_runtime.identity_store import IdentityStore
 from nodestro_runtime.storage_postgres import PostgresDatabase
 import stub_oidc
 
-from nodestro_api.identity import LOGIN_COOKIE, SESSION_COOKIE, OidcClient, OidcSettings, safe_return_path
+from nodestro_api.identity import (
+    LOGIN_COOKIE,
+    SESSION_COOKIE,
+    OidcClient,
+    OidcSettings,
+    axentra_login_flow,
+    safe_return_path,
+)
 from nodestro_api.server_app import TenantComposition, create_tenant_app
 
 DSN = os.environ.get("NODESTRO_TEST_POSTGRES", "")
 
 
-@pytest.fixture(params=["nodestro", "axentra"])
+@pytest.fixture(params=["nodestro", "mirror", "axentra"])
 def backend(request: pytest.FixtureRequest) -> str:
-    if request.param == "axentra":
+    if request.param != "nodestro":
         pytest.importorskip("axentra", reason="Axentra needs Python 3.11+")
     return str(request.param)
 
@@ -100,57 +108,83 @@ class Server:
         return browser
 
 
-@pytest.fixture
-def identity(database: PostgresDatabase, backend: str) -> Iterator[IdentityStore]:
-    if backend == "nodestro":
-        yield IdentityStore(database)
-        return
+def axentra_services(database: PostgresDatabase) -> Any:
+    """Axentra on the test database's schema, migrated and started (close it after the test)."""
     import base64
     import secrets
 
-    from nodestro_runtime.axentra_identity import AxentraIdentityStore
-    from nodestro_runtime.axentra_platform import AxentraConfig, AxentraLink, AxentraServices
+    from nodestro_runtime.axentra_platform import AxentraConfig, AxentraServices
 
     ring = "k1:" + base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("=")
     services = AxentraServices(
-        AxentraConfig(enabled=True, keyring=ring, allow_superuser=True, identity_backend="axentra"),
+        AxentraConfig(enabled=True, keyring=ring, allow_superuser=True),
         database_url=DSN,
         public_origin=stub_oidc.ORIGIN,
         schema=database.test_schema,  # type: ignore[attr-defined]
     )
     services.migrate()
     services.start()
-    store = AxentraIdentityStore(database, AxentraLink(services, database), mode="axentra")
+    return services
+
+
+def identity_store(database: PostgresDatabase, services: Any, mode: str) -> IdentityStore:
+    """The identity store a server process opens for ``NODESTRO_IDENTITY_BACKEND=mode`` (a restart per mode)."""
+    if mode == "nodestro":
+        return IdentityStore(database)
+    from nodestro_runtime.axentra_identity import AxentraIdentityStore
+    from nodestro_runtime.axentra_platform import AxentraLink
+
+    store = AxentraIdentityStore(database, AxentraLink(services, database), mode=mode)  # type: ignore[arg-type]
     store.prepare()
-    yield store
+    return store
+
+
+def oidc_settings(issuer: str = stub_oidc.ISSUER) -> OidcSettings:
+    return OidcSettings(
+        issuer=issuer,
+        client_id=stub_oidc.CLIENT_ID,
+        client_secret=stub_oidc.CLIENT_SECRET,
+        redirect_uri=stub_oidc.REDIRECT_URI,
+    )
+
+
+def tenant_app(
+    identity: IdentityStore, database: PostgresDatabase, provider: stub_oidc.StubProvider, data_root: Path
+) -> Any:
+    """The studio API as ``create_server_app`` composes it for the store's mode: in ``axentra`` mode Axentra runs the
+    login (``axentra_login_flow``), otherwise Nodestro's own OIDC client."""
+    if getattr(identity, "mode", None) == "axentra":
+        oidc: Any = axentra_login_flow(identity, oidc_settings(provider.issuer), transport=provider.transport())
+    else:
+        oidc = OidcClient(oidc_settings(provider.issuer), http=httpx.Client(transport=provider.transport()))
+    scripted = ScriptedClient({"ALPHA": [text("Alpha result")] * 5})
+    return create_tenant_app(
+        TenantComposition(
+            database=database,
+            identity=identity,
+            oidc=oidc,
+            origin=stub_oidc.ORIGIN,
+            data_root=data_root,
+            client_factory=lambda _provider: scripted,
+            integrations=[],
+        )
+    )
+
+
+@pytest.fixture
+def identity(database: PostgresDatabase, backend: str) -> Iterator[IdentityStore]:
+    if backend == "nodestro":
+        yield IdentityStore(database)
+        return
+    services = axentra_services(database)
+    yield identity_store(database, services, backend)
     services.close()
 
 
 @pytest.fixture
 def server(database: PostgresDatabase, identity: IdentityStore, tmp_path: Path) -> Iterator[Server]:
     provider = stub_oidc.StubProvider()
-    oidc = OidcClient(
-        OidcSettings(
-            issuer=stub_oidc.ISSUER,
-            client_id=stub_oidc.CLIENT_ID,
-            client_secret=stub_oidc.CLIENT_SECRET,
-            redirect_uri=stub_oidc.REDIRECT_URI,
-        ),
-        http=httpx.Client(transport=provider.transport()),
-    )
-    scripted = ScriptedClient({"ALPHA": [text("Alpha result")] * 5})
-    app = create_tenant_app(
-        TenantComposition(
-            database=database,
-            identity=identity,
-            oidc=oidc,
-            origin=stub_oidc.ORIGIN,
-            data_root=tmp_path / "server",
-            client_factory=lambda _provider: scripted,
-            integrations=[],
-        )
-    )
-    built = Server(app, identity, provider, [])
+    built = Server(tenant_app(identity, database, provider, tmp_path / "server"), identity, provider, [])
     yield built
     for client in built.clients:
         client.__exit__(None, None, None)
@@ -670,3 +704,192 @@ def test_automatic_language_clears_the_stored_one_on_a_server(server: Server) ->
     assert admin.put("/api/settings", json={"default_budget_usd": 2}).json()["language"] == "it"
     assert admin.put("/api/settings", json={"language": None}).json()["language"] is None
     assert admin.get("/api/settings").json()["language"] is None
+
+
+# ---- suspended tenants, session rotation, one person per identity -------------------------------------------
+
+
+def test_a_suspended_tenant_is_closed_for_its_members(server: Server) -> None:
+    alice = server.member("acme", "alice", "owner")
+    assert alice.get("/api/workflows").status_code == 200
+    server.identity.set_tenant_status("acme", "suspended")
+    for path in ("/api/workflows", "/api/auth/me", "/api/runs"):
+        answer = alice.get(path)
+        assert answer.status_code == 403 and answer.json()["code"] == "identity.tenant_suspended", path
+    assert alice.post("/api/workflows", json=WORKFLOW).status_code == 403
+    # Nobody logs in to it (the only tenant of the account).
+    again = server.browser()
+    answer = server.log_in(again, "alice", "?tenant=acme")
+    assert answer.status_code == 403 and answer.json()["code"] == "identity.tenant_suspended"
+    assert SESSION_COOKIE not in answer.headers.get("set-cookie", "")
+    # A setup link of a suspended tenant waits, unused.
+    server.identity.create_tenant("fresh", "Fresh")
+    token = server.identity.create_bootstrap_token("fresh")
+    server.identity.set_tenant_status("fresh", "suspended")
+    founder = server.browser()
+    answer = server.log_in(founder, "founder", f"?setup={token}")
+    assert answer.status_code == 403 and answer.json()["code"] == "identity.tenant_suspended"
+    server.identity.set_tenant_status("fresh", "active")
+    assert server.log_in(server.browser(), "founder", f"?setup={token}").status_code == 303
+    # Resuming restores the sessions that did not expire meanwhile.
+    server.identity.set_tenant_status("acme", "active")
+    assert alice.get("/api/workflows").status_code == 200
+
+
+def test_logins_and_switches_skip_suspended_tenants(server: Server) -> None:
+    alice = server.member("acme", "alice", "owner")
+    server.member("globex", "alice", "viewer")
+    server.identity.set_tenant_status("globex", "suspended")
+    assert alice.get("/api/auth/me").json()["tenants"] == {"acme": "owner"}  # a closed tenant is not offered
+    answer = alice.post("/api/auth/switch", json={"tenant_id": "globex"})
+    assert answer.status_code == 403 and answer.json()["code"] == "identity.tenant_suspended"
+    assert alice.get("/api/auth/me").json()["tenant_id"] == "acme"  # the session stays where it was
+    # Non-members still learn nothing about a tenant.
+    bob = server.member("initech", "bob", "owner")
+    assert bob.post("/api/auth/switch", json={"tenant_id": "globex"}).status_code == 404
+    # A login without a tenant goes to an active one; asking for the suspended one is refused.
+    fresh = server.browser()
+    assert server.log_in(fresh, "alice").status_code == 303
+    assert fresh.get("/api/auth/me").json()["tenant_id"] == "acme"
+    answer = server.log_in(server.browser(), "alice", "?tenant=globex")
+    assert answer.status_code == 403 and answer.json()["code"] == "identity.tenant_suspended"
+
+
+def test_a_login_ends_the_session_the_browser_held_before(server: Server) -> None:
+    alice = server.member("acme", "alice", "owner")
+    before = alice.cookies.get(SESSION_COOKIE) or ""
+    assert server.identity.session(before) is not None
+    assert server.log_in(alice, "alice").status_code == 303
+    after = alice.cookies.get(SESSION_COOKIE) or ""
+    assert after and after != before
+    assert server.identity.session(before) is None and server.identity.session(after) is not None
+
+
+def test_two_issuers_with_one_address_are_two_people(
+    server: Server, database: PostgresDatabase, tmp_path: Path
+) -> None:
+    alice = server.member("acme", "alice", "owner")
+    claims = {"email": "alice@example.com", "email_verified": True}
+    assert server.log_in(alice, "alice", "?tenant=acme", **claims).status_code == 303
+    # Another identity provider (after a change of the operator's provider) sends the same verified address.
+    other = stub_oidc.StubProvider(issuer="https://other-login.example")
+    app = tenant_app(server.identity, database, other, tmp_path / "server")
+    elsewhere = Server(app, server.identity, other, server.clients)
+    browser = elsewhere.browser()
+    answer = elsewhere.log_in(browser, "alice", **claims)
+    assert answer.status_code == 403 and answer.json()["code"] == "identity.no_tenant"  # nothing inherited
+    first = server.identity.login(stub_oidc.ISSUER, "alice")
+    second = server.identity.login(other.issuer, "alice")
+    assert first.id != second.id
+    assert server.identity.memberships(second.id) == []
+    assert alice.get("/api/auth/me").json()["user_id"] == first.id
+
+
+def test_a_role_change_applies_to_the_next_request(server: Server) -> None:
+    alice = server.member("acme", "alice", "viewer")
+    assert alice.post("/api/workflows", json=WORKFLOW).status_code == 403
+    user = server.identity.login(stub_oidc.ISSUER, "alice")
+    server.identity.set_role("acme", user.id, "editor")
+    assert alice.post("/api/workflows", json=WORKFLOW).status_code == 201
+    assert alice.get("/api/auth/me").json()["permissions"] == ["edit", "read", "run"]
+    server.identity.set_role("acme", user.id, "viewer")
+    assert alice.post("/api/workflows", json=WORKFLOW).status_code == 403
+
+
+def test_logins_and_sessions_through_every_identity_switch_and_back(database: PostgresDatabase, tmp_path: Path) -> None:
+    """nodestro -> mirror -> axentra -> mirror -> nodestro, one restart each, real OIDC callbacks in every mode:
+    sessions survive, ended sessions stay ended, roles and removals apply at once, a tenant switch rotates the
+    session, and nobody is merged by e-mail."""
+    pytest.importorskip("axentra", reason="Axentra needs Python 3.11+")
+    from nodestro_runtime.axentra_identity import AxentraIdentityStore, backfill_identity, reconcile_identity
+    from nodestro_runtime.axentra_platform import AxentraLink
+
+    provider = stub_oidc.StubProvider()
+    clients: list[TestClient] = []
+    services = axentra_services(database)
+
+    def boot(mode: str) -> Server:
+        identity = identity_store(database, services, mode)
+        return Server(tenant_app(identity, database, provider, tmp_path / "server"), identity, provider, clients)
+
+    def carry(server: Server, token: str) -> TestClient:
+        """The same browser (its session cookie) after the restart."""
+        browser = server.browser()
+        browser.cookies.set(SESSION_COOKIE, token, domain="studio.test")
+        return browser
+
+    verified = {"email": "shared@example.com", "email_verified": True}
+    try:
+        # nodestro: alice (owner of acme and globex), bob (editor), carol logs in and out.
+        plain = boot("nodestro")
+        alice = plain.member("acme", "alice", "owner")
+        plain.identity.create_tenant("globex", "Globex")
+        plain.identity.set_role("globex", plain.identity.login(stub_oidc.ISSUER, "alice").id, "owner")
+        assert plain.log_in(alice, "alice", "?tenant=acme", **verified).status_code == 303
+        bob = plain.member("acme", "bob", "editor")
+        carol = plain.member("acme", "carol", "viewer")
+        tokens = {name: b.cookies.get(SESSION_COOKIE) or "" for name, b in (("alice", alice), ("bob", bob))}
+        carol_token = carol.cookies.get(SESSION_COOKIE) or ""
+        assert carol.post("/api/auth/logout").status_code == 204
+
+        # The backfill (maintenance window), then mirror.
+        tools = AxentraIdentityStore(database, AxentraLink(services, database), mode="mirror")
+        backfill_identity(tools)
+        assert reconcile_identity(tools).ok
+        mirror = boot("mirror")
+        assert carry(mirror, tokens["alice"]).get("/api/auth/me").json()["role"] == "owner"
+        assert carry(mirror, carol_token).get("/api/workflows").status_code == 401  # ended stays ended
+        bob_id = mirror.identity.login(stub_oidc.ISSUER, "bob").id
+        mirror.identity.set_role("acme", bob_id, "viewer")
+        assert carry(mirror, tokens["bob"]).post("/api/workflows", json=WORKFLOW).status_code == 403
+        assert mirror.log_in(mirror.browser(), "dave", "", **verified).status_code == 403  # a new person, no tenant
+
+        # axentra: Axentra answers and runs the login.
+        ax = boot("axentra")
+        alice_ax = carry(ax, tokens["alice"])
+        assert alice_ax.get("/api/auth/me").json()["tenants"] == {"acme": "owner", "globex": "owner"}
+        bob_ax = carry(ax, tokens["bob"])
+        assert bob_ax.get("/api/auth/me").json()["role"] == "viewer"
+        ax.identity.set_role("acme", bob_id, "editor")
+        assert bob_ax.post("/api/workflows", json=WORKFLOW).status_code == 201  # at once
+        # A login through Axentra's flow: the same person (issuer, subject), a new session.
+        relog = ax.browser()
+        assert ax.log_in(relog, "alice", "?tenant=acme", **verified).status_code == 303
+        assert relog.get("/api/auth/me").json()["user_id"] == ax.identity.login(stub_oidc.ISSUER, "alice").id
+        # Another issuer with the same verified address is another person.
+        other = stub_oidc.StubProvider(issuer="https://other-login.example")
+        ax_other = Server(tenant_app(ax.identity, database, other, tmp_path / "server"), ax.identity, other, clients)
+        assert ax_other.log_in(ax_other.browser(), "alice", **verified).status_code == 403
+        # A tenant switch rotates the session.
+        assert alice_ax.post("/api/auth/switch", json={"tenant_id": "globex"}).status_code == 204
+        switched = alice_ax.cookies.get(SESSION_COOKIE) or ""
+        assert switched != tokens["alice"] and carry(ax, tokens["alice"]).get("/api/workflows").status_code == 401
+        # Logout and removal end access at once.
+        assert bob_ax.post("/api/auth/logout").status_code == 204
+        dave = ax.identity.login(stub_oidc.ISSUER, "dave")
+        ax.identity.set_role("acme", dave.id, "viewer")
+        dave_browser = ax.browser()
+        assert ax.log_in(dave_browser, "dave", "?tenant=acme").status_code == 303
+        dave_token = dave_browser.cookies.get(SESSION_COOKIE) or ""
+        ax.identity.remove_member("acme", dave.id)
+        assert dave_browser.get("/api/workflows").status_code == 401
+        relog_token = relog.cookies.get(SESSION_COOKIE) or ""
+
+        # Back: mirror, then nodestro. Sessions made in axentra mode work; ended ones stay ended.
+        for mode in ("mirror", "nodestro"):
+            back = boot(mode)
+            assert carry(back, switched).get("/api/auth/me").json()["tenant_id"] == "globex", mode
+            assert carry(back, relog_token).get("/api/auth/me").json()["tenant_id"] == "acme", mode
+            for ended in (tokens["alice"], tokens["bob"], carol_token, dave_token):
+                assert carry(back, ended).get("/api/workflows").status_code == 401, mode
+            assert back.log_in(back.browser(), "alice", "?tenant=acme").status_code == 303, mode
+        # Five people, never merged: alice, bob, carol, dave and alice of the other issuer.
+        assert int(database._query("SELECT count(*) FROM nodestro_users")[0][0]) == 5
+        # The login in nodestro mode is not mirrored (documented): the backfill before switching forward again.
+        assert list(reconcile_identity(tools).as_dict()["differences"]) == ["sessions"]
+        backfill_identity(tools)
+        assert reconcile_identity(tools).ok
+    finally:
+        for client in clients:
+            client.__exit__(None, None, None)
+        services.close()

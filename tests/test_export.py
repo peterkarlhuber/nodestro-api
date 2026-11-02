@@ -101,8 +101,10 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     # and cancelling runs use (tool_journal, sandbox_cancel; backend audit B-02, B-03), and the run budget decisions
     # the engine pauses runs for (run_budget; BUDGET-1).
     modules = check["runtime_modules"]
-    assert "nodestro_runtime.run_budget" in modules
-    assert len(modules) == 47 and "nodestro_runtime.extensions" in modules  # + nodestro_runtime.run_chat (LRC-1)
+    # + nodestro_runtime.run_chat (LRC-1); + nodestro_runtime.docker_status (Docker-first plan R2);
+    # + nodestro_runtime.run_budget (BUDGET-1)
+    expected = {"nodestro_runtime.extensions", "nodestro_runtime.docker_status", "nodestro_runtime.run_budget"}
+    assert len(modules) == 48 and expected <= set(modules)
     # The audit/usage hook protocol is exported (tool approvals and the usage log import it); the Axentra
     # integration itself is server-only and never part of an export.
     assert "nodestro_runtime.platform_events" in modules and "nodestro_runtime.axentra_platform" not in modules
@@ -384,3 +386,35 @@ def test_the_exported_api_chooses_its_tool_sandbox_from_the_environment() -> Non
     assert StandaloneSettings.from_env({"TOOL_SANDBOX": "docker"}).tool_sandbox == "docker"
     with pytest.raises(ValidationError):
         StandaloneSettings.from_env({"TOOL_SANDBOX": "unsafe"})
+
+
+def test_the_exported_api_proves_docker_before_untrusted_tools_run(
+    exported: Callable[..., Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from nodestro_runtime import docker_status
+    from nodestro_runtime.sandbox_policy import isolation_of
+    from nodestro_runtime.testing import StaticDockerMonitor
+    from orkexa.dynamic import DockerSandbox
+
+    from nodestro_api.standalone import StandaloneHost, StandaloneSettings
+
+    client, publication = exported()
+    project = _extract(_download(client, _export(client, publication["id"])["id"]), tmp_path)
+    created: list[dict[str, Any]] = []
+    monitor = StaticDockerMonitor()
+
+    def monitor_for(sandbox: Callable[[], DockerSandbox], **options: Any) -> StaticDockerMonitor:
+        created.append({"sandbox": sandbox(), **options})
+        return monitor
+
+    monkeypatch.setattr(docker_status, "monitor_for", monitor_for)
+    data = tmp_path / "export-data"
+    host = StandaloneHost(project, StandaloneSettings.from_env({"DATA_DIR": str(data), "TOOL_SANDBOX": "docker"}))
+    try:
+        owner = docker_status.installation_owner(data)
+        assert created and created[0]["owner"] == owner and created[0]["sandbox"].owner == owner
+        assert monitor.reaps == [False]  # expired containers only
+        made = created[0]["sandbox"]
+        assert isinstance(made, DockerSandbox) and isolation_of(made) == "none"  # refused until proven
+    finally:
+        host.close()

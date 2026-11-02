@@ -199,6 +199,21 @@ None known.
 - **Next step:** Record the region in the runtime usage data, then add it to `UsageBucket` or a `by_region` view.
 - **Depends on:** nodestro-runtime RT-015 (region in usage records)
 
+### API-027 · Docker sandbox status routes: follow-ups
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** Docker-first plan A1, `GET /api/sandbox/status`,
+  `POST /api/sandbox/self-test`, nodestro-runtime RT-033/RT-034
+- **What:** Both routes answer the runtime's background check (`Workspace.docker_status`, a `SandboxBackendStatus`);
+  `GET /api/settings` never waits for Docker. A forced check (`refresh=1`, the self-test) starts at most every 10 s
+  per Docker monitor, which one server's tenants share. Open: the studio does not show the status and the new
+  diagnostics codes `docker.checking` and `docker.unavailable` yet (nodestro-studio ST1); the export
+  (`TOOL_SANDBOX=docker`) still uses Orkexa's `orkexa-sandbox` image, because building Nodestro's runtime image
+  needs the Python environment manager, which an export does not carry; the routes were tested with stand-ins only
+  (no Docker daemon in the development container).
+- **Next step:** Wire the status into the studio (ST1); decide how an export gets a sandbox image without a hand
+  build; a real-daemon test of both routes in the CI `docker` job.
+- **Depends on:** nodestro-studio ST1, nodestro-sdk S1
+
 ## Tests and quality assurance
 
 ### API-022 · Untested cases from the backend audit re-verification

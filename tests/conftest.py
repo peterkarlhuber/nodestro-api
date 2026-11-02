@@ -13,6 +13,7 @@ from nodestro_runtime.testing import (
     Parsed,
     ScriptedClient,
     ScriptedMessages,
+    StaticDockerMonitor,
     _Stream,
     message,
     parsed,
@@ -23,6 +24,21 @@ import pytest
 
 from nodestro_api.app import create_app
 from nodestro_api.context import AppConfig
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line("markers", "real_docker_status: use the computer's real Docker status (background check)")
+
+
+@pytest.fixture(autouse=True)
+def _static_docker_status(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Workspaces see a fixed "Docker missing" status (no background thread, no docker CLI, no reaper), so a CI
+    runner's Docker changes no test; a test passes its own ``StaticDockerMonitor`` where it needs another status."""
+    from nodestro_runtime import docker_status
+
+    docker_status.reset_monitors()
+    if request.node.get_closest_marker("real_docker_status") is None:
+        monkeypatch.setattr(docker_status, "monitor_for", lambda *args, **kwargs: StaticDockerMonitor())
 
 
 @pytest.fixture(autouse=True)
