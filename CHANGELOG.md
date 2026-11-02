@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Automatic sandbox selection (2026-11-02, ADR-0009)
+
+- Pins: nodestro-runtime 7fd8761 (runtime #78, `auto` sandbox mode) and nodestro-examples f1c6403. `GET/PUT /api/settings` accept and return
+  `sandbox: "auto"` and return `sandbox_selection` (the runtime's OS and CPU, where untrusted and user-authored code
+  runs, or why it is blocked) and `sandbox_backends` (every backend with its state); OpenAPI regenerated.
+- Release tool libraries use the studio's `auto` container fallback, so an untrusted tool of a published release
+  runs in Docker on a desktop without the built-in sandbox, as in the studio, and is refused otherwise.
+
 ### Live run chat and steering (LRC-1, 2026-11-01)
 
 - New routes (`api_run_chat.py`) for talking to an orchestrator of a running run: `GET /api/runs/{id}/chat`

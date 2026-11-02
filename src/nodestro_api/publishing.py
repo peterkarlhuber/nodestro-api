@@ -915,6 +915,8 @@ class Publications:
                 policy=self.ctx.sandbox_policy,
                 provenance=self.ctx.tools.linked_provenance(),
             )
+            # The ``auto`` sandbox mode: the studio's container fallback for untrusted tools (None in other modes).
+            tools.container_fallback = self.ctx.tools.container_fallback
             if bundle.mcp_tools:
                 # Only the frozen MCP tools, revalidated against the tenant's approvals on every call (WP-9).
                 tools.mcp = PinnedMcp(self.ctx.mcp, bundle.mcp_tools)  # type: ignore[assignment]
