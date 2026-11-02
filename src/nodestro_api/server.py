@@ -269,6 +269,25 @@ def _require_axentra_schema(server: ServerEnvironment) -> None:
             services.close()
 
 
+def _attach_mirrors(server: ServerEnvironment, database: Any) -> Any:
+    """Start Axentra and attach the audit/usage mirrors to ``database`` when ``NODESTRO_AXENTRA_AUDIT`` or
+    ``NODESTRO_AXENTRA_USAGE`` is on (see :mod:`nodestro_runtime.platform_events`); the started services or ``None``.
+    """
+    config = server.settings.axentra
+    if not (config.enabled and (config.audit or config.usage)):
+        return None
+    from nodestro_runtime.axentra_platform import AxentraLink, attach_platform_events
+
+    services = _axentra(server)
+    try:
+        services.start()
+        attach_platform_events(database, AxentraLink(services, database))
+    except BaseException:
+        services.close()
+        raise
+    return services
+
+
 def _ready(server: ServerEnvironment) -> Any:
     """The database, after checking that its schema is current and Docker is reachable."""
     database = _database(server)
@@ -296,6 +315,7 @@ def create_server_app() -> Any:
 
     server = load()
     database = _ready(server)
+    _attach_mirrors(server, database)  # open for the life of the process, as the database
     settings = server.settings
     oidc = OidcClient(
         OidcSettings(
@@ -334,6 +354,7 @@ async def run_worker(server: ServerEnvironment) -> None:
     from .worker import ServerWorker, WorkerSettings
 
     database = _ready(server)
+    mirrors = _attach_mirrors(server, database)
     files = TenantFiles(
         database=database,
         data_root=server.profile.data_dir,
@@ -359,6 +380,8 @@ async def run_worker(server: ServerEnvironment) -> None:
         await worker.serve(stop)
     finally:
         database.close()
+        if mirrors is not None:
+            mirrors.close()
         logger.info("Worker %s stopped", worker.name)
 
 
@@ -453,6 +476,31 @@ def reencrypt_secrets(server: ServerEnvironment, *, dry_run: bool, tenant: str |
     return report.as_dict()
 
 
+def reconcile_mirrors(server: ServerEnvironment, *, dry_run: bool, tenant: str | None) -> dict[str, Any]:
+    """``nodestro-server axentra reconcile``: write the audit/usage mirrors that are missing in Axentra
+    (:meth:`nodestro_runtime.axentra_platform.AxentraEvents.reconcile`; idempotent, Nodestro's records only read)."""
+    config = server.settings.axentra
+    if not (config.enabled and (config.audit or config.usage)):
+        raise NodestroError(
+            "axentra.mirrors_off",
+            "Reconciling needs NODESTRO_AXENTRA=on and NODESTRO_AXENTRA_AUDIT=1 or NODESTRO_AXENTRA_USAGE=1",
+        )
+    database = _database(server)
+    try:
+        database.require_current_schema()
+        _require_axentra_schema(server)
+        services = _attach_mirrors(server, database)
+        try:
+            report: dict[str, Any] = database.platform_events.reconcile(dry_run=dry_run, tenant=tenant)
+        finally:
+            database.platform_events = None
+            services.close()
+    finally:
+        database.close()
+    logger.info("Axentra reconcile%s: %s", " (dry run)" if dry_run else "", report)
+    return report
+
+
 def axentra_status(server: ServerEnvironment) -> list[str]:
     """``nodestro-server axentra status``: switch, package version, pending migrations."""
     from nodestro_runtime.axentra_platform import available, axentra_version
@@ -462,6 +510,8 @@ def axentra_status(server: ServerEnvironment) -> list[str]:
         f"axentra: {'on' if config.enabled else 'off'}",
         f"package: {axentra_version() or 'not installed'}" + ("" if available() else " (not usable here)"),
         f"secrets format: {config.secrets_format}",
+        f"audit mirror: {'on' if config.audit else 'off'}",
+        f"usage mirror: {'on' if config.usage else 'off'}",
     ]
     services = _axentra(server)
     if services is not None:
@@ -735,6 +785,11 @@ def parser() -> argparse.ArgumentParser:
     platform = commands.add_parser("axentra", help="Axentra platform services")
     platform_commands = platform.add_subparsers(dest="axentra_command", required=True)
     platform_commands.add_parser("status", help="Switch, version and pending migrations of Axentra")
+    reconciling = platform_commands.add_parser(
+        "reconcile", help="Write audit/usage mirrors missing in Axentra (idempotent)"
+    )
+    reconciling.add_argument("--dry-run", action="store_true", help="Only count what is missing")
+    reconciling.add_argument("--tenant", help="Only this tenant")
     pricing = commands.add_parser("pricing", help="Reference prices: status, sync, open reviews and their decisions")
     pricing_commands = pricing.add_subparsers(dest="pricing_command", required=True)
     pricing_commands.add_parser("status", help="Print the state of the reference prices and the open reviews")
@@ -798,6 +853,13 @@ def main(argv: Sequence[str] | None = None) -> None:
             print(json.dumps(report, indent=2))
             if report["failed"]:
                 raise SystemExit(2)
+        elif args.command == "axentra" and args.axentra_command == "reconcile":
+            import json
+
+            report = reconcile_mirrors(server, dry_run=args.dry_run, tenant=args.tenant)
+            print(json.dumps(report, indent=2))
+            if report["failed"]:
+                raise SystemExit(2)
         elif args.command == "axentra":
             print("\n".join(axentra_status(server)))
         elif args.command == "pricing":
@@ -824,6 +886,7 @@ __all__ = [
     "members",
     "migrate",
     "pricing",
+    "reconcile_mirrors",
     "reencrypt_secrets",
     "remove_member",
     "revoke_sessions",
