@@ -296,8 +296,48 @@ def test_failed_runs_reach_the_members_inbox_and_the_worker_settles_run_usage(
         page = browser.get("/api/notifications").json()
         assert page["unread"] == 1 and [item["kind"] for item in page["items"]] == ["run_failed"]
         assert page["items"][0]["subject"] == "A run of Invoices failed"
+        # SR-06: a malformed cursor is a 400 with a Nodestro error code (it was an unhandled 500).
+        for cursor in _BAD_CURSORS:
+            refused = browser.get("/api/notifications", params={"cursor": cursor})
+            assert refused.status_code == 400, cursor
+            assert refused.json()["code"] == "notifications.invalid_cursor" and cursor not in refused.text
+        good = _cursor(["2026-11-02T10:00:00+00:00", "msg_x"])
+        assert browser.get("/api/notifications", params={"cursor": good}).status_code == 200
         marked = browser.post("/api/notifications/read", json={}, headers={"Origin": "https://studio.test"})
         assert marked.status_code == 200 and marked.json() == {"marked": 1}
         assert browser.get("/api/notifications").json()["unread"] == 0
         browser.cookies.set(SESSION_COOKIE, viewer_token, domain="studio.test")
         assert browser.get("/api/notifications").json() == {"items": [], "unread": 0, "next_cursor": None}
+
+
+def _cursor(value: object) -> str:
+    import base64
+    import json
+
+    return base64.urlsafe_b64encode(json.dumps(value).encode()).decode().rstrip("=")
+
+
+_BAD_CURSORS = [
+    "not-base64!!",
+    _cursor({"a": 1}),
+    _cursor(["2026-11-02T10:00:00+00:00"]),
+    _cursor(["yesterday", "msg_x"]),
+    _cursor(["2026-11-02T10:00:00", "msg_x"]),  # no time zone
+    _cursor([1, 2]),
+    _cursor(["2026-11-02T10:00:00+00:00", ""]),
+    "A" * 600,
+]
+
+
+def test_a_notification_cursor_is_checked_before_axentra_reads_it() -> None:
+    from nodestro_runtime.problems import NodestroError
+
+    from nodestro_api.api_notifications import check_cursor
+
+    check_cursor(None)
+    check_cursor("")
+    check_cursor(_cursor(["2026-11-02T10:00:00.123456+00:00", "msg_1"]))
+    for cursor in _BAD_CURSORS:
+        with pytest.raises(NodestroError) as caught:
+            check_cursor(cursor)
+        assert caught.value.code == "notifications.invalid_cursor"

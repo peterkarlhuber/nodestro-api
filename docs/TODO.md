@@ -57,7 +57,8 @@ None known.
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** backend audit D-11
 - **What:** Tool approvals have an audit trail. Logins, API key changes, tenant creation and role changes appear
-  only in the process log.
+  only in the process log. With `NODESTRO_IDENTITY_BACKEND=mirror|axentra` (off by default) Axentra's audit log also
+  records tenant and membership changes and refused logins of its login flow, but nothing reads it back.
 - **Next step:** Add an `audit_events` store (actor, action, target, time) and record these events. Expose the
   events to tenant admins read-only.
 
@@ -116,11 +117,12 @@ None known.
 ### API-011 · Observability for the server profile
 
 - **Priority:** P2 Medium · **Status:** Open · **Refs:** backend audit D-10 (residual)
-- **What:** `/api/health` reports database loss (503). The server still has no JSON log, request or correlation
-  IDs, metrics endpoint or readiness endpoint separate from liveness, and workers have no liveness signal of
-  their own.
-- **Next step:** Add request IDs and structured logging first, then metrics and readiness. The nodestro-server
-  RUNBOOK then gets a monitoring section.
+- **What:** `/api/health` reports database loss (503), and `GET /api/metrics` (Prometheus, only with
+  `NODESTRO_METRICS_TOKEN`; nodestro-runtime `docs/AXENTRA.md`, "Observability") exists. The server still has no
+  JSON log, request or correlation IDs or readiness endpoint separate from liveness, and workers have no liveness
+  signal or metrics listener of their own.
+- **Next step:** Add request IDs and structured logging first, then readiness. The nodestro-server RUNBOOK ("Metrics
+  and status") then documents them.
 - **Depends on:** nodestro-server (RUNBOOK monitoring section)
 
 ### API-012 · No OpenAPI contract for the server routes

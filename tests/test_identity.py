@@ -121,6 +121,7 @@ def axentra_services(database: PostgresDatabase) -> Any:
         database_url=DSN,
         public_origin=stub_oidc.ORIGIN,
         schema=database.test_schema,  # type: ignore[attr-defined]
+        database=database,  # Axentra borrows the process's pool, as on a server
     )
     services.migrate()
     services.start()

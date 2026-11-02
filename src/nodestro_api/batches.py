@@ -524,12 +524,12 @@ class Batches:
             self._start(batch)
         return batch
 
-    async def cancel(self, batch_id: str) -> Batch:
+    async def cancel(self, batch_id: str, *, stop_code: str = "batch.cancelled") -> Batch:
         batch = self.get(batch_id)
         if batch.status in ("finished", "cancelled"):
             return batch
         batch.status = "cancelled"
-        batch.stop_code = "batch.cancelled"
+        batch.stop_code = stop_code
         for item in batch.items:
             if item.status == "pending":
                 item.status = "skipped"
@@ -542,6 +542,15 @@ class Batches:
         if batch_id not in self._tasks or self._tasks[batch_id].done():
             self._finish(batch)
         return batch
+
+    async def cancel_all(self, *, stop_code: str) -> builtins.list[str]:
+        """Cancel every batch this process drives (a suspended tenant, security review SR-03); returns their ids."""
+        cancelled = []
+        for batch_id, batch in list(self._live.items()):
+            if batch.status not in ("finished", "cancelled"):
+                await self.cancel(batch_id, stop_code=stop_code)
+                cancelled.append(batch_id)
+        return cancelled
 
     async def wait(self, batch_id: str) -> Batch:
         task = self._tasks.get(batch_id)

@@ -29,11 +29,13 @@ sentence listing every problem (``profile.invalid``); nothing has a default that
 ``nodestro-server axentra status``
     The embedding state: switches, package version, schema state of both runners, keyring key ids (never keys),
     stored secrets by format, identity backend and its readiness, and the reconciliation backlog (counts only).
-``nodestro-server files migrate|verify|remove-source|export-volume [--dry-run] [--tenant TENANT]``
+``nodestro-server files migrate|verify|cleanup|remove-source|export-volume [--dry-run] [--tenant TENANT]``
     Input file bytes in Axentra's storage (``NODESTRO_FILES_BACKEND=axentra``): copy volume files into it (resumable,
-    idempotent, SHA-256 checked, the volume file is kept), verify every object, remove migrated volume files after
-    the fallback period (only with ``NODESTRO_FILES_SOURCE_REMOVAL=1``), or copy them back for a rollback. Exit code 2
-    when a file failed. See :mod:`nodestro_runtime.axentra_storage`.
+    idempotent, SHA-256 checked, the volume file is kept), verify every object and report leftovers (objects without
+    a mapping, mappings no input file uses, e.g. after a delete while the backend was ``volume``), delete those
+    leftovers, remove migrated volume files after the fallback period (only with ``NODESTRO_FILES_SOURCE_REMOVAL=1``),
+    or copy them back for a rollback. Exit code 2 when a file failed or ``verify`` found a leftover.
+    See :mod:`nodestro_runtime.axentra_storage`.
 ``nodestro-server axentra backfill-identity [--dry-run]`` / ``nodestro-server axentra reconcile-identity``
     Copy users, tenants, memberships and live sessions into Axentra (idempotent, resumable; run it in a maintenance
     window before ``NODESTRO_IDENTITY_BACKEND=mirror``), and compare both sides (exit code 1 on any difference; ids
@@ -41,9 +43,12 @@ sentence listing every problem (``profile.invalid``); nothing has a default that
 ``nodestro-server members TENANT`` / ``set-role TENANT USER ROLE`` / ``remove-member TENANT USER`` /
 ``revoke-sessions USER``
     Membership of a tenant (A-08): list it, add a member or change a role, remove a member (their sessions in the
-    tenant end with it), and end every session of a user at once. ``USER`` is a user id (``u_…``), a verified
-    e-mail address or the subject at the configured identity provider. A person is known once they logged in at
-    least once (a login alone grants nothing); a tenant always keeps at least one owner.
+    tenant end with it), and end every session of a user at once. ``USER`` is a user id (``u_…``) or the subject at
+    the configured identity provider. An e-mail address only looks the user up: the command shows the matching user
+    with their identity (provider, subject) and goes on only when the operator types that user id; without a
+    terminal it stops and names the user id to use (``identity.user_confirm``); an address shared by several users is
+    refused (``identity.user_ambiguous``). A person is known once they logged in at least once (a login alone grants
+    nothing); a tenant always keeps at least one owner.
 ``nodestro-server suspend-tenant TENANT`` / ``resume-tenant TENANT``
     Close a tenant until it is resumed (``403 identity.tenant_suspended`` for its sessions and logins; workers neither
     start nor continue its runs) and open it again. Nothing is deleted.
@@ -66,7 +71,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -325,10 +330,18 @@ def _require_axentra_schema(server: ServerEnvironment, database: Any) -> None:
 
 
 def _require_readable_secrets(server: ServerEnvironment, database: Any) -> None:
-    """Refuse a configuration that cannot read every stored tenant secret (a rollback switched too early)."""
+    """Refuse a configuration that cannot read every stored tenant secret (a rollback switched too early, or a key
+    with other bytes under a known key id)."""
     from nodestro_runtime.axentra_platform import require_readable_secrets
 
-    require_readable_secrets(database, server.settings.axentra)
+    kids = None
+    services = _axentra(server, database)
+    if services is not None:  # Axentra's own keyring columns need their keys too (SR-05)
+        try:
+            kids = services.kids_in_use()
+        finally:
+            services.close()
+    require_readable_secrets(database, server.settings.axentra, server.settings.secret_box(), kids)
 
 
 def _require_runtime_role(server: ServerEnvironment, database: Any) -> None:
@@ -692,20 +705,41 @@ def reencrypt_secrets(server: ServerEnvironment, *, dry_run: bool, tenant: str |
             "values move to (axs1: the active key; v1: back to NODESTRO_SECRET_KEY before switching Axentra off)",
         )
     database = _database(server)
+    axentra: dict[str, Any] | None = None
     try:
         database.require_current_schema()
         report = reencrypt_tenant_secrets(database, box, dry_run=dry_run, tenant=tenant)
+        # Axentra's own keyring columns (login states, webhook secrets, notification messages and the inbox) use the
+        # same keyring: they move to its active key too, or removing the old key would lose them (SR-05). They
+        # belong to no Nodestro tenant, so --tenant leaves them for a run without it.
+        if tenant is None:
+            _require_axentra_schema(server, database)
+            services = _axentra(server, database)
+            if services is not None:
+                try:
+                    axentra = services.reencrypt_columns(dry_run=dry_run)
+                finally:
+                    services.close()
     finally:
         database.close()
     logger.info(
-        "Secret re-encryption%s: %d values, %d pending, %d re-encrypted, %d failed",
+        "Secret re-encryption%s: %d values, %d pending, %d re-encrypted, %d failed; Axentra's columns: %s",
         " (dry run)" if dry_run else "",
         report.total,
         report.pending,
         report.reencrypted,
         len(report.failed),
+        "skipped (--tenant)" if axentra is None else f"{axentra['pending']} pending, {axentra['failed']} failed",
     )
-    return report.as_dict()
+    result = report.as_dict()
+    result["axentra"] = axentra
+    if axentra is not None:
+        # One answer for the operator: pending and failed cover both stores (the old key may go at pending: 0).
+        result["nodestro_pending"], result["nodestro_failed"] = result["pending"], result["failed"]
+        result["pending"] = result["pending"] + int(axentra["pending"])
+        if axentra["failed"]:
+            result["failed"] = [*result["failed"], f"axentra: {axentra['failed']} values"]
+    return result
 
 
 def reconcile_mirrors(server: ServerEnvironment, *, dry_run: bool, tenant: str | None) -> dict[str, Any]:
@@ -876,13 +910,13 @@ def _files_tools(server: ServerEnvironment) -> Iterator[Any]:
         database.close()
 
 
-FILES_COMMANDS = ("migrate", "verify", "remove-source", "export-volume")
+FILES_COMMANDS = ("migrate", "verify", "cleanup", "remove-source", "export-volume")
 
 
 def files_command(
     server: ServerEnvironment, command: str, *, dry_run: bool = False, tenant: str | None = None
 ) -> dict[str, Any]:
-    """``nodestro-server files migrate|verify|remove-source|export-volume`` (see
+    """``nodestro-server files migrate|verify|cleanup|remove-source|export-volume`` (see
     :class:`nodestro_runtime.axentra_storage.AxentraFiles`); ids and counts only."""
     root = server.profile.data_dir
     with _files_tools(server) as files:
@@ -890,6 +924,8 @@ def files_command(
             report = files.migrate(root, tenant=tenant, dry_run=dry_run)
         elif command == "verify":
             report = files.verify(root, tenant=tenant)
+        elif command == "cleanup":
+            report = files.cleanup(tenant=tenant, dry_run=dry_run)
         elif command == "remove-source":
             report = files.remove_sources(root, tenant=tenant, dry_run=dry_run)
         elif command == "export-volume":
@@ -911,25 +947,45 @@ def archive_files(server: ServerEnvironment, directory: Path) -> Path | None:
         storage = services.settings.storage
         if storage.backend != "local":
             return None
-        source = Path(storage.local_path)
+        source: Path | None = Path(storage.local_path)
     finally:
         services.close()
+    assert source is not None
     if not source.is_dir():
-        raise NodestroError("storage.backup_failed", f"Axentra's storage directory {source} does not exist")
+        if _stored_files(server):
+            raise NodestroError("storage.backup_failed", f"Axentra's storage directory {source} does not exist")
+        source = None  # nothing was stored yet (a fresh installation): an empty archive
+    import gzip
     import tarfile
 
     directory.mkdir(parents=True, exist_ok=True)
     target = directory / f"nodestro-files-{_stamp()}.tar.gz"
     partial = target.with_name(target.name + ".partial")
     try:
-        with tarfile.open(partial, "w:gz") as archive:
-            # Temporary upload files (.tmp-*) of uploads in progress are left out: their rows are still pending.
-            archive.add(source, arcname=".", filter=lambda info: None if "/.tmp-" in f"/{info.name}" else info)
+        # The gzip header names the archive itself, not the temporary file it is written to.
+        with (
+            partial.open("wb") as raw,
+            gzip.GzipFile(filename=target.name, mode="wb", fileobj=raw) as compressed,
+            tarfile.open(fileobj=compressed, mode="w") as archive,
+        ):
+            if source is not None:
+                # Temporary upload files (.tmp-*) of uploads in progress are left out: their rows are still pending.
+                archive.add(source, arcname=".", filter=lambda info: None if "/.tmp-" in f"/{info.name}" else info)
         partial.replace(target)
     except BaseException:
         partial.unlink(missing_ok=True)
         raise
     return target
+
+
+def _stored_files(server: ServerEnvironment) -> int:
+    """How many file rows Axentra's storage has (any status), read as the owner role."""
+    database = _database(server, owner=True)
+    try:
+        rows = database._query("SELECT count(*) FROM axentra_files")
+    finally:
+        database.close()
+    return int(rows[0][0])
 
 
 def runtime_role(server: ServerEnvironment) -> str:
@@ -1020,6 +1076,12 @@ def dump(server: ServerEnvironment, target: Path) -> Path:
     )
     if completed.returncode != 0:
         target.unlink(missing_ok=True)
+        if "row-level security" in completed.stderr:
+            raise NodestroError(
+                "storage.backup_failed",
+                "pg_dump cannot read tables with row-level security as this role: the backup needs "
+                "NODESTRO_DATABASE_MIGRATION_URL (the owner role)",
+            )
         raise NodestroError("storage.backup_failed", f"pg_dump failed: {completed.stderr.strip()[-500:]}")
     return target
 
@@ -1059,18 +1121,38 @@ def create_tenant(server: ServerEnvironment, tenant_id: str, name: str) -> None:
 _USER_ID = re.compile(r"u_[0-9a-f]{24}")
 
 
-def find_user(server: ServerEnvironment, database: Any, who: str) -> Any:
-    """The user named by an id (``u_…``), a verified e-mail address or a subject at the configured provider."""
+#: Asked before an operator command acts on a user named by an e-mail address: gets the one matching user (with
+#: their identity), returns ``True`` only when the operator confirmed exactly that user.
+Confirm = Callable[[Any], bool]
+
+
+def describe_user(user: Any) -> str:
+    """A user with the identity that logged in (provider and subject), for an operator to check."""
+    return (
+        f"{user.id}: provider {user.issuer}, subject {user.subject}, e-mail {user.email or '-'}, "
+        f"name {user.name or '-'}"
+    )
+
+
+def find_user(server: ServerEnvironment, database: Any, who: str, *, confirm: Confirm | None = None) -> Any:
+    """The user named by an id (``u_…``), a subject at the configured provider or an e-mail address.
+
+    An e-mail address is the latest claim of an identity provider, so it never names a user by itself (security
+    review SR-10): an address shared by several users is refused (``identity.user_ambiguous``), and the one
+    matching user is used only when ``confirm`` accepts them; otherwise ``identity.user_confirm`` lists the user
+    with their identity and asks for the user id."""
     from nodestro_runtime.identity_store import IdentityStore, User
 
     who = who.strip()
     identity = IdentityStore(database)
+    by_email = False
     if _USER_ID.fullmatch(who):
         found = identity.user(who)
         if found is not None:
             return found
         rows: list[Any] = []
     elif "@" in who:
+        by_email = True
         rows = database._query(
             "SELECT id, issuer, subject, email, name FROM nodestro_users WHERE lower(email) = lower(%s) ORDER BY id",
             (who,),
@@ -1087,14 +1169,38 @@ def find_user(server: ServerEnvironment, database: Any, who: str) -> Any:
             "then run this command again",
             user=who,
         )
-    if len(rows) > 1:
+    users = [User(id=row[0], issuer=row[1], subject=row[2], email=row[3], name=row[4]) for row in rows]
+    if len(users) > 1:
         raise NodestroError(
             "identity.user_ambiguous",
-            f"{who!r} names {len(rows)} users; use the user id ({', '.join(row[0] for row in rows)})",
+            f"{who!r} names {len(users)} users; use the user id of the right one: "
+            + "; ".join(describe_user(user) for user in users),
             user=who,
+            users=[user.id for user in users],
         )
-    row = rows[0]
-    return User(id=row[0], issuer=row[1], subject=row[2], email=row[3], name=row[4])
+    user = users[0]
+    if by_email and (confirm is None or not confirm(user)):
+        raise NodestroError(
+            "identity.user_confirm",
+            f"{who!r} is an e-mail address, which names nobody by itself; check the user and run the command again "
+            f"with the user id: {describe_user(user)}",
+            user=who,
+            users=[user.id],
+        )
+    return user
+
+
+def _confirm_on_terminal(user: Any) -> bool:
+    """Show the user an e-mail address matched and accept them only when the operator types their user id (never
+    without a terminal)."""
+    if not (sys.stdin.isatty() and sys.stderr.isatty()):
+        return False
+    print(f"The e-mail address names {describe_user(user)}", file=sys.stderr)
+    try:
+        answer = input("Type this user id to confirm: ")
+    except EOFError:
+        return False
+    return bool(answer.strip() == user.id)
 
 
 def _require_tenant(identity: Any, tenant_id: str) -> None:
@@ -1121,7 +1227,7 @@ def members(server: ServerEnvironment, tenant_id: str) -> list[str]:
         database.close()
 
 
-def set_role(server: ServerEnvironment, tenant_id: str, who: str, role: str) -> str:
+def set_role(server: ServerEnvironment, tenant_id: str, who: str, role: str, *, confirm: Confirm | None = None) -> str:
     """Give a user a role in a tenant (adds the member); takes effect with their next request."""
     from nodestro_runtime.identity_store import ROLES
 
@@ -1132,7 +1238,7 @@ def set_role(server: ServerEnvironment, tenant_id: str, who: str, role: str) -> 
         database.require_current_schema()
         with _identity(server, database) as identity:
             _require_tenant(identity, tenant_id)
-            user = find_user(server, database, who)
+            user = find_user(server, database, who, confirm=confirm)
             before = identity.role(tenant_id, user.id)
             identity.set_role(tenant_id, user.id, role)
     finally:
@@ -1156,14 +1262,14 @@ def set_tenant_status(server: ServerEnvironment, tenant_id: str, status: str) ->
     return f"tenant {tenant_id} is {status}"
 
 
-def remove_member(server: ServerEnvironment, tenant_id: str, who: str) -> str:
+def remove_member(server: ServerEnvironment, tenant_id: str, who: str, *, confirm: Confirm | None = None) -> str:
     """Remove a user from a tenant; their sessions in the tenant end at once (the last owner stays)."""
     database = _database(server)
     try:
         database.require_current_schema()
         with _identity(server, database) as identity:
             _require_tenant(identity, tenant_id)
-            user = find_user(server, database, who)
+            user = find_user(server, database, who, confirm=confirm)
             if identity.role(tenant_id, user.id) is None:
                 raise NodestroError(
                     "identity.not_a_member", f"{user.id} is not a member of {tenant_id}", tenant=tenant_id
@@ -1175,12 +1281,12 @@ def remove_member(server: ServerEnvironment, tenant_id: str, who: str) -> str:
     return f"removed {user.id} from {tenant_id}"
 
 
-def revoke_sessions(server: ServerEnvironment, who: str) -> str:
+def revoke_sessions(server: ServerEnvironment, who: str, *, confirm: Confirm | None = None) -> str:
     """End every session of a user in every tenant (memberships stay; a new login starts a new session)."""
     database = _database(server)
     try:
         database.require_current_schema()
-        user = find_user(server, database, who)
+        user = find_user(server, database, who, confirm=confirm)
         with _identity(server, database) as identity:
             ended = identity.end_sessions(user.id)
     finally:
@@ -1251,7 +1357,10 @@ def parser() -> argparse.ArgumentParser:
     link.add_argument("tenant_id")
     listing = commands.add_parser("members", help="List the members of a tenant with their roles")
     listing.add_argument("tenant_id")
-    user_help = "user id (u_...), verified e-mail address or subject at the identity provider"
+    user_help = (
+        "user id (u_...), subject at the identity provider, or e-mail address (then the matching user is shown and "
+        "must be confirmed by typing their user id; without a terminal the command asks for the user id)"
+    )
     role = commands.add_parser("set-role", help="Add a member to a tenant or change their role")
     role.add_argument("tenant_id")
     role.add_argument("user", help=user_help)
@@ -1293,7 +1402,8 @@ def parser() -> argparse.ArgumentParser:
     files_commands = files.add_subparsers(dest="files_command", required=True)
     for name, text in (
         ("migrate", "Copy volume files into Axentra's storage (resumable, SHA-256 checked, volume kept)"),
-        ("verify", "Read every stored file back and compare its SHA-256 (exit code 2 on a failure)"),
+        ("verify", "Read every stored file back and compare its SHA-256; report leftovers (exit code 2 on either)"),
+        ("cleanup", "Delete leftovers in Axentra: objects without a mapping, mappings no input file uses"),
         ("remove-source", "Delete migrated, verified volume files after the fallback period (needs the switch)"),
         ("export-volume", "Copy files stored only in Axentra back to the volume (before switching back)"),
     ):
@@ -1361,7 +1471,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 server, args.files_command, dry_run=getattr(args, "dry_run", False), tenant=args.tenant
             )
             print(json.dumps(report, indent=2))
-            if report["failed"]:
+            if not report["ok"]:
                 raise SystemExit(2)
         elif args.command in ("suspend-tenant", "resume-tenant"):
             status = "suspended" if args.command == "suspend-tenant" else "active"
@@ -1374,11 +1484,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         elif args.command == "members":
             print("\n".join(members(server, args.tenant_id)) or f"tenant {args.tenant_id} has no members")
         elif args.command == "set-role":
-            print(set_role(server, args.tenant_id, args.user, args.role))
+            print(set_role(server, args.tenant_id, args.user, args.role, confirm=_confirm_on_terminal))
         elif args.command == "remove-member":
-            print(remove_member(server, args.tenant_id, args.user))
+            print(remove_member(server, args.tenant_id, args.user, confirm=_confirm_on_terminal))
         elif args.command == "revoke-sessions":
-            print(revoke_sessions(server, args.user))
+            print(revoke_sessions(server, args.user, confirm=_confirm_on_terminal))
         elif args.command == "secrets":
             import json
 

@@ -262,3 +262,92 @@ def test_api_and_worker_contexts_read_the_same_files_through_axentra(
         finally:
             api.close()
             worker.close()
+
+
+def _gzip_name(archive: Path) -> str:
+    """The file name in an archive's gzip header (FNAME)."""
+    header = archive.read_bytes()
+    assert header[:2] == b"\x1f\x8b" and header[3] & 0x08, "the gzip header names no file"
+    return header[10 : header.index(b"\0", 10)].decode("latin-1")
+
+
+@pytest.mark.skipif(shutil.which("pg_dump") is None, reason="needs pg_dump")
+def test_a_backup_before_the_first_upload(
+    databases: Callable[[], str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fresh installation (no upload yet, the storage directory not created yet) is backed up with an empty
+    archive; once Axentra stored a file, a missing directory is an error again."""
+    from nodestro_runtime.problems import NodestroError
+
+    from nodestro_api import server as command
+
+    url = databases()
+    monkeypatch.setattr(command, "_require_containers", lambda _server: None)
+    loaded = command.load(_environment(tmp_path, url))
+    command.migrate(loaded, backup_dir=None, backup_taken=False)
+    shutil.rmtree(tmp_path / "objects", ignore_errors=True)
+    command.dump(loaded, tmp_path / "backups" / "nodestro.dump")
+    archive = command.archive_files(loaded, tmp_path / "backups")
+    assert archive is not None and _gzip_name(archive) == archive.name.removesuffix(".gz")
+    with tarfile.open(archive) as unpacked:
+        assert unpacked.getnames() == []
+    assert not list((tmp_path / "backups").glob("*.partial"))
+
+    command.create_tenant(loaded, "acme", "Acme")
+    with command._files_tools(loaded) as files:  # the start creates the directory (owner only)
+        assert (tmp_path / "objects").is_dir()
+        root = loaded.profile.data_dir / "tenants" / "acme" / "inputs"
+        from nodestro_runtime.input_files import InputFiles
+
+        InputFiles(files.database.store("acme"), root, blobs=files.blobs("acme", root)).add(b"stored", name="a.txt")
+    archived = command.archive_files(loaded, tmp_path / "later")
+    assert archived is not None and _gzip_name(archived) == archived.name.removesuffix(".gz")
+    with tarfile.open(archived) as unpacked:
+        assert any(member.isfile() for member in unpacked.getmembers())
+    shutil.rmtree(tmp_path / "objects")
+    with pytest.raises(NodestroError) as caught:
+        command.archive_files(loaded, tmp_path / "lost")
+    assert caught.value.code == "storage.backup_failed" and "does not exist" in str(caught.value)
+
+
+def test_files_cleanup_removes_what_verify_reports(
+    databases: Callable[[], str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An object left by a cut-off copy makes ``files verify`` exit with 2 until ``files cleanup`` removed it."""
+    import json
+
+    from nodestro_runtime.storage_postgres import PostgresDatabase
+
+    from nodestro_api import server as command
+
+    url = databases()
+    monkeypatch.setattr(command, "_require_containers", lambda _server: None)
+    for key, value in _environment(tmp_path, url).items():
+        monkeypatch.setenv(key, value)
+    loaded = command.load(_environment(tmp_path, url))
+    command.migrate(loaded, backup_dir=None, backup_taken=False)
+    command.create_tenant(loaded, "acme", "Acme")
+    with command._files_tools(loaded) as files:
+        stray = files.upload(
+            "acme", b"cut off", blob="0" * 16, name="a.txt", media_type="text/plain", origin="migration"
+        )
+    database = PostgresDatabase(url)
+    try:
+        database._write(
+            "UPDATE axentra_files SET created_at = created_at - interval '2 hours' WHERE id = %s",
+            (stray.axentra_file,),
+        )
+    finally:
+        database.close()
+    capsys.readouterr()
+    with pytest.raises(SystemExit) as exited:
+        command.main(["files", "verify"])
+    assert exited.value.code == 2
+    report = json.loads(capsys.readouterr().out)
+    assert not report["ok"] and [entry["file"] for entry in report["orphans"]] == [stray.axentra_file]
+    command.main(["files", "cleanup", "--dry-run"])
+    assert json.loads(capsys.readouterr().out)["removed"] == 0
+    command.main(["files", "cleanup"])
+    assert json.loads(capsys.readouterr().out)["removed"] == 1
+    command.main(["files", "verify"])
+    assert json.loads(capsys.readouterr().out)["ok"]

@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Platform pins: Axentra migration completion
+
+- Runtime pin `50edcf7` (nodestro-runtime #86: security review fixes, performance fixes, M12 cleanup, Axentra
+  `a8ea5d5`); examples pin `c3ef412` (examples #49). The runtime's `AxentraServices.start` now requires the
+  process's database pool.
+
+### Security review fixes (SR-01, SR-03 to SR-06, SR-09, SR-10)
+
+- `tests/test_tenant_filters.py` runs the runtime's static tenant check over the API package.
+- A suspended tenant's batches, benchmarks, assistant answers and architect drafts stop
+  (`server_app.stop_tenant_work`, checked every 5 s), with `stop_code` `identity.tenant_suspended`.
+- `/api/notifications` refuses a malformed cursor with 400 `notifications.invalid_cursor`.
+- `secrets reencrypt` without `--tenant` also re-encrypts Axentra's columns (`axentra` in the report); the start
+  checks the keys of stored values.
+- `nodestro-server files cleanup [--dry-run] [--tenant]`; `files` exits with 2 when a report is not `ok`.
+- `set-role`, `remove-member`, `revoke-sessions`: an e-mail address needs the operator to type the user id on a
+  terminal (`identity.user_confirm` otherwise); an ambiguous address lists every identity.
+- `backup`: an empty storage archive before the first upload, the gzip header names the archive, and a clear error
+  when `pg_dump` runs without the owner role.
 ### Pins: Docker sandbox security review fixes (2026-11-02)
 
 - Runtime pin `bf9af7d` (nodestro-runtime #85: review fixes DS-1..DS-5, DS-7, DS-9, DS-11; Orkexa `3364fb8`, DS-10),
@@ -52,6 +71,15 @@
 
 - Runtime pin `95114ae` (nodestro-runtime #82: Axentra `f6ae01d` across the version chain), examples pin `9cdc1f5`
   (nodestro-examples #45).
+
+### Performance benches (Axentra migration, requirement 15)
+
+- `tests/bench_identity.py`, `bench_api.py`, `bench_pool_load.py`, `bench_mirrors.py`, `bench_migrations.py`,
+  `bench_workers.py` (shared set-up in `tests/perf_support.py`): before/after measurements on a throwaway PostgreSQL
+  schema (session resolution, API latency, pool and connections under API plus worker load, mirror write cost and
+  run usage settlement, migration commands with a SIGKILL and resume, worker throughput and a killed worker, process
+  memory). Run with `python tests/bench_x.py`; not collected by pytest. Results: nodestro-runtime `docs/AXENTRA.md`,
+  "Performance".
 
 ### Identity completion (Axentra migration M5; off by default)
 
