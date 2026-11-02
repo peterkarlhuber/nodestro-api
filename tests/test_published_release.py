@@ -11,6 +11,7 @@ import zipfile
 
 from fastapi.testclient import TestClient
 import httpx
+from nodestro_runtime.testing import ContainerDouble
 from nodestro_runtime.tool_library import CUSTOM_TESTS_TEMPLATE, CUSTOM_TOOL_TEMPLATE
 from test_published_api import PUBLISHED, auth, finish, form_workflow, new_key, publish
 
@@ -289,3 +290,33 @@ def test_a_release_runs_untrusted_tools_only_with_isolation(make_app: Callable[.
     run = client.get(f"/api/runs/{run_id}").json()
     assert run["nodes"]["convert"].get("tool_calls", []) == []
     assert "sandbox.isolation_required" in json.dumps(run)
+
+
+def test_a_release_uses_the_automatic_container_fallback(make_app: Callable[..., TestClient]) -> None:
+    """In the ``auto`` sandbox mode an untrusted published tool runs in the studio's container fallback (here a
+    container double), never in the host subprocess (ADR-0009)."""
+    calls = [tool_use("celsius_to_fahrenheit", {"celsius": 100}), text("fertig")]
+    client = make_app({"CONVERT": calls * 2})
+    body = {"function_name": "celsius_to_fahrenheit", "code": CUSTOM_TOOL_TEMPLATE, "tests": CUSTOM_TESTS_TEMPLATE}
+    client.post("/api/tools", json=body)
+    workflow_id = save(
+        client,
+        [
+            {"id": "start", "type": "start"},
+            agent_node("convert", "CONVERT", tools=["celsius_to_fahrenheit"]),
+            {"id": "out", "type": "output"},
+        ],
+        [edge("start", "convert"), edge("convert", "out")],
+        name="Umrechner",
+    )
+    publication = publish(client, workflow_id)["publication"]
+    workspace = client.app.state.nodestro  # type: ignore[attr-defined]
+    workspace.tools.provenance.clear()
+    container = ContainerDouble()
+    workspace.tools.container_fallback = lambda: container
+    token = new_key(client, publication["id"])
+    run_id = client.post(f"{PUBLISHED}/umrechner/runs", json={"input": "100 Grad"}, headers=auth(token)).json()[
+        "run_id"
+    ]
+    assert finish(client, "umrechner", token, run_id)["status"] == "succeeded"
+    assert ("call", "celsius_to_fahrenheit") in container.calls

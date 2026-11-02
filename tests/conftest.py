@@ -25,6 +25,16 @@ from nodestro_api.app import create_app
 from nodestro_api.context import AppConfig
 
 
+@pytest.fixture(autouse=True)
+def _no_automatic_docker(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The desktop ``auto`` sandbox mode would run untrusted tools in Docker wherever it runs (CI runners have
+    Docker). Tests see a computer without that fallback, so "no isolation" stays testable; a test that wants it
+    sets ``workspace.tools.container_fallback`` itself."""
+    from nodestro_runtime.workspace import Workspace
+
+    monkeypatch.setattr(Workspace, "_auto_container", lambda self: None)
+
+
 @pytest.fixture
 def make_app(tmp_path: Path) -> Callable[..., TestClient]:
     """``make_app(script)`` -> a TestClient whose agents answer from ``script``."""
