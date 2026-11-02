@@ -22,6 +22,7 @@ from .api import install_error_handlers, router
 from .api_architect import router as architect_router
 from .api_assistant import router as assistant_router
 from .api_automation import router as automation_router
+from .api_budget import router as budget_router
 from .api_data import router as data_router
 from .api_inputs import router as inputs_router
 from .api_mcp import router as mcp_router
@@ -103,9 +104,9 @@ def create_app(
             # Reference prices: checked at start when due, then daily; offline the last valid prices stay.
             if nodestro.price_sync is not None and nodestro.config.price_sync.enabled:
                 prices = asyncio.create_task(nodestro.price_sync.run(stop_prices), name="price-sync")
-            # Runs paused at a tool call (M6b): the deadline sweep continues decided and overdue ones.
-            if nodestro.runs.tool_gate is not None:
-                sweeping = asyncio.create_task(_sweep_tool_waits(nodestro, stop_prices), name="tool-waits")
+            # Runs paused at a tool call (M6b) or waiting for a budget decision (BUDGET-1): the deadline sweep
+            # continues decided and overdue ones.
+            sweeping = asyncio.create_task(_sweep_tool_waits(nodestro, stop_prices), name="tool-waits")
         except BaseException:
             await shutdown()
             raise
@@ -180,6 +181,7 @@ def create_app(
     app.include_router(inputs_router)
     app.include_router(pricing_router)
     app.include_router(mcp_router)
+    app.include_router(budget_router)
     app.include_router(tool_approvals_router)
     app.include_router(run_chat_router)
     app.include_router(router)
@@ -196,8 +198,10 @@ TOOL_WAIT_SWEEP_SECONDS = 15.0
 async def _sweep_tool_waits(nodestro: Any, stop: asyncio.Event, every: float = TOOL_WAIT_SWEEP_SECONDS) -> None:
     while not stop.is_set():
         try:
-            nodestro.runs.sweep_tool_waits()
+            if nodestro.runs.tool_gate is not None:
+                nodestro.runs.sweep_tool_waits()
+            nodestro.runs.sweep_budget_waits()
         except Exception:
-            logging.getLogger(__name__).exception("Sweeping runs paused at tool calls failed")
+            logging.getLogger(__name__).exception("Sweeping paused runs failed")
         with suppress(asyncio.TimeoutError):
             await asyncio.wait_for(stop.wait(), timeout=every)

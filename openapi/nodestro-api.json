@@ -3516,6 +3516,67 @@
         "title": "BillingKeyOut",
         "type": "object"
       },
+      "BlockedRequest": {
+        "description": "A model request that waits: the one that was refused, and the ones held while the decision is pending.",
+        "properties": {
+          "agent": {
+            "title": "Agent",
+            "type": "string"
+          },
+          "bounded": {
+            "default": false,
+            "title": "Bounded",
+            "type": "boolean"
+          },
+          "max_cost_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Cost Usd"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "price_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Status"
+          },
+          "refused": {
+            "default": false,
+            "title": "Refused",
+            "type": "boolean"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "node_id",
+          "agent",
+          "model"
+        ],
+        "title": "BlockedRequest",
+        "type": "object"
+      },
       "Body_inspect_api_backup_inspect_post": {
         "properties": {
           "file": {
@@ -3612,6 +3673,369 @@
           "files"
         ],
         "title": "Body_upload_knowledge_api_knowledge_post",
+        "type": "object"
+      },
+      "BudgetBlock": {
+        "description": "The limit that refused the request.",
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Id"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "scope": {
+            "default": "run",
+            "enum": [
+              "run",
+              "subworkflow",
+              "team"
+            ],
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id"
+        ],
+        "title": "BudgetBlock",
+        "type": "object"
+      },
+      "BudgetDecisionIn": {
+        "properties": {
+          "action": {
+            "enum": [
+              "raise",
+              "end"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9._:-]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idempotency Key"
+          },
+          "limit_usd": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit Usd"
+          },
+          "request_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "action"
+        ],
+        "title": "BudgetDecisionIn",
+        "type": "object"
+      },
+      "BudgetPolicy": {
+        "properties": {
+          "can_decide": {
+            "default": false,
+            "title": "Can Decide",
+            "type": "boolean"
+          },
+          "decision_hours": {
+            "default": 24,
+            "title": "Decision Hours",
+            "type": "integer"
+          },
+          "max_limit_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Limit Usd"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "BudgetPolicy",
+        "type": "object"
+      },
+      "BudgetRaise": {
+        "description": "One approved raise of a run's budget (BUDGET-1); the request in ``budget_requests`` holds the full record.",
+        "properties": {
+          "decided_at": {
+            "format": "date-time",
+            "title": "Decided At",
+            "type": "string"
+          },
+          "decided_by": {
+            "title": "Decided By",
+            "type": "string"
+          },
+          "new_limit_usd": {
+            "title": "New Limit Usd",
+            "type": "string"
+          },
+          "previous_limit_usd": {
+            "title": "Previous Limit Usd",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "previous_limit_usd",
+          "new_limit_usd",
+          "decided_by"
+        ],
+        "title": "BudgetRaise",
+        "type": "object"
+      },
+      "BudgetRequest": {
+        "description": "A budget decision of one top-level run: what blocked, the numbers when it was asked, and the decision.",
+        "properties": {
+          "attended": {
+            "default": true,
+            "title": "Attended",
+            "type": "boolean"
+          },
+          "block": {
+            "$ref": "#/components/schemas/BudgetBlock"
+          },
+          "closed_because": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed Because"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "deadline": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadline"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idempotency Key"
+          },
+          "limit_usd": {
+            "title": "Limit Usd",
+            "type": "string"
+          },
+          "new_limit_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Limit Usd"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "continued",
+                  "ended"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "reason": {
+            "default": "used_up",
+            "enum": [
+              "used_up",
+              "request_too_large"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "requests": {
+            "items": {
+              "$ref": "#/components/schemas/BlockedRequest"
+            },
+            "title": "Requests",
+            "type": "array"
+          },
+          "reserved_usd": {
+            "default": "0",
+            "title": "Reserved Usd",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "spent_usd": {
+            "title": "Spent Usd",
+            "type": "string"
+          },
+          "status": {
+            "default": "pending",
+            "enum": [
+              "pending",
+              "raised",
+              "ended",
+              "expired",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "suggested_limit_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Limit Usd"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "unknown_cost": {
+            "default": false,
+            "title": "Unknown Cost",
+            "type": "boolean"
+          },
+          "workflow_id": {
+            "title": "Workflow Id",
+            "type": "string"
+          },
+          "workflow_name": {
+            "title": "Workflow Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "workflow_id",
+          "workflow_name",
+          "block",
+          "limit_usd",
+          "spent_usd"
+        ],
+        "title": "BudgetRequest",
         "type": "object"
       },
       "BuiltinSandboxStatus": {
@@ -9627,6 +10051,7 @@
               "skipped",
               "blocked",
               "awaiting_approval",
+              "awaiting_budget",
               "cancelled"
             ],
             "title": "Status",
@@ -13513,6 +13938,16 @@
             ],
             "title": "Api Key Id"
           },
+          "budget": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunBudget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "budget_hard_maximum": {
             "anyOf": [
               {
@@ -13717,6 +14152,17 @@
             ],
             "title": "Started At"
           },
+          "started_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started By"
+          },
           "status": {
             "default": "queued",
             "enum": [
@@ -13810,6 +14256,176 @@
           "workflow"
         ],
         "title": "Run",
+        "type": "object"
+      },
+      "RunBudget": {
+        "description": "The budget of one run, apart from every configuration it came from (BUDGET-1).\n\n``initial_limit_usd`` is the effective limit the run started with (the workflow's budget, else the workspace's\ndefault budget, or a published release's run limit); ``limit_usd`` is the limit that applies now: the initial one\nor the last approved raise. A raise changes only this run: never the workflow, its saved versions or the\nsettings, and never another run. ``None`` limits mean: no limit.",
+        "properties": {
+          "initial_limit_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initial Limit Usd"
+          },
+          "limit_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit Usd"
+          },
+          "pending_request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Request Id"
+          },
+          "raises": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetRaise"
+            },
+            "title": "Raises",
+            "type": "array"
+          },
+          "source": {
+            "default": "none",
+            "enum": [
+              "workflow",
+              "default",
+              "release",
+              "subworkflow",
+              "team",
+              "none"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "title": "RunBudget",
+        "type": "object"
+      },
+      "RunBudgetOut": {
+        "properties": {
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetRequest"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "initial_limit_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initial Limit Usd"
+          },
+          "limit_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit Usd"
+          },
+          "pending": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BudgetRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "policy": {
+            "$ref": "#/components/schemas/BudgetPolicy"
+          },
+          "raises": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetRaise"
+            },
+            "title": "Raises",
+            "type": "array"
+          },
+          "remaining_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining Usd"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "workflow",
+              "default",
+              "release",
+              "subworkflow",
+              "team",
+              "none"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "spent_usd": {
+            "title": "Spent Usd",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "paused",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "unknown_cost": {
+            "default": false,
+            "title": "Unknown Cost",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "run_id",
+          "status",
+          "source",
+          "spent_usd",
+          "policy"
+        ],
+        "title": "RunBudgetOut",
         "type": "object"
       },
       "RunChatView": {
@@ -14326,6 +14942,16 @@
       },
       "RunSummary": {
         "properties": {
+          "budget": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunBudget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -15418,6 +16044,11 @@
             "title": "Assistant Model",
             "type": "string"
           },
+          "budget_decision_hours": {
+            "default": 24,
+            "title": "Budget Decision Hours",
+            "type": "integer"
+          },
           "builtin_sandbox": {
             "$ref": "#/components/schemas/BuiltinSandboxStatus"
           },
@@ -15467,6 +16098,17 @@
             ],
             "title": "Language"
           },
+          "max_run_budget_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Run Budget Usd"
+          },
           "ocr_available": {
             "default": false,
             "title": "Ocr Available",
@@ -15476,6 +16118,17 @@
             "default": false,
             "title": "Ocr Enabled",
             "type": "boolean"
+          },
+          "operator_max_run_budget_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operator Max Run Budget Usd"
           },
           "price_mode": {
             "default": "standard",
@@ -15566,6 +16219,30 @@
             ],
             "title": "Assistant Model"
           },
+          "budget_decision_hours": {
+            "anyOf": [
+              {
+                "maximum": 720.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Decision Hours"
+          },
+          "clear_max_run_budget": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clear Max Run Budget"
+          },
           "default_budget_usd": {
             "anyOf": [
               {
@@ -15607,6 +16284,22 @@
               }
             ],
             "title": "Language"
+          },
+          "max_run_budget_usd": {
+            "anyOf": [
+              {
+                "maximum": 1000000.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Run Budget Usd"
           },
           "ocr_enabled": {
             "anyOf": [
@@ -22236,6 +22929,52 @@
         "summary": "Start Benchmark"
       }
     },
+    "/api/budget-requests": {
+      "get": {
+        "description": "The tenant's open budget requests, oldest first (also after a restart).",
+        "operationId": "budget_requests_api_budget_requests_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "const": "pending",
+              "default": "pending",
+              "title": "Status",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BudgetRequest"
+                  },
+                  "title": "Response Budget Requests Api Budget Requests Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Budget Requests"
+      }
+    },
     "/api/diagnostics": {
       "get": {
         "description": "Local checks only: free, no network (the sandbox check runs a tiny test tool).",
@@ -26995,6 +27734,96 @@
           }
         },
         "summary": "Decide Approval"
+      }
+    },
+    "/api/runs/{run_id}/budget": {
+      "get": {
+        "description": "The budget of a run's top-level run, its open decision and what the caller may decide.",
+        "operationId": "run_budget_api_runs__run_id__budget_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunBudgetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Budget"
+      }
+    },
+    "/api/runs/{run_id}/budget/decisions": {
+      "post": {
+        "description": "Raise exactly the blocking limit of this run and continue it, or end the run.",
+        "operationId": "decide_run_budget_api_runs__run_id__budget_decisions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetDecisionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunBudgetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decide Run Budget"
       }
     },
     "/api/runs/{run_id}/cancel": {

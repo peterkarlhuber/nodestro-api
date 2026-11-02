@@ -98,10 +98,13 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     # applies (tool_policy, tool_approvals; runtime 8597544), output contracts and the orchestrator node
     # (contracts, orchestrator; runtime 40e04b4), and the agent checkpoints of runs paused at a tool call
     # (tool_checkpoints; runtime c86781b), and the tool call journal and the sandbox cancel binding that continuing
-    # and cancelling runs use (tool_journal, sandbox_cancel; backend audit B-02, B-03).
+    # and cancelling runs use (tool_journal, sandbox_cancel; backend audit B-02, B-03), and the run budget decisions
+    # the engine pauses runs for (run_budget; BUDGET-1).
     modules = check["runtime_modules"]
-    # + nodestro_runtime.run_chat (LRC-1); + nodestro_runtime.docker_status (Docker-first plan R2)
-    assert len(modules) == 47 and {"nodestro_runtime.extensions", "nodestro_runtime.docker_status"} <= set(modules)
+    # + nodestro_runtime.run_chat (LRC-1); + nodestro_runtime.docker_status (Docker-first plan R2);
+    # + nodestro_runtime.run_budget (BUDGET-1)
+    expected = {"nodestro_runtime.extensions", "nodestro_runtime.docker_status", "nodestro_runtime.run_budget"}
+    assert len(modules) == 48 and expected <= set(modules)
     # The audit/usage hook protocol is exported (tool approvals and the usage log import it); the Axentra
     # integration itself is server-only and never part of an export.
     assert "nodestro_runtime.platform_events" in modules and "nodestro_runtime.axentra_platform" not in modules

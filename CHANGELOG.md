@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Run budget decisions (BUDGET-1, 2026-11-02)
+
+- New `api_budget.py`: `GET /api/runs/{run_id}/budget` (read; the run's budget, its open decision, earlier ones and
+  `policy.can_decide`), `POST /api/runs/{run_id}/budget/decisions` (`raise` with `limit_usd`, or `end`; needs `run`
+  and that the caller started the run or is an admin; 409 `budget.not_pending`, 422 `budget.limit_not_higher` /
+  `budget.limit_invalid`, 403 `budget.over_policy` / `access.forbidden`; idempotent with `idempotency_key`) and
+  `GET /api/budget-requests` (read; the tenant's open requests).
+- Runs started and continued from the Studio record `started_by` (the principal). Run summaries carry `budget`.
+- The worker sweeps budget decisions next to the tool-approval sweep (overdue requests expire, decided runs
+  continue); the desktop sweeps both. Settings `max_run_budget_usd`, `clear_max_run_budget`,
+  `budget_decision_hours` and the read-only `operator_max_run_budget_usd` (`NODESTRO_MAX_RUN_BUDGET_USD`).
+- Published API runs, schedules, batches and test series never wait for a budget decision: they fail as before.
+- New `tests/test_budget_api.py`; the OpenAPI contract is regenerated.
+- Pins nodestro-runtime `64895e6` (runtime #84) and nodestro-examples `59fc96b` (examples #47).
+
 ### Pins (Axentra completion cascade, 2026-11-02)
 
 - Runtime pin `95114ae` (nodestro-runtime #82: Axentra `f6ae01d` across the version chain), examples pin `9cdc1f5`
