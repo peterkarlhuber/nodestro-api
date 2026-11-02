@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Platform pins: Docker-first follow-up (2026-11-02)
+
+- Pins: nodestro-runtime `958be1d` (#90 R-1 source builds only on the desktop, R-5 container shape checks; #91 MCP
+  container deadline 15 minutes; #92 R-4 tool adoption) and nodestro-examples `8c338d3` (#52).
+
 ### Adopting AI-generated tool code as one's own, desktop only (R-4, 2026-11-02)
 
 - `POST /api/tools/{name}/adopt` (`admin`; body `content_hash` from `GET /api/tools/{name}`) adopts an AI-generated
