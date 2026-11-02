@@ -8,7 +8,6 @@ from contextlib import suppress
 from datetime import datetime, timezone
 import hashlib
 import json
-import threading
 import time
 from typing import Annotated, Any, Literal, cast
 
@@ -71,7 +70,7 @@ from orkexa import OrkexaError, ProviderError, UsageTracker
 from orkexa import __version__ as library_version
 from pydantic import BaseModel, Field
 
-from . import __version__
+from . import __version__, sandbox_status
 from .assistants import AgentDraft, MemorySeed
 from .benchmarks import SuiteIn, TestCase
 from .context import Nodestro
@@ -218,76 +217,103 @@ def get_model_capabilities(model: Annotated[str, Query(min_length=1, max_length=
     return ModelCapabilities(model=model, capabilities=model_capabilities(model))
 
 
+def _is_admin(request: Request) -> bool:
+    """Whether the request's principal holds ``admin`` (the local owner does)."""
+    principal: Principal | None = getattr(request.state, "principal", None)
+    return principal is not None and principal.allows(Permission.ADMIN)
+
+
 @router.get("/settings", dependencies=READ)
-def get_settings(ctx: Ctx) -> Settings:
+def get_settings(request: Request, ctx: Ctx) -> Settings:
     """The settings; the Docker rows come from the background check (``Workspace.docker_status``) and never wait
-    for the daemon (``checking`` until the first check after the start finished)."""
-    return ctx.settings()
+    for the daemon (``checking`` until the first check after the start finished). Without the permission ``admin``
+    the Docker row carries no host details (see ``GET /api/sandbox/status``)."""
+    settings = ctx.settings()
+    if _is_admin(request):
+        return settings
+    return sandbox_status.redact_settings(settings, server=ctx.profile.kind == "server")
 
 
 #: The longest ``wait`` of ``GET /api/sandbox/status`` and the longest ``timeout`` of ``POST
 #: /api/sandbox/self-test`` (seconds).
 SANDBOX_STATUS_MAX_WAIT = 5.0
 SANDBOX_SELF_TEST_MAX_WAIT = 60.0
-#: A new check (``refresh`` or the self-test) starts at most this often per Docker monitor (seconds); within it the
-#: current status is returned. One monitor serves every tenant of a server, so no caller can keep the daemon busy.
-SANDBOX_CHECK_INTERVAL = 10.0
-_sandbox_checks: dict[int, float] = {}
-_sandbox_checks_lock = threading.Lock()
 
 
-def _may_check_sandbox(ctx: Nodestro) -> bool:
-    """Whether a forced Docker check may start now (at most every :data:`SANDBOX_CHECK_INTERVAL` seconds)."""
-    key = id(ctx.docker_monitor)
-    moment = time.monotonic()
-    with _sandbox_checks_lock:
-        last = _sandbox_checks.get(key)
-        if last is not None and moment - last < SANDBOX_CHECK_INTERVAL:
-            return False
-        _sandbox_checks[key] = moment
-        return True
+def _sandbox_answer(
+    ctx: Nodestro, row: SandboxBackendStatus, *, admin: bool, **facts: Any
+) -> sandbox_status.SandboxStatus:
+    if not admin:
+        row = sandbox_status.redact_backend(row, server=ctx.profile.kind == "server")
+    return sandbox_status.SandboxStatus(**row.model_dump(), redacted=not admin, **facts)
 
 
 @router.get("/sandbox/status", dependencies=READ)
 def get_sandbox_status(
+    request: Request,
     ctx: Ctx,
     refresh: Annotated[bool, Query()] = False,
     wait: Annotated[float, Query(ge=0, le=SANDBOX_STATUS_MAX_WAIT)] = 0.0,
-) -> SandboxBackendStatus:
+) -> sandbox_status.SandboxStatus:
     """The Docker sandbox of the computer the API runs on, as the background check last found it (the ``docker``
     row of the settings' ``sandbox_backends``). It never waits for the daemon: ``state`` is ``checking`` until the
     first check after the start finished, and ``approved`` only after the preflight and the in-container self-test
     passed (``checks`` lists each step).
 
-    ``refresh=1`` starts a new check in the background, the self-test included (at most every 10 s; otherwise the
-    current status is returned), and answers at once with the current status; ``wait`` (seconds, at most 5) waits
-    that long at most for a running check."""
-    if refresh and not _may_check_sandbox(ctx):
-        refresh = False
-    return ctx.docker_status(refresh, wait=wait)
+    ``refresh=1`` starts a new check in the background, the self-test included, and answers at once with the
+    current status; only administrators start one (otherwise ``refresh_ignored``), at most every 10 s (otherwise
+    ``throttled`` with ``retry_after``); ``check_started`` says whether this request started one. ``wait`` (seconds,
+    at most 5) waits that long at most for a running check, unless too many requests wait already
+    (``wait_skipped``). Without ``admin`` host details are left out (``redacted``)."""
+    admin = _is_admin(request)
+    started, retry_after = False, None
+    if refresh and admin:
+        retry_after = sandbox_status.try_start(ctx.docker_monitor, "refresh")
+        started = retry_after is None
+    row, skipped = sandbox_status.bounded_wait(lambda seconds: ctx.docker_status(started, wait=seconds), wait)
+    return _sandbox_answer(
+        ctx,
+        row,
+        admin=admin,
+        check_started=started,
+        throttled=retry_after is not None,
+        retry_after=retry_after,
+        refresh_ignored=refresh and not admin,
+        wait_skipped=skipped,
+    )
 
 
 @router.post("/sandbox/self-test", dependencies=ADMIN)
 def post_sandbox_self_test(
     ctx: Ctx, timeout: Annotated[float, Query(ge=0, le=SANDBOX_SELF_TEST_MAX_WAIT)] = 30.0
-) -> SandboxBackendStatus:
+) -> sandbox_status.SandboxStatus:
     """Run the Docker sandbox's checks again now, the in-container self-test included, and wait at most
     ``timeout`` seconds (default 30, at most 60) for the result. A check that takes longer (the first start builds
     the runtime image) goes on in the background: the answer then says ``checking`` and ``GET
-    /api/sandbox/status`` shows the result later. Within 10 s of the last forced check no new one starts; the
-    answer is the status of the running or last check."""
-    deadline = time.monotonic() + timeout
+    /api/sandbox/status`` shows the result later. Within 10 s of the last self-test no new one starts: the answer is
+    the status of the running or last check with ``throttled`` and ``retry_after`` (``check_started`` false).
+    Readers cannot start checks, and ``refresh`` on the status has a window of its own, so neither delays this."""
     before = ctx.docker_status()
-    if not _may_check_sandbox(ctx):
-        return ctx.docker_status(wait=timeout)
-    found = ctx.docker_status(True, wait=timeout)
-    # A check that was already running when the self-test was asked for may have passed its self-test step before:
-    # the forced one then runs right after it (once).
-    remaining = deadline - time.monotonic()
-    reached = any(check.name in ("image", "self-test") for check in found.checks)
-    if remaining > 0 and reached and found.tested_at == before.tested_at:
-        found = ctx.docker_status(True, wait=remaining)
-    return found
+    retry_after = sandbox_status.try_start(ctx.docker_monitor, "self-test")
+    if retry_after is not None:
+        row, skipped = sandbox_status.bounded_wait(
+            lambda seconds: ctx.docker_status(wait=seconds), timeout, self_test=True
+        )
+        return _sandbox_answer(ctx, row, admin=True, throttled=True, retry_after=retry_after, wait_skipped=skipped)
+
+    def run(seconds: float) -> SandboxBackendStatus:
+        deadline = time.monotonic() + seconds
+        found = ctx.docker_status(True, wait=seconds)
+        # A check that was already running when the self-test was asked for may have passed its self-test step
+        # before: the forced one then runs right after it (once).
+        remaining = deadline - time.monotonic()
+        reached = any(check.name in ("image", "self-test") for check in found.checks)
+        if remaining > 0 and reached and found.tested_at == before.tested_at:
+            found = ctx.docker_status(True, wait=remaining)
+        return found
+
+    row, skipped = sandbox_status.bounded_wait(run, timeout, self_test=True)
+    return _sandbox_answer(ctx, row, admin=True, check_started=True, wait_skipped=skipped)
 
 
 @router.put("/settings", dependencies=ADMIN)
