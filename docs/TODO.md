@@ -218,7 +218,8 @@ None known.
 - **Next step:** Decide whether the export should build its sandbox image itself (for example a pinned
   `docker/sandbox.Dockerfile` shipped in the export); pin the export's own `Dockerfile` (`FROM python:<v>-slim`,
   no digest yet) by digest, e.g. from nodestro-runtime's `container_images.BASE_IMAGES`; a real-daemon test of both
-  routes in the CI `docker` job.
+  routes and of the server worker's Docker watch (`DockerWatch`, which keeps the proof warm; tested with stand-ins
+  and by hand against a daemon that refused or could not be reached only) in the CI `docker` job.
 - **Depends on:** None
 
 ### API-028 · Docker sandbox status: residual risks after the security review (DS-6, DS-8, DS-12)
