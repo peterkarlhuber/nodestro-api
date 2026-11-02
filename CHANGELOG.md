@@ -4,6 +4,8 @@
 
 ### Python 3.11 minimum (2026-11-02)
 
+- Pin nodestro-runtime 51262a2 (runtime #88: Python 3.11 minimum, orkexa dec66eb) and nodestro-examples 3f91300
+  (examples #51).
 - Python 3.11 is now the minimum (3.10 reached end of life in October 2026): `requires-python`, ruff `py311`, mypy 3.11,
   CI matrix 3.11/3.13.
 - The exported project's vendored `orkexa` now declares `requires-python = ">=3.11"` (orkexa's new minimum).
