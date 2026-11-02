@@ -140,7 +140,8 @@ def test_the_tenant_cap_limits_a_raise(app: TestClient) -> None:
 
 def test_an_unknown_request_and_run_are_not_found(app: TestClient) -> None:
     run_id, _view = waiting(app)
-    assert decide(app, run_id, "bud_unknown", action="end").status_code == 404
+    unknown = decide(app, run_id, "bud_unknown", action="end")
+    assert unknown.status_code == 404 and unknown.json()["code"] == "budget.request_not_found", unknown.text
     assert decide(app, "run_unknown", "bud_unknown", action="end").status_code == 404
     assert app.get("/api/runs/run_unknown/budget").status_code == 404
 

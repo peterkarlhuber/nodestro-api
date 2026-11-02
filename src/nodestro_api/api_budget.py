@@ -9,8 +9,8 @@ decision. These routes show and answer it:
   the run (``end``). Raising and continuing are one operation. Needs ``run`` **and** that the caller started the
   run or holds ``admin``; a run without a recorded starter is decided by an admin only. The new limit is at most the
   tenant's ``max_run_budget_usd`` and the operator's ``NODESTRO_MAX_RUN_BUDGET_USD``. Errors: 404 (run or request
-  unknown), 409 ``budget.not_pending``, 422 ``budget.limit_not_higher`` / ``budget.limit_invalid`` /
-  ``budget.action_invalid``, 403 ``budget.over_policy`` / ``access.forbidden``. The same ``idempotency_key`` with the
+  unknown), 409 ``budget.not_pending``, 422 ``budget.limit_not_higher`` / ``budget.limit_invalid``,
+  403 ``budget.over_policy`` / ``access.forbidden``. The same ``idempotency_key`` with the
   same decision by the same person answers the stored result.
 - ``GET /api/budget-requests?status=pending`` (``read``): the tenant's open requests, oldest first (approvals inbox).
 
@@ -27,7 +27,7 @@ from fastapi import APIRouter, Request
 from nodestro_runtime.engine import run_has_unknown_cost, run_spent_usd
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.run_budget import BudgetRequest, BudgetRequests
-from nodestro_runtime.schemas import BudgetRaise, Run
+from nodestro_runtime.schemas import BudgetRaise, Run, RunStatus
 from pydantic import BaseModel, Field
 
 from .api import Ctx
@@ -36,12 +36,14 @@ from .serving import ApiError
 
 router = APIRouter(prefix="/api")
 
+#: Where a run's budget came from (the run budget's ``source``).
+BudgetSource = Literal["workflow", "default", "release", "subworkflow", "team", "none"]
+
 #: HTTP status of each refusal of a decision.
 STATUS = {
     "budget.not_pending": 409,
     "budget.limit_not_higher": 422,
     "budget.limit_invalid": 422,
-    "budget.action_invalid": 422,
     "budget.over_policy": 403,
 }
 
@@ -59,8 +61,8 @@ class BudgetPolicy(BaseModel):
 
 class RunBudgetOut(BaseModel):
     run_id: str
-    status: str
-    source: str
+    status: RunStatus
+    source: BudgetSource
     initial_limit_usd: Decimal | None = None
     limit_usd: Decimal | None = None
     spent_usd: Decimal
@@ -169,7 +171,7 @@ async def decide_run_budget(run_id: str, body: BudgetDecisionIn, ctx: Ctx, reque
         )
     except NodestroError as problem:
         if problem.code == "budget.request_not_found":
-            raise KeyError(body.request_id) from problem
+            raise ApiError(404, problem.code, str(problem), request_id=body.request_id) from problem
         status = STATUS.get(problem.code)
         if status is not None:
             params = dict(problem.params)

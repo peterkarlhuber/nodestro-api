@@ -14385,6 +14385,14 @@
             "type": "string"
           },
           "source": {
+            "enum": [
+              "workflow",
+              "default",
+              "release",
+              "subworkflow",
+              "team",
+              "none"
+            ],
             "title": "Source",
             "type": "string"
           },
@@ -14393,6 +14401,14 @@
             "type": "string"
           },
           "status": {
+            "enum": [
+              "queued",
+              "running",
+              "paused",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ],
             "title": "Status",
             "type": "string"
           },
