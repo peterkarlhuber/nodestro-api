@@ -17,6 +17,16 @@
 - Only workspaces whose tool code can run in Docker are watched (on a server: every tenant; on a desktop the `docker`
   and `auto` modes); the watch ends with `stop`.
 
+### Stopping a suspended tenant's tool generation jobs (security review round 3, NF-1, 2026-11-02)
+
+- `server_app.stop_tenant_work` also stops the tenant's tool generation jobs (`POST /api/tools/jobs`), before its
+  Python environment installations: the job is `failed` at once with `message_code` `identity.tenant_suspended`
+  (no new status), sends no further model request, has a running sandbox test killed, stops waiting for a decision
+  (a late decision gets `400 job.not_awaiting`) and never registers its tool. Other tenants' jobs are untouched.
+- Pins nodestro-runtime 96f14ef (runtime #93: `ToolLibrary.cancel_jobs`, static tenant SQL check round-3 gaps #89,
+  Axentra f3ed8d2) and nodestro-examples cacf6b5 (examples #53). The API's own tenant SQL test passes the stricter
+  check. Request-bound work that is not cancelled is recorded as accepted risk API-041 in `docs/TODO.md`.
+
 ### Platform pins: Docker-first follow-up (2026-11-02)
 
 - Pins: nodestro-runtime `958be1d` (#90 R-1 source builds only on the desktop, R-5 container shape checks; #91 MCP

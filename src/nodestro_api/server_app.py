@@ -18,9 +18,9 @@ Unlike the desktop, the API reference (``/api/docs``, ``/api/openapi.json``) nee
 ``NODESTRO_AXENTRA_NOTIFY=1``.
 
 A suspended tenant's requests are refused at once (every request checks the tenant). Work its context started in the
-background before (batches, benchmarks with their judge, assistant answers, architect drafts, live run chat answers,
-Python environment installations) is stopped within :attr:`TenantComposition.suspension_check` seconds
-(:func:`stop_tenant_work`, security review SR-03, SR-03a).
+background before (batches, benchmarks with their judge, assistant answers, architect drafts, tool generation jobs,
+live run chat answers, Python environment installations) is stopped within :attr:`TenantComposition.suspension_check`
+seconds (:func:`stop_tenant_work`, security review SR-03, SR-03a, NF-1).
 
 ``nodestro-server api`` (:mod:`nodestro_api.server`) builds it from validated
 :class:`~nodestro_runtime.server_settings.ServerSettings`. Not part of it yet: the published workflow APIs
@@ -179,8 +179,8 @@ TENANT_SUSPENDED = "identity.tenant_suspended"
 
 async def stop_tenant_work(context: Nodestro) -> list[str]:
     """Stop the background work a tenant's context runs in this process (its tenant was suspended): benchmarks
-    (their judge too), batches, assistant answers, architect drafts, live run chat answers and Python environment
-    installations. Idempotent; returns the ids stopped."""
+    (their judge too), batches, assistant answers, architect drafts, tool generation jobs, live run chat answers and
+    Python environment installations. Idempotent; returns the ids stopped."""
     stopped: list[str] = []
     # Benchmarks first: a benchmark follows its batch and would judge the batch's results once it is cancelled.
     for name, stop in (("benchmarks", context.benchmarks.cancel_all), ("batches", context.batches.cancel_all)):
@@ -193,9 +193,12 @@ async def stop_tenant_work(context: Nodestro) -> list[str]:
             stopped += sync_stop()
         except Exception:
             logger.exception("Stopping the %s of a suspended tenant failed", name)
-    # SR-03a: live run chat answers (the question fails at once, a late answer is not stored) and Python environment
-    # installations (stopped before their next step).
+    # NF-1: tool generation jobs (failed at once with the code; no further model request, a running sandbox test is
+    # killed, a wait for a decision ends, the tool is never registered); before the installations, so a stopped job
+    # starts none. SR-03a: live run chat answers (the question fails at once, a late answer is not stored) and Python
+    # environment installations (stopped before their next step).
     for name, stop_with_code in (
+        ("tool generation jobs", context.tools.cancel_jobs),
         ("run chat answers", context.runs.chat.cancel_answers),
         ("Python environment installations", context.python.cancel_installs),
     ):

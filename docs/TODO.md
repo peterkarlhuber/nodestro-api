@@ -13,7 +13,7 @@
 | P1 High | 0 |
 | P2 Medium | 6 |
 | P3 Low | 16 |
-| P4 Optional | 4 |
+| P4 Optional | 5 |
 
 **Release blockers:** None for this repository.
 
@@ -299,6 +299,17 @@ None known.
   `access_ended`, so events within that window are still delivered.
 - **Next step:** None. If needed, shorten the window. Reason: a check on every event would load each stream with
   database queries.
+
+### API-041 · Request-bound work of a suspended tenant runs to its own timeout
+
+- **Priority:** P4 Optional · **Status:** Accepted risk · **Refs:** security review NF-1 (#69);
+  `server_app.stop_tenant_work`
+- **What:** `stop_tenant_work` stops all background work of a suspended tenant (batches, benchmarks, assistant,
+  architect, tool generation jobs, run chat, Python installs). Work that a route runs with `asyncio.to_thread` while
+  its request is open (agent tester, tool check and save, tool-draft tests, backups, OCR) is not cancelled; it ends
+  at its own timeout. A model request already in flight in a stopped tool job finishes and its answer is dropped.
+- **Next step:** None. New requests of the tenant are refused at once; cancelling a running worker thread would need
+  cooperative cancel points in each of those paths.
 
 ## Cross-repository dependencies
 
