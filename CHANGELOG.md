@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Pins (Axentra completion cascade, 2026-11-02)
+
+- Runtime pin `95114ae` (nodestro-runtime #82: Axentra `f6ae01d` across the version chain), examples pin `9cdc1f5`
+  (nodestro-examples #45).
+
 ### Identity completion (Axentra migration M5; off by default)
 
 - `NODESTRO_IDENTITY_BACKEND=axentra`: Axentra runs the OIDC login (`AxentraLoginFlow`, Axentra's `OidcService` behind
@@ -13,6 +18,7 @@
 - Session rotation on login: the session the browser held before ends.
 - Tests: `test_identity.py` runs every server case in `nodestro`, `mirror` and `axentra` mode, plus a full
   `nodestro -> mirror -> axentra -> mirror -> nodestro` walk with real OIDC callbacks.
+
 ### Database roles and one connection pool (Axentra migration, work package dbinfra)
 
 - `NODESTRO_DATABASE_MIGRATION_URL[_FILE]` (optional): `migrate`, `backup` and the pre-migration `pg_dump` run as
