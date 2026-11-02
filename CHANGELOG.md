@@ -14,6 +14,20 @@
   which brings Axentra on Python 3.11+ only.
 - Tests: `tests/test_server_axentra.py`; `tests/test_identity.py` runs every server case with identity on Axentra too.
 
+### Desktop secrets through a pipe, not the environment (review MS-1, 2026-11-02)
+
+- New option `--secrets-fd FD` of `nodestro` and `nodestro-api` (module `nodestro_api.handoff`): the launch secret
+  and the MCP token vault key arrive as one JSON object `{"launch_secret": ..., "vault_key": ... | null}` on an
+  inherited descriptor (the desktop app uses 0, standard input). It is read before anything else (at most 64 KiB),
+  made non-inheritable and closed (descriptor 0 becomes the null device); the values stay in memory and never enter
+  `os.environ`, so neither `KERN_PROCARGS2` (macOS) nor `/proc/<pid>/environ` (Linux) of the backend or of any child
+  shows them. Malformed input, an unknown key or an unusable descriptor stops the start with `access.handoff_invalid`;
+  `--reload` is refused after a handoff.
+- `AppConfig.vault_key` (not in `repr`): the workspace seals MCP tokens with it instead of reading
+  `NODESTRO_VAULT_KEY` from the environment. The operator's `NODESTRO_VAULT_KEY` still works and is now taken out of
+  `os.environ` on the first read (as `NODESTRO_LAUNCH_SECRET` already was), so no child process inherits it; a
+  malformed key stops `serve` with one sentence. After a handoff both variables are removed and ignored.
+
 ### Automatic sandbox selection (2026-11-02, ADR-0009)
 
 - Pins: nodestro-runtime 7fd8761 (runtime #78, `auto` sandbox mode) and nodestro-examples f1c6403. `GET/PUT /api/settings` accept and return

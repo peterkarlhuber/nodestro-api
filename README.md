@@ -89,9 +89,18 @@ web pages in the user's browser from using it, it also
 `studio.localhost`). Host and origin checks do not replace authentication; the studio API is reachable from a
 network only as a server, with its login (`nodestro-server`).
 
-**Desktop app: per-launch secret.** The desktop app starts the API with a random secret in `NODESTRO_LAUNCH_SECRET`
-(at least 32 characters, refused otherwise with `access.launch_secret_weak`; `--reload` is refused with it). The
-backend removes the variable from its environment, so no process it starts inherits it. The app's window opens
+**Desktop app: per-launch secret.** The desktop app starts the API with a random secret (at least 32 characters,
+refused otherwise with `access.launch_secret_weak`; `--reload` is refused with it). It hands the secret over on a pipe,
+never in the environment or on the command line: any process of the same OS user can read another process's initial
+environment and arguments (`sysctl` `KERN_PROCARGS2` on macOS, `/proc/<pid>/environ` on Linux). The app passes
+`--secrets-fd 0`, makes the backend's standard input a pipe, writes one JSON object
+`{"launch_secret": "...", "vault_key": "..." | null}` and closes it. The backend reads it before anything else, replaces
+its standard input by the null device, and keeps both values in memory only (`nodestro_api.handoff`); no process it
+starts (uv, OCR, sandboxed tools, MCP servers) inherits them. A malformed handoff stops the start with
+`access.handoff_invalid`. `--secrets-fd N` also takes another inherited descriptor (3 and higher, POSIX).
+Operators who start the backend themselves can still set `NODESTRO_LAUNCH_SECRET` and `NODESTRO_VAULT_KEY`: the
+backend takes both out of `os.environ` when it reads them, so its child processes do not inherit them, but they remain
+visible in the backend's own initial environment; after a handoff both variables are ignored. The app's window opens
 `/api/launch?token=<secret>` once; the answer sets a session cookie (`HttpOnly`, `SameSite=Strict`) and continues
 to the studio from the backend's own origin (the token is redacted in the access log). A second launch is refused (`403 access.launch_used`), and every other request without that cookie gets
 `401 access.launch_required`, except `/api/health` and the key-protected `/api/published` routes. This keeps other
@@ -236,8 +245,8 @@ studio repository; the client lives in the runtime, `nodestro_runtime.mcp`). Rou
 | `GET /api/mcp/stats` | calls in flight, the operator's limits (`NODESTRO_MCP_*`) and each server's health since the start: calls, failures, circuit breaker, last error code |
 
 Approved tools appear in `GET /api/tools` with `kind: "mcp"`. Until per-call approval exists only `read` tools are
-usable. Tokens are sealed with the server's secret key (per tenant) or, on the desktop, with `NODESTRO_VAULT_KEY`
-from the operating system's keychain; without either they are kept for the session only. Servers need the operator's
+usable. Tokens are sealed with the server's secret key (per tenant) or, on the desktop, with the key from the operating
+system's keychain, which the desktop app hands over on `--secrets-fd` (an operator can set `NODESTRO_VAULT_KEY`); without either they are kept for the session only. Servers need the operator's
 list `NODESTRO_MCP_ENDPOINTS`; unattended runs need `NODESTRO_MCP_UNATTENDED=1` (after the security acceptance).
 
 ## Published workflow APIs
