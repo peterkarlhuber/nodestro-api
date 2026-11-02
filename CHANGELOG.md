@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Adopting AI-generated tool code as one's own, desktop only (R-4, 2026-11-02)
+
+- `POST /api/tools/{name}/adopt` (`admin`; body `content_hash` from `GET /api/tools/{name}`) adopts an AI-generated
+  tool as the caller's own code (ADR-0006 amendment): the desktop's local owner is recorded with the role `owner`,
+  a tenant member with their role (only `admin` passes). Refusals: `403 tool.adoption_desktop_only` (server,
+  Nodestro Local Docker), `403 tool.adoption_forbidden`, `409 tool.adoption_stale`, `409 tool.adoption_not_needed`,
+  `400 tool.adoption_not_applicable`, `404` for an unknown tool. Adoptions, refusals and revocations appear in
+  `GET /api/tool-approvals/audit`.
+- Contract (`openapi/nodestro-api.json`), additions only: the route, `ToolAdoptRequest`, `ToolAdoption`, and the
+  optional `ToolInfo.content_hash` and `ToolInfo.adoption`.
+- Needs a runtime pin with R-4 (developed against the local runtime worktree; the pin is bumped when the runtime PR
+  is merged).
+
 ### Python 3.11 minimum (2026-11-02)
 
 - Pin nodestro-runtime 51262a2 (runtime #88: Python 3.11 minimum, orkexa dec66eb) and nodestro-examples 3f91300
