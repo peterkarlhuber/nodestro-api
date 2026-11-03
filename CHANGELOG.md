@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Pin nodestro-runtime 3006ce0 (runtime #106) and nodestro-examples be55542 (examples #64: task profiles per agent, `agent_plan`, `ModelChoice.agents`).
 - Models per agent for example copies (EX-011): `GET /api/library/{template_id}/models` lists every agent of the
   template with its task profile and the model a copy gives it. In a workspace with local models that is the installed
   model the runtime recommends for the task on this computer (hardware, reported capabilities, the agent's tools and
