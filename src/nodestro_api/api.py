@@ -1000,10 +1000,49 @@ def preview(body: PreviewRequest, ctx: Ctx) -> ContextPreview:
 # ---- runs -----------------------------------------------------------------------
 
 
-@router.post("/workflows/{workflow_id}/runs", status_code=201, dependencies=RUN)
-async def start_run(workflow_id: str, body: RunIn, ctx: Ctx, request: Request) -> Run:
+@router.post(
+    "/workflows/{workflow_id}/runs",
+    status_code=201,
+    dependencies=RUN,
+    responses={200: {"model": Run, "description": "Replayed: the run this Idempotency-Key started before"}},
+)
+async def start_run(
+    workflow_id: str,
+    body: RunIn,
+    ctx: Ctx,
+    request: Request,
+    response: Response,
+    idempotency_key: Annotated[
+        str | None,
+        Header(
+            max_length=200,
+            description="Optional. A retry with the same key (same member, workflow and request, within 24 hours) "
+            "returns the run that already started (200, ``Idempotent-Replayed: true``) instead of starting another; "
+            "the same key with a different request is ``409 idempotency.conflict``.",
+        ),
+    ] = None,
+) -> Run:
+    """Start a run (201). With ``Idempotency-Key`` a retried request never starts it twice (API2-08)."""
+    workflow = _workflow(ctx, workflow_id)
     # Who started the run decides its budget requests (BUDGET-1), besides administrators.
-    return await launch(ctx, _workflow(ctx, workflow_id), body, started_by=actor_id(request))
+    started_by = actor_id(request)
+    key = (idempotency_key or "").strip()
+    if not key:
+        return await launch(ctx, workflow, body, started_by=started_by)
+    # The published APIs' record store (24 hours, pruned with theirs); keyed per member and workflow.
+    record_key = f"studio:{workflow_id}:{started_by}:{hashlib.sha256(key.encode()).hexdigest()}"
+    fingerprint = hashlib.sha256(
+        json.dumps([workflow_id, body.model_dump(mode="json")], sort_keys=True, default=str).encode()
+    ).hexdigest()
+    async with ctx.serving.studio_start_lock:
+        earlier = ctx.serving.idempotent_run_id(record_key, fingerprint)
+        if earlier is not None and (run := ctx.runs.get(earlier)) is not None:
+            response.status_code = 200
+            response.headers["Idempotent-Replayed"] = "true"
+            return run
+        run = await launch(ctx, workflow, body, started_by=started_by)
+        ctx.serving.remember_idempotent_run(record_key, run.id, fingerprint)
+    return run
 
 
 @router.get(
