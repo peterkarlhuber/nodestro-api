@@ -1082,31 +1082,29 @@ def list_runs(
     Paging (AX-25): the answer stays a list; ``X-Has-More`` says whether older runs match, and ``X-Next-Before`` is
     the cursor for ``before`` that continues with them."""
     cursor = _run_cursor(before)
-    runs: list[RunSummary]
-    if workflow_id is not None:
-        # Every run of the workflow, however many other runs were stored since (C-04).
-        runs = ctx.store.find("runs", "workflow_id", [workflow_id], RunSummary)
-    elif trigger_ref is not None:
-        runs = ctx.store.find("runs", "trigger_ref", [trigger_ref], RunSummary)
-    elif cursor is not None:
-        # An older page: the store lists by update, not by creation, so every run is read (only on request; the
-        # polled first page reads a window of the newest).
-        runs = ctx.store.list("runs", RunSummary)
-    elif include_children:
-        runs = ctx.store.list("runs", RunSummary, limit=max(limit, 0) + 1)
+    if workflow_id is None and trigger_ref is None:
+        # One keyset query by creation (API2-04): a page costs ``limit + 1`` index entries and reads only the
+        # fields of the summary, however many runs are stored.
+        page, more = ctx.store.list_page(
+            "runs", RunSummary, limit=limit, before=cursor, top_level=not include_children, summary=True
+        )
     else:
-        runs = _top_level_runs(ctx, max(limit, 0) + 1)
-    if not include_children:
-        runs = [run for run in runs if run.parent_run_id is None]
-    if workflow_id is not None:
-        runs = [run for run in runs if run.workflow_id == workflow_id]
-    if trigger_ref is not None:
-        runs = [run for run in runs if run.trigger_ref == trigger_ref]
-    if cursor is not None:
-        runs = [run for run in runs if _run_key(run) < cursor]
-    ordered = sorted(runs, key=_run_key, reverse=True)
-    page = ordered[: max(limit, 0)]
-    more = len(ordered) > len(page)
+        # Every run of the workflow or trigger, however many other runs were stored since (C-04).
+        if workflow_id is not None:
+            runs = ctx.store.find("runs", "workflow_id", [workflow_id], RunSummary)
+        else:
+            runs = ctx.store.find("runs", "trigger_ref", [trigger_ref or ""], RunSummary)
+        if not include_children:
+            runs = [run for run in runs if run.parent_run_id is None]
+        if workflow_id is not None:
+            runs = [run for run in runs if run.workflow_id == workflow_id]
+        if trigger_ref is not None:
+            runs = [run for run in runs if run.trigger_ref == trigger_ref]
+        if cursor is not None:
+            runs = [run for run in runs if _run_key(run) < cursor]
+        ordered = sorted(runs, key=_run_key, reverse=True)
+        page = ordered[:limit]
+        more = len(ordered) > len(page)
     response.headers["X-Has-More"] = "true" if more else "false"
     if more and page:
         last = page[-1]
@@ -1135,23 +1133,6 @@ def _run_cursor(before: str | None) -> tuple[datetime, str] | None:
             400, "runs.cursor_invalid", "before must be a time or the X-Next-Before of a page", before=before
         )
     return created, run_id
-
-
-#: Runs read at least for the top-level run list: runs are listed by creation, the store answers by update.
-_RUN_WINDOW = 2000
-
-
-def _top_level_runs(ctx: Nodestro, limit: int) -> list[RunSummary]:
-    """The most recently updated runs, enough of them to hold ``limit`` top-level runs (or all runs).
-
-    Sub-workflow and team runs can outnumber their parents by far; the window grows until it holds enough
-    top-level runs instead of stopping at a fixed number of runs."""
-    window = _RUN_WINDOW
-    while True:
-        runs = ctx.store.list("runs", RunSummary, limit=window)
-        if len(runs) < window or sum(run.parent_run_id is None for run in runs) >= limit:
-            return runs
-        window *= 4
 
 
 class TraceImport(BaseModel):
