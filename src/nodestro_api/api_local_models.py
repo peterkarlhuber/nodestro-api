@@ -59,14 +59,16 @@ class PullIn(BaseModel):
 
 
 class ImportIn(BaseModel):
-    kind: Literal["package", "gguf"]
-    #: The package folder or the GGUF file.
+    kind: Literal["package", "gguf", "build"]
+    #: The package folder, the GGUF file, or (build) the upstream weights file of a catalog model built from files.
     path: str = Field(min_length=1, max_length=4096)
     #: GGUF: the model name to create (e.g. ``my-model:q4``); package: which of its models (default: all).
     name: str | None = Field(default=None, max_length=200)
     models: list[str] | None = None
     #: GGUF: the vision projector file (``mmproj``), optional.
     projector: str | None = Field(default=None, max_length=4096)
+    #: Build: the template GGUF file (or its header) of the catalog model's recipe, e.g. for ``mdenseon:307m``.
+    template: str | None = Field(default=None, max_length=4096)
 
 
 class StorageIn(BaseModel):
@@ -161,6 +163,12 @@ async def local_pull(body: PullIn, ctx: Ctx) -> LocalJob:
 @router.post("/local-models/import", status_code=202, dependencies=INSTALL)
 async def local_import(body: ImportIn, ctx: Ctx) -> LocalJob:
     _manageable(ctx)
+    if body.kind == "build":
+        if not body.name or not body.template:
+            raise ApiError(
+                400, "local.name_missing", "Name the catalog model and choose its weights and template files"
+            )
+        return await asyncio.to_thread(ctx.local_models.build, body.name, weights=body.path, template=body.template)
     if body.kind == "gguf":
         if not body.name:
             raise ApiError(400, "local.name_missing", "Name the model to create from the GGUF file")
