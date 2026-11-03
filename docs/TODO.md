@@ -12,7 +12,7 @@
 | P0 Critical | 0 |
 | P1 High | 0 |
 | P2 Medium | 4 |
-| P3 Low | 17 |
+| P3 Low | 18 |
 | P4 Optional | 5 |
 
 **Release blockers:** None for this repository.
@@ -101,6 +101,16 @@ None known.
 - **Next step:** Decide on a retention policy (defaults, per tenant on the server). Then add configurable cleanup
   to the existing leader task.
 - **Depends on:** nodestro-runtime RT-014 (store deletes for runs and versions)
+
+### API-043 · Idempotent run starts are serialised per API process only
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** backend audit round 2 re-verification R2V-03, API2-08
+- **What:** Run starts with an `Idempotency-Key` (studio and published API) check and record the key under a lock
+  held by one process. With several API processes behind a load balancer, two concurrent retries with the same key
+  on different processes can each start a run.
+- **Next step:** An atomic insert-if-absent for raw store records (SQLite and PostgreSQL) in nodestro-runtime; reserve
+  the key with it before the run starts.
+- **Depends on:** nodestro-runtime RT-045
 
 ## Architecture and modularity
 
@@ -318,6 +328,7 @@ None known.
 | API-012 | nodestro-sdk | SDK-005 | SDK contract tests use the server contract |
 | API-013 | nodestro-runtime | RT-009 (store time filter) | runtime change first |
 | API-016 | nodestro-runtime | RT-011 | combined code list |
+| API-043 | nodestro-runtime | RT-045 (atomic insert-if-absent) | runtime change first |
 | API-017 | nodestro-studio | ST-014 (AD-20 Usage page card) | studio consumes the field |
 | API-018 | nodestro-runtime, nodestro-studio | RT-005, RT-012; ST-003 (studio #81) | runtime changes the run shape first; studio consumes it |
 | API-021 | nodestro-runtime | RT-015 | runtime change first |
