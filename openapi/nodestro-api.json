@@ -4181,6 +4181,45 @@
         "title": "BudgetRequest",
         "type": "object"
       },
+      "BuildInput": {
+        "description": "One pinned upstream file a catalog model is built from (what an offline build needs on this computer).",
+        "properties": {
+          "role": {
+            "enum": [
+              "weights",
+              "template"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "url",
+          "sha256"
+        ],
+        "title": "BuildInput",
+        "type": "object"
+      },
       "BuiltinSandboxStatus": {
         "description": "Whether the built-in Linux sandbox isolates AI-generated code on this computer (desktop profile only).",
         "properties": {
@@ -4469,6 +4508,13 @@
             "title": "Alternative",
             "type": "boolean"
           },
+          "build_inputs": {
+            "items": {
+              "$ref": "#/components/schemas/BuildInput"
+            },
+            "title": "Build Inputs",
+            "type": "array"
+          },
           "context": {
             "anyOf": [
               {
@@ -4507,6 +4553,11 @@
           "family": {
             "title": "Family",
             "type": "string"
+          },
+          "fits": {
+            "default": true,
+            "title": "Fits",
+            "type": "boolean"
           },
           "installed": {
             "default": false,

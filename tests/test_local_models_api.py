@@ -59,6 +59,11 @@ def test_the_overview_works_without_a_runtime(make_app: MakeApp, monkeypatch: py
     assert overview["status"]["running"] is False and overview["status"]["pinned_version"] == "0.40.14"
     assert [entry["name"] for entry in overview["catalog"]][:2] == ["qwen3.5:4b", "qwen3.5:9b"]
     assert all(entry["installed"] is False for entry in overview["catalog"])
+    built = next(entry for entry in overview["catalog"] if entry["name"] == "mdenseon:307m")
+    assert [item["role"] for item in built["build_inputs"]] == ["weights", "template"]
+    assert all(len(item["sha256"]) == 64 and item["url"].startswith("https://") for item in built["build_inputs"])
+    assert all(entry["build_inputs"] == [] for entry in overview["catalog"] if entry["name"] != "mdenseon:307m")
+    assert all(isinstance(entry["fits"], bool) for entry in overview["catalog"])
     tasks = {item["task"]: item for item in overview["recommendations"]}
     assert tasks["embedding"]["model"] == "ollama:qwen3-embedding:0.6b"
     assert overview["hardware"]["cpus"] >= 1

@@ -22,8 +22,8 @@ from typing import Literal
 
 from fastapi import APIRouter, Response
 from nodestro_runtime.knowledge import KnowledgeIndexStatus
-from nodestro_runtime.local_models import CATALOG, TASKS, Hardware, LocalModelInfo, Recommendation, recommend_all
-from nodestro_runtime.local_service import LocalAdvice, LocalJob, LocalStatus
+from nodestro_runtime.local_models import CATALOG, TASKS, Hardware, LocalModelInfo, Recommendation, fits, recommend_all
+from nodestro_runtime.local_service import BuildInput, LocalAdvice, LocalJob, LocalStatus, build_inputs
 from pydantic import BaseModel, Field
 
 from .api import Ctx
@@ -37,6 +37,10 @@ class CatalogEntry(LocalModelInfo):
     installed: bool = False
     #: The installed model has the catalog's digest (the verified build).
     verified: bool = False
+    #: Whether the model can run on this computer (GPU memory, or memory and fast enough on a CPU).
+    fits: bool = True
+    #: ``source="build"``: the pinned upstream files an offline build needs (role, URL, SHA-256, size).
+    build_inputs: list[BuildInput] = Field(default_factory=list)
 
 
 class LocalOverview(BaseModel):
@@ -108,6 +112,8 @@ async def local_overview(ctx: Ctx) -> LocalOverview:
             **entry.model_dump(),
             installed=entry.name in installed,
             verified=entry.name in installed and installed[entry.name].verified,
+            fits=fits(entry, hardware),
+            build_inputs=build_inputs(entry.name),
         )
         for entry in CATALOG
     ]

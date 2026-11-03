@@ -11,7 +11,8 @@
   curated tiers.
 - Local model hints and measured speed (RT-050/RT-051): `GET /api/local-models` returns `advice` and the status'
   context window and GPU use; `POST /api/local-models/benchmark` measures an installed chat model (permission
-  `install`, refused on server tenants like the other changes of the local model server).
+  `install`, refused on server tenants like the other changes of the local model server). Catalog entries carry
+  `fits` (this computer) and `build_inputs` (the pinned files of an offline build).
 - Pin nodestro-runtime 90ba97b and nodestro-examples 7b79fde (examples #62, the same runtime pin) (runtime #104: 32K context window for the managed Ollama, mDenseOn as optional European
   embedding model built from pinned weights, orkexa 71f8aaf). `POST /api/local-models/pull` builds a catalog model
   with `source="build"`; `POST /api/local-models/import` with `kind: "build"` builds it from local weights and template
