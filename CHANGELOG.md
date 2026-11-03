@@ -4,6 +4,10 @@
 
 ### Backend audit round 2 (2026-11-03)
 
+- Export without test tools: an installation without pytest (the server and desktop images) answered the export
+  check and the export with 500. The exported project's test dependencies are pinned to the installed version where
+  there is one, otherwise to the floor its generated tests need (`pytest>=8`, `httpx>=0.27`). Found in the joint
+  integration run.
 - API2-01/DX-23: the API reference is served at `/api/docs` from a vendored Swagger UI 5.34.0 (no CDN, no inline
   script; file hashes in `VENDORED.md`), with READ access.
 - API2-02: security headers on every answer: `Content-Security-Policy` (`script-src 'self'`, no inline script),
