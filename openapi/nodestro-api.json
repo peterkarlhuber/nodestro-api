@@ -4397,6 +4397,13 @@
             "title": "Kind",
             "type": "string"
           },
+          "languages": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Languages",
+            "type": "array"
+          },
           "license": {
             "title": "License",
             "type": "string"
@@ -4429,6 +4436,22 @@
             "default": 0,
             "title": "Rank",
             "type": "integer"
+          },
+          "region": {
+            "default": "other",
+            "enum": [
+              "eu",
+              "us",
+              "cn",
+              "other"
+            ],
+            "title": "Region",
+            "type": "string"
+          },
+          "vendor": {
+            "default": "",
+            "title": "Vendor",
+            "type": "string"
           },
           "verified": {
             "default": false,

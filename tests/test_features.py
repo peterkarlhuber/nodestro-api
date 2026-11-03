@@ -277,7 +277,9 @@ def test_diagnostics_never_show_the_key(make_app: Callable[..., TestClient]) -> 
     assert checks["database"]["status"] == "ok"
     assert checks["data_dir"]["status"] == "ok"
     assert checks["sandbox"]["status"] == "ok", checks["sandbox"]
-    assert checks["providers"]["code"] == "ok" and checks["providers"]["params"]["providers"] == "Anthropic"
+    # Ollama is listed too where a local model server answers on this computer.
+    assert checks["providers"]["code"] == "ok"
+    assert checks["providers"]["params"]["providers"].split(", ")[0] == "Anthropic"
     assert report["versions"]["orkexa"]
 
 

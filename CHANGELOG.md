@@ -4,8 +4,9 @@
 
 ### Local models, embeddings and semantic knowledge search (2026-11-03)
 
-- Pin nodestro-runtime fc7c591 (nodestro-runtime #99: local models, embeddings, semantic knowledge search; it pins
-  orkexa 9b06a5e).
+- Pin nodestro-runtime a60be7d (nodestro-runtime #99 and #101: local models, embeddings, semantic knowledge search,
+  selection preferences, a provider configured by an injected client; it pins orkexa 9b06a5e) and nodestro-examples
+  da9f1c9 (examples #59: the same runtime pin).
 - New routes for local models (Ollama, `api_local_models.py`): `GET /api/local-models` (server state, catalog with
   what is installed and verified, hardware, a recommendation per task), `GET /api/local-models/recommend`,
   `POST .../start|stop`, `PUT .../autostart`, and jobs with progress and cancel for installing the pinned runtime
