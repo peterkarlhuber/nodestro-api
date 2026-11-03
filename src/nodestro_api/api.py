@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import suppress
 from datetime import UTC, datetime
 import hashlib
@@ -12,6 +12,7 @@ import time
 from typing import Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, Depends, FastAPI, File, Form, Header, Query, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 import nodestro_examples as library
 from nodestro_examples import samples as library_samples
@@ -70,6 +71,7 @@ from nodestro_runtime.versions import VersionSummary, WorkflowVersion
 from orkexa import OrkexaError, ProviderError, UsageTracker
 from orkexa import __version__ as library_version
 from pydantic import BaseModel, Field
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import __version__, sandbox_status
 from .assistants import AgentDraft, MemorySeed
@@ -90,6 +92,7 @@ from .permissions import (
 from .publishing import PUBLICATIONS, RELEASES
 from .references import Reference, ReferenceKind, references
 from .search import readable_documents, stored_workflows
+from .serving import PREFIX as PUBLISHED_PREFIX
 from .serving import ApiError
 
 router = APIRouter(prefix="/api")
@@ -155,6 +158,31 @@ def install_error_handlers(app: FastAPI) -> None:
         assert isinstance(exc, AccessError)
         return _error(exc.status, exc.code, str(exc), **exc.params)
 
+    async def invalid_request(_: Request, exc: Exception) -> JSONResponse:
+        assert isinstance(exc, RequestValidationError)
+        errors = validation_errors(exc.errors())
+        if any(item["type"] == "json_invalid" for item in errors):
+            return _error(400, "request.malformed", "The request body is not valid JSON")
+        summary = "; ".join(f"{'.'.join(str(part) for part in item['loc'])}: {item['msg']}" for item in errors)
+        return _error(422, "request.invalid", f"The request is invalid: {summary}"[:500], errors=errors)
+
+    async def http_error(_: Request, exc: Exception) -> JSONResponse:
+        assert isinstance(exc, StarletteHTTPException)
+        headers = dict(exc.headers or {})
+        if exc.status_code == 404:
+            response = _error(404, "route.not_found", "There is no API route at this path")
+        elif exc.status_code == 405:
+            response = _error(405, "method.not_allowed", "This API route does not accept this method")
+        elif exc.status_code == 400:
+            # FastAPI's own answer to a body it could not read or parse.
+            response = _error(400, "request.malformed", "The request body could not be read")
+        else:
+            response = _error(exc.status_code, f"http.{exc.status_code}", str(exc.detail))
+        response.headers.update(headers)  # e.g. Allow of a 405
+        return response
+
+    app.add_exception_handler(RequestValidationError, invalid_request)
+    app.add_exception_handler(StarletteHTTPException, http_error)
     app.add_exception_handler(NodestroError, nodestro_error)
     app.add_exception_handler(ApiError, api_error)
     app.add_exception_handler(AccessError, access_error)
@@ -163,6 +191,76 @@ def install_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(KeyError, not_found)
     app.add_exception_handler(ProviderError, upstream)
     app.add_exception_handler(OrkexaError, agent_error)
+    document_errors(app)
+
+
+#: Fields of a validation error the answer keeps: never ``input`` or ``ctx`` (they echo what the client sent).
+_VALIDATION_FIELDS = ("loc", "msg", "type")
+
+
+def validation_errors(errors: Sequence[Any]) -> list[dict[str, Any]]:
+    """FastAPI's validation errors as ``params.errors``: ``loc``, ``msg`` and ``type`` of each, without the input."""
+    return [
+        {
+            "loc": [part if isinstance(part, int) else str(part) for part in item.get("loc", ())],
+            "msg": str(item.get("msg", ""))[:300],
+            "type": str(item.get("type", "")),
+        }
+        for item in errors[:50]
+        if isinstance(item, dict)
+    ]
+
+
+#: The error answer of the studio API, in the OpenAPI document (``components.schemas``).
+ERROR_SCHEMA_NAME = "ErrorResponse"
+ERROR_SCHEMA: dict[str, Any] = {
+    "title": ERROR_SCHEMA_NAME,
+    "type": "object",
+    "description": "Every error of the studio API: ``code`` is stable (the interface translates it with ``params``), "
+    "``detail`` an English technical text. Validation errors (``request.invalid``) list ``params.errors`` "
+    "(``loc``, ``msg``, ``type``; the input is never echoed).",
+    "required": ["detail", "code", "params"],
+    "properties": {
+        "detail": {"type": "string", "title": "Detail"},
+        "code": {"type": "string", "title": "Code"},
+        "params": {"type": "object", "title": "Params", "additionalProperties": True},
+    },
+}
+_ERROR_RESPONSE = {
+    "description": "Error",
+    "content": {"application/json": {"schema": {"$ref": f"#/components/schemas/{ERROR_SCHEMA_NAME}"}}},
+}
+
+
+def document_errors(app: FastAPI) -> None:
+    """Declare :data:`ERROR_SCHEMA` in the OpenAPI document as the answer of every studio operation's errors (``4XX``,
+    replacing FastAPI's ``422`` with its own validation shape). Published workflow APIs keep their own error format
+    and documentation."""
+    generate = app.openapi
+
+    def openapi() -> dict[str, Any]:
+        if app.openapi_schema is not None:
+            return app.openapi_schema
+        schema = generate()
+        for path, operations in schema.get("paths", {}).items():
+            if path == PUBLISHED_PREFIX or path.startswith(PUBLISHED_PREFIX + "/"):
+                continue
+            for operation in operations.values():
+                if not isinstance(operation, dict) or "responses" not in operation:
+                    continue
+                responses = operation["responses"]
+                responses.pop("422", None)
+                responses["4XX"] = _ERROR_RESPONSE
+        schemas = schema.setdefault("components", {}).setdefault("schemas", {})
+        schemas[ERROR_SCHEMA_NAME] = ERROR_SCHEMA
+        text = json.dumps(schema)
+        for unused in ("HTTPValidationError", "ValidationError"):
+            if f"#/components/schemas/{unused}" not in text:
+                schemas.pop(unused, None)
+        app.openapi_schema = schema
+        return schema
+
+    app.openapi = openapi  # type: ignore[method-assign]
 
 
 # ---- meta and settings ----------------------------------------------------------
@@ -902,10 +1000,49 @@ def preview(body: PreviewRequest, ctx: Ctx) -> ContextPreview:
 # ---- runs -----------------------------------------------------------------------
 
 
-@router.post("/workflows/{workflow_id}/runs", status_code=201, dependencies=RUN)
-async def start_run(workflow_id: str, body: RunIn, ctx: Ctx, request: Request) -> Run:
+@router.post(
+    "/workflows/{workflow_id}/runs",
+    status_code=201,
+    dependencies=RUN,
+    responses={200: {"model": Run, "description": "Replayed: the run this Idempotency-Key started before"}},
+)
+async def start_run(
+    workflow_id: str,
+    body: RunIn,
+    ctx: Ctx,
+    request: Request,
+    response: Response,
+    idempotency_key: Annotated[
+        str | None,
+        Header(
+            max_length=200,
+            description="Optional. A retry with the same key (same member, workflow and request, within 24 hours) "
+            "returns the run that already started (200, ``Idempotent-Replayed: true``) instead of starting another; "
+            "the same key with a different request is ``409 idempotency.conflict``.",
+        ),
+    ] = None,
+) -> Run:
+    """Start a run (201). With ``Idempotency-Key`` a retried request never starts it twice (API2-08)."""
+    workflow = _workflow(ctx, workflow_id)
     # Who started the run decides its budget requests (BUDGET-1), besides administrators.
-    return await launch(ctx, _workflow(ctx, workflow_id), body, started_by=actor_id(request))
+    started_by = actor_id(request)
+    key = (idempotency_key or "").strip()
+    if not key:
+        return await launch(ctx, workflow, body, started_by=started_by)
+    # The published APIs' record store (24 hours, pruned with theirs); keyed per member and workflow.
+    record_key = f"studio:{workflow_id}:{started_by}:{hashlib.sha256(key.encode()).hexdigest()}"
+    fingerprint = hashlib.sha256(
+        json.dumps([workflow_id, body.model_dump(mode="json")], sort_keys=True, default=str).encode()
+    ).hexdigest()
+    async with ctx.serving.studio_start_lock:
+        earlier = ctx.serving.idempotent_run_id(record_key, fingerprint)
+        if earlier is not None and (run := ctx.runs.get(earlier)) is not None:
+            response.status_code = 200
+            response.headers["Idempotent-Replayed"] = "true"
+            return run
+        run = await launch(ctx, workflow, body, started_by=started_by)
+        ctx.serving.remember_idempotent_run(record_key, run.id, fingerprint)
+    return run
 
 
 @router.get(
@@ -930,7 +1067,7 @@ def list_runs(
     ctx: Ctx,
     response: Response,
     workflow_id: str | None = None,
-    limit: int = Query(100, le=500),
+    limit: int = Query(100, ge=1, le=500),
     include_children: bool = False,
     trigger_ref: str | None = None,
     before: str | None = Query(
@@ -945,31 +1082,29 @@ def list_runs(
     Paging (AX-25): the answer stays a list; ``X-Has-More`` says whether older runs match, and ``X-Next-Before`` is
     the cursor for ``before`` that continues with them."""
     cursor = _run_cursor(before)
-    runs: list[RunSummary]
-    if workflow_id is not None:
-        # Every run of the workflow, however many other runs were stored since (C-04).
-        runs = ctx.store.find("runs", "workflow_id", [workflow_id], RunSummary)
-    elif trigger_ref is not None:
-        runs = ctx.store.find("runs", "trigger_ref", [trigger_ref], RunSummary)
-    elif cursor is not None:
-        # An older page: the store lists by update, not by creation, so every run is read (only on request; the
-        # polled first page reads a window of the newest).
-        runs = ctx.store.list("runs", RunSummary)
-    elif include_children:
-        runs = ctx.store.list("runs", RunSummary, limit=max(limit, 0) + 1)
+    if workflow_id is None and trigger_ref is None:
+        # One keyset query by creation (API2-04): a page costs ``limit + 1`` index entries and reads only the
+        # fields of the summary, however many runs are stored.
+        page, more = ctx.store.list_page(
+            "runs", RunSummary, limit=limit, before=cursor, top_level=not include_children, summary=True
+        )
     else:
-        runs = _top_level_runs(ctx, max(limit, 0) + 1)
-    if not include_children:
-        runs = [run for run in runs if run.parent_run_id is None]
-    if workflow_id is not None:
-        runs = [run for run in runs if run.workflow_id == workflow_id]
-    if trigger_ref is not None:
-        runs = [run for run in runs if run.trigger_ref == trigger_ref]
-    if cursor is not None:
-        runs = [run for run in runs if _run_key(run) < cursor]
-    ordered = sorted(runs, key=_run_key, reverse=True)
-    page = ordered[: max(limit, 0)]
-    more = len(ordered) > len(page)
+        # Every run of the workflow or trigger, however many other runs were stored since (C-04).
+        if workflow_id is not None:
+            runs = ctx.store.find("runs", "workflow_id", [workflow_id], RunSummary)
+        else:
+            runs = ctx.store.find("runs", "trigger_ref", [trigger_ref or ""], RunSummary)
+        if not include_children:
+            runs = [run for run in runs if run.parent_run_id is None]
+        if workflow_id is not None:
+            runs = [run for run in runs if run.workflow_id == workflow_id]
+        if trigger_ref is not None:
+            runs = [run for run in runs if run.trigger_ref == trigger_ref]
+        if cursor is not None:
+            runs = [run for run in runs if _run_key(run) < cursor]
+        ordered = sorted(runs, key=_run_key, reverse=True)
+        page = ordered[:limit]
+        more = len(ordered) > len(page)
     response.headers["X-Has-More"] = "true" if more else "false"
     if more and page:
         last = page[-1]
@@ -998,23 +1133,6 @@ def _run_cursor(before: str | None) -> tuple[datetime, str] | None:
             400, "runs.cursor_invalid", "before must be a time or the X-Next-Before of a page", before=before
         )
     return created, run_id
-
-
-#: Runs read at least for the top-level run list: runs are listed by creation, the store answers by update.
-_RUN_WINDOW = 2000
-
-
-def _top_level_runs(ctx: Nodestro, limit: int) -> list[RunSummary]:
-    """The most recently updated runs, enough of them to hold ``limit`` top-level runs (or all runs).
-
-    Sub-workflow and team runs can outnumber their parents by far; the window grows until it holds enough
-    top-level runs instead of stopping at a fixed number of runs."""
-    window = _RUN_WINDOW
-    while True:
-        runs = ctx.store.list("runs", RunSummary, limit=window)
-        if len(runs) < window or sum(run.parent_run_id is None for run in runs) >= limit:
-            return runs
-        window *= 4
 
 
 class TraceImport(BaseModel):
@@ -1103,6 +1221,9 @@ def delete_result_file(run_id: str, file_id: str, ctx: Ctx) -> Response:
 
 @router.post("/runs/{run_id}/cancel", dependencies=RUN)
 async def cancel_run(run_id: str, ctx: Ctx) -> dict[str, bool]:
+    """``cancelled``: whether the run was still going; an unknown run is ``404`` (API2-07)."""
+    if ctx.runs.get(run_id) is None:
+        raise KeyError(run_id)
     return {"cancelled": ctx.runs.cancel(run_id)}
 
 

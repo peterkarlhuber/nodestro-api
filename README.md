@@ -81,9 +81,13 @@ web pages in the user's browser from using it, it also
 
 - answers only requests for `localhost`, loopback addresses and the address chosen with `--host` (protection
   against DNS rebinding; other host names get `403 request.host_not_allowed`),
-- accepts changing requests only from its own pages, from this computer's origins, or without `Origin`
-  (cross-site requests get `403 request.origin_not_allowed`),
-- allows CORS only for the studio's development server (`localhost:5173`).
+- accepts changing requests and WebSockets only from its own origin (exactly the scheme, host and port the request
+  was sent to) or without `Origin`; pages of other sites and of other programs on this computer (another port) get
+  `403 request.origin_not_allowed`,
+- answers no CORS requests. For frontend development, `NODESTRO_DEV_CORS=1` allows the studio's development server
+  (`http://localhost:5173`, `http://127.0.0.1:5173`) to read answers and send changes; never set it otherwise (it is
+  ignored in Nodestro Local Docker). `npm run dev` itself needs no flag: its proxy forwards `/api` with the
+  development server's own origin.
 
 `NODESTRO_ALLOWED_HOSTS` can add further names that point to this computer (comma-separated, for example
 `studio.localhost`). Host and origin checks do not replace authentication; the studio API is reachable from a
@@ -142,6 +146,30 @@ Uploaded files are served with `X-Content-Type-Options: nosniff`; HTML, SVG and 
 everything except PDF carries a restrictive `Content-Security-Policy`, so an uploaded page cannot run scripts in the
 studio's origin.
 
+**Security headers** (`nodestro_api.security_headers`, desktop, Local Docker and server alike). Every answer that does
+not set its own carries `Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-…'; style-src 'self'
+'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none';
+frame-ancestors 'none'` (the hash allows the studio page's one inline theme script; CodeMirror, React Flow and
+Swagger UI insert inline styles), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and
+`Referrer-Policy: no-referrer`; `Strict-Transport-Security: max-age=31536000` only over HTTPS (on a server whose
+origin is `https://` always, also behind a TLS proxy). The API reference (`/api/docs`) loads a vendored Swagger UI
+(`swagger-ui-dist` 5.34.0, `nodestro_api/swagger_ui/VENDORED.md`) and nothing from other sites.
+
+**Request size limits** (`nodestro_api.body_limit`, every profile). Request bodies are counted while they are read
+(a missing or wrong `Content-Length` changes nothing) and refused with `413 request.too_large` (`params.limit_mb`)
+above the route's limit. Set in bytes through the environment:
+
+| Variable | Default | Routes |
+| --- | --- | --- |
+| `NODESTRO_MAX_REQUEST_BYTES` | 2 MiB | every route not listed below |
+| `NODESTRO_MAX_LARGE_REQUEST_BYTES` | 16 MiB | workflow import, batch plan and start, creating and changing a test series |
+| `NODESTRO_MAX_UPLOAD_BYTES` | 256 MiB | knowledge and input file uploads, batch files |
+| `NODESTRO_MAX_BACKUP_BYTES` | 2 GiB | uploading a backup (desktop) |
+
+Trace import keeps its 50 MB limit (`trace.too_large`), the studio's test of a published API and the published APIs
+themselves their 80 MB (published APIs answer in their own error format). Keep a reverse proxy's limit
+(`client_max_body_size`) at or above the largest one you need.
+
 **Published workflow APIs use API keys** (`Authorization: Bearer ndk_<id>_<secret>` or `X-API-Key`). A key is shown
 once when it is created or rotated; only a SHA-256 hash is stored. Each key names the publications it may use and
 its permissions:
@@ -183,7 +211,11 @@ unsafe value is listed at once (`profile.invalid`), and nothing has a default th
 
 Commands:
 
-- `nodestro-server check`: settings, database (reachable, schema current) and Docker; exit code 0 when ready.
+- `nodestro-server check`: settings, database (reachable, schema current, runtime role), Docker and the identity
+  provider (its discovery document at `NODESTRO_OIDC_ISSUER` answers, names that issuer and https endpoints, else
+  `identity.provider`); exit code 0 when ready. A superuser or `BYPASSRLS` runtime role is refused
+  (`storage.role_unsafe`) with Axentra or a separate migration role and printed as `warning:` otherwise (row-level
+  security does not protect the tenants then).
 - `nodestro-server migrate`: applies the database migrations under an advisory lock. A database that already has
   tables needs a backup first: `--backup-dir DIR` runs `pg_dump` (custom format; the password is passed in the
   environment, never on the command line), `--backup-taken` states that the operator made one.
@@ -348,8 +380,8 @@ call a paid provider. They cover the REST API, published APIs, keys, approvals, 
 files, Python libraries, backups, the network listener, the Host/Origin guard and the export; the exported project
 passes its own tests. `NODESTRO_NETWORK_TESTS=1` enables the test that installs a real package from PyPI. CI runs on
 Python 3.11 and 3.13, builds the wheel and the source distribution, installs the wheel into a fresh environment and
-calls the started server over HTTP. It needs the repository secret `NODESTRO_READ` (read access to orkexa and the
-Nodestro repositories).
+calls the started server over HTTP. It needs no secret: orkexa and the Nodestro repositories are public and are
+installed anonymously.
 
 Open work (known bugs, follow-ups and planned improvements) is listed in [docs/TODO.md](docs/TODO.md).
 

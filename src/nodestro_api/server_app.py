@@ -41,8 +41,7 @@ import threading
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.openapi.docs import get_swagger_ui_html
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from nodestro_runtime.bedrock import BedrockOperatorConfig
 from nodestro_runtime.extensions import Integration
 from nodestro_runtime.identity_store import IdentityStore
@@ -63,8 +62,10 @@ from .api_mcp import router as mcp_router
 from .api_pricing import router as pricing_router
 from .api_publish import router as publish_router
 from .api_python import router as python_router
+from .api_reference import install_api_reference
 from .api_run_chat import router as run_chat_router
 from .api_tool_approvals import router as tool_approvals_router
+from .body_limit import BodyLimitMiddleware, BodyLimits
 from .context import AppConfig, Nodestro
 from .frontend import mount_frontend
 from .identity import (
@@ -79,6 +80,7 @@ from .identity import (
 )
 from .permissions import PUBLIC, READ, check_routes
 from .pricing_setup import PRICE_REFERENCE_TENANT
+from .security_headers import SecurityHeadersMiddleware
 from .serving import PREFIX as PUBLISHED_PREFIX
 
 logger = logging.getLogger(__name__)
@@ -122,6 +124,8 @@ class TenantComposition:
     #: Input file bytes in Axentra's storage (:class:`nodestro_runtime.axentra_storage.AxentraFiles`,
     #: ``NODESTRO_FILES_BACKEND=axentra``); ``None``: on the data volume.
     files: Any | None = None
+    #: The size limits of request bodies (``None``: from the environment, :class:`~nodestro_api.body_limit.BodyLimits`).
+    body_limits: BodyLimits | None = None
 
 
 @dataclass
@@ -288,7 +292,11 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
     # The configured public origin (never a request's Host header): callbacks such as the MCP sign-in use it.
     app.state.public_origin = composition.origin
     app.state.principal_resolver = SessionResolver(composition.identity)
+    # Inside the origin check: a cross-site request is refused before its body is read (API2-03).
+    app.add_middleware(BodyLimitMiddleware, limits=composition.body_limits or BodyLimits.from_env())
     app.add_middleware(SameOriginMiddleware, origin=composition.origin, exempt=[PUBLISHED_PREFIX])
+    # API2-02; the studio's origin is https (http only on localhost for development): HSTS also behind a TLS proxy.
+    app.add_middleware(SecurityHeadersMiddleware, hsts=composition.origin.startswith("https://"))
     install_error_handlers(app)
     app.include_router(auth_router(composition.identity, composition.oidc))
     app.include_router(publish_router)
@@ -391,9 +399,7 @@ def _api_reference(app: FastAPI) -> None:
     def openapi_document() -> JSONResponse:
         return JSONResponse(app.openapi())
 
-    @app.get("/api/docs", dependencies=READ, include_in_schema=False)
-    def api_docs() -> HTMLResponse:
-        return get_swagger_ui_html(openapi_url="/api/openapi.json", title=f"{app.title} - API reference")
+    install_api_reference(app, "/api/openapi.json", dependencies=READ)
 
 
 def _secure_origin(origin: str) -> bool:

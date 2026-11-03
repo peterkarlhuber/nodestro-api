@@ -29,8 +29,10 @@ from .api_mcp import router as mcp_router
 from .api_pricing import router as pricing_router
 from .api_publish import router as publish_router
 from .api_python import router as python_router
+from .api_reference import install_api_reference
 from .api_run_chat import router as run_chat_router
 from .api_tool_approvals import router as tool_approvals_router
+from .body_limit import BodyLimitMiddleware, BodyLimits
 from .context import AppConfig, Nodestro
 from .launch import LOCAL_COOKIE, LaunchSecretMiddleware, check_secret
 from .local_access import LocalAccessMiddleware, allowed_hosts, listens_everywhere, require_loopback_only
@@ -38,6 +40,7 @@ from .local_container import CONTAINER_PORT, loopback_hosts, require_safe_config
 from .local_container import REFUSAL as LOCAL_REFUSAL
 from .mcp_server import build_mcp_router
 from .permissions import check_routes, resolver_for
+from .security_headers import SecurityHeadersMiddleware
 from .serving import build_router
 
 logger = logging.getLogger(__name__)
@@ -120,23 +123,27 @@ def create_app(
                         await asyncio.wait_for(task, timeout=5)
             await shutdown()
 
-    # /docs belongs to the built-in user documentation; the API reference lives under /api.
+    # /docs belongs to the built-in user documentation; the API reference lives under /api (its page with the
+    # vendored Swagger UI: nodestro_api.api_reference).
     app = FastAPI(
         title="Nodestro",
         version=__version__,
         lifespan=lifespan,
-        docs_url="/api/docs",
+        docs_url=None,
         redoc_url=None,
         openapi_url="/api/openapi.json",
     )
     app.state.nodestro = nodestro
     # Who sends a request: on the desktop always the local owner (every permission).
     app.state.principal_resolver = resolver_for(profile)
+    # Innermost of the guards: a request the host, origin or launch checks refuse is never read (API2-03).
+    app.add_middleware(BodyLimitMiddleware, limits=BodyLimits.from_env())
     local = profile.kind == "local-container"
-    if not local:  # the frontend's development server (npm run dev); never in a container
+    dev_origins = frozenset(DEV_SERVER_ORIGINS) if config.dev_cors and not local else frozenset()
+    if dev_origins:  # the frontend's development server (npm run dev), only on request; never in a container
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+            allow_origins=sorted(dev_origins),
             allow_methods=["*"],
             allow_headers=["*"],
         )
@@ -162,10 +169,16 @@ def create_app(
         LocalAccessMiddleware,
         hosts=loopback_hosts(config.allowed_hosts) if local else allowed_hosts(config.host, config.allowed_hosts),
         ip_addresses=listens_everywhere(config.host) and not local,
-        strict_origin=local,
+        # Changes only from the exact origin a request was sent to (API2-10): a page that another program serves on
+        # localhost (same site, other port) cannot use the key-less studio API; the development server only with
+        # NODESTRO_DEV_CORS=1.
+        strict_origin=True,
+        extra_origins=dev_origins,
         # The published port, and the container's own port for the launcher's and health check's calls (D3).
         ports=frozenset({config.host_port, CONTAINER_PORT}) if local else None,
     )
+    # Outside everything: refusals get the security headers too (API2-02).
+    app.add_middleware(SecurityHeadersMiddleware)
     install_error_handlers(app)
     # Before the main router: /api/tools/drafts must not be taken for a tool named "drafts".
     # Published workflows (``/api/published``): key-protected, answered only on this computer here;
@@ -186,10 +199,14 @@ def create_app(
     app.include_router(run_chat_router)
     app.include_router(router)
     app.include_router(data_router)
+    install_api_reference(app, "/api/openapi.json")
     # Fail closed: an application with a route that declares no access requirement is not built.
     check_routes(app)
     return app
 
+
+#: The frontend's development server (``npm run dev``): CORS and changes only with ``NODESTRO_DEV_CORS=1``.
+DEV_SERVER_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:5173")
 
 #: How often the desktop looks for runs paused at a tool call whose question was decided or ran out (seconds).
 TOOL_WAIT_SWEEP_SECONDS = 15.0

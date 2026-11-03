@@ -7,8 +7,10 @@ page the user visits can reach that address too, through the browser:
   then reads and changes everything as a same-origin page. Its requests carry
   ``Host: evil.example``; only known host names are answered.
 - with a *cross-site request*, a page sends a form or a ``fetch`` without preflight to the API.
-  The browser marks it with the page's ``Origin``; changing requests are only accepted from the
-  studio's own origin or from this computer.
+  The browser marks it with the page's ``Origin``; :func:`nodestro_api.app.create_app` accepts changing requests
+  and WebSockets only from exactly the origin the request was sent to (``strict_origin``, API2-10), not from other
+  pages on this computer (another program's page on ``localhost:<other port>``). The frontend's development server
+  (``localhost:5173``) is added only with ``NODESTRO_DEV_CORS=1`` (``extra_origins``).
 
 These checks protect a studio API on loopback against the browser; they are **not authentication**.
 As long as the studio API has no login, it is never offered to the network
@@ -158,16 +160,19 @@ class LocalAccessMiddleware:
         ip_addresses: bool = False,
         strict_origin: bool = False,
         ports: frozenset[int] | None = None,
+        extra_origins: frozenset[str] = frozenset(),
     ) -> None:
         """``ip_addresses``: answer every IP address (listening on every interface); a page cannot
         rebind an address, only a name. ``strict_origin``: accept changes and WebSockets only from the exact origin
         of the request (Nodestro Local Docker). ``ports``: answer only these ports in ``Host`` (a ``Host`` without a
-        port is port 80); ``None``: every port."""
+        port is port 80); ``None``: every port. ``extra_origins``: further origins (``scheme://host:port``) whose
+        changes are accepted (the frontend's development server with ``NODESTRO_DEV_CORS=1``)."""
         self.app = app
         self.hosts = hosts
         self.ip_addresses = ip_addresses
         self.strict_origin = strict_origin
         self.ports = ports
+        self.extra_origins = frozenset(origin.rstrip("/").lower() for origin in extra_origins)
 
     def _host_allowed(self, host: str) -> bool:
         if self.hosts is None or is_loopback(host) or host in self.hosts:
@@ -180,6 +185,8 @@ class LocalAccessMiddleware:
             return False  # "null" (sandboxed frames, files) and other schemes
         if parts.netloc.lower() == host_header.strip().lower():
             return True  # the studio's own pages
+        if origin.rstrip("/").lower() in self.extra_origins:
+            return True
         if self.strict_origin:
             return False
         return is_loopback(parts.hostname) or (self.hosts is not None and parts.hostname in self.hosts)

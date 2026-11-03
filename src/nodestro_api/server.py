@@ -586,18 +586,77 @@ async def run_worker(server: ServerEnvironment) -> None:
 # ---- operator commands ------------------------------------------------------------------------
 
 
-def check(server: ServerEnvironment) -> list[str]:
-    """What keeps this server from starting (empty: ready)."""
+def check_identity_provider(server: ServerEnvironment, http: Any | None = None) -> str | None:
+    """Whether the OpenID Connect provider answers its discovery document at ``NODESTRO_OIDC_ISSUER`` and names that
+    issuer with https endpoints (DX-31); the problem, or ``None``. Read once, with a short timeout."""
+    import httpx
+
+    from .identity import LoginError, OidcClient, OidcSettings
+
+    settings = server.settings
+    client = OidcClient(
+        OidcSettings(
+            issuer=settings.oidc_issuer,
+            client_id=settings.oidc_client_id,
+            client_secret=settings.oidc_client_secret,
+            redirect_uri=settings.redirect_uri,
+        ),
+        http=http or httpx.Client(timeout=5.0, follow_redirects=False),
+    )
+    try:
+        client.metadata()
+    except LoginError as error:
+        return f"{error.code}: the identity provider {settings.oidc_issuer} cannot be used for logins: {error}"
+    finally:
+        if http is None:
+            client.http.close()
+    return None
+
+
+def _superuser_role(server: ServerEnvironment, database: Any) -> str | None:
+    """A runtime role that is a superuser or has ``BYPASSRLS`` where :func:`_require_runtime_role` does not refuse it
+    (Nodestro's own mode with one role, which api and worker accept): ``check`` warns, since row-level security does
+    not protect the tenants then (DX-31). With Axentra or a separate migration role it is an error
+    (``storage.role_unsafe``, :func:`_require_runtime_role`)."""
+    settings = server.settings
+    if (settings.axentra.enabled and not settings.axentra.allow_superuser) or settings.separate_migration_role:
+        return None  # _require_runtime_role decides
+    info = database.role_info()
+    reasons = [
+        reason
+        for reason, flag in (("is a superuser", info["superuser"]), ("has BYPASSRLS", info["bypass_rls"]))
+        if flag
+    ]
+    if not reasons:
+        return None
+    return (
+        f"storage.role_unsafe: The runtime database role {info['role']!r} {' and '.join(reasons)}, so row-level "
+        "security does not protect the tenants; use a role with NOSUPERUSER NOBYPASSRLS for api and worker "
+        "(nodestro-server db grant-runtime-role) and migrate as the owner (NODESTRO_DATABASE_MIGRATION_URL)"
+    )
+
+
+def check(server: ServerEnvironment, *, warnings: list[str] | None = None, http: Any | None = None) -> list[str]:
+    """What keeps this server from starting (empty: ready). ``warnings`` receives what does not keep it from starting
+    but is unsafe (a superuser or ``BYPASSRLS`` runtime role in Nodestro's own mode). ``http``: the client for the
+    identity provider's discovery document."""
     problems: list[str] = []
     try:
         database = _database(server)
     except NodestroError as error:
         return [f"{error.code}: {error}"]
+
+    def runtime_role() -> None:
+        _require_runtime_role(server, database)
+        unsafe = _superuser_role(server, database)
+        if unsafe is not None and warnings is not None:
+            warnings.append(unsafe)
+
     try:
         steps = (
             database.require_current_schema,
             lambda: _require_axentra_schema(server, database),
-            lambda: _require_runtime_role(server, database),
+            runtime_role,
         )
         for step in steps:
             try:
@@ -631,6 +690,9 @@ def check(server: ServerEnvironment) -> list[str]:
         _require_containers(server)
     except NodestroError as error:
         problems.append(f"{error.code}: {error}")
+    provider = check_identity_provider(server, http)
+    if provider is not None:
+        problems.append(provider)
     return problems
 
 
@@ -1436,7 +1498,10 @@ def main(argv: Sequence[str] | None = None) -> None:
     try:
         server = load()
         if args.command == "check":
-            problems = check(server)
+            warnings: list[str] = []
+            problems = check(server, warnings=warnings)
+            for warning in warnings:
+                print(f"warning: {warning}", file=sys.stderr)
             for problem in problems:
                 print(f"not ready: {problem}", file=sys.stderr)
             if problems:

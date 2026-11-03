@@ -11,9 +11,9 @@ The published endpoints themselves are :mod:`nodestro_api.serving` (``/api/publi
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from nodestro_runtime.engine import start_fields
 from nodestro_runtime.forms import check_values, input_text
 from nodestro_runtime.problems import NodestroError
@@ -330,7 +330,7 @@ async def test_api(publication_id: str, body: TestIn, ctx: Ctx) -> Any:
 
 
 @router.get("/publications/{publication_id}/runs", dependencies=READ)
-def publication_runs(publication_id: str, ctx: Ctx, limit: int = 50) -> list[RunSummary]:
+def publication_runs(publication_id: str, ctx: Ctx, limit: Annotated[int, Query(ge=1)] = 50) -> list[RunSummary]:
     ctx.publications.get(publication_id)
     return api_runs(ctx, publication_id, limit=min(max(limit, 1), 500))
 
@@ -393,6 +393,7 @@ def create_guide(publication_id: str, body: GuideIn, request: Request, ctx: Ctx)
 
 @router.get("/publications/{publication_id}/guides", dependencies=READ)
 def list_guides(publication_id: str, ctx: Ctx) -> list[ApiGuide]:
+    ctx.publications.get(publication_id)  # an unknown publication is 404, not an empty list (API2-07)
     return api_guide.for_publication(ctx, publication_id)
 
 

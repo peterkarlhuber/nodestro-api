@@ -3528,6 +3528,17 @@
             "title": "Bounded",
             "type": "boolean"
           },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
           "max_cost_usd": {
             "anyOf": [
               {
@@ -6057,6 +6068,31 @@
           "message"
         ],
         "title": "ErrorOut",
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "description": "Every error of the studio API: ``code`` is stable (the interface translates it with ``params``), ``detail`` an English technical text. Validation errors (``request.invalid``) list ``params.errors`` (``loc``, ``msg``, ``type``; the input is never echoed).",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          }
+        },
+        "required": [
+          "detail",
+          "code",
+          "params"
+        ],
+        "title": "ErrorResponse",
         "type": "object"
       },
       "EvaluationRecord": {
@@ -20578,15 +20614,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Design Agent"
@@ -20609,6 +20645,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "List Templates"
@@ -20636,15 +20682,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Create Template"
@@ -20668,15 +20714,15 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Delete Template"
@@ -20715,15 +20761,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Update Template"
@@ -20754,15 +20800,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Test Agent"
@@ -20796,15 +20842,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Validate Agent"
@@ -20853,15 +20899,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Decide Guide"
@@ -20884,6 +20930,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "List Keys"
@@ -20911,15 +20967,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Create Key"
@@ -20943,15 +20999,15 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Delete Key"
@@ -20982,15 +21038,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Revoke Key"
@@ -21022,15 +21078,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Rotate Key"
@@ -21049,6 +21105,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "Network Status"
@@ -21076,15 +21142,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Configure Network"
@@ -21108,6 +21174,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "List Approvals"
@@ -21138,15 +21214,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Start Architect"
@@ -21177,15 +21253,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Get Architect Job"
@@ -21227,15 +21303,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Accept Architect"
@@ -21266,15 +21342,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Cancel Architect"
@@ -21306,15 +21382,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Discard Architect"
@@ -21344,15 +21420,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Architect Events"
@@ -21375,6 +21451,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "List Conversations"
@@ -21402,15 +21488,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Create Conversation"
@@ -21434,15 +21520,15 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Delete Conversation"
@@ -21471,15 +21557,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Get Conversation"
@@ -21518,15 +21604,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Rename Conversation"
@@ -21568,15 +21654,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Attach"
@@ -21616,15 +21702,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Detach"
@@ -21674,15 +21760,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Refresh Attachment"
@@ -21724,15 +21810,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Send Message"
@@ -21772,15 +21858,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Cancel Message"
@@ -21819,15 +21905,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Message Events"
@@ -21877,15 +21963,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Retry Message"
@@ -21926,15 +22012,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Get Snapshot"
@@ -21988,15 +22074,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Search Docs"
@@ -22014,6 +22100,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "Download Backup"
@@ -22044,15 +22140,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Inspect"
@@ -22075,6 +22171,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "List Local Backups"
@@ -22103,15 +22209,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Download Local Backup"
@@ -22143,15 +22249,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Inspect Local"
@@ -22182,15 +22288,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Restore"
@@ -22213,6 +22319,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "List Batches"
@@ -22240,15 +22356,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Create Batch"
@@ -22279,15 +22395,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Parse Batch File"
@@ -22318,15 +22434,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Plan Batch"
@@ -22350,15 +22466,15 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Delete Batch"
@@ -22387,15 +22503,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Get Batch"
@@ -22426,15 +22542,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Cancel Batch"
@@ -22473,15 +22589,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Export Batch"
@@ -22512,15 +22628,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Pause Batch"
@@ -22551,15 +22667,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Resume Batch"
@@ -22600,15 +22716,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Compare Benchmark Runs"
@@ -22632,15 +22748,15 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Delete Benchmark Run"
@@ -22669,15 +22785,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Get Benchmark Run"
@@ -22708,15 +22824,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Cancel Benchmark Run"
@@ -22758,15 +22874,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "List Suites"
@@ -22794,15 +22910,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Create Suite"
@@ -22826,15 +22942,15 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Delete Suite"
@@ -22863,15 +22979,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Get Suite"
@@ -22910,15 +23026,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Update Suite"
@@ -23002,15 +23118,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Benchmark Model Choice"
@@ -23052,15 +23168,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Plan Benchmark"
@@ -23095,15 +23211,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "List Benchmark Runs"
@@ -23142,15 +23258,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Start Benchmark"
@@ -23188,15 +23304,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Budget Requests"
@@ -23216,6 +23332,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "Diagnostics"
@@ -23254,15 +23380,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Diagnostics Connection"
@@ -23291,15 +23417,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Download Export"
@@ -23322,6 +23448,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "Health"
@@ -23340,6 +23476,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "Input Storage"
@@ -23372,15 +23518,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Upload Inputs"
@@ -23410,15 +23556,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Cleanup Inputs"
@@ -23437,6 +23583,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "Input Formats"
@@ -23460,15 +23616,15 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Delete Input"
@@ -23497,15 +23653,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Input File"
@@ -23534,15 +23690,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Input Content"
@@ -23584,15 +23740,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Input Text"
@@ -23634,15 +23790,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "List Knowledge"
@@ -23674,15 +23830,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Upload Knowledge"
@@ -23713,15 +23869,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Adopt Confirm"
@@ -23756,15 +23912,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Adopt Check"
@@ -23787,6 +23943,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "Knowledge Collections"
@@ -23847,15 +24013,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Search Knowledge"
@@ -23879,15 +24045,15 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Delete Knowledge"
@@ -23926,15 +24092,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Update Knowledge"
@@ -23963,15 +24129,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Knowledge Content"
@@ -24003,15 +24169,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Recognise Knowledge"
@@ -24062,15 +24228,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "List Library"
@@ -24126,15 +24292,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Get Library Template"
@@ -24176,15 +24342,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Copy Library Template"
@@ -24247,15 +24413,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Download Library Sample"
@@ -24294,15 +24460,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "List Events"
@@ -24325,6 +24491,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "List Servers"
@@ -24352,15 +24528,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Add Server"
@@ -24384,15 +24560,15 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Remove Server"
@@ -24421,15 +24597,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Get Server"
@@ -24468,15 +24644,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Update Server"
@@ -24508,15 +24684,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Discover Server"
@@ -24548,15 +24724,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Server Environment"
@@ -24588,15 +24764,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Plan Server Environment"
@@ -24627,15 +24803,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Sign Out Oauth"
@@ -24667,15 +24843,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Start Oauth"
@@ -24710,15 +24886,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "List Tools"
@@ -24768,15 +24944,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Decide Tool"
@@ -24796,6 +24972,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "Mcp Stats"
@@ -24814,6 +25000,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "Mcp Status"
@@ -24836,6 +25032,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "List Spaces"
@@ -24865,15 +25071,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Propose Memory"
@@ -24897,15 +25103,15 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Clear Memory"
@@ -24938,15 +25144,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "List Memory"
@@ -24979,15 +25185,15 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Delete Memory"
@@ -25025,15 +25231,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Read Memory"
@@ -25072,15 +25278,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Write Memory"
@@ -25099,6 +25305,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "Meta"
@@ -25132,15 +25348,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Get Model Capabilities"
@@ -25159,6 +25375,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "Organize State"
@@ -25166,6 +25392,7 @@
     },
     "/api/organize/{kind}/{item_id}": {
       "put": {
+        "description": "Favorite and tags of an existing workflow, agent template or tool; an unknown one is ``404`` (API2-07).",
         "operationId": "organize_item_api_organize__kind___item_id__put",
         "parameters": [
           {
@@ -25213,15 +25440,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Organize Item"
@@ -25245,6 +25472,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "List Prices"
@@ -25268,6 +25505,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "List Billing Keys"
@@ -25295,15 +25542,15 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Remove Billing Key"
@@ -25347,15 +25594,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Set Billing Key"
@@ -25394,15 +25641,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Pricing History"
@@ -25436,15 +25683,15 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Remove Override"
@@ -25493,15 +25740,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Set Override"
@@ -25558,15 +25805,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Get Reconciliation"
@@ -25595,15 +25842,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Post Reconciliation"
@@ -25626,6 +25873,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "List Reviews"
@@ -25666,15 +25923,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Approve Review"
@@ -25708,15 +25965,15 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Reject Review"
@@ -25735,6 +25992,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "Pricing Status"
@@ -25754,6 +26021,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "Sync Prices"
@@ -25776,6 +26053,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "List Publications"
@@ -25799,15 +26086,15 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Delete Publication"
@@ -25846,15 +26133,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Update Publication"
@@ -25896,15 +26183,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Activate"
@@ -25951,15 +26238,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Api Docs"
@@ -26000,15 +26287,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Set Enabled"
@@ -26049,15 +26336,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Export Check"
@@ -26092,15 +26379,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "List Exports"
@@ -26139,15 +26426,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Create Export"
@@ -26189,15 +26476,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Set Gate"
@@ -26239,15 +26526,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Create Guide"
@@ -26282,15 +26569,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "List Guides"
@@ -26331,15 +26618,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Get Release"
@@ -26364,6 +26651,7 @@
             "required": false,
             "schema": {
               "default": 50,
+              "minimum": 1,
               "title": "Limit",
               "type": "integer"
             }
@@ -26384,15 +26672,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Publication Runs"
@@ -26434,15 +26722,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Test Api"
@@ -27206,6 +27494,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "Python Status"
@@ -27225,6 +27523,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "Cleanup"
@@ -27273,15 +27581,15 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Remove Environment"
@@ -27324,15 +27632,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Get Environment"
@@ -27378,15 +27686,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Reinstall Environment"
@@ -27418,15 +27726,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Approve Plan"
@@ -27467,15 +27775,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Tool Plan"
@@ -27516,15 +27824,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Tool Status"
@@ -27564,15 +27872,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Workflow Export"
@@ -27621,15 +27929,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Workflow Plan"
@@ -27677,15 +27985,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Workflow Status"
@@ -27719,6 +28027,7 @@
             "schema": {
               "default": 100,
               "maximum": 500,
+              "minimum": 1,
               "title": "Limit",
               "type": "integer"
             }
@@ -27802,15 +28111,15 @@
               }
             }
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "List Runs"
@@ -27830,6 +28139,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "Import Run"
@@ -27853,15 +28172,15 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Delete Run"
@@ -27890,15 +28209,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Get Run"
@@ -27949,15 +28268,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Decide Approval"
@@ -27989,15 +28308,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Run Budget"
@@ -28039,15 +28358,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Decide Run Budget"
@@ -28055,6 +28374,7 @@
     },
     "/api/runs/{run_id}/cancel": {
       "post": {
+        "description": "``cancelled``: whether the run was still going; an unknown run is ``404`` (API2-07).",
         "operationId": "cancel_run_api_runs__run_id__cancel_post",
         "parameters": [
           {
@@ -28082,15 +28402,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Cancel Run"
@@ -28122,15 +28442,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Run Chat View"
@@ -28160,15 +28480,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Run Chat Events"
@@ -28210,15 +28530,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Send Run Chat Message"
@@ -28258,15 +28578,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Run Chat Message"
@@ -28296,15 +28616,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Run Events"
@@ -28365,15 +28685,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Export Run"
@@ -28409,15 +28729,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "List Result Files"
@@ -28457,15 +28777,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Create Result File"
@@ -28498,15 +28818,15 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Delete Result File"
@@ -28552,15 +28872,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Download Result File"
@@ -28596,15 +28916,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Run Inputs"
@@ -28636,15 +28956,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Resume Plan"
@@ -28684,15 +29004,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Resume Run"
@@ -28734,15 +29054,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Propose Test Case"
@@ -28777,15 +29097,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Run Tool Approvals"
@@ -28836,15 +29156,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Decide Tool Approval"
@@ -28879,15 +29199,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Post Sandbox Self Test"
@@ -28932,15 +29252,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Get Sandbox Status"
@@ -28963,6 +29283,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "List Schedules"
@@ -28990,15 +29320,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Create Schedule"
@@ -29047,15 +29377,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Preview Schedule"
@@ -29078,6 +29408,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "List Time Zones"
@@ -29101,15 +29441,15 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Delete Schedule"
@@ -29138,15 +29478,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Get Schedule"
@@ -29185,15 +29525,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Update Schedule"
@@ -29224,15 +29564,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Disable Schedule"
@@ -29264,15 +29604,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Enable Schedule"
@@ -29321,15 +29661,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Global Search"
@@ -29349,6 +29689,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "Get Settings"
@@ -29376,15 +29726,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Put Settings"
@@ -29422,18 +29772,18 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "429": {
+            "description": "Checked a moment ago (provider.verify_rate_limited, Retry-After)"
+          },
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
-          },
-          "429": {
-            "description": "Checked a moment ago (provider.verify_rate_limited, Retry-After)"
+            "description": "Error"
           }
         },
         "summary": "Verify Bedrock"
@@ -29457,6 +29807,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "Open Tool Approvals"
@@ -29472,6 +29832,7 @@
             "required": false,
             "schema": {
               "default": 200,
+              "minimum": 1,
               "title": "Limit",
               "type": "integer"
             }
@@ -29492,15 +29853,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Tool Approval Audit"
@@ -29519,6 +29880,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "Tool Approvals State"
@@ -29536,6 +29907,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "Stamp Legacy Bindings"
@@ -29559,6 +29940,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "List Pre Grants"
@@ -29587,15 +29978,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Create Pre Grant"
@@ -29650,15 +30041,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Revoke Pre Grant"
@@ -29681,6 +30072,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "List Tools"
@@ -29708,15 +30109,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Save Tool"
@@ -29746,15 +30147,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Check Tool"
@@ -29778,6 +30179,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "List Tool Drafts"
@@ -29801,15 +30212,15 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Reject Tool Draft"
@@ -29838,15 +30249,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Get Tool Draft"
@@ -29878,15 +30289,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Approve Tool Draft"
@@ -29918,15 +30329,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Test Tool Draft"
@@ -29949,6 +30360,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "List Jobs"
@@ -29976,15 +30397,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Start Job"
@@ -30015,15 +30436,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Get Job"
@@ -30064,15 +30485,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Decide Job"
@@ -30113,15 +30534,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Decide Job Dependencies"
@@ -30140,6 +30561,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "Tool Template"
@@ -30163,15 +30594,15 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Delete Tool"
@@ -30200,15 +30631,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Get Tool"
@@ -30250,15 +30681,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Adopt Tool"
@@ -30300,15 +30731,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Run Tool"
@@ -30343,15 +30774,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Usage"
@@ -30408,15 +30839,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Used By"
@@ -30439,6 +30870,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
           }
         },
         "summary": "List Workflows"
@@ -30467,15 +30908,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Create Workflow"
@@ -30524,15 +30965,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Check"
@@ -30563,15 +31004,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Import Workflow"
@@ -30602,15 +31043,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Preview"
@@ -30635,15 +31076,15 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Delete Workflow"
@@ -30672,15 +31113,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Get Workflow"
@@ -30752,15 +31193,15 @@
           "409": {
             "description": "``workflow.conflict``: the workflow changed since the revision in If-Match"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Update Workflow"
@@ -30791,15 +31232,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Api Overview"
@@ -30840,15 +31281,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Api Check"
@@ -30890,15 +31331,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Gate Report"
@@ -30939,15 +31380,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Publish"
@@ -30978,15 +31419,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Duplicate Workflow"
@@ -30994,6 +31435,7 @@
     },
     "/api/workflows/{workflow_id}/runs": {
       "post": {
+        "description": "Start a run (201). With ``Idempotency-Key`` a retried request never starts it twice (API2-08).",
         "operationId": "start_run_api_workflows__workflow_id__runs_post",
         "parameters": [
           {
@@ -31003,6 +31445,25 @@
             "schema": {
               "title": "Workflow Id",
               "type": "string"
+            }
+          },
+          {
+            "description": "Optional. A retry with the same key (same member, workflow and request, within 24 hours) returns the run that already started (200, ``Idempotent-Replayed: true``) instead of starting another; the same key with a different request is ``409 idempotency.conflict``.",
+            "in": "header",
+            "name": "idempotency-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional. A retry with the same key (same member, workflow and request, within 24 hours) returns the run that already started (200, ``Idempotent-Replayed: true``) instead of starting another; the same key with a different request is ``409 idempotency.conflict``.",
+              "title": "Idempotency-Key"
             }
           }
         ],
@@ -31017,6 +31478,16 @@
           "required": true
         },
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            },
+            "description": "Replayed: the run this Idempotency-Key started before"
+          },
           "201": {
             "content": {
               "application/json": {
@@ -31027,15 +31498,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Start Run"
@@ -31070,15 +31541,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "List Versions"
@@ -31118,15 +31589,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Get Version"
@@ -31174,15 +31645,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Describe Version"
@@ -31223,15 +31694,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Error"
           }
         },
         "summary": "Restore Version"

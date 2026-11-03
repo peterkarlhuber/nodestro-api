@@ -34,6 +34,7 @@ from contextlib import contextmanager
 from datetime import datetime
 import hashlib
 import json
+import logging
 from pathlib import Path, PurePosixPath
 import re
 import shutil
@@ -58,12 +59,43 @@ from .assistant import ChatMessage, Conversation
 if TYPE_CHECKING:
     from .context import Nodestro
 
+logger = logging.getLogger(__name__)
+
 FORMAT = "nodestro-backup"
 FORMAT_VERSION = 1
 _TOOL_FILE = re.compile(r"^tools/[A-Za-z_][A-Za-z0-9_]*/v\d+\.json$")
 _INPUT_FILE = re.compile(r"^inputs/(catalog\.json|blobs/[0-9a-f]{16})$")
 #: Tables that SQLite or the full-text index maintain themselves; they are rebuilt, not copied.
 _DERIVED = re.compile(r"^(sqlite_|index_fts|index_vec)")
+#: The tables a restore copies, with the definition it creates a missing one with (API2-11): Nodestro's documents and
+#: the tables of Orkexa's SQLite stores (the same statements as ``orkexa.retrieval``, ``memory`` and ``files``, which
+#: create them on first use). A restore never runs SQL from the archive; other tables in a backup are left out.
+KNOWN_TABLES: dict[str, str] = {
+    "nodestro_documents": (
+        "CREATE TABLE IF NOT EXISTS nodestro_documents (collection TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL,"
+        " updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), PRIMARY KEY (collection, id))"
+    ),
+    "memory_files": (
+        "CREATE TABLE IF NOT EXISTS memory_files (namespace TEXT NOT NULL, path TEXT NOT NULL, content TEXT NOT NULL,"
+        " updated_at TEXT NOT NULL, PRIMARY KEY (namespace, path))"
+    ),
+    "index_chunks": (
+        "CREATE TABLE IF NOT EXISTS index_chunks (id INTEGER PRIMARY KEY, namespace TEXT NOT NULL,"
+        " source TEXT NOT NULL, title TEXT, file_id TEXT, metadata TEXT NOT NULL, text TEXT NOT NULL)"
+    ),
+    "index_meta": "CREATE TABLE IF NOT EXISTS index_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+    "stored_files": (
+        "CREATE TABLE IF NOT EXISTS stored_files (namespace TEXT NOT NULL, id TEXT NOT NULL, entry TEXT NOT NULL,"
+        " data BLOB NOT NULL, PRIMARY KEY (namespace, id))"
+    ),
+}
+
+
+def quote_identifier(name: str) -> str:
+    """``name`` as an SQLite identifier: in double quotes, inner double quotes doubled."""
+    return '"' + name.replace('"', '""') + '"'
+
+
 _SECRET_SETTINGS = ("api_key",)
 #: The providers' keys (and base URLs with credentials in them) stay on this computer as well.
 _PROVIDER_SECRETS = "provider_keys"
@@ -522,11 +554,13 @@ def _copy_tables(connection: sqlite3.Connection, source: Path, keep_settings: di
     """Replace every table's rows with the backup's, in one transaction."""
     connection.execute("ATTACH DATABASE ? AS restore_source", (str(source),))
     try:
-        backup_tables = {
-            row[0]: row[1]
-            for row in connection.execute("SELECT name, sql FROM restore_source.sqlite_master WHERE type = 'table'")
-            if not _DERIVED.match(row[0])
+        found = {
+            row[0] for row in connection.execute("SELECT name FROM restore_source.sqlite_master WHERE type = 'table'")
         }
+        backup_tables = [name for name in KNOWN_TABLES if name in found]
+        ignored = sorted(name for name in found - set(KNOWN_TABLES) if not _DERIVED.match(name))
+        if ignored:
+            logger.warning("Restore: tables unknown to this version are left out: %s", ", ".join(ignored)[:500])
         # ATTACH creates an empty database for a missing file; copying from it would empty every table.
         if "nodestro_documents" not in backup_tables:
             raise _fail("backup.expired", "This backup is no longer waiting to be restored; please choose it again")
@@ -538,19 +572,22 @@ def _copy_tables(connection: sqlite3.Connection, source: Path, keep_settings: di
         ).fetchall()
         connection.execute("BEGIN IMMEDIATE")
         try:
-            for name, create in backup_tables.items():
+            for name in backup_tables:
                 if name not in main_tables:
-                    connection.execute(create)
-                main_columns = [row[1] for row in connection.execute(f'PRAGMA main.table_info("{name}")')]
-                source_columns = {row[1] for row in connection.execute(f'PRAGMA restore_source.table_info("{name}")')}
-                columns = ", ".join(f'"{column}"' for column in main_columns if column in source_columns)
-                connection.execute(f'DELETE FROM main."{name}"')
-                connection.execute(
-                    f'INSERT INTO main."{name}" ({columns}) SELECT {columns} FROM restore_source."{name}"'
-                )
+                    connection.execute(KNOWN_TABLES[name])  # this version's definition, never the archive's
+                table = quote_identifier(name)
+                main_columns = [row[1] for row in connection.execute(f"PRAGMA main.table_info({table})")]
+                source_columns = {row[1] for row in connection.execute(f"PRAGMA restore_source.table_info({table})")}
+                # Only this version's columns, each quoted (a column name in the archive is data, not SQL).
+                columns = ", ".join(quote_identifier(column) for column in main_columns if column in source_columns)
+                connection.execute(f"DELETE FROM main.{table}")
+                if columns:
+                    connection.execute(
+                        f"INSERT INTO main.{table} ({columns}) SELECT {columns} FROM restore_source.{table}"
+                    )
             for name in main_tables - set(backup_tables):
                 if not _DERIVED.match(name):
-                    connection.execute(f'DELETE FROM main."{name}"')
+                    connection.execute(f"DELETE FROM main.{quote_identifier(name)}")
             if "index_fts" in main_tables:
                 connection.execute("INSERT INTO main.index_fts(index_fts) VALUES ('rebuild')")
             row = connection.execute(

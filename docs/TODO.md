@@ -3,7 +3,7 @@
 > Open work for this repository: release blockers, known bugs, security follow-ups, technical debt and planned improvements.
 > GitHub issues are the source of truth for details; this file is the entry point and summary.
 >
-> **Last full review:** 2026-11-01 against `master` at `fb7f438`.
+> **Last full review:** 2026-11-03 against `master` at `f21fd6a` (backend audit round 2).
 
 ## Summary
 
@@ -11,8 +11,8 @@
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 0 |
-| P2 Medium | 6 |
-| P3 Low | 16 |
+| P2 Medium | 4 |
+| P3 Low | 17 |
 | P4 Optional | 5 |
 
 **Release blockers:** None for this repository.
@@ -38,13 +38,12 @@ None known.
 
 ## Security
 
-### API-001 · Hardening of request size limits on the studio API's upload and import endpoints
+### API-001 · Cleanup of idle tenant contexts on the server
 
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** backend audit A-09 (residual)
-- **What:** Hardening follow-up: an application-level request size limit for the remaining endpoint group that
-  takes files or imports, and resource cleanup for idle tenant contexts on the server. Details are kept privately.
-- **Next step:** Apply the application-level limit to the remaining endpoints and add the cleanup, as described in
-  the internal audit.
+- **Priority:** P3 Low · **Status:** Open · **Refs:** backend audit A-09 (residual); request size limits done in
+  backend audit round 2 (API2-03)
+- **What:** Hardening follow-up: resource cleanup for idle tenant contexts on the server. Details are kept privately.
+- **Next step:** Add the cleanup, as described in the internal audit.
 
 ### API-002 · Rate limiting of the anonymous login start (server)
 
@@ -143,14 +142,6 @@ None known.
 - **Next step:** Aggregate in the store (SQL), or read only the usage fields with a `since` filter.
 - **Depends on:** nodestro-runtime RT-009 (store-level time filter)
 
-### API-014 · Lighter run list: summary projection and total count
-
-- **Priority:** P4 Optional · **Status:** Open · **Refs:** UX audit AX-24 (residual), backend audit section 14
-- **What:** Run lists now have cursor paging and compression, but they still load whole run documents, and the
-  studio cannot show "N of M runs".
-- **Next step:** Read summary columns only, and return a total count header.
-- **Depends on:** nodestro-runtime (projection on the storage level)
-
 ## Features and enhancements
 
 ### API-016 · Machine-readable list of all error codes (X-03)
@@ -237,6 +228,14 @@ None known.
   (`SandboxStatus`, nodestro-sdk, pin `dde77f5`).
 - **Depends on:** None
 
+### API-042 · Approval nodes are not four-eyes; conversations have no owner
+
+- **Priority:** P4 Optional · **Status:** Open · **Refs:** backend audit round 2 API2-15 (by design)
+- **What:** Inside a tenant, a member with run permission may approve the approval node of their own run, any editor
+  can read, rename or delete assistant conversations, and the edit permission can delete a run with its approval
+  record. This is the documented role model, not a defect.
+- **Next step:** Decide whether approval nodes get a "needs another member" option and conversations get an owner.
+
 ## Tests and quality assurance
 
 ### API-022 · Untested cases from the backend audit re-verification
@@ -278,13 +277,7 @@ None known.
 
 ## Technical debt
 
-### API-024 · CI requires a read token although the dependencies are public
-
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** #50, backend audit D-08 (residual); same change in runtime #75
-- **What:** CI fails when `NODESTRO_READ` is empty, and the comments call the public repositories private. This
-  blocks Dependabot and fork runs.
-- **Next step:** Install anonymously, keep the token optional or remove it, fix the comments, then consider
-  Dependabot for pip.
+None known.
 
 ## Later optimizations
 
@@ -323,13 +316,12 @@ None known.
 | API-009 | nodestro-runtime | RT-014 | runtime provides deletes |
 | API-011 | nodestro-server | SRV-007 (RUNBOOK monitoring section) | server documents what this adds |
 | API-012 | nodestro-sdk | SDK-005 | SDK contract tests use the server contract |
-| API-013, API-014 | nodestro-runtime | RT-009 (store time filter), projection | runtime change first |
+| API-013 | nodestro-runtime | RT-009 (store time filter) | runtime change first |
 | API-016 | nodestro-runtime | RT-011 | combined code list |
 | API-017 | nodestro-studio | ST-014 (AD-20 Usage page card) | studio consumes the field |
 | API-018 | nodestro-runtime, nodestro-studio | RT-005, RT-012; ST-003 (studio #81) | runtime changes the run shape first; studio consumes it |
 | API-021 | nodestro-runtime | RT-015 | runtime change first |
 | API-023 | nodestro-server | SRV-013 (PostgreSQL load test) | load test runs there |
-| API-024 | all Nodestro repositories | NODESTRO_READ in CI (runtime RT-029) | same fix in each repo |
 | (pointer) | nodestro-local-docker | LD-010 (session hardening) | implementation would be here; tracked there |
 | API-001, API-002, API-005, API-006, API-010, API-019 | nodestro-server | RUNBOOK limitations (pointer rows in its table) | server documents the current limits until these land |
 | (pointer) | nodestro-runtime | X-01 / RT-005 | full entry in runtime |

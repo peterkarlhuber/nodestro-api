@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### Backend audit round 2 (2026-11-03)
+
+- API2-01/DX-23: the API reference is served at `/api/docs` from a vendored Swagger UI 5.34.0 (no CDN, no inline
+  script; file hashes in `VENDORED.md`), with READ access.
+- API2-02: security headers on every answer: `Content-Security-Policy` (`script-src 'self'`, no inline script),
+  `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, HSTS only over HTTPS.
+  File answers keep their own policy and `SAMEORIGIN` so the studio previews work.
+- API2-03: request bodies are limited while they are read (2 MiB default, 16 MiB large requests, 256 MiB uploads,
+  2 GiB backups; settable by environment). New code `request.too_large` with `limit_mb`.
+- API2-06/DX-22: every error answer has the `{detail, code, params}` shape without echoing input; new codes
+  `request.invalid` (`errors[]`), `request.malformed`, `route.not_found`, `method.not_allowed`, `http.<status>`.
+  The OpenAPI document declares `4XX` as `ErrorResponse`.
+- API2-07: unknown ids answer 404 and list limits must be at least 1. DX-21: a taken explicit publication slug
+  answers 409 `publication.slug_taken`.
+- API2-08: `POST /api/workflows/{id}/runs` honours `Idempotency-Key` (`idempotency.conflict`).
+- API2-04: `GET /api/runs` reads one keyset page of summary fields (`DocumentStore.list_page`), no 2,000-run window.
+- API2-05: published-API code examples quote values safely (Python `repr`, curl `shlex.quote`).
+- API2-10: CORS only with `NODESTRO_DEV_CORS=1`, with a strict origin check.
+- API2-11: backup restore copies only known tables and columns, with quoted identifiers.
+- DX-31: `nodestro-server check` checks the OIDC issuer (`identity.provider`) and warns about a superuser or
+  `BYPASSRLS` database role (`storage.role_unsafe`).
+- CI installs the public sibling repositories anonymously (OPS2-05).
+- Pins nodestro-runtime 140d479 (runtime #96: backend audit round 2; orkexa bc8c4ed; Axentra a872242) and
+  nodestro-examples 8499edf (examples #56: anonymous CI installs, same runtime pin).
+
 ### Platform pins: security review round 4 (2026-11-02)
 
 - Pins nodestro-runtime bcfea7f (runtime #95: no tool-job install starts after a stop, R4-7; static tenant SQL check

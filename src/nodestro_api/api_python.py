@@ -111,6 +111,8 @@ def reinstall_environment(kind: ScopeKind, ref: str, ctx: Ctx) -> PythonEnvironm
 def remove_environment(kind: ScopeKind, ref: str, ctx: Ctx, forget: bool = False) -> Response:
     """Delete the installed environment; ``forget`` also deletes the definition and approvals."""
     scope = scope_of(kind, ref)
+    if ctx.python.get(scope) is None and not ctx.python.env_dir(scope).exists():
+        raise KeyError(ref)  # nothing to delete: 404, not 204 (API2-07)
     if kind == "workflow" and ref in ctx.runs.live_workflow_ids():
         raise NodestroError("deps.run_active", "The workflow is running; try again when it has finished")
     if forget:

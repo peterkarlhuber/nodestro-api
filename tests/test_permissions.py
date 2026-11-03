@@ -138,8 +138,9 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # read: + MCP stdio server environment (WP-8); + a typed model's capabilities (Amazon Bedrock)
         # read: + live run chat view, message, events (LRC-1)
         # read: + the Docker sandbox's status (A1)
+        # read: + the API reference page and its vendored Swagger UI files (API2-01)
         # read: + a run's budget and the open budget requests (BUDGET-1)
-        "read": 106,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
+        "read": 108,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
         # MCP status, servers, server, tools (WP-3); tool approval inbox, run questions, pre-grants, state (S-2b)
         "edit": 48,  # + the tool panel's test run (review H-1, was run)
         # run: + sending a live run chat message (LRC-1)
@@ -155,16 +156,12 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         "public": 1,
     }
     assert all(item.path.startswith("/api/") for item in found if item.access != "generated")
-    # Explicit exceptions: the health check, the key-protected published APIs, FastAPI's API reference.
+    # Explicit exceptions: the health check, the key-protected published APIs, FastAPI's OpenAPI document.
     assert {item.path for item in found if item.access == "public"} == {"/api/health"}
     assert {item.path for item in found if item.access == "api_key"} and all(
         item.path.startswith("/api/published/") for item in found if item.access == "api_key"
     )
-    assert {item.path for item in found if item.access == "generated"} == {
-        "/api/openapi.json",
-        "/api/docs",
-        "/docs/oauth2-redirect",
-    }
+    assert {item.path for item in found if item.access == "generated"} == {"/api/openapi.json"}
 
 
 SENSITIVE = {

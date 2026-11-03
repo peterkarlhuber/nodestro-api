@@ -243,6 +243,34 @@ def test_the_run_list_pages_with_a_cursor(make_app: Any) -> None:
     assert refused.status_code == 400 and refused.json()["code"] == "runs.cursor_invalid"
 
 
+def test_the_run_list_reads_one_page_not_every_run(make_app: Any, monkeypatch: Any) -> None:
+    """API2-04: a page of the run list is one keyset query of the store (``list_page``); neither the first page nor
+    an older one reads the whole collection, and a page holds only the summary of each run."""
+    client = make_app()
+    ids = _stored_runs(client, 12)
+    store = _ctx(client).store
+    pages: list[dict[str, Any]] = []
+    original = store.list_page
+
+    def refuse_list(collection: str, *args: Any, **kwargs: Any) -> Any:
+        raise AssertionError(f"the run list read the whole collection {collection!r}")
+
+    def counting_page(collection: str, model: Any, **kwargs: Any) -> Any:
+        pages.append(kwargs)
+        return original(collection, model, **kwargs)
+
+    monkeypatch.setattr(store, "list", refuse_list)
+    monkeypatch.setattr(store, "list_page", counting_page)
+    first = client.get("/api/runs", params={"limit": 5})
+    second = client.get("/api/runs", params={"limit": 5, "before": first.headers["X-Next-Before"]})
+    assert [run["id"] for run in first.json() + second.json()] == ids[::-1][:10]
+    assert second.headers["X-Has-More"] == "true"
+    assert [page["limit"] for page in pages] == [5, 5]
+    assert all(page["summary"] and page["top_level"] for page in pages)
+    old = client.get("/api/runs", params={"limit": 1, "before": "2100-01-01T00:00:00Z", "include_children": True})
+    assert [run["id"] for run in old.json()] == [ids[-1]] and pages[-1]["top_level"] is False
+
+
 # ---- settings: "Automatic" language ---------------------------------------------------------------------------
 
 

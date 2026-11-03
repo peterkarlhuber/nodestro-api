@@ -164,6 +164,7 @@ async def start_benchmark(suite_id: str, body: BenchmarkStart, ctx: Ctx) -> Benc
 
 @router.get("/benchmarks/{suite_id}/runs", dependencies=READ)
 def list_benchmark_runs(suite_id: str, ctx: Ctx) -> list[BenchmarkRun]:
+    ctx.benchmarks.suite(suite_id)  # an unknown test series is 404, not an empty list (API2-07)
     return ctx.benchmarks.runs(suite_id)
 
 

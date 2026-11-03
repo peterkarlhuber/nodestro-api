@@ -123,7 +123,11 @@ def test_api_responses_are_untouched(client: TestClient) -> None:
     assert "vary" not in response.headers
     for path in ("/api", "/api/nothing-here"):
         unknown = client.get(path, headers=GZIP)
-        assert unknown.status_code == 404 and unknown.json() == {"detail": "Not found"}, path
+        assert unknown.status_code == 404 and unknown.json() == {
+            "detail": "There is no API route at this path",
+            "code": "route.not_found",
+            "params": {},
+        }, path
         assert "cache-control" not in unknown.headers and "content-encoding" not in unknown.headers
     # Only GET (and HEAD) reach the studio, as before.
     assert client.head("/").status_code == 200

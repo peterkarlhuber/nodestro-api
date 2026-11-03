@@ -769,7 +769,30 @@ class ServingCore:
         self._requests = _Window()
         self._failures = _Window()
         self._start_lock = asyncio.Lock()
+        #: Serialises the studio's own run starts with an Idempotency-Key (``POST /api/workflows/{id}/runs``).
+        self.studio_start_lock = asyncio.Lock()
         self._idempotency_pruned: float | None = None
+
+    def idempotent_run_id(self, record_key: str, fingerprint: str) -> str | None:
+        """The run an Idempotency-Key started within its 24 hours, if any; ``409 idempotency.conflict`` when the key
+        was used for a different request (``fingerprint``)."""
+        earlier = self.host.store.get_raw(_IDEMPOTENCY, record_key)
+        if earlier is None or datetime.fromisoformat(earlier["at"]) <= now() - timedelta(hours=_IDEMPOTENCY_HOURS):
+            return None
+        if earlier["request"] != fingerprint:
+            raise ApiError(409, "idempotency.conflict", "This Idempotency-Key was used for a different request")
+        return str(earlier["run_id"])
+
+    def remember_idempotent_run(self, record_key: str, run_id: str, fingerprint: str) -> None:
+        """Store which run an Idempotency-Key started (never raises: the run has started, a 500 would make the
+        client retry and start it twice)."""
+        try:
+            self.host.store.put_raw(
+                _IDEMPOTENCY, record_key, {"run_id": run_id, "request": fingerprint, "at": now().isoformat()}
+            )
+        except Exception:
+            logger.exception("The Idempotency-Key of run %s could not be stored", run_id)
+        self._prune_idempotency()
 
     def _prune_idempotency(self) -> None:
         """Delete Idempotency-Key records older than their 24 hours (at most once an hour; A-09)."""
@@ -1120,17 +1143,9 @@ class ServingCore:
                 record_key = (
                     f"{release.publication_id}:{identity.id}:{hashlib.sha256(idempotency.encode()).hexdigest()}"
                 )
-                earlier = self.host.store.get_raw(_IDEMPOTENCY, record_key)
-                if earlier is not None and datetime.fromisoformat(earlier["at"]) > now() - timedelta(
-                    hours=_IDEMPOTENCY_HOURS
-                ):
-                    if earlier["request"] != fingerprint:
-                        raise ApiError(
-                            409,
-                            "idempotency.conflict",
-                            "This Idempotency-Key was used for a different request",
-                        )
-                    run = self.host.runs.get(earlier["run_id"])
+                earlier = self.idempotent_run_id(record_key, fingerprint)
+                if earlier is not None:
+                    run = self.host.runs.get(earlier)
                     if run is not None:
                         return JSONResponse(
                             self.status(release.slug, run).model_dump(mode="json"),
@@ -1161,14 +1176,7 @@ class ServingCore:
                 api_key_id=identity.id,
             )
             if record_key:
-                try:
-                    self.host.store.put_raw(
-                        _IDEMPOTENCY, record_key, {"run_id": run.id, "request": fingerprint, "at": now().isoformat()}
-                    )
-                except Exception:
-                    # The run has started: answering 500 now would make the client retry and start it twice.
-                    logger.exception("The Idempotency-Key of run %s could not be stored", run.id)
-                self._prune_idempotency()
+                self.remember_idempotent_run(record_key, run.id, fingerprint)
         status_code = 202
         if wait > 0:
             timeout = min(wait, release.limits.sync_timeout_seconds)

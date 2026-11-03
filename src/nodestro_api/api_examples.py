@@ -2,11 +2,17 @@
 
 Generated deterministically from a release (no AI request). The studio shows them in the
 *API & Export* dialog; an exported project gets the same ones in its README and ``examples/``.
+
+Values that come from the workflow (defaults of its form) or the request (the base URL) are never pasted as code:
+the Python example writes them as Python literals (``pprint``/``repr``), the shell examples quote every argument with
+:func:`shlex.quote` (API2-05), so a copied example neither breaks nor runs anything a default value contains.
 """
 
 from __future__ import annotations
 
 import json
+import pprint
+import shlex
 from typing import Any
 
 from nodestro_runtime.engine import start_fields
@@ -48,8 +54,14 @@ def endpoints(slug: str) -> list[dict[str, str]]:
     ]
 
 
+def python_literal(value: Any) -> str:
+    """``value`` (JSON data) as a Python literal: ``True``/``None``, strings with Python's escapes."""
+    return pprint.pformat(value, indent=1, width=100, sort_dicts=False)
+
+
 def python_client(base_url: str, slug: str, request: dict[str, Any]) -> str:
-    body = json.dumps(request, indent=4, ensure_ascii=False).replace("\n", "\n    ")
+    body = python_literal(request).replace("\n", "\n    ")
+    base = repr(f"{base_url}{PREFIX}/{slug}")
     return f'''"""Start a run, wait for it (deciding approvals if asked) and print the result."""
 
 import json
@@ -57,7 +69,7 @@ import os
 import time
 import urllib.request
 
-BASE = "{base_url}{PREFIX}/{slug}"
+BASE = {base}
 KEY = os.environ["{KEY_VARIABLE}"]
 
 
@@ -101,39 +113,43 @@ def _multipart_example(release: ServedRelease, url: str, auth: str, request: dic
     others = {
         key: value for key, value in request.get("values", {}).items() if key not in {f.name for f in file_fields}
     }
-    parts = [f"  -F 'values={json.dumps(others, ensure_ascii=False)}'"] if others else []
+    parts = [f"  -F {shlex.quote('values=' + json.dumps(others, ensure_ascii=False))}"] if others else []
     for field in file_fields:
         extensions = accept_extensions(field.accept) if field.accept else []
         extension = ".pdf" if not extensions or ".pdf" in extensions else extensions[0]
         count = 2 if field.multiple else 1
-        parts += [f'  -F "{field.name}=@{field.name}_{index + 1}{extension}"' for index in range(count)]
-    return f"curl -s -X POST {url}/runs \\\n  {auth} \\\n" + " \\\n".join(parts)
+        parts += [f"  -F {shlex.quote(f'{field.name}=@{field.name}_{index + 1}{extension}')}" for index in range(count)]
+    return f"curl -s -X POST {shlex.quote(url + '/runs')} \\\n  {auth} \\\n" + " \\\n".join(parts)
 
 
 def examples(release: ServedRelease, base_url: str) -> ApiExamples:
     slug = release.slug
     request = example_values(release.workflow)
     url = f"{base_url}{PREFIX}/{slug}"
-    data = json.dumps(request, ensure_ascii=False)
+    data = shlex.quote(json.dumps(request, ensure_ascii=False))
     auth = f'-H "Authorization: Bearer ${KEY_VARIABLE}"'
+
+    def at(path: str) -> str:
+        return shlex.quote(url + path)
+
     curl = {
-        "start": f'curl -s -X POST {url}/runs \\\n  {auth} \\\n  -H "Content-Type: application/json" \\\n'
-        f"  -H \"Idempotency-Key: order-4711\" \\\n  -d '{data}'",
-        "status": f"curl -s {url}/runs/RUN_ID \\\n  {auth}",
-        "result": f"curl -s {url}/runs/RUN_ID/result \\\n  {auth}",
-        "events": f"curl -N {url}/runs/RUN_ID/events \\\n  {auth}",
-        "approve": f"curl -s -X POST {url}/runs/RUN_ID/approve \\\n  {auth} \\\n"
+        "start": f'curl -s -X POST {at("/runs")} \\\n  {auth} \\\n  -H "Content-Type: application/json" \\\n'
+        f'  -H "Idempotency-Key: order-4711" \\\n  -d {data}',
+        "status": f"curl -s {at('/runs/RUN_ID')} \\\n  {auth}",
+        "result": f"curl -s {at('/runs/RUN_ID/result')} \\\n  {auth}",
+        "events": f"curl -N {at('/runs/RUN_ID/events')} \\\n  {auth}",
+        "approve": f"curl -s -X POST {at('/runs/RUN_ID/approve')} \\\n  {auth} \\\n"
         '  -H "Content-Type: application/json" \\\n'
         '  -d \'{"decision": "approved", "comment": "Checked."}\'',
-        "cancel": f"curl -s -X POST {url}/runs/RUN_ID/cancel \\\n  {auth}",
+        "cancel": f"curl -s -X POST {at('/runs/RUN_ID/cancel')} \\\n  {auth}",
     }
     upload = _multipart_example(release, url, auth, request)
     if upload:
         curl["upload"] = upload
     if release.limits.sync_enabled:
         curl["sync"] = (
-            f'curl -s -X POST "{url}/runs?wait={release.limits.sync_timeout_seconds}" \\\n  {auth} \\\n'
-            f"  -H \"Content-Type: application/json\" \\\n  -d '{data}'"
+            f"curl -s -X POST {at(f'/runs?wait={release.limits.sync_timeout_seconds}')} \\\n  {auth} \\\n"
+            f'  -H "Content-Type: application/json" \\\n  -d {data}'
         )
     started = {
         "run_id": "run_3f2a9c1b7d4e",
