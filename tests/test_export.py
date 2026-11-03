@@ -439,3 +439,24 @@ def test_the_exported_api_proves_docker_before_untrusted_tools_run(
         assert isinstance(made, DockerSandbox) and isolation_of(made) == "none"  # refused until proven
     finally:
         host.close()
+
+
+def test_an_installation_without_test_tools_exports(
+    exported: Callable[..., tuple[TestClient, dict[str, Any]]], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The server and desktop images install no pytest: the check and the export must not fail with a 500.
+    real = exporter._version
+
+    def without_pytest(name: str) -> str:
+        if name == "pytest":
+            raise exporter.metadata.PackageNotFoundError(name)
+        return real(name)
+
+    monkeypatch.setattr(exporter, "_version", without_pytest)
+    client, publication = exported()
+    check = client.post(f"/api/publications/{publication['id']}/export/check", json={"options": {}})
+    assert check.status_code == 200 and check.json()["ok"] is True
+    project = _extract(_download(client, _export(client, publication["id"])["id"]), tmp_path)
+    pyproject = (project / "pyproject.toml").read_text()
+    assert '"pytest>=8",' in pyproject  # the floor its generated tests need, not a pin
+    assert f'"httpx=={real("httpx")}",' in pyproject  # an installed test tool stays pinned
