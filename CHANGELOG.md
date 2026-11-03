@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Pin nodestro-runtime df725c5 (runtime #103: European local models as catalog alternatives, the
+- Pin nodestro-runtime df725c5 and nodestro-examples c03f132 (examples #61, the same runtime pin) (runtime #103: European local models as catalog alternatives, the
   `prefer_european_models` setting, no thinking at effort `low` for local thinking models, a refused Ollama address
   no longer breaks the agent check). `GET /api/local-models` recommends with the stored preferences. The OpenAPI
   document gains `Settings.prefer_european_models` and the catalog fields `tasks` and `alternative`.
