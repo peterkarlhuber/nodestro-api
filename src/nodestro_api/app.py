@@ -32,6 +32,7 @@ from .api_python import router as python_router
 from .api_reference import install_api_reference
 from .api_run_chat import router as run_chat_router
 from .api_tool_approvals import router as tool_approvals_router
+from .body_limit import BodyLimitMiddleware, BodyLimits
 from .context import AppConfig, Nodestro
 from .launch import LOCAL_COOKIE, LaunchSecretMiddleware, check_secret
 from .local_access import LocalAccessMiddleware, allowed_hosts, listens_everywhere, require_loopback_only
@@ -135,6 +136,8 @@ def create_app(
     app.state.nodestro = nodestro
     # Who sends a request: on the desktop always the local owner (every permission).
     app.state.principal_resolver = resolver_for(profile)
+    # Innermost of the guards: a request the host, origin or launch checks refuse is never read (API2-03).
+    app.add_middleware(BodyLimitMiddleware, limits=BodyLimits.from_env())
     local = profile.kind == "local-container"
     if not local:  # the frontend's development server (npm run dev); never in a container
         app.add_middleware(

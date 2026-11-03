@@ -151,6 +151,21 @@ Swagger UI insert inline styles), `X-Content-Type-Options: nosniff`, `X-Frame-Op
 origin is `https://` always, also behind a TLS proxy). The API reference (`/api/docs`) loads a vendored Swagger UI
 (`swagger-ui-dist` 5.34.0, `nodestro_api/swagger_ui/VENDORED.md`) and nothing from other sites.
 
+**Request size limits** (`nodestro_api.body_limit`, every profile). Request bodies are counted while they are read
+(a missing or wrong `Content-Length` changes nothing) and refused with `413 request.too_large` (`params.limit_mb`)
+above the route's limit. Set in bytes through the environment:
+
+| Variable | Default | Routes |
+| --- | --- | --- |
+| `NODESTRO_MAX_REQUEST_BYTES` | 2 MiB | every route not listed below |
+| `NODESTRO_MAX_LARGE_REQUEST_BYTES` | 16 MiB | workflow import, batch plan and start, creating and changing a test series |
+| `NODESTRO_MAX_UPLOAD_BYTES` | 256 MiB | knowledge and input file uploads, batch files |
+| `NODESTRO_MAX_BACKUP_BYTES` | 2 GiB | uploading a backup (desktop) |
+
+Trace import keeps its 50 MB limit (`trace.too_large`), the studio's test of a published API and the published APIs
+themselves their 80 MB (published APIs answer in their own error format). Keep a reverse proxy's limit
+(`client_max_body_size`) at or above the largest one you need.
+
 **Published workflow APIs use API keys** (`Authorization: Bearer ndk_<id>_<secret>` or `X-API-Key`). A key is shown
 once when it is created or rotated; only a SHA-256 hash is stored. Each key names the publications it may use and
 its permissions:

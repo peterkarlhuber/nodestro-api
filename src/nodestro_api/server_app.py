@@ -65,6 +65,7 @@ from .api_python import router as python_router
 from .api_reference import install_api_reference
 from .api_run_chat import router as run_chat_router
 from .api_tool_approvals import router as tool_approvals_router
+from .body_limit import BodyLimitMiddleware, BodyLimits
 from .context import AppConfig, Nodestro
 from .frontend import mount_frontend
 from .identity import (
@@ -123,6 +124,8 @@ class TenantComposition:
     #: Input file bytes in Axentra's storage (:class:`nodestro_runtime.axentra_storage.AxentraFiles`,
     #: ``NODESTRO_FILES_BACKEND=axentra``); ``None``: on the data volume.
     files: Any | None = None
+    #: The size limits of request bodies (``None``: from the environment, :class:`~nodestro_api.body_limit.BodyLimits`).
+    body_limits: BodyLimits | None = None
 
 
 @dataclass
@@ -289,6 +292,8 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
     # The configured public origin (never a request's Host header): callbacks such as the MCP sign-in use it.
     app.state.public_origin = composition.origin
     app.state.principal_resolver = SessionResolver(composition.identity)
+    # Inside the origin check: a cross-site request is refused before its body is read (API2-03).
+    app.add_middleware(BodyLimitMiddleware, limits=composition.body_limits or BodyLimits.from_env())
     app.add_middleware(SameOriginMiddleware, origin=composition.origin, exempt=[PUBLISHED_PREFIX])
     # API2-02; the studio's origin is https (http only on localhost for development): HSTS also behind a TLS proxy.
     app.add_middleware(SecurityHeadersMiddleware, hsts=composition.origin.startswith("https://"))
