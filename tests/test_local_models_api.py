@@ -78,6 +78,16 @@ def test_downloads_are_refused_offline(make_app: MakeApp) -> None:
     assert client.put("/api/settings", json={"strict_offline": True}).json()["strict_offline"] is True
     refused = client.post("/api/local-models/runtime", json={"download": True})
     assert refused.status_code == 400 and refused.json()["code"] == "local.offline_download"
+    # mDenseOn is built from its pinned upstream files: its download is refused too, an offline build names both files.
+    built = client.post("/api/local-models/pull", json={"model": "mdenseon:307m"})
+    assert built.status_code == 400 and built.json()["code"] == "local.offline_download"
+    partial = client.post("/api/local-models/import", json={"kind": "build", "path": "/x", "name": "mdenseon:307m"})
+    assert partial.status_code == 400 and partial.json()["code"] == "local.name_missing"
+    missing = client.post(
+        "/api/local-models/import",
+        json={"kind": "build", "path": "/no/weights", "template": "/no/template", "name": "mdenseon:307m"},
+    )
+    assert missing.status_code == 400 and missing.json()["code"] == "local.file_missing"
 
 
 @pytest.fixture

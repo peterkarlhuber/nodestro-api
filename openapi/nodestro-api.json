@@ -4453,6 +4453,15 @@
             "title": "Region",
             "type": "string"
           },
+          "source": {
+            "default": "registry",
+            "enum": [
+              "registry",
+              "build"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
           "tasks": {
             "items": {
               "type": "string"
@@ -7230,7 +7239,8 @@
           "kind": {
             "enum": [
               "package",
-              "gguf"
+              "gguf",
+              "build"
             ],
             "title": "Kind",
             "type": "string"
@@ -7278,6 +7288,18 @@
               }
             ],
             "title": "Projector"
+          },
+          "template": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template"
           }
         },
         "required": [
@@ -8529,6 +8551,7 @@
           "kind": {
             "enum": [
               "pull",
+              "build",
               "install_runtime",
               "import_package",
               "import_gguf",
