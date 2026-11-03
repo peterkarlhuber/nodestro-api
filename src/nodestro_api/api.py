@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import suppress
 from datetime import UTC, datetime
 import hashlib
@@ -12,6 +12,7 @@ import time
 from typing import Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, Depends, FastAPI, File, Form, Header, Query, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 import nodestro_examples as library
 from nodestro_examples import samples as library_samples
@@ -70,6 +71,7 @@ from nodestro_runtime.versions import VersionSummary, WorkflowVersion
 from orkexa import OrkexaError, ProviderError, UsageTracker
 from orkexa import __version__ as library_version
 from pydantic import BaseModel, Field
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import __version__, sandbox_status
 from .assistants import AgentDraft, MemorySeed
@@ -90,6 +92,7 @@ from .permissions import (
 from .publishing import PUBLICATIONS, RELEASES
 from .references import Reference, ReferenceKind, references
 from .search import readable_documents, stored_workflows
+from .serving import PREFIX as PUBLISHED_PREFIX
 from .serving import ApiError
 
 router = APIRouter(prefix="/api")
@@ -155,6 +158,31 @@ def install_error_handlers(app: FastAPI) -> None:
         assert isinstance(exc, AccessError)
         return _error(exc.status, exc.code, str(exc), **exc.params)
 
+    async def invalid_request(_: Request, exc: Exception) -> JSONResponse:
+        assert isinstance(exc, RequestValidationError)
+        errors = validation_errors(exc.errors())
+        if any(item["type"] == "json_invalid" for item in errors):
+            return _error(400, "request.malformed", "The request body is not valid JSON")
+        summary = "; ".join(f"{'.'.join(str(part) for part in item['loc'])}: {item['msg']}" for item in errors)
+        return _error(422, "request.invalid", f"The request is invalid: {summary}"[:500], errors=errors)
+
+    async def http_error(_: Request, exc: Exception) -> JSONResponse:
+        assert isinstance(exc, StarletteHTTPException)
+        headers = dict(exc.headers or {})
+        if exc.status_code == 404:
+            response = _error(404, "route.not_found", "There is no API route at this path")
+        elif exc.status_code == 405:
+            response = _error(405, "method.not_allowed", "This API route does not accept this method")
+        elif exc.status_code == 400:
+            # FastAPI's own answer to a body it could not read or parse.
+            response = _error(400, "request.malformed", "The request body could not be read")
+        else:
+            response = _error(exc.status_code, f"http.{exc.status_code}", str(exc.detail))
+        response.headers.update(headers)  # e.g. Allow of a 405
+        return response
+
+    app.add_exception_handler(RequestValidationError, invalid_request)
+    app.add_exception_handler(StarletteHTTPException, http_error)
     app.add_exception_handler(NodestroError, nodestro_error)
     app.add_exception_handler(ApiError, api_error)
     app.add_exception_handler(AccessError, access_error)
@@ -163,6 +191,76 @@ def install_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(KeyError, not_found)
     app.add_exception_handler(ProviderError, upstream)
     app.add_exception_handler(OrkexaError, agent_error)
+    document_errors(app)
+
+
+#: Fields of a validation error the answer keeps: never ``input`` or ``ctx`` (they echo what the client sent).
+_VALIDATION_FIELDS = ("loc", "msg", "type")
+
+
+def validation_errors(errors: Sequence[Any]) -> list[dict[str, Any]]:
+    """FastAPI's validation errors as ``params.errors``: ``loc``, ``msg`` and ``type`` of each, without the input."""
+    return [
+        {
+            "loc": [part if isinstance(part, int) else str(part) for part in item.get("loc", ())],
+            "msg": str(item.get("msg", ""))[:300],
+            "type": str(item.get("type", "")),
+        }
+        for item in errors[:50]
+        if isinstance(item, dict)
+    ]
+
+
+#: The error answer of the studio API, in the OpenAPI document (``components.schemas``).
+ERROR_SCHEMA_NAME = "ErrorResponse"
+ERROR_SCHEMA: dict[str, Any] = {
+    "title": ERROR_SCHEMA_NAME,
+    "type": "object",
+    "description": "Every error of the studio API: ``code`` is stable (the interface translates it with ``params``), "
+    "``detail`` an English technical text. Validation errors (``request.invalid``) list ``params.errors`` "
+    "(``loc``, ``msg``, ``type``; the input is never echoed).",
+    "required": ["detail", "code", "params"],
+    "properties": {
+        "detail": {"type": "string", "title": "Detail"},
+        "code": {"type": "string", "title": "Code"},
+        "params": {"type": "object", "title": "Params", "additionalProperties": True},
+    },
+}
+_ERROR_RESPONSE = {
+    "description": "Error",
+    "content": {"application/json": {"schema": {"$ref": f"#/components/schemas/{ERROR_SCHEMA_NAME}"}}},
+}
+
+
+def document_errors(app: FastAPI) -> None:
+    """Declare :data:`ERROR_SCHEMA` in the OpenAPI document as the answer of every studio operation's errors (``4XX``,
+    replacing FastAPI's ``422`` with its own validation shape). Published workflow APIs keep their own error format
+    and documentation."""
+    generate = app.openapi
+
+    def openapi() -> dict[str, Any]:
+        if app.openapi_schema is not None:
+            return app.openapi_schema
+        schema = generate()
+        for path, operations in schema.get("paths", {}).items():
+            if path == PUBLISHED_PREFIX or path.startswith(PUBLISHED_PREFIX + "/"):
+                continue
+            for operation in operations.values():
+                if not isinstance(operation, dict) or "responses" not in operation:
+                    continue
+                responses = operation["responses"]
+                responses.pop("422", None)
+                responses["4XX"] = _ERROR_RESPONSE
+        schemas = schema.setdefault("components", {}).setdefault("schemas", {})
+        schemas[ERROR_SCHEMA_NAME] = ERROR_SCHEMA
+        text = json.dumps(schema)
+        for unused in ("HTTPValidationError", "ValidationError"):
+            if f"#/components/schemas/{unused}" not in text:
+                schemas.pop(unused, None)
+        app.openapi_schema = schema
+        return schema
+
+    app.openapi = openapi  # type: ignore[method-assign]
 
 
 # ---- meta and settings ----------------------------------------------------------

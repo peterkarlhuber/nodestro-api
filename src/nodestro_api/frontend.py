@@ -42,7 +42,11 @@ def mount_frontend(app: FastAPI, static_dir: Path) -> None:
     async def frontend(request: Request) -> Response:
         path: str = request.path_params["path"]
         if path == "api" or path.startswith("api/"):
-            return JSONResponse({"detail": "Not found"}, status_code=404)
+            # The studio API's own answer for an unknown route (API2-06).
+            return JSONResponse(
+                {"detail": "There is no API route at this path", "code": "route.not_found", "params": {}},
+                status_code=404,
+            )
         candidate = (static_dir / path).resolve()
         if path and candidate.is_file() and root in candidate.parents:
             return FileResponse(candidate, headers={"Cache-Control": CACHE_REVALIDATE})
