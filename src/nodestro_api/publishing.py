@@ -719,10 +719,21 @@ class Publications:
             report = evaluate(self.ctx, workflow_id, bundle.workflow_version, wanted_gate)
             record = enforce(report, override, principal_id)
             if publication is None:
-                wanted = slugify(slug or bundle.workflow.name)
+                if slug:
+                    # An explicitly requested name is never changed (DX-21): a script that publishes as ``orders``
+                    # and then calls ``/api/published/orders`` must not reach another workflow's API.
+                    wanted = slugify(slug)
+                    taken = self.by_slug(wanted)
+                    if taken is not None:
+                        raise ApiError(
+                            409, "publication.slug_taken", f"Another API is already called {wanted}", slug=wanted
+                        )
+                else:
+                    # No name requested: the workflow's name, with a number when it is taken.
+                    wanted = self._free_slug(slugify(bundle.workflow.name), None)
                 publication = Publication(
                     workflow_id=workflow_id,
-                    slug=self._free_slug(wanted, None),
+                    slug=wanted,
                     name=bundle.workflow.name,
                     description=bundle.workflow.description,
                 )
