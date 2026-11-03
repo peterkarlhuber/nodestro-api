@@ -3528,6 +3528,17 @@
             "title": "Bounded",
             "type": "boolean"
           },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
           "max_cost_usd": {
             "anyOf": [
               {
