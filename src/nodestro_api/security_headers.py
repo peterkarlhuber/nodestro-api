@@ -5,9 +5,8 @@ routes and the launch pages keep their stricter policies). The policy, :data:`CO
 built studio interface and the API reference page need, found by loading them in a browser and collecting
 violations:
 
-- scripts only from the studio's origin, plus the one inline script of ``index.html`` that applies the saved colour
-  theme before the first paint (allowed by its SHA-256, :data:`THEME_SCRIPT_HASH`; it goes away once the studio
-  loads it from a file);
+- scripts only from the studio's origin, no inline script (the studio loads its colour-theme script from
+  ``theme-init.js``);
 - ``style-src 'unsafe-inline'``: the code editor (CodeMirror) and the canvas (React Flow) insert ``<style>`` elements
   and ``style`` attributes at run time, and so does Swagger UI;
 - images from the origin and ``data:`` URLs (icons inside the CSS of Swagger UI and the interface); downloads the
@@ -29,13 +28,10 @@ from __future__ import annotations
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-#: ``index.html``'s inline theme script (studio ``frontend/index.html``), allowed by hash.
-THEME_SCRIPT_HASH = "'sha256-Dg848yCS9DqpBwZ5Cl5PMxRcmQskfCb1akYnj1gGsRo='"
-
 CONTENT_SECURITY_POLICY = "; ".join(
     (
         "default-src 'self'",
-        f"script-src 'self' {THEME_SCRIPT_HASH}",
+        "script-src 'self'",
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data:",
         "font-src 'self'",
@@ -87,4 +83,4 @@ class SecurityHeadersMiddleware:
         await self.app(scope, receive, send_with_headers)
 
 
-__all__ = ["CONTENT_SECURITY_POLICY", "HSTS", "THEME_SCRIPT_HASH", "SecurityHeadersMiddleware"]
+__all__ = ["CONTENT_SECURITY_POLICY", "HSTS", "SecurityHeadersMiddleware"]
