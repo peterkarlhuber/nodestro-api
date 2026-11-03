@@ -1,0 +1,18 @@
+{
+ "embed_chunks_per_s": 1.1,
+ "query_embed_ms_median": 50,
+ "chat_think_False": {
+  "wall_s": 19.3,
+  "load_s": 0.0,
+  "prompt_tok_per_s": 75.0,
+  "gen_tok_per_s": 6.0,
+  "gen_tokens": 114
+ },
+ "chat_think_True": {
+  "wall_s": 43.2,
+  "load_s": 0.0,
+  "prompt_tok_per_s": 81.7,
+  "gen_tok_per_s": 6.0,
+  "gen_tokens": 256
+ }
+}

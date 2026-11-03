@@ -104,7 +104,10 @@ async def local_overview(ctx: Ctx) -> LocalOverview:
         for entry in CATALOG
     ]
     recommendations = recommend_all(
-        hardware, list(installed), capabilities={name: model.capabilities for name, model in installed.items()}
+        hardware,
+        list(installed),
+        capabilities={name: model.capabilities for name, model in installed.items()},
+        preferences=service.preferences(),
     )
     return LocalOverview(
         status=status,

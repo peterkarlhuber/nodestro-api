@@ -4345,6 +4345,11 @@
       },
       "CatalogEntry": {
         "properties": {
+          "alternative": {
+            "default": false,
+            "title": "Alternative",
+            "type": "boolean"
+          },
           "context": {
             "anyOf": [
               {
@@ -4447,6 +4452,13 @@
             ],
             "title": "Region",
             "type": "string"
+          },
+          "tasks": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tasks",
+            "type": "array"
           },
           "vendor": {
             "default": "",
@@ -17289,6 +17301,11 @@
             ],
             "title": "Operator Max Run Budget Usd"
           },
+          "prefer_european_models": {
+            "default": false,
+            "title": "Prefer European Models",
+            "type": "boolean"
+          },
           "price_mode": {
             "default": "standard",
             "enum": [
@@ -17503,6 +17520,17 @@
               }
             ],
             "title": "Ocr Enabled"
+          },
+          "prefer_european_models": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefer European Models"
           },
           "price_mode": {
             "anyOf": [
