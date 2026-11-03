@@ -94,7 +94,7 @@ def generate(
         options=connection.options(),
         max_retries=MAX_RETRIES,
         usage_tracker=tracker,
-        **connection.agent_kwargs(),
+        **connection.agent_kwargs(model),
     )
     guide_id = new_id("gde")
     try:

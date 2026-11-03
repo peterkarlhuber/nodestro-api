@@ -25,6 +25,7 @@ from .api_automation import router as automation_router
 from .api_budget import router as budget_router
 from .api_data import router as data_router
 from .api_inputs import router as inputs_router
+from .api_local_models import router as local_models_router
 from .api_mcp import router as mcp_router
 from .api_pricing import router as pricing_router
 from .api_publish import router as publish_router
@@ -99,13 +100,17 @@ def create_app(
         stop_prices = asyncio.Event()
         prices: asyncio.Task[None] | None = None
         sweeping: asyncio.Task[None] | None = None
+        local: asyncio.Task[None] | None = None
         try:
             if scheduler:
                 nodestro.schedules.start()
             # The network listener for published APIs runs only when the user switched it on.
             await nodestro.network.start()
-            # Reference prices: checked at start when due, then daily; offline the last valid prices stay.
-            if nodestro.price_sync is not None and nodestro.config.price_sync.enabled:
+            # Local models: the managed Ollama starts in the background when it is installed and not switched off.
+            local = asyncio.create_task(asyncio.to_thread(nodestro.local_models.start_on_launch), name="local-models")
+            # Reference prices: checked at start when due, then daily; offline the last valid prices stay. The strict
+            # offline mode makes no request at all.
+            if nodestro.price_sync is not None and nodestro.config.price_sync.enabled and not nodestro.strict_offline():
                 prices = asyncio.create_task(nodestro.price_sync.run(stop_prices), name="price-sync")
             # Runs paused at a tool call (M6b) or waiting for a budget decision (BUDGET-1): the deadline sweep
             # continues decided and overdue ones.
@@ -117,7 +122,7 @@ def create_app(
             yield
         finally:
             stop_prices.set()
-            for task in (prices, sweeping):
+            for task in (prices, sweeping, local):
                 if task is not None:
                     with suppress(Exception):
                         await asyncio.wait_for(task, timeout=5)
@@ -193,6 +198,7 @@ def create_app(
     app.include_router(assistant_router)
     app.include_router(inputs_router)
     app.include_router(pricing_router)
+    app.include_router(local_models_router)
     app.include_router(mcp_router)
     app.include_router(budget_router)
     app.include_router(tool_approvals_router)

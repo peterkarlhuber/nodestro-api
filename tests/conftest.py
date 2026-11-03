@@ -74,7 +74,10 @@ def make_app(tmp_path: Path) -> Callable[..., TestClient]:
         python_runner: Any = None,
         ocr_runner: Any = None,
         integrations: list[Any] | None = None,
+        local_defaults: bool = False,
     ) -> TestClient:
+        """``local_defaults``: keep the local default models of a new installation; otherwise the app uses the cloud
+        defaults of an existing one, which the scripted (Anthropic-shaped) client answers."""
         client = client or ScriptedClient(script or {})
         app = create_app(
             AppConfig(data_dir=tmp_path / f"data{len(clients)}"),
@@ -85,6 +88,12 @@ def make_app(tmp_path: Path) -> Callable[..., TestClient]:
             integrations=integrations or [],
             scheduler=False,
         )
+        if not local_defaults:
+            from nodestro_runtime.schemas import DEFAULT_AGENT_MODEL, DEFAULT_ASSISTANT_MODEL, SettingsIn
+
+            app.state.nodestro.update_settings(
+                SettingsIn(default_model=DEFAULT_AGENT_MODEL, assistant_model=DEFAULT_ASSISTANT_MODEL)
+            )
         test_client = TestClient(app, base_url="http://127.0.0.1")
         test_client.__enter__()
         test_client.fake = client  # type: ignore[attr-defined]

@@ -755,7 +755,7 @@ class _Session:
             options=connection.options(),
             max_retries=MAX_RETRIES,
             usage_tracker=self.tracker,
-            **connection.agent_kwargs(),
+            **connection.agent_kwargs(self.model),
             **self._hooks(),
         )
         return agent.ask(prompt)
@@ -1302,7 +1302,7 @@ class _Session:
             model=qualify(self.model),
             system_prompt=CODING_PROMPT,
             effort=connection.effort(self.model, "high"),
-            credentials={connection.provider: connection.settings()},
+            credentials={connection.provider: connection.settings(self.model)},
             usage_tracker=self.tracker,
         )
         taken = set(self.nodestro.tools.registry.names()) | set(self.pending_tools) | set(RESERVED_TOOL_NAMES)
