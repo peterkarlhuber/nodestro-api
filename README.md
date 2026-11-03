@@ -211,7 +211,11 @@ unsafe value is listed at once (`profile.invalid`), and nothing has a default th
 
 Commands:
 
-- `nodestro-server check`: settings, database (reachable, schema current) and Docker; exit code 0 when ready.
+- `nodestro-server check`: settings, database (reachable, schema current, runtime role), Docker and the identity
+  provider (its discovery document at `NODESTRO_OIDC_ISSUER` answers, names that issuer and https endpoints, else
+  `identity.provider`); exit code 0 when ready. A superuser or `BYPASSRLS` runtime role is refused
+  (`storage.role_unsafe`) with Axentra or a separate migration role and printed as `warning:` otherwise (row-level
+  security does not protect the tenants then).
 - `nodestro-server migrate`: applies the database migrations under an advisory lock. A database that already has
   tables needs a backup first: `--backup-dir DIR` runs `pg_dump` (custom format; the password is passed in the
   environment, never on the command line), `--backup-taken` states that the operator made one.

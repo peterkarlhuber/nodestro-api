@@ -392,3 +392,44 @@ def test_a_backup_as_a_role_that_row_level_security_limits_names_the_owner_role(
     assert caught.value.code == "storage.backup_failed"
     assert "NODESTRO_DATABASE_MIGRATION_URL (the owner role)" in str(caught.value)
     assert not (tmp_path / "backups" / "nodestro.dump").exists()
+
+
+def test_check_warns_about_a_superuser_runtime_role(
+    schema: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """DX-31: in Nodestro's own mode (one role) a superuser or BYPASSRLS runtime role is reported as a warning (api and
+    worker accept it); with Axentra or a separate migration role it is refused (tests/test_server_roles.py)."""
+    monkeypatch.setattr(command, "_require_containers", lambda _server: None)
+    loaded = command.load(_environment(tmp_path))
+    command.migrate(loaded, backup_dir=None, backup_taken=False)
+    warnings: list[str] = []
+    assert command.check(loaded, warnings=warnings) == []
+    assert len(warnings) == 1 and warnings[0].startswith("storage.role_unsafe") and "is a superuser" in warnings[0]
+
+
+@pytest.mark.real_identity_check
+def test_check_reads_the_identity_provider(tmp_path: Path) -> None:
+    """DX-31: check verifies the issuer's discovery document (reachable, same issuer, https endpoints)."""
+    import httpx
+    import stub_oidc
+
+    loaded = command.load(_environment(tmp_path, NODESTRO_OIDC_ISSUER=stub_oidc.ISSUER))
+    provider = stub_oidc.StubProvider()
+    assert command.check_identity_provider(loaded, httpx.Client(transport=provider.transport())) is None
+    other = stub_oidc.StubProvider(issuer="https://other.example")
+
+    def wrong_issuer(request: httpx.Request) -> httpx.Response:
+        answer = other.transport().handle_request(
+            httpx.Request("GET", "https://other.example/.well-known/openid-configuration")
+        )
+        answer.read()
+        return httpx.Response(200, json=answer.json())
+
+    found = command.check_identity_provider(loaded, httpx.Client(transport=httpx.MockTransport(wrong_issuer)))
+    assert found is not None and found.startswith("identity.provider:") and "other.example" in found
+
+    def down(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    found = command.check_identity_provider(loaded, httpx.Client(transport=httpx.MockTransport(down)))
+    assert found is not None and found.startswith("identity.provider:") and stub_oidc.ISSUER in found

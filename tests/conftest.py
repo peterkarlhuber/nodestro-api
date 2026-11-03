@@ -28,6 +28,17 @@ from nodestro_api.context import AppConfig
 
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "real_docker_status: use the computer's real Docker status (background check)")
+    config.addinivalue_line("markers", "real_identity_check: nodestro-server check reads the identity provider")
+
+
+@pytest.fixture(autouse=True)
+def _no_identity_provider_reads(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``nodestro-server check`` reads the identity provider's discovery document (DX-31); the tests' providers are
+    not reachable, so it passes unless a test asks for the real check."""
+    if request.node.get_closest_marker("real_identity_check") is None:
+        from nodestro_api import server
+
+        monkeypatch.setattr(server, "check_identity_provider", lambda _server, _http=None: None)
 
 
 @pytest.fixture(autouse=True)
