@@ -649,7 +649,7 @@ def test_a_tenant_never_uses_the_servers_environment_billing_keys(
 def test_the_api_reference_needs_a_login_on_a_server(server: Server) -> None:
     """A-09: the OpenAPI document and the reference page are not anonymous on a server."""
     anonymous = server.browser()
-    for path in ("/api/openapi.json", "/api/docs"):
+    for path in ("/api/openapi.json", "/api/docs", "/api/docs/assets/swagger-ui-bundle.js"):
         answer = anonymous.get(path)
         assert answer.status_code == 401 and answer.json()["code"] == "access.login_required", path
     viewer = server.member("acme", "victor", "viewer")
@@ -657,6 +657,9 @@ def test_the_api_reference_needs_a_login_on_a_server(server: Server) -> None:
     assert document.status_code == 200 and "/api/workflows" in document.json()["paths"]
     page = viewer.get("/api/docs")
     assert page.status_code == 200 and "/api/openapi.json" in page.text
+    # API2-01: the vendored Swagger UI, not a CDN.
+    assert "cdn.jsdelivr.net" not in page.text
+    assert viewer.get("/api/docs/assets/swagger-ui-bundle.js").status_code == 200
 
 
 APPROVAL_FLOW = {

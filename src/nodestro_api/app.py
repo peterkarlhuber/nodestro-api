@@ -29,6 +29,7 @@ from .api_mcp import router as mcp_router
 from .api_pricing import router as pricing_router
 from .api_publish import router as publish_router
 from .api_python import router as python_router
+from .api_reference import install_api_reference
 from .api_run_chat import router as run_chat_router
 from .api_tool_approvals import router as tool_approvals_router
 from .context import AppConfig, Nodestro
@@ -120,12 +121,13 @@ def create_app(
                         await asyncio.wait_for(task, timeout=5)
             await shutdown()
 
-    # /docs belongs to the built-in user documentation; the API reference lives under /api.
+    # /docs belongs to the built-in user documentation; the API reference lives under /api (its page with the
+    # vendored Swagger UI: nodestro_api.api_reference).
     app = FastAPI(
         title="Nodestro",
         version=__version__,
         lifespan=lifespan,
-        docs_url="/api/docs",
+        docs_url=None,
         redoc_url=None,
         openapi_url="/api/openapi.json",
     )
@@ -186,6 +188,7 @@ def create_app(
     app.include_router(run_chat_router)
     app.include_router(router)
     app.include_router(data_router)
+    install_api_reference(app, "/api/openapi.json")
     # Fail closed: an application with a route that declares no access requirement is not built.
     check_routes(app)
     return app

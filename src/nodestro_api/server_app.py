@@ -41,8 +41,7 @@ import threading
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.openapi.docs import get_swagger_ui_html
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from nodestro_runtime.bedrock import BedrockOperatorConfig
 from nodestro_runtime.extensions import Integration
 from nodestro_runtime.identity_store import IdentityStore
@@ -63,6 +62,7 @@ from .api_mcp import router as mcp_router
 from .api_pricing import router as pricing_router
 from .api_publish import router as publish_router
 from .api_python import router as python_router
+from .api_reference import install_api_reference
 from .api_run_chat import router as run_chat_router
 from .api_tool_approvals import router as tool_approvals_router
 from .context import AppConfig, Nodestro
@@ -391,9 +391,7 @@ def _api_reference(app: FastAPI) -> None:
     def openapi_document() -> JSONResponse:
         return JSONResponse(app.openapi())
 
-    @app.get("/api/docs", dependencies=READ, include_in_schema=False)
-    def api_docs() -> HTMLResponse:
-        return get_swagger_ui_html(openapi_url="/api/openapi.json", title=f"{app.title} - API reference")
+    install_api_reference(app, "/api/openapi.json", dependencies=READ)
 
 
 def _secure_origin(origin: str) -> bool:
