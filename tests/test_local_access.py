@@ -67,9 +67,21 @@ def test_changes_from_a_foreign_web_page_are_refused(make_app: Callable[..., Tes
         assert answer.status_code == 403, origin
         assert answer.json()["code"] == "request.origin_not_allowed"
     assert client.get("/api/workflows").json() == []
-    # The studio's own pages, the development server and clients without a browser are accepted.
-    for headers in ({"Origin": "http://127.0.0.1"}, {"Origin": "http://localhost:5173"}, {}):
+    # The studio's own pages and clients without a browser are accepted.
+    for headers in ({"Origin": "http://127.0.0.1"}, {}):
         assert client.post("/api/workflows", json=body, headers=headers).status_code == 201
+    # API2-10: pages of other programs on this computer (same site, other port or name) are not, nor the frontend's
+    # development server without NODESTRO_DEV_CORS=1.
+    for origin in ("http://localhost:9999", "http://127.0.0.1:5173", "http://localhost:5173", "http://[::1]:5"):
+        answer = client.post("/api/workflows", json=body, headers={"Origin": origin})
+        assert answer.status_code == 403 and answer.json()["code"] == "request.origin_not_allowed", origin
+    # The same origin under another loopback name is the request's own origin.
+    assert (
+        client.post(
+            "/api/workflows", json=body, headers={"Host": "localhost:8000", "Origin": "http://localhost:8000"}
+        ).status_code
+        == 201
+    )
     # Reading needs no origin check: the browser does not let a foreign page read the answer.
     assert client.get("/api/workflows", headers={"Origin": "https://evil.example"}).status_code == 200
 
@@ -189,3 +201,26 @@ def test_published_workflow_apis_stay_reachable_with_their_keys(tmp_path: Path) 
         assert client.get(f"{PUBLISHED}/{slug}", headers={"X-Forwarded-For": "192.168.1.30"}).status_code == 401
         rebound = client.get(f"{PUBLISHED}/{slug}", headers={**auth(token), "Host": "evil.example:8000"})
         assert rebound.status_code == 403
+
+
+def test_the_development_server_needs_the_dev_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """API2-10: no CORS and no changes for ``localhost:5173`` unless ``NODESTRO_DEV_CORS=1``."""
+    body = {"name": "Dev", "nodes": [], "edges": []}
+    preflight = {"Origin": "http://localhost:5173", "Access-Control-Request-Method": "PUT"}
+    monkeypatch.setenv("NODESTRO_DATA_DIR", str(tmp_path / "plain"))
+    monkeypatch.delenv("NODESTRO_DEV_CORS", raising=False)
+    with TestClient(create_app(AppConfig.from_env(), scheduler=False), base_url="http://127.0.0.1") as client:
+        read = client.get("/api/workflows", headers={"Origin": "http://localhost:5173"})
+        assert read.status_code == 200 and "access-control-allow-origin" not in read.headers
+        assert "access-control-allow-origin" not in client.options("/api/settings", headers=preflight).headers
+    monkeypatch.setenv("NODESTRO_DATA_DIR", str(tmp_path / "dev"))
+    monkeypatch.setenv("NODESTRO_DEV_CORS", "1")
+    config = AppConfig.from_env()
+    assert config.dev_cors
+    with TestClient(create_app(config, scheduler=False), base_url="http://127.0.0.1") as client:
+        read = client.get("/api/workflows", headers={"Origin": "http://localhost:5173"})
+        assert read.headers["access-control-allow-origin"] == "http://localhost:5173"
+        answer = client.post("/api/workflows", json=body, headers={"Origin": "http://127.0.0.1:5173"})
+        assert answer.status_code == 201
+        # Other ports stay refused.
+        assert client.post("/api/workflows", json=body, headers={"Origin": "http://localhost:3000"}).status_code == 403

@@ -81,9 +81,13 @@ web pages in the user's browser from using it, it also
 
 - answers only requests for `localhost`, loopback addresses and the address chosen with `--host` (protection
   against DNS rebinding; other host names get `403 request.host_not_allowed`),
-- accepts changing requests only from its own pages, from this computer's origins, or without `Origin`
-  (cross-site requests get `403 request.origin_not_allowed`),
-- allows CORS only for the studio's development server (`localhost:5173`).
+- accepts changing requests and WebSockets only from its own origin (exactly the scheme, host and port the request
+  was sent to) or without `Origin`; pages of other sites and of other programs on this computer (another port) get
+  `403 request.origin_not_allowed`,
+- answers no CORS requests. For frontend development, `NODESTRO_DEV_CORS=1` allows the studio's development server
+  (`http://localhost:5173`, `http://127.0.0.1:5173`) to read answers and send changes; never set it otherwise (it is
+  ignored in Nodestro Local Docker). `npm run dev` itself needs no flag: its proxy forwards `/api` with the
+  development server's own origin.
 
 `NODESTRO_ALLOWED_HOSTS` can add further names that point to this computer (comma-separated, for example
 `studio.localhost`). Host and origin checks do not replace authentication; the studio API is reachable from a

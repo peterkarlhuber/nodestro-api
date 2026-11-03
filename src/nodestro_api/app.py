@@ -139,10 +139,11 @@ def create_app(
     # Innermost of the guards: a request the host, origin or launch checks refuse is never read (API2-03).
     app.add_middleware(BodyLimitMiddleware, limits=BodyLimits.from_env())
     local = profile.kind == "local-container"
-    if not local:  # the frontend's development server (npm run dev); never in a container
+    dev_origins = frozenset(DEV_SERVER_ORIGINS) if config.dev_cors and not local else frozenset()
+    if dev_origins:  # the frontend's development server (npm run dev), only on request; never in a container
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+            allow_origins=sorted(dev_origins),
             allow_methods=["*"],
             allow_headers=["*"],
         )
@@ -168,7 +169,11 @@ def create_app(
         LocalAccessMiddleware,
         hosts=loopback_hosts(config.allowed_hosts) if local else allowed_hosts(config.host, config.allowed_hosts),
         ip_addresses=listens_everywhere(config.host) and not local,
-        strict_origin=local,
+        # Changes only from the exact origin a request was sent to (API2-10): a page that another program serves on
+        # localhost (same site, other port) cannot use the key-less studio API; the development server only with
+        # NODESTRO_DEV_CORS=1.
+        strict_origin=True,
+        extra_origins=dev_origins,
         # The published port, and the container's own port for the launcher's and health check's calls (D3).
         ports=frozenset({config.host_port, CONTAINER_PORT}) if local else None,
     )
@@ -199,6 +204,9 @@ def create_app(
     check_routes(app)
     return app
 
+
+#: The frontend's development server (``npm run dev``): CORS and changes only with ``NODESTRO_DEV_CORS=1``.
+DEV_SERVER_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:5173")
 
 #: How often the desktop looks for runs paused at a tool call whose question was decided or ran out (seconds).
 TOOL_WAIT_SWEEP_SECONDS = 15.0

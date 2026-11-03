@@ -95,6 +95,9 @@ class AppConfig:
     #: Where reference prices come from and whether they are synced in the background (``NODESTRO_PRICE_*``,
     #: see :mod:`nodestro_api.pricing_setup`). Off unless configured: tests and embedded uses never go online.
     price_sync: PriceSyncConfig = field(default_factory=lambda: PriceSyncConfig(enabled=False))
+    #: ``NODESTRO_DEV_CORS=1``: the frontend's development server (``npm run dev`` on port 5173) may read answers
+    #: (CORS) and send changes; off unless set, never in Nodestro Local Docker (API2-10).
+    dev_cors: bool = False
 
     @property
     def profile(self) -> RuntimeProfile:
@@ -129,6 +132,7 @@ class AppConfig:
             session_idle_hours=idle,
             session_max_hours=longest,
             price_sync=PriceSyncConfig.from_env(),
+            dev_cors=os.environ.get("NODESTRO_DEV_CORS", "").strip() == "1",
         )
 
 
