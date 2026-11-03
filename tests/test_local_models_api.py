@@ -36,6 +36,8 @@ FAKE_OLLAMA = textwrap.dedent(
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{{}}")
             if self.path == "/api/show" and body.get("model") == "qwen3.5:4b":
                 self.reply({{"capabilities": ["completion", "tools", "vision"], "model_info": {{}}}})
+            elif self.path == "/api/generate" and body.get("model") == "qwen3.5:4b":
+                self.reply({{"eval_count": 50, "eval_duration": 5000000000}})
             else: self.reply({{"error": "model not found"}}, 404)
         def do_DELETE(self):
             self.reply({{}})
@@ -57,6 +59,11 @@ def test_the_overview_works_without_a_runtime(make_app: MakeApp, monkeypatch: py
     assert overview["status"]["running"] is False and overview["status"]["pinned_version"] == "0.40.14"
     assert [entry["name"] for entry in overview["catalog"]][:2] == ["qwen3.5:4b", "qwen3.5:9b"]
     assert all(entry["installed"] is False for entry in overview["catalog"])
+    built = next(entry for entry in overview["catalog"] if entry["name"] == "mdenseon:307m")
+    assert [item["role"] for item in built["build_inputs"]] == ["weights", "template"]
+    assert all(len(item["sha256"]) == 64 and item["url"].startswith("https://") for item in built["build_inputs"])
+    assert all(entry["build_inputs"] == [] for entry in overview["catalog"] if entry["name"] != "mdenseon:307m")
+    assert all(isinstance(entry["fits"], bool) for entry in overview["catalog"])
     tasks = {item["task"]: item for item in overview["recommendations"]}
     assert tasks["embedding"]["model"] == "ollama:qwen3-embedding:0.6b"
     assert overview["hardware"]["cpus"] >= 1
@@ -121,12 +128,30 @@ def test_the_managed_server_starts_lists_and_stops(managed: TestClient) -> None:
             "embedding_length": None,
             "catalog": True,
             "verified": True,
+            "speed": None,
         }
     ]
     catalog = {entry["name"]: entry for entry in overview["catalog"]}
     assert catalog["qwen3.5:4b"]["installed"] and catalog["qwen3.5:4b"]["verified"]
     providers = {item["id"]: item for item in managed.get("/api/settings").json()["providers"]}
     assert providers["ollama"]["configured"] and providers["ollama"]["local_server"]
+    # The managed server starts with Nodestro's context window; the hints say what this computer can do.
+    assert overview["status"]["context_length"] == 32768 and overview["status"]["context_source"] == "configured"
+    assert isinstance(overview["status"]["accelerated"], bool)
+    codes = {hint["code"] for hint in overview["advice"]}
+    assert "local.context_small" not in codes and "local.context_unknown" not in codes
+    # The speed is measured, never estimated: a short request, stored with the model.
+    job = managed.post("/api/local-models/benchmark", json={"model": "qwen3.5:4b"})
+    assert job.status_code == 202 and job.json()["kind"] == "benchmark"
+    deadline = time.monotonic() + 15
+    while (state := managed.get(f"/api/local-models/jobs/{job.json()['id']}").json())["state"] == "running":
+        assert time.monotonic() < deadline
+        time.sleep(0.05)
+    assert state["state"] == "done" and state["message"] == "10.0 tokens/s", state
+    speed = managed.get("/api/local-models").json()["status"]["models"][0]["speed"]
+    assert speed["tokens_per_second"] == 10.0
+    missing = managed.post("/api/local-models/benchmark", json={"model": "nope:1b"})
+    assert missing.status_code in (400, 404) and missing.json()["code"] == "local.model_missing"
     assert managed.delete("/api/local-models/models/qwen3.5:4b").status_code == 204
     invalid = managed.delete("/api/local-models/models/qwen3.5:cloud")
     assert invalid.status_code == 400

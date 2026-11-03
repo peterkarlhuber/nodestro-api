@@ -627,6 +627,99 @@
         "title": "AgentDraft",
         "type": "object"
       },
+      "AgentModel": {
+        "description": "The model one agent of a template gets, and why.",
+        "properties": {
+          "alternatives": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Alternatives",
+            "type": "array"
+          },
+          "installed": {
+            "default": false,
+            "title": "Installed",
+            "type": "boolean"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "default": "agent",
+            "title": "Kind",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "needs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Needs",
+            "type": "array"
+          },
+          "part": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Part"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          },
+          "suggested": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested"
+          },
+          "task": {
+            "title": "Task",
+            "type": "string"
+          },
+          "tier": {
+            "title": "Tier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "task",
+          "tier"
+        ],
+        "title": "AgentModel",
+        "type": "object"
+      },
       "AgentTemplate": {
         "properties": {
           "agent": {
@@ -793,6 +886,17 @@
           "prompt": {
             "title": "Prompt",
             "type": "string"
+          },
+          "reasoning_reduced": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Reduced"
           },
           "started_at": {
             "format": "date-time",
@@ -3101,6 +3205,21 @@
         "title": "BatchSummary",
         "type": "object"
       },
+      "BenchmarkIn": {
+        "properties": {
+          "model": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model"
+        ],
+        "title": "BenchmarkIn",
+        "type": "object"
+      },
       "BenchmarkPlan": {
         "properties": {
           "approvals": {
@@ -4062,6 +4181,45 @@
         "title": "BudgetRequest",
         "type": "object"
       },
+      "BuildInput": {
+        "description": "One pinned upstream file a catalog model is built from (what an offline build needs on this computer).",
+        "properties": {
+          "role": {
+            "enum": [
+              "weights",
+              "template"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "url",
+          "sha256"
+        ],
+        "title": "BuildInput",
+        "type": "object"
+      },
       "BuiltinSandboxStatus": {
         "description": "Whether the built-in Linux sandbox isolates AI-generated code on this computer (desktop profile only).",
         "properties": {
@@ -4350,6 +4508,13 @@
             "title": "Alternative",
             "type": "boolean"
           },
+          "build_inputs": {
+            "items": {
+              "$ref": "#/components/schemas/BuildInput"
+            },
+            "title": "Build Inputs",
+            "type": "array"
+          },
           "context": {
             "anyOf": [
               {
@@ -4388,6 +4553,11 @@
           "family": {
             "title": "Family",
             "type": "string"
+          },
+          "fits": {
+            "default": true,
+            "title": "Fits",
+            "type": "boolean"
           },
           "installed": {
             "default": false,
@@ -7732,6 +7902,16 @@
             "title": "Size",
             "type": "integer"
           },
+          "speed": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelSpeed"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "verified": {
             "default": false,
             "title": "Verified",
@@ -8470,6 +8650,14 @@
             ],
             "title": "Language"
           },
+          "models": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 200,
+            "title": "Models",
+            "type": "object"
+          },
           "tests": {
             "default": false,
             "title": "Tests",
@@ -8477,6 +8665,94 @@
           }
         },
         "title": "LibraryCopy",
+        "type": "object"
+      },
+      "LibraryModelPlan": {
+        "properties": {
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/AgentModel"
+            },
+            "title": "Agents",
+            "type": "array"
+          },
+          "judge": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Judge"
+          },
+          "local": {
+            "title": "Local",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "local",
+          "agents"
+        ],
+        "title": "LibraryModelPlan",
+        "type": "object"
+      },
+      "LocalAdvice": {
+        "description": "A hint about the local models of this computer; the interface shows its own text for the ``code``.\n\n``value`` and ``recommended`` depend on the code: tokens for ``local.context_small``, tokens per second times ten\nfor ``local.model_slow``, bytes for ``local.memory_low``.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "recommended": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommended"
+          },
+          "severity": {
+            "default": "info",
+            "enum": [
+              "info",
+              "warning"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "LocalAdvice",
         "type": "object"
       },
       "LocalBackup": {
@@ -8555,7 +8831,8 @@
               "install_runtime",
               "import_package",
               "import_gguf",
-              "move_models"
+              "move_models",
+              "benchmark"
             ],
             "title": "Kind",
             "type": "string"
@@ -8608,6 +8885,13 @@
       },
       "LocalOverview": {
         "properties": {
+          "advice": {
+            "items": {
+              "$ref": "#/components/schemas/LocalAdvice"
+            },
+            "title": "Advice",
+            "type": "array"
+          },
           "catalog": {
             "items": {
               "$ref": "#/components/schemas/CatalogEntry"
@@ -8646,6 +8930,17 @@
       "LocalStatus": {
         "description": "The state of the local model server of this workspace.",
         "properties": {
+          "accelerated": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accelerated"
+          },
           "autostart": {
             "default": true,
             "title": "Autostart",
@@ -8661,6 +8956,27 @@
               }
             ],
             "title": "Base Url"
+          },
+          "context_length": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Length"
+          },
+          "context_source": {
+            "default": "unknown",
+            "enum": [
+              "configured",
+              "server",
+              "unknown"
+            ],
+            "title": "Context Source",
+            "type": "string"
           },
           "detected_external": {
             "anyOf": [
@@ -10322,6 +10638,64 @@
         "title": "ModelPolicy",
         "type": "object"
       },
+      "ModelSpeed": {
+        "description": "How fast an installed model answered here, measured by :meth:`LocalModelService.benchmark` (never estimated).",
+        "properties": {
+          "context_length": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Length"
+          },
+          "measured_at": {
+            "format": "date-time",
+            "title": "Measured At",
+            "type": "string"
+          },
+          "processor": {
+            "anyOf": [
+              {
+                "enum": [
+                  "gpu",
+                  "cpu",
+                  "mixed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processor"
+          },
+          "prompt_tokens_per_second": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Tokens Per Second"
+          },
+          "tokens_per_second": {
+            "title": "Tokens Per Second",
+            "type": "number"
+          }
+        },
+        "required": [
+          "tokens_per_second",
+          "measured_at"
+        ],
+        "title": "ModelSpeed",
+        "type": "object"
+      },
       "NeededRequirement": {
         "description": "A direct requirement of a scope: the union of what its tools need.",
         "properties": {
@@ -10820,6 +11194,17 @@
             },
             "title": "Proposals",
             "type": "array"
+          },
+          "reasoning_reduced": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Reduced"
           },
           "reused_from": {
             "anyOf": [
@@ -17283,6 +17668,15 @@
             ],
             "title": "Language"
           },
+          "local_reasoning": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "full"
+            ],
+            "title": "Local Reasoning",
+            "type": "string"
+          },
           "max_run_budget_usd": {
             "anyOf": [
               {
@@ -17516,6 +17910,21 @@
               }
             ],
             "title": "Language"
+          },
+          "local_reasoning": {
+            "anyOf": [
+              {
+                "enum": [
+                  "auto",
+                  "full"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Reasoning"
           },
           "max_run_budget_usd": {
             "anyOf": [
@@ -18384,6 +18793,17 @@
           "structured": {
             "title": "Structured",
             "type": "boolean"
+          },
+          "task": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task"
           },
           "tools": {
             "items": {
@@ -25602,6 +26022,70 @@
         "summary": "Copy Library Template"
       }
     },
+    "/api/library/{template_id}/models": {
+      "get": {
+        "description": "The model each agent of the template would get in a copy (EX-011): with local models the one recommended for\nits task on this computer among the installed ones, with the reasons; otherwise the cloud tiers.",
+        "operationId": "library_template_models_api_library__template_id__models_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "language",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "de",
+                    "en",
+                    "es",
+                    "fr",
+                    "pt-BR",
+                    "it"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Language"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryModelPlan"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Library Template Models"
+      }
+    },
     "/api/library/{template_id}/samples/{sample_id}": {
       "get": {
         "description": "A synthetic sample file of a template for one of its file fields (built locally, nothing is stored).",
@@ -25737,6 +26221,45 @@
           }
         },
         "summary": "Local Autostart"
+      }
+    },
+    "/api/local-models/benchmark": {
+      "post": {
+        "description": "Measure how fast an installed chat model answers here (a short request; the result is stored with the\nmodel). Shown instead of any estimate; loads the model like an agent's first request.",
+        "operationId": "local_benchmark_api_local_models_benchmark_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BenchmarkIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalJob"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Local Benchmark"
       }
     },
     "/api/local-models/import": {

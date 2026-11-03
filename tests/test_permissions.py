@@ -141,7 +141,8 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # read: + the API reference page and its vendored Swagger UI files (API2-01)
         # read: + a run's budget and the open budget requests (BUDGET-1)
         # read: + local models overview, recommendation, jobs, job; the semantic index's status
-        "read": 113,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
+        # read: + the models per agent of a template copy (EX-011)
+        "read": 114,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
         # MCP status, servers, server, tools (WP-3); tool approval inbox, run questions, pre-grants, state (S-2b)
         "edit": 51,  # + the tool panel's test run (review H-1, was run); + semantic index rebuild, cancel, remove
         # run: + sending a live run chat message (LRC-1)
@@ -155,7 +156,8 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # Amazon Bedrock verification (a settings action)
         # install: + local model server start, stop, autostart; runtime install, model download, import, delete,
         # model folder move, job cancel (downloads and files on the computer, like package environments)
-        "install": 19,
+        # install: + measuring a local model's speed (RT-050; loads the model on the shared server)
+        "install": 20,
         "public": 1,
     }
     assert all(item.path.startswith("/api/") for item in found if item.access != "generated")
@@ -172,6 +174,7 @@ SENSITIVE = {
     ("POST", "/api/local-models/runtime"): "install",
     ("PUT", "/api/local-models/storage"): "install",
     ("DELETE", "/api/local-models/models/{name:path}"): "install",
+    ("POST", "/api/local-models/benchmark"): "install",
     ("POST", "/api/settings/providers/bedrock/verify"): "admin",
     ("GET", "/api/sandbox/status"): "read",
     ("POST", "/api/sandbox/self-test"): "admin",
