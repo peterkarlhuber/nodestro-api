@@ -380,8 +380,8 @@ call a paid provider. They cover the REST API, published APIs, keys, approvals, 
 files, Python libraries, backups, the network listener, the Host/Origin guard and the export; the exported project
 passes its own tests. `NODESTRO_NETWORK_TESTS=1` enables the test that installs a real package from PyPI. CI runs on
 Python 3.11 and 3.13, builds the wheel and the source distribution, installs the wheel into a fresh environment and
-calls the started server over HTTP. It needs the repository secret `NODESTRO_READ` (read access to orkexa and the
-Nodestro repositories).
+calls the started server over HTTP. It needs no secret: orkexa and the Nodestro repositories are public and are
+installed anonymously.
 
 Open work (known bugs, follow-ups and planned improvements) is listed in [docs/TODO.md](docs/TODO.md).
 
