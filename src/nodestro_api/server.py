@@ -636,10 +636,17 @@ def _superuser_role(server: ServerEnvironment, database: Any) -> str | None:
     )
 
 
-def check(server: ServerEnvironment, *, warnings: list[str] | None = None, http: Any | None = None) -> list[str]:
+def check(
+    server: ServerEnvironment,
+    *,
+    warnings: list[str] | None = None,
+    http: Any | None = None,
+    identity_provider: bool = True,
+) -> list[str]:
     """What keeps this server from starting (empty: ready). ``warnings`` receives what does not keep it from starting
     but is unsafe (a superuser or ``BYPASSRLS`` runtime role in Nodestro's own mode). ``http``: the client for the
-    identity provider's discovery document."""
+    identity provider's discovery document. ``identity_provider=False`` skips that request: a worker's periodic health
+    check must not depend on (or poll) the identity provider, which only the API process uses."""
     problems: list[str] = []
     try:
         database = _database(server)
@@ -690,9 +697,10 @@ def check(server: ServerEnvironment, *, warnings: list[str] | None = None, http:
         _require_containers(server)
     except NodestroError as error:
         problems.append(f"{error.code}: {error}")
-    provider = check_identity_provider(server, http)
-    if provider is not None:
-        problems.append(provider)
+    if identity_provider:
+        provider = check_identity_provider(server, http)
+        if provider is not None:
+            problems.append(provider)
     return problems
 
 
@@ -1402,7 +1410,12 @@ def parser() -> argparse.ArgumentParser:
 
     found = argparse.ArgumentParser(prog="nodestro-server", description="Nodestro server processes")
     commands = found.add_subparsers(dest="command", required=True)
-    commands.add_parser("check", help="Check settings, database and container runtime")
+    checking = commands.add_parser("check", help="Check settings, database, container runtime and identity provider")
+    checking.add_argument(
+        "--skip-identity-provider",
+        action="store_true",
+        help="Do not read the identity provider's discovery document (for a worker's periodic health check)",
+    )
     migrating = commands.add_parser("migrate", help="Apply the database migrations")
     backup = migrating.add_mutually_exclusive_group()
     backup.add_argument("--backup-dir", type=Path, help="Run pg_dump into this directory first")
@@ -1499,7 +1512,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         server = load()
         if args.command == "check":
             warnings: list[str] = []
-            problems = check(server, warnings=warnings)
+            problems = check(server, warnings=warnings, identity_provider=not args.skip_identity_provider)
             for warning in warnings:
                 print(f"warning: {warning}", file=sys.stderr)
             for problem in problems:

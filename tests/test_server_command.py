@@ -433,3 +433,25 @@ def test_check_reads_the_identity_provider(tmp_path: Path) -> None:
 
     found = command.check_identity_provider(loaded, httpx.Client(transport=httpx.MockTransport(down)))
     assert found is not None and found.startswith("identity.provider:") and stub_oidc.ISSUER in found
+
+
+@pytest.mark.real_identity_check
+def test_check_can_skip_the_identity_provider(schema: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A worker's health check runs ``check --skip-identity-provider``: no request reaches the provider."""
+    import httpx
+
+    monkeypatch.setattr(command, "_require_containers", lambda _server: None)
+    loaded = command.load(_environment(tmp_path))
+    command.migrate(loaded, backup_dir=None, backup_taken=False)
+    calls: list[httpx.Request] = []
+
+    def record(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        raise httpx.ConnectError("connection refused", request=request)
+
+    client = httpx.Client(transport=httpx.MockTransport(record))
+    assert command.check(loaded, http=client, identity_provider=False) == []
+    assert calls == []
+    found = command.check(loaded, http=client)
+    assert len(found) == 1 and found[0].startswith("identity.provider:") and len(calls) == 1
+    assert command.parser().parse_args(["check", "--skip-identity-provider"]).skip_identity_provider
