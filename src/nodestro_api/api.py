@@ -28,7 +28,7 @@ from nodestro_runtime.preflight import WorkflowCheck, preflight
 from nodestro_runtime.preview import ContextPreview, PreviewRequest, build_preview, latest_run
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.profile import ProfileKind
-from nodestro_runtime.providers import CAPABILITY_NAMES, PROVIDERS, ProviderInfo, ProviderStatus, qualify
+from nodestro_runtime.providers import CAPABILITY_NAMES, PROVIDERS, ProviderInfo, ProviderStatus, check_model, qualify
 from nodestro_runtime.python_envs import ExportedDefinition, scope_of
 from nodestro_runtime.python_tools import check_with_dependencies, save_with_dependencies, tool_run_sandbox
 from nodestro_runtime.reports import FileRequest, ResultFile
@@ -73,7 +73,7 @@ from orkexa import __version__ as library_version
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import __version__, sandbox_status
+from . import __version__, library_models, sandbox_status
 from .assistants import AgentDraft, MemorySeed
 from .benchmarks import SuiteIn, TestCase
 from .context import Nodestro
@@ -820,6 +820,9 @@ class LibraryCopy(BaseModel):
     #: The template's integrations to connect (integration id -> MCP server id). Every tool an integration needs
     #: must be approved on that server as read-only; integrations not named here run in their offline mode.
     integrations: dict[str, str] = Field(default_factory=dict)
+    #: The person's model for an agent (agent key from ``GET /api/library/{id}/models`` -> model id); it always wins
+    #: over the recommendation and the tiers.
+    models: dict[str, str] = Field(default_factory=dict, max_length=200)
 
 
 #: Metadata of a knowledge file stored by a copy: the SHA-256 of the file as the library rendered it, so a second
@@ -924,6 +927,16 @@ def _library_connections(ctx: Nodestro, template_id: str, chosen: dict[str, str]
     return connections
 
 
+@router.get("/library/{template_id}/models", dependencies=READ)
+def library_template_models(
+    template_id: str, request: Request, ctx: Ctx, language: Language | None = None
+) -> library_models.LibraryModelPlan:
+    """The model each agent of the template would get in a copy (EX-011): with local models the one recommended for
+    its task on this computer among the installed ones, with the reasons; otherwise the cloud tiers."""
+    library.structure(template_id)  # an unknown template is 404
+    return library_models.plan(ctx, template_id, language or request_language(request))
+
+
 @router.post("/library/{template_id}/copy", status_code=201, dependencies=EDIT)
 def copy_library_template(template_id: str, body: LibraryCopy, request: Request, ctx: Ctx) -> Workflow:
     """Create an ordinary, independent workflow from a template; the template itself never changes.
@@ -947,8 +960,11 @@ def copy_library_template(template_id: str, body: LibraryCopy, request: Request,
             "take over its test cases",
         )
     connections = _library_connections(ctx, template_id, body.integrations)
-    settings = ctx.settings()
-    models = library.model_choice(settings.default_model, settings.assistant_model)
+    chosen = {key: check_model(model) for key, model in body.models.items()}
+    try:
+        models = library_models.choice(ctx, template_id, language, chosen)
+    except KeyError as exc:
+        raise ApiError(422, "library.agent_unknown", str(exc.args[0]) if exc.args else "Unknown agent") from None
     host = _LibraryHost(ctx)
     try:
         made = library.instantiate(template_id, language, host, models=models, connections=connections)

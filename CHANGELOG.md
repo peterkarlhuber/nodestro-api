@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Models per agent for example copies (EX-011): `GET /api/library/{template_id}/models` lists every agent of the
+  template with its task profile and the model a copy gives it. In a workspace with local models that is the installed
+  model the runtime recommends for the task on this computer (hardware, reported capabilities, the agent's tools and
+  images, the copy's language, the European preference), never a download (`suggested` names a better one); without a
+  suitable installed model the default model stays. `POST /api/library/{template_id}/copy` takes `models` (agent key
+  -> model): the person's choice always wins (`library.agent_unknown` for an unknown key). Cloud workspaces keep the
+  curated tiers.
+- Local model hints and measured speed (RT-050/RT-051): `GET /api/local-models` returns `advice` and the status'
+  context window and GPU use; `POST /api/local-models/benchmark` measures an installed chat model (permission
+  `install`, refused on server tenants like the other changes of the local model server).
 - Pin nodestro-runtime 90ba97b and nodestro-examples 7b79fde (examples #62, the same runtime pin) (runtime #104: 32K context window for the managed Ollama, mDenseOn as optional European
   embedding model built from pinned weights, orkexa 71f8aaf). `POST /api/local-models/pull` builds a catalog model
   with `source="build"`; `POST /api/local-models/import` with `kind: "build"` builds it from local weights and template
