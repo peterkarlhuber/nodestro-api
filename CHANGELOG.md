@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Pin nodestro-runtime 7b9f4f7 (runtime #102: local agents are checked with what their server reports; checks
+  `check.local_model_missing`, `check.local_model_not_chat`, `check.local_model_no_tools`; a thinking local model gets
+  the effort as `reasoning_effort`) and nodestro-examples d389e91 (examples #60: the same runtime pin). The API
+  contract is unchanged.
 ### Local models, embeddings and semantic knowledge search (2026-11-03)
 
 - Pin nodestro-runtime a60be7d (nodestro-runtime #99 and #101: local models, embeddings, semantic knowledge search,
