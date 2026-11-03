@@ -79,6 +79,7 @@ from .identity import (
 )
 from .permissions import PUBLIC, READ, check_routes
 from .pricing_setup import PRICE_REFERENCE_TENANT
+from .security_headers import SecurityHeadersMiddleware
 from .serving import PREFIX as PUBLISHED_PREFIX
 
 logger = logging.getLogger(__name__)
@@ -289,6 +290,8 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
     app.state.public_origin = composition.origin
     app.state.principal_resolver = SessionResolver(composition.identity)
     app.add_middleware(SameOriginMiddleware, origin=composition.origin, exempt=[PUBLISHED_PREFIX])
+    # API2-02; the studio's origin is https (http only on localhost for development): HSTS also behind a TLS proxy.
+    app.add_middleware(SecurityHeadersMiddleware, hsts=composition.origin.startswith("https://"))
     install_error_handlers(app)
     app.include_router(auth_router(composition.identity, composition.oidc))
     app.include_router(publish_router)

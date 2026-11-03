@@ -39,6 +39,7 @@ from .local_container import CONTAINER_PORT, loopback_hosts, require_safe_config
 from .local_container import REFUSAL as LOCAL_REFUSAL
 from .mcp_server import build_mcp_router
 from .permissions import check_routes, resolver_for
+from .security_headers import SecurityHeadersMiddleware
 from .serving import build_router
 
 logger = logging.getLogger(__name__)
@@ -168,6 +169,8 @@ def create_app(
         # The published port, and the container's own port for the launcher's and health check's calls (D3).
         ports=frozenset({config.host_port, CONTAINER_PORT}) if local else None,
     )
+    # Outside everything: refusals get the security headers too (API2-02).
+    app.add_middleware(SecurityHeadersMiddleware)
     install_error_handlers(app)
     # Before the main router: /api/tools/drafts must not be taken for a tool named "drafts".
     # Published workflows (``/api/published``): key-protected, answered only on this computer here;

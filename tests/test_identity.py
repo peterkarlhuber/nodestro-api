@@ -662,6 +662,23 @@ def test_the_api_reference_needs_a_login_on_a_server(server: Server) -> None:
     assert viewer.get("/api/docs/assets/swagger-ui-bundle.js").status_code == 200
 
 
+def test_a_server_sends_the_security_headers_and_hsts(server: Server, tmp_path: Path) -> None:
+    """API2-02: CSP, framing, sniffing and referrer headers on pages and API answers; HSTS (the origin is https)."""
+    from nodestro_api.frontend import mount_frontend
+    from nodestro_api.security_headers import CONTENT_SECURITY_POLICY, HSTS
+
+    static = tmp_path / "static"
+    static.mkdir()
+    (static / "index.html").write_text("<!doctype html><title>studio</title>")
+    mount_frontend(server.app, static)
+    viewer = server.member("acme", "victor", "viewer")
+    for client, path in ((server.browser(), "/"), (server.browser(), "/api/auth/me"), (viewer, "/api/workflows")):
+        headers = client.get(path).headers
+        assert headers["content-security-policy"] == CONTENT_SECURITY_POLICY, path
+        assert headers["x-frame-options"] == "DENY" and headers["x-content-type-options"] == "nosniff", path
+        assert headers["referrer-policy"] == "no-referrer" and headers["strict-transport-security"] == HSTS, path
+
+
 APPROVAL_FLOW = {
     "name": "Needs approval",
     "nodes": [

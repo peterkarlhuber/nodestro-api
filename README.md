@@ -142,6 +142,15 @@ Uploaded files are served with `X-Content-Type-Options: nosniff`; HTML, SVG and 
 everything except PDF carries a restrictive `Content-Security-Policy`, so an uploaded page cannot run scripts in the
 studio's origin.
 
+**Security headers** (`nodestro_api.security_headers`, desktop, Local Docker and server alike). Every answer that does
+not set its own carries `Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-…'; style-src 'self'
+'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none';
+frame-ancestors 'none'` (the hash allows the studio page's one inline theme script; CodeMirror, React Flow and
+Swagger UI insert inline styles), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and
+`Referrer-Policy: no-referrer`; `Strict-Transport-Security: max-age=31536000` only over HTTPS (on a server whose
+origin is `https://` always, also behind a TLS proxy). The API reference (`/api/docs`) loads a vendored Swagger UI
+(`swagger-ui-dist` 5.34.0, `nodestro_api/swagger_ui/VENDORED.md`) and nothing from other sites.
+
 **Published workflow APIs use API keys** (`Authorization: Bearer ndk_<id>_<secret>` or `X-API-Key`). A key is shown
 once when it is created or rotated; only a SHA-256 hash is stored. Each key names the publications it may use and
 its permissions:
