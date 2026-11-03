@@ -12,7 +12,7 @@
 | P0 Critical | 0 |
 | P1 High | 0 |
 | P2 Medium | 4 |
-| P3 Low | 18 |
+| P3 Low | 19 |
 | P4 Optional | 5 |
 
 **Release blockers:** None for this repository.
@@ -153,6 +153,15 @@ None known.
 - **Depends on:** nodestro-runtime RT-009 (store-level time filter)
 
 ## Features and enhancements
+
+### API-044 · Reindex jobs run inside the API process
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** local models work order (2026-11-03)
+- **What:** `POST /api/knowledge/index/rebuild` runs the embedding job in a thread of the API process. A restart
+  stops it; the next rebuild continues where it stopped. On a multi-process server two replicas could each start
+  one for the same tenant (the runtime's final switch stays atomic, but the work is done twice).
+- **Next step:** Run reindex jobs as server batch jobs with a lease once the server profile gets them.
+- **Depends on:** nodestro-runtime RT-046
 
 ### API-016 · Machine-readable list of all error codes (X-03)
 
@@ -329,6 +338,7 @@ None known.
 | API-013 | nodestro-runtime | RT-009 (store time filter) | runtime change first |
 | API-016 | nodestro-runtime | RT-011 | combined code list |
 | API-043 | nodestro-runtime | RT-045 (atomic insert-if-absent) | runtime change first |
+| API-044 | nodestro-runtime | RT-046 (reindex jobs in the API process) | runtime change first |
 | API-017 | nodestro-studio | ST-014 (AD-20 Usage page card) | studio consumes the field |
 | API-018 | nodestro-runtime, nodestro-studio | RT-005, RT-012; ST-003 (studio #81) | runtime changes the run shape first; studio consumes it |
 | API-021 | nodestro-runtime | RT-015 | runtime change first |

@@ -640,7 +640,7 @@ class Benchmarks:
                 options=connection.options(),
                 usage_tracker=tracker,
                 name="Judge",
-                **connection.agent_kwargs(),
+                **connection.agent_kwargs(judge),
             )
             evaluation = await asyncio.to_thread(
                 evaluator.evaluate, task, output, criteria=_criteria(case.judge_criteria), context=context

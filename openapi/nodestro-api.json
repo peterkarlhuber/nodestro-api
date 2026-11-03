@@ -2332,6 +2332,19 @@
         "title": "AttachmentView",
         "type": "object"
       },
+      "AutostartIn": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "AutostartIn",
+        "type": "object"
+      },
       "BackupContents": {
         "properties": {
           "conversations": {
@@ -4328,6 +4341,136 @@
           "run_status"
         ],
         "title": "CaseResult",
+        "type": "object"
+      },
+      "CatalogEntry": {
+        "properties": {
+          "context": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context"
+          },
+          "cpu_friendly": {
+            "default": true,
+            "title": "Cpu Friendly",
+            "type": "boolean"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "dimensions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dimensions"
+          },
+          "download_bytes": {
+            "title": "Download Bytes",
+            "type": "integer"
+          },
+          "family": {
+            "title": "Family",
+            "type": "string"
+          },
+          "installed": {
+            "default": false,
+            "title": "Installed",
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "chat",
+              "embedding"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "languages": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Languages",
+            "type": "array"
+          },
+          "license": {
+            "title": "License",
+            "type": "string"
+          },
+          "listed_capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Listed Capabilities",
+            "type": "array"
+          },
+          "memory_bytes": {
+            "title": "Memory Bytes",
+            "type": "integer"
+          },
+          "min_ollama": {
+            "title": "Min Ollama",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "default": "",
+            "title": "Notes",
+            "type": "string"
+          },
+          "rank": {
+            "default": 0,
+            "title": "Rank",
+            "type": "integer"
+          },
+          "region": {
+            "default": "other",
+            "enum": [
+              "eu",
+              "us",
+              "cn",
+              "other"
+            ],
+            "title": "Region",
+            "type": "string"
+          },
+          "vendor": {
+            "default": "",
+            "title": "Vendor",
+            "type": "string"
+          },
+          "verified": {
+            "default": false,
+            "title": "Verified",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "family",
+          "download_bytes",
+          "digest",
+          "listed_capabilities",
+          "min_ollama",
+          "license",
+          "memory_bytes"
+        ],
+        "title": "CatalogEntry",
         "type": "object"
       },
       "ChatLimits": {
@@ -7014,6 +7157,124 @@
         "title": "Handover",
         "type": "object"
       },
+      "Hardware": {
+        "description": "What this computer offers to local models (memory sizes in bytes; ``None``: not known).",
+        "properties": {
+          "cpus": {
+            "title": "Cpus",
+            "type": "integer"
+          },
+          "gpu": {
+            "default": "none",
+            "enum": [
+              "nvidia",
+              "apple",
+              "none"
+            ],
+            "title": "Gpu",
+            "type": "string"
+          },
+          "gpu_memory_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Memory Bytes"
+          },
+          "machine": {
+            "title": "Machine",
+            "type": "string"
+          },
+          "ram_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ram Bytes"
+          },
+          "system": {
+            "title": "System",
+            "type": "string"
+          }
+        },
+        "required": [
+          "system",
+          "machine",
+          "cpus"
+        ],
+        "title": "Hardware",
+        "type": "object"
+      },
+      "ImportIn": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "package",
+              "gguf"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "models": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Models"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "path": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "projector": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projector"
+          }
+        },
+        "required": [
+          "kind",
+          "path"
+        ],
+        "title": "ImportIn",
+        "type": "object"
+      },
       "InfoOut": {
         "properties": {
           "approvals": {
@@ -7381,6 +7642,77 @@
         "title": "InstallState",
         "type": "object"
       },
+      "InstalledModel": {
+        "properties": {
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "catalog": {
+            "default": false,
+            "title": "Catalog",
+            "type": "boolean"
+          },
+          "context_length": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Length"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "embedding_length": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Length"
+          },
+          "kind": {
+            "enum": [
+              "chat",
+              "embedding"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "verified": {
+            "default": false,
+            "title": "Verified",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "size",
+          "digest",
+          "kind"
+        ],
+        "title": "InstalledModel",
+        "type": "object"
+      },
       "JobRequest": {
         "properties": {
           "requirement": {
@@ -7511,7 +7843,7 @@
         "type": "object"
       },
       "KnowledgeConfig": {
-        "description": "Which knowledge files an agent gets and how.\n\n``context`` puts the files into the prompt, ``on_demand`` gives the agent the\n``files`` tool to load them when needed, ``search`` gives it the ``search``\ntool over their text (RAG with citations).",
+        "description": "Which knowledge files an agent gets and how.\n\n``context`` puts the files into the prompt, ``on_demand`` gives the agent the\n``files`` tool to load them when needed, ``search`` gives it the ``search``\ntool over their text (RAG with citations).\n\n``retrieval`` is how ``search`` ranks: ``default`` follows the workspace setting, ``fts`` full text,\n``vector`` semantic search (needs the semantic index), ``hybrid`` both.",
         "properties": {
           "citations": {
             "default": false,
@@ -7533,6 +7865,17 @@
               "search"
             ],
             "title": "Mode",
+            "type": "string"
+          },
+          "retrieval": {
+            "default": "default",
+            "enum": [
+              "default",
+              "fts",
+              "vector",
+              "hybrid"
+            ],
+            "title": "Retrieval",
             "type": "string"
           }
         },
@@ -7654,6 +7997,112 @@
           "chunks"
         ],
         "title": "KnowledgeFile",
+        "type": "object"
+      },
+      "KnowledgeIndexStatus": {
+        "description": "The semantic index of the knowledge base: which model filled it and how complete it is.",
+        "properties": {
+          "active": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active"
+          },
+          "building": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Building"
+          },
+          "building_embedded": {
+            "default": 0,
+            "title": "Building Embedded",
+            "type": "integer"
+          },
+          "chunks": {
+            "default": 0,
+            "title": "Chunks",
+            "type": "integer"
+          },
+          "detail": {
+            "default": "",
+            "title": "Detail",
+            "type": "string"
+          },
+          "embedded": {
+            "default": 0,
+            "title": "Embedded",
+            "type": "integer"
+          },
+          "embedding_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Model"
+          },
+          "job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReindexJob"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mode": {
+            "default": "fts",
+            "enum": [
+              "fts",
+              "vector",
+              "hybrid"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "pgvector": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pgvector"
+          },
+          "state": {
+            "default": "off",
+            "enum": [
+              "off",
+              "ready",
+              "incomplete",
+              "building",
+              "reindex_required",
+              "unavailable"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "title": "KnowledgeIndexStatus",
         "type": "object"
       },
       "KnowledgeInfo": {
@@ -8018,6 +8467,290 @@
           "created_at"
         ],
         "title": "LocalBackup",
+        "type": "object"
+      },
+      "LocalJob": {
+        "properties": {
+          "completed": {
+            "default": 0,
+            "title": "Completed",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "pull",
+              "install_runtime",
+              "import_package",
+              "import_gguf",
+              "move_models"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "default": "",
+            "title": "Message",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "state": {
+            "default": "running",
+            "enum": [
+              "running",
+              "done",
+              "failed",
+              "cancelled"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "target",
+          "started_at"
+        ],
+        "title": "LocalJob",
+        "type": "object"
+      },
+      "LocalOverview": {
+        "properties": {
+          "catalog": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogEntry"
+            },
+            "title": "Catalog",
+            "type": "array"
+          },
+          "hardware": {
+            "$ref": "#/components/schemas/Hardware"
+          },
+          "manageable": {
+            "title": "Manageable",
+            "type": "boolean"
+          },
+          "recommendations": {
+            "items": {
+              "$ref": "#/components/schemas/Recommendation"
+            },
+            "title": "Recommendations",
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/LocalStatus"
+          }
+        },
+        "required": [
+          "status",
+          "catalog",
+          "hardware",
+          "recommendations",
+          "manageable"
+        ],
+        "title": "LocalOverview",
+        "type": "object"
+      },
+      "LocalStatus": {
+        "description": "The state of the local model server of this workspace.",
+        "properties": {
+          "autostart": {
+            "default": true,
+            "title": "Autostart",
+            "type": "boolean"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "detected_external": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detected External"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "free_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Bytes"
+          },
+          "mode": {
+            "enum": [
+              "managed",
+              "container",
+              "external",
+              "unavailable"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/InstalledModel"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "models_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Models Dir"
+          },
+          "offline": {
+            "default": false,
+            "title": "Offline",
+            "type": "boolean"
+          },
+          "pinned_version": {
+            "default": "0.40.14",
+            "title": "Pinned Version",
+            "type": "string"
+          },
+          "running": {
+            "default": false,
+            "title": "Running",
+            "type": "boolean"
+          },
+          "runtime_bundled": {
+            "default": false,
+            "title": "Runtime Bundled",
+            "type": "boolean"
+          },
+          "runtime_installed": {
+            "default": false,
+            "title": "Runtime Installed",
+            "type": "boolean"
+          },
+          "runtime_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime Path"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "LocalStatus",
         "type": "object"
       },
       "LockedPackage": {
@@ -12090,6 +12823,11 @@
             "title": "Label",
             "type": "string"
           },
+          "local_server": {
+            "default": false,
+            "title": "Local Server",
+            "type": "boolean"
+          },
           "operator_role": {
             "anyOf": [
               {
@@ -12519,6 +13257,21 @@
         "title": "PublishOut",
         "type": "object"
       },
+      "PullIn": {
+        "properties": {
+          "model": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model"
+        ],
+        "title": "PullIn",
+        "type": "object"
+      },
       "PythonEnvironment": {
         "description": "The stored definition of one scope's environment.",
         "properties": {
@@ -12737,6 +13490,78 @@
           "description"
         ],
         "title": "QualityCriterion",
+        "type": "object"
+      },
+      "Recommendation": {
+        "description": "The model suggested for a task, and why.",
+        "properties": {
+          "alternatives": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Alternatives",
+            "type": "array"
+          },
+          "better": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Better"
+          },
+          "download_bytes": {
+            "default": 0,
+            "title": "Download Bytes",
+            "type": "integer"
+          },
+          "installed": {
+            "default": false,
+            "title": "Installed",
+            "type": "boolean"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "quality": {
+            "enum": [
+              "recommended",
+              "acceptable",
+              "limited",
+              "insufficient"
+            ],
+            "title": "Quality",
+            "type": "string"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          },
+          "task": {
+            "title": "Task",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task",
+          "model",
+          "quality"
+        ],
+        "title": "Recommendation",
         "type": "object"
       },
       "ReconciliationIn": {
@@ -13080,6 +13905,97 @@
           }
         },
         "title": "Refresh",
+        "type": "object"
+      },
+      "ReindexIn": {
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          }
+        },
+        "title": "ReindexIn",
+        "type": "object"
+      },
+      "ReindexJob": {
+        "properties": {
+          "completed": {
+            "default": 0,
+            "title": "Completed",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "state": {
+            "default": "running",
+            "enum": [
+              "running",
+              "done",
+              "failed",
+              "cancelled"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "model"
+        ],
+        "title": "ReindexJob",
         "type": "object"
       },
       "Release": {
@@ -15231,6 +16147,28 @@
         "title": "RunWarning",
         "type": "object"
       },
+      "RuntimeInstallIn": {
+        "properties": {
+          "archive": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archive"
+          },
+          "download": {
+            "default": false,
+            "title": "Download",
+            "type": "boolean"
+          }
+        },
+        "title": "RuntimeInstallIn",
+        "type": "object"
+      },
       "SampleInfo": {
         "description": "A sample file as the gallery lists it (download: ``/api/library/{id}/samples/{sample}``).",
         "properties": {
@@ -16006,6 +16944,14 @@
             ],
             "title": "File Id"
           },
+          "ranks": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "default": {},
+            "title": "Ranks",
+            "type": "object"
+          },
           "score": {
             "title": "Score",
             "type": "number"
@@ -16262,6 +17208,27 @@
             "title": "Docker Available",
             "type": "boolean"
           },
+          "embedding_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Model"
+          },
+          "knowledge_retrieval": {
+            "default": "fts",
+            "enum": [
+              "fts",
+              "vector",
+              "hybrid"
+            ],
+            "title": "Knowledge Retrieval",
+            "type": "string"
+          },
           "language": {
             "anyOf": [
               {
@@ -16291,6 +17258,15 @@
               }
             ],
             "title": "Max Run Budget Usd"
+          },
+          "model_defaults": {
+            "default": "kept",
+            "enum": [
+              "local",
+              "kept"
+            ],
+            "title": "Model Defaults",
+            "type": "string"
           },
           "ocr_available": {
             "default": false,
@@ -16349,6 +17325,11 @@
           },
           "sandbox_selection": {
             "$ref": "#/components/schemas/SandboxSelection"
+          },
+          "strict_offline": {
+            "default": false,
+            "title": "Strict Offline",
+            "type": "boolean"
           }
         },
         "title": "Settings",
@@ -16450,6 +17431,33 @@
             ],
             "title": "Default Model"
           },
+          "embedding_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Model"
+          },
+          "knowledge_retrieval": {
+            "anyOf": [
+              {
+                "enum": [
+                  "fts",
+                  "vector",
+                  "hybrid"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Knowledge Retrieval"
+          },
           "language": {
             "anyOf": [
               {
@@ -16541,6 +17549,17 @@
               }
             ],
             "title": "Sandbox"
+          },
+          "strict_offline": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strict Offline"
           }
         },
         "title": "SettingsIn",
@@ -16857,6 +17876,30 @@
           "status"
         ],
         "title": "StepOut",
+        "type": "object"
+      },
+      "StorageIn": {
+        "properties": {
+          "path": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "transfer": {
+            "default": "copy",
+            "enum": [
+              "use",
+              "copy"
+            ],
+            "title": "Transfer",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "StorageIn",
         "type": "object"
       },
       "StorageInfo": {
@@ -19436,6 +20479,11 @@
             ],
             "title": "Known Cost Usd"
           },
+          "local_requests": {
+            "default": 0,
+            "title": "Local Requests",
+            "type": "integer"
+          },
           "missing_cost_components": {
             "items": {
               "type": "string"
@@ -19547,6 +20595,11 @@
           "label": {
             "title": "Label",
             "type": "string"
+          },
+          "local_requests": {
+            "default": 0,
+            "title": "Local Requests",
+            "type": "integer"
           },
           "missing_cost_components": {
             "items": {
@@ -23958,8 +25011,129 @@
         "summary": "Knowledge Collections"
       }
     },
+    "/api/knowledge/index": {
+      "delete": {
+        "operationId": "knowledge_drop_vectors_api_knowledge_index_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeIndexStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Knowledge Drop Vectors"
+      },
+      "get": {
+        "operationId": "knowledge_index_api_knowledge_index_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeIndexStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Knowledge Index"
+      }
+    },
+    "/api/knowledge/index/cancel": {
+      "post": {
+        "operationId": "knowledge_cancel_reindex_api_knowledge_index_cancel_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeIndexStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Knowledge Cancel Reindex"
+      }
+    },
+    "/api/knowledge/index/rebuild": {
+      "post": {
+        "operationId": "knowledge_reindex_api_knowledge_index_rebuild_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReindexIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeIndexStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Knowledge Reindex"
+      }
+    },
     "/api/knowledge/search": {
       "get": {
+        "description": "``mode``: full text, semantic or both (default: the workspace's setting); never a silent fallback.",
         "operationId": "search_knowledge_api_knowledge_search_get",
         "parameters": [
           {
@@ -23995,6 +25169,27 @@
               "default": 8,
               "title": "K",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "fts",
+                    "vector",
+                    "hybrid"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mode"
             }
           }
         ],
@@ -24425,6 +25620,469 @@
           }
         },
         "summary": "Download Library Sample"
+      }
+    },
+    "/api/local-models": {
+      "get": {
+        "operationId": "local_overview_api_local_models_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalOverview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Local Overview"
+      }
+    },
+    "/api/local-models/autostart": {
+      "put": {
+        "operationId": "local_autostart_api_local_models_autostart_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutostartIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Local Autostart"
+      }
+    },
+    "/api/local-models/import": {
+      "post": {
+        "operationId": "local_import_api_local_models_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalJob"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Local Import"
+      }
+    },
+    "/api/local-models/jobs": {
+      "get": {
+        "operationId": "local_jobs_api_local_models_jobs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LocalJob"
+                  },
+                  "title": "Response Local Jobs Api Local Models Jobs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Local Jobs"
+      }
+    },
+    "/api/local-models/jobs/{job_id}": {
+      "get": {
+        "operationId": "local_job_api_local_models_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalJob"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Local Job"
+      }
+    },
+    "/api/local-models/jobs/{job_id}/cancel": {
+      "post": {
+        "operationId": "local_cancel_api_local_models_jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalJob"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Local Cancel"
+      }
+    },
+    "/api/local-models/models/{name}": {
+      "delete": {
+        "operationId": "local_delete_api_local_models_models__name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Local Delete"
+      }
+    },
+    "/api/local-models/pull": {
+      "post": {
+        "operationId": "local_pull_api_local_models_pull_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PullIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalJob"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Local Pull"
+      }
+    },
+    "/api/local-models/recommend": {
+      "get": {
+        "operationId": "local_recommend_api_local_models_recommend_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "task",
+            "required": true,
+            "schema": {
+              "title": "Task",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Recommendation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Local Recommend"
+      }
+    },
+    "/api/local-models/runtime": {
+      "post": {
+        "operationId": "local_install_runtime_api_local_models_runtime_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeInstallIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalJob"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Local Install Runtime"
+      }
+    },
+    "/api/local-models/start": {
+      "post": {
+        "operationId": "local_start_api_local_models_start_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Local Start"
+      }
+    },
+    "/api/local-models/stop": {
+      "post": {
+        "operationId": "local_stop_api_local_models_stop_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Local Stop"
+      }
+    },
+    "/api/local-models/storage": {
+      "put": {
+        "operationId": "local_storage_api_local_models_storage_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/LocalJob"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocalStatus"
+                    }
+                  ],
+                  "title": "Response Local Storage Api Local Models Storage Put"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Local Storage"
       }
     },
     "/api/mcp/events": {

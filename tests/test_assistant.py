@@ -337,8 +337,13 @@ def test_without_api_key_nothing_is_sent_or_stored(tmp_path: Path, monkeypatch: 
     from nodestro_api.app import create_app
     from nodestro_api.context import AppConfig
 
+    monkeypatch.delenv("NODESTRO_OLLAMA_BINARY", raising=False)
     with TestClient(create_app(AppConfig(data_dir=tmp_path)), base_url="http://127.0.0.1") as client:
         conversation_id = chat(client)
+        response = client.post(f"/api/assistant/conversations/{conversation_id}/messages", json={"content": "Hallo"})
+        # A new installation's assistant is local: without the local runtime nothing is sent either.
+        assert response.status_code == 400 and response.json()["code"] == "local.runtime_missing"
+        client.put("/api/settings", json={"assistant_model": "anthropic:claude-sonnet-5-5"})
         response = client.post(f"/api/assistant/conversations/{conversation_id}/messages", json={"content": "Hallo"})
         assert response.status_code == 400 and response.json()["code"] == "api_key_missing"
         assert client.get(f"/api/assistant/conversations/{conversation_id}").json()["history"] == []

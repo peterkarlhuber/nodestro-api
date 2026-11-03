@@ -1377,6 +1377,8 @@ class UsageBucket(BaseModel):
     cost_state: Literal["known", "partial", "unknown", "none"] = "none"
     #: Requests priced with a price that had not been checked for longer than the warning threshold.
     stale_price_requests: int = 0
+    #: Requests to local models: no external API billing (0 in the sums); local operating costs are not recorded.
+    local_requests: int = 0
     #: Cost components that could not be priced (e.g. ``cache_write_1h``), over all requests.
     missing_cost_components: list[str] = Field(default_factory=list)
     #: The price snapshot versions, sources and the lowest quality the costs were calculated with.
@@ -1417,6 +1419,7 @@ def _add(bucket: UsageBucket, usage: Any, *, run: bool = False) -> None:
         bucket.known_cost_usd += usage.estimated_cost_usd
     bucket.estimated_cost_usd = bucket.known_cost_usd
     bucket.stale_price_requests += getattr(usage, "stale_price_requests", 0) or 0
+    bucket.local_requests += getattr(usage, "local_requests", 0) or 0
     for target, values in (
         (bucket.missing_cost_components, getattr(usage, "missing_cost_components", None) or []),
         (bucket.pricing_versions, getattr(usage, "pricing_versions", None) or []),
@@ -1871,6 +1874,8 @@ class SearchHit(BaseModel):
     title: str | None
     text: str
     score: float
+    #: The hit's rank in each ranking that found it (``fts``, ``vector``).
+    ranks: dict[str, int] = {}
 
 
 @router.get("/knowledge", dependencies=READ)
@@ -1910,11 +1915,20 @@ async def upload_knowledge(
 
 
 @router.get("/knowledge/search", dependencies=READ)
-def search_knowledge(ctx: Ctx, q: str, file_ids: str | None = None, k: int = 8) -> list[SearchHit]:
+def search_knowledge(
+    ctx: Ctx,
+    q: str,
+    file_ids: str | None = None,
+    k: int = 8,
+    mode: Literal["fts", "vector", "hybrid"] | None = None,
+) -> list[SearchHit]:
+    """``mode``: full text, semantic or both (default: the workspace's setting); never a silent fallback."""
     ids = [item for item in (file_ids or "").split(",") if item] or None
     return [
-        SearchHit(file_id=hit.file_id, source=hit.source, title=hit.title, text=hit.text, score=hit.score)
-        for hit in ctx.knowledge.search(q, ids, k)
+        SearchHit(
+            file_id=hit.file_id, source=hit.source, title=hit.title, text=hit.text, score=hit.score, ranks=hit.ranks
+        )
+        for hit in ctx.knowledge.search(q, ids, k, mode=mode)
     ]
 
 

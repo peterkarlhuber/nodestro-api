@@ -147,7 +147,7 @@ class Assistants:
             model=qualify(model),
             system_prompt=prompt,
             effort=connection.effort(model, "high"),
-            credentials={connection.provider: connection.settings()},
+            credentials={connection.provider: connection.settings(model)},
             usage_tracker=tracker,
         )
         catalog = self.tools.catalog() + [
@@ -255,7 +255,7 @@ class Assistants:
             options=connection.options(),
             max_retries=MAX_RETRIES,
             usage_tracker=tracker,
-            **connection.agent_kwargs(),
+            **connection.agent_kwargs(model),
         )
         seed = agent.ask(f"Agent role:\n{role or '(not specified)'}\n\nWhat it should remember:\n{wishes}")
         return seed, _cost(tracker)

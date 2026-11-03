@@ -1132,7 +1132,7 @@ class _Reply:
                 on_text=self.on_text,
                 on_event=self.on_event,
                 on_request=self.on_request,
-                **connection.agent_kwargs(),
+                **connection.agent_kwargs(model),
             )
             self.agent.ask(prompt)
             status, error = "complete", None

@@ -18,6 +18,7 @@ import zipfile
 
 from fastapi.testclient import TestClient
 from google.genai import types as genai_types
+from nodestro_runtime.schemas import DEFAULT_AGENT_MODEL, DEFAULT_ASSISTANT_MODEL, SettingsIn
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from openai.types.responses import Response
 import pytest
@@ -201,6 +202,10 @@ def providers_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[.
             AppConfig(data_dir=tmp_path / f"data{len(clients)}"),
             client_factory=lambda provider: fakes.get(provider),
             scheduler=False,
+        )
+        # The cloud defaults of an existing installation (a new one defaults to local models).
+        app.state.nodestro.update_settings(
+            SettingsIn(default_model=DEFAULT_AGENT_MODEL, assistant_model=DEFAULT_ASSISTANT_MODEL)
         )
         client = TestClient(app, base_url="http://127.0.0.1")
         client.__enter__()

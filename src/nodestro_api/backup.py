@@ -65,8 +65,10 @@ FORMAT = "nodestro-backup"
 FORMAT_VERSION = 1
 _TOOL_FILE = re.compile(r"^tools/[A-Za-z_][A-Za-z0-9_]*/v\d+\.json$")
 _INPUT_FILE = re.compile(r"^inputs/(catalog\.json|blobs/[0-9a-f]{16})$")
-#: Tables that SQLite or the full-text index maintain themselves; they are rebuilt, not copied.
-_DERIVED = re.compile(r"^(sqlite_|index_fts|index_vec)")
+#: Tables that SQLite, the full-text index or the legacy ``vec0`` vector table (``index_vec`` and its shadow tables)
+#: maintain themselves; they are not copied. The vectors of the semantic index (``index_spaces``, ``index_vectors``)
+#: are data: they belong to the chunks of the same backup and are restored with them.
+_DERIVED = re.compile(r"^(sqlite_|index_fts|index_vec($|_))")
 #: The tables a restore copies, with the definition it creates a missing one with (API2-11): Nodestro's documents and
 #: the tables of Orkexa's SQLite stores (the same statements as ``orkexa.retrieval``, ``memory`` and ``files``, which
 #: create them on first use). A restore never runs SQL from the archive; other tables in a backup are left out.
@@ -84,6 +86,14 @@ KNOWN_TABLES: dict[str, str] = {
         " source TEXT NOT NULL, title TEXT, file_id TEXT, metadata TEXT NOT NULL, text TEXT NOT NULL)"
     ),
     "index_meta": "CREATE TABLE IF NOT EXISTS index_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+    "index_spaces": (
+        "CREATE TABLE IF NOT EXISTS index_spaces (namespace TEXT NOT NULL, space TEXT NOT NULL, identity TEXT NOT NULL,"
+        " dimensions INTEGER NOT NULL, state TEXT NOT NULL, PRIMARY KEY (namespace, space))"
+    ),
+    "index_vectors": (
+        "CREATE TABLE IF NOT EXISTS index_vectors (space TEXT NOT NULL, chunk_id INTEGER NOT NULL,"
+        " embedding BLOB NOT NULL, PRIMARY KEY (space, chunk_id))"
+    ),
     "stored_files": (
         "CREATE TABLE IF NOT EXISTS stored_files (namespace TEXT NOT NULL, id TEXT NOT NULL, entry TEXT NOT NULL,"
         " data BLOB NOT NULL, PRIMARY KEY (namespace, id))"

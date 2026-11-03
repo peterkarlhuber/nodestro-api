@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Local models, embeddings and semantic knowledge search (2026-11-03)
+
+- Pin nodestro-runtime a60be7d (nodestro-runtime #99 and #101: local models, embeddings, semantic knowledge search,
+  selection preferences, a provider configured by an injected client; it pins orkexa 9b06a5e) and nodestro-examples
+  da9f1c9 (examples #59: the same runtime pin).
+- New routes for local models (Ollama, `api_local_models.py`): `GET /api/local-models` (server state, catalog with
+  what is installed and verified, hardware, a recommendation per task), `GET /api/local-models/recommend`,
+  `POST .../start|stop`, `PUT .../autostart`, and jobs with progress and cancel for installing the pinned runtime
+  (`POST .../runtime`, from a local archive or by download), downloading a model (`POST .../pull`), importing an
+  offline model package or a GGUF file (`POST .../import`), deleting a model and moving the model folder
+  (`PUT .../storage`, use or copy). On a server every change answers 403 `local.server_managed`; downloads answer 400
+  `local.offline_download` in the strict offline mode.
+- The semantic knowledge index: `GET /api/knowledge/index`, `POST /api/knowledge/index/rebuild|cancel`,
+  `DELETE /api/knowledge/index`. Knowledge search takes `mode` (`fts`, `vector`, `hybrid`); hits carry `ranks`.
+- The application starts the managed local model server in the background when it starts (never blocking start-up)
+  and skips the online price sync in the strict offline mode. Models are resolved per model, so a local model gets
+  the capabilities the server reports.
+- Usage buckets count `local_requests` (local inference: no external API billing, operating costs not recorded).
+- Backups keep the semantic index (`index_spaces`, `index_vectors`) with its chunks.
+- Contract (`openapi/nodestro-api.json`), additions only: the routes, `LocalOverview`, `LocalStatus`, `LocalJob`,
+  `KnowledgeIndexStatus` and the new optional settings and usage fields.
+- Tests: `tests/conftest.py` keeps the cloud default models for scripted tests (`make_app(local_defaults=True)`
+  shows the defaults of a new installation).
+
 ### Backend audit round 2 (2026-11-03)
 
 - Export without test tools: an installation without pytest (the server and desktop images) answered the export

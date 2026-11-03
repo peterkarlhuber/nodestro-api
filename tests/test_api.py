@@ -387,7 +387,14 @@ def test_generated_tools_are_written_in_english(make_app: Callable[..., TestClie
 def test_missing_api_key_is_explained(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
+    monkeypatch.delenv("NODESTRO_OLLAMA_BINARY", raising=False)
+
     with TestClient(create_app(AppConfig(data_dir=tmp_path)), base_url="http://127.0.0.1") as client:
+        # A new installation uses local models: without their runtime, that is what the answer explains.
+        response = client.post("/api/agents/design", json={"description": "x"})
+        assert response.status_code == 400 and response.json()["code"] == "local.runtime_missing"
+        # With a cloud model, the missing key is explained.
+        client.put("/api/settings", json={"assistant_model": "anthropic:claude-sonnet-5-5"})
         response = client.post("/api/agents/design", json={"description": "x"})
         assert response.status_code == 400
         assert response.json()["code"] == "api_key_missing"
