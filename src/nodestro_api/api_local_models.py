@@ -7,7 +7,7 @@ The runtime does the work (:mod:`nodestro_runtime.local_service`, :mod:`nodestro
   recommendation per task.
 - Jobs (``202`` with the job; progress at ``GET /api/local-models/jobs/{id}``, ``POST .../cancel``): install the
   runtime (from a local archive or by download), download a model, import an offline model package or a GGUF file,
-  move the model folder.
+  build a catalog model from local files, measure a model's speed, move the model folder.
 - ``/api/knowledge/index``: the semantic index (state, rebuild, cancel, remove).
 
 Downloads need the internet and are refused in the strict offline mode. Paths name files on the computer that runs
@@ -23,7 +23,7 @@ from typing import Literal
 from fastapi import APIRouter, Response
 from nodestro_runtime.knowledge import KnowledgeIndexStatus
 from nodestro_runtime.local_models import CATALOG, TASKS, Hardware, LocalModelInfo, Recommendation, recommend_all
-from nodestro_runtime.local_service import LocalJob, LocalStatus
+from nodestro_runtime.local_service import LocalAdvice, LocalJob, LocalStatus
 from pydantic import BaseModel, Field
 
 from .api import Ctx
@@ -44,6 +44,8 @@ class LocalOverview(BaseModel):
     catalog: list[CatalogEntry]
     hardware: Hardware
     recommendations: list[Recommendation]
+    #: Hints for this computer: small context window, no GPU, slow or too large models, the CPU saving mode.
+    advice: list[LocalAdvice] = Field(default_factory=list)
     #: Whether this installation may change the local model server (``False`` on a server's tenants).
     manageable: bool
 
@@ -55,6 +57,10 @@ class RuntimeInstallIn(BaseModel):
 
 
 class PullIn(BaseModel):
+    model: str = Field(min_length=1, max_length=200)
+
+
+class BenchmarkIn(BaseModel):
     model: str = Field(min_length=1, max_length=200)
 
 
@@ -111,11 +117,13 @@ async def local_overview(ctx: Ctx) -> LocalOverview:
         capabilities={name: model.capabilities for name, model in installed.items()},
         preferences=service.preferences(),
     )
+    saving = await asyncio.to_thread(ctx.reasoning_saving)
     return LocalOverview(
         status=status,
         catalog=catalog,
         hardware=hardware,
         recommendations=recommendations,
+        advice=service.advice(status, reasoning_saving=saving),
         manageable=service.profile != "server",
     )
 
@@ -158,6 +166,14 @@ def local_install_runtime(body: RuntimeInstallIn, ctx: Ctx) -> LocalJob:
 async def local_pull(body: PullIn, ctx: Ctx) -> LocalJob:
     _manageable(ctx)
     return await asyncio.to_thread(ctx.local_models.pull, body.model)
+
+
+@router.post("/local-models/benchmark", status_code=202, dependencies=INSTALL)
+async def local_benchmark(body: BenchmarkIn, ctx: Ctx) -> LocalJob:
+    """Measure how fast an installed chat model answers here (a short request; the result is stored with the
+    model). Shown instead of any estimate; loads the model like an agent's first request."""
+    _manageable(ctx)
+    return await asyncio.to_thread(ctx.local_models.benchmark, body.model)
 
 
 @router.post("/local-models/import", status_code=202, dependencies=INSTALL)
