@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Pin nodestro-runtime 90ba97b (runtime #104: 32K context window for the managed Ollama, mDenseOn as optional European
+- Pin nodestro-runtime 90ba97b and nodestro-examples 7b79fde (examples #62, the same runtime pin) (runtime #104: 32K context window for the managed Ollama, mDenseOn as optional European
   embedding model built from pinned weights, orkexa 71f8aaf). `POST /api/local-models/pull` builds a catalog model
   with `source="build"`; `POST /api/local-models/import` with `kind: "build"` builds it from local weights and template
   files (air gap). The OpenAPI document gains the job kind `build`, `ImportIn.template` and `LocalModelInfo.source`.
