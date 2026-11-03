@@ -23,6 +23,8 @@
 - API2-11: backup restore copies only known tables and columns, with quoted identifiers.
 - DX-31: `nodestro-server check` checks the OIDC issuer (`identity.provider`) and warns about a superuser or
   `BYPASSRLS` database role (`storage.role_unsafe`).
+  `check --skip-identity-provider` leaves the provider out, for a worker's periodic health check, which must not
+  poll the identity provider or fail while it is down.
 - CI installs the public sibling repositories anonymously (OPS2-05).
 - Pins nodestro-runtime 140d479 (runtime #96: backend audit round 2; orkexa bc8c4ed; Axentra a872242) and
   nodestro-examples 8499edf (examples #56: anonymous CI installs, same runtime pin).
