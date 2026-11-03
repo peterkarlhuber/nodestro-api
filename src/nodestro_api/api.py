@@ -1028,7 +1028,7 @@ def list_runs(
     ctx: Ctx,
     response: Response,
     workflow_id: str | None = None,
-    limit: int = Query(100, le=500),
+    limit: int = Query(100, ge=1, le=500),
     include_children: bool = False,
     trigger_ref: str | None = None,
     before: str | None = Query(
@@ -1201,6 +1201,9 @@ def delete_result_file(run_id: str, file_id: str, ctx: Ctx) -> Response:
 
 @router.post("/runs/{run_id}/cancel", dependencies=RUN)
 async def cancel_run(run_id: str, ctx: Ctx) -> dict[str, bool]:
+    """``cancelled``: whether the run was still going; an unknown run is ``404`` (API2-07)."""
+    if ctx.runs.get(run_id) is None:
+        raise KeyError(run_id)
     return {"cancelled": ctx.runs.cancel(run_id)}
 
 

@@ -23,9 +23,9 @@ Every route works on the request's tenant only (its workspace and store); ids of
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from nodestro_runtime.mcp_access import is_mcp_tool
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.schemas import now
@@ -199,7 +199,7 @@ def revoke_pre_grant(scope: PreGrantScope, scope_id: str, grant_id: str, ctx: Ct
 
 
 @router.get("/tool-approvals/audit", dependencies=ADMIN)
-def tool_approval_audit(ctx: Ctx, limit: int = 200) -> list[ToolApprovalEvent]:
+def tool_approval_audit(ctx: Ctx, limit: Annotated[int, Query(ge=1)] = 200) -> list[ToolApprovalEvent]:
     return audit_events(ctx.store, limit=max(1, min(limit, 1000)))
 
 

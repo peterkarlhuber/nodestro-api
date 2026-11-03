@@ -54,6 +54,11 @@ def organize_state(ctx: Ctx) -> OrganizeState:
 
 @router.put("/organize/{kind}/{item_id}", dependencies=EDIT)
 def organize_item(kind: Kind, item_id: str, body: Organize, ctx: Ctx) -> Organize:
+    """Favorite and tags of an existing workflow, agent template or tool; an unknown one is ``404`` (API2-07)."""
+    if kind == "tool":
+        ctx.tools.get(item_id)  # raises KeyError for an unknown tool
+    elif ctx.store.get_raw("workflows" if kind == "workflow" else "templates", item_id) is None:
+        raise KeyError(item_id)
     return ctx.organize.set(kind, item_id, body)
 
 
