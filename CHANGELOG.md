@@ -24,7 +24,8 @@
 - DX-31: `nodestro-server check` checks the OIDC issuer (`identity.provider`) and warns about a superuser or
   `BYPASSRLS` database role (`storage.role_unsafe`).
 - CI installs the public sibling repositories anonymously (OPS2-05).
-- Pins nodestro-runtime 140d479 (runtime #96: backend audit round 2; orkexa bc8c4ed; Axentra a872242).
+- Pins nodestro-runtime 140d479 (runtime #96: backend audit round 2; orkexa bc8c4ed; Axentra a872242) and
+  nodestro-examples 8499edf (examples #56: anonymous CI installs, same runtime pin).
 
 ### Platform pins: security review round 4 (2026-11-02)
 
