@@ -3,7 +3,7 @@
 > Open work for this repository: release blockers, known bugs, security follow-ups, technical debt and planned improvements.
 > GitHub issues are the source of truth for details; this file is the entry point and summary.
 >
-> **Last full review:** 2026-11-03 against `master` at `7c195ed` (close-out of the backend audit round 2).
+> **Last full review:** 2026-11-04 against `master` at `b55793a` (internal backend audit round 3).
 
 ## Summary
 
@@ -12,8 +12,8 @@
 | P0 Critical | 0 |
 | P1 High | 0 |
 | P2 Medium | 5 |
-| P3 Low | 20 |
-| P4 Optional | 6 |
+| P3 Low | 21 |
+| P4 Optional | 8 |
 
 **Release blockers:** None for this repository.
 
@@ -97,10 +97,24 @@ None known.
 
 - **Priority:** P3 Low · **Status:** Needs decision · **Refs:** backend audit C-12 (residual)
 - **What:** Jobs, events, sessions, login states and idempotency records are cleaned up. Runs, the usage log,
-  workflow versions, `before-restore-*.zip` and `pre-migration-*.db` grow without limit.
+  workflow versions, `before-restore-*.zip`, `pre-migration-*.db` and exports with portable packages
+  (`<data>/exports`, up to several GB each) grow without limit.
 - **Next step:** Decide on a retention policy (defaults, per tenant on the server). Then add configurable cleanup
   to the existing leader task.
 - **Depends on:** nodestro-runtime RT-014 (store deletes for runs and versions)
+
+### API-048 · Portable export builds on the server profile: quota and retention
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** backend audit round 3 (API3-07), `docs/portable-export.md`
+  ("On a server")
+- **What:** Since round 3 the server profile refuses export jobs (`export.server_unsupported`) unless the operator
+  sets `NODESTRO_SERVER_EXPORT_JOBS=1`; then one build runs at a time on the whole server and
+  `NODESTRO_SERVER_EXPORT_MAX_BYTES` (default 2 GiB) caps a package. Left: no per-tenant quota and no retention, so
+  packages stay until a member deletes them, and the build still runs in the API process.
+- **Next step:** Before anyone enables export jobs on a shared server: per-tenant quota plus retention (see
+  API-009), and run builds as server batch jobs with a lease (like API-044). Document the switch in the
+  nodestro-server RUNBOOK.
+- **Depends on:** None
 
 ### API-043 · Idempotent run starts are serialised per API process only
 
@@ -184,9 +198,13 @@ None known.
 ### API-016 · Machine-readable list of all error codes (X-03)
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** #53, backend audit X-03
-- **What:** No generated list of error codes exists, so new codes reach the studio without a text.
+- **What:** No generated list of error codes exists, so new codes reach the studio without a text. The OpenAPI
+  document also declares only 422/429 for the published run routes (the real answers include 401, 403, 404, 409,
+  413 and 503 with `ErrorResponse`), and most studio routes have no tag, so `/api/docs` is one flat list (UX
+  round 3 handover B13).
 - **Next step:** Generate one list of API and runtime codes, published next to the OpenAPI document. Add a test
-  for codes that are missing from it.
+  for codes that are missing from it. Declare the error responses of the published routes and tag the studio
+  routers (workflows, runs, publications, local models, MCP, pricing).
 - **Depends on:** nodestro-runtime RT-011
 
 ### API-017 · Budget information in the usage report (AD-20)
@@ -258,7 +276,9 @@ None known.
   "admin" is a tenant admin, so every tenant's admins still see the shared host's Docker detail and share one 10 s
   window per path (one tenant admin polling `refresh=1` throttles another's status refresh, not the self-test); the
   diagnosis (`GET /api/diagnostics`, permission `install`) still waits up to 5 s outside the waiter cap; the runtime's
-  periodic preflight (TTL) is still started by any status read, as before.
+  periodic preflight (TTL) is still started by any status read, as before. Related (round 3, API3-08): server
+  tenants without the `install` permission now get `GET /api/local-models` without hardware, paths or the local model
+  server address, but `GET /api/local-models/jobs` still shows job target paths.
 - **Next step:** Decide whether Docker host detail on a server goes to the operator only (a server-operator
   permission instead of tenant `admin`), and whether the windows should be per tenant. The studio shows
   `throttled`/`retry_after`, `refresh_ignored` and `redacted` (nodestro-studio ST-033) and the SDK returns them
@@ -272,6 +292,27 @@ None known.
   can read, rename or delete assistant conversations, and the edit permission can delete a run with its approval
   record. This is the documented role model, not a defect.
 - **Next step:** Decide whether approval nodes get a "needs another member" option and conversations get an owner.
+
+### API-052 · Run search in `GET /api/search`
+
+- **Priority:** P4 Optional · **Status:** Open · **Refs:** UX round 3 handover H1, studio ST-008 (#83)
+- **What:** The studio's global search filters only the newest 100 runs on the client; older runs are not found,
+  and the server profile's search has no runs.
+- **Next step:** Add a `SearchResult` kind `run` (id = run id, title = workflow name, subtitle = status, snippet =
+  input excerpt, `workflow_id`), matched on workflow name, input text and run id, newest first, with the same read
+  permission as `/api/runs`. Regenerate the contract and the SDK types.
+- **Depends on:** None
+
+### API-053 · Developer messages: exported client, export README, local models, server check
+
+- **Priority:** P4 Optional · **Status:** Open · **Refs:** UX round 3 DX handovers B15-B18
+- **What:** The exported `examples/client.py` has a fixed base URL and prints a traceback on HTTP errors; the export
+  README shows an approval section and "-" when the workflow has no approval steps, and the exported approval test
+  returns instead of skipping; `local.*` task errors do not list the allowed tasks; `nodestro-server check` prints
+  all profile problems in one line.
+- **Next step:** `NODESTRO_BASE_URL` with the current default and the error code from the JSON body in the client;
+  leave out the empty approval section, "none" instead of "-", `pytest.skip`; `params.allowed`; one problem per line.
+- **Depends on:** None
 
 ## Tests and quality assurance
 
@@ -302,7 +343,10 @@ None known.
   CI smoke test (build, self-test, start, a run without a model call, stop, restart): no local models, no browser,
   no Gatekeeper/SmartScreen. Windows ARM64 has no `sqlite-vec` wheel (semantic search falls back to full text). Releases using Gemini cannot be
   packaged for macOS Intel or Windows ARM64 (no `cryptography` wheel since 46.0.4).
+  An offline package does not restrict the network of tools written by people in the workflow; this is not
+  documented yet.
 - **Next step:** Run a package with local models on real macOS and Windows machines, and a browser check there.
+  Document the network behavior of person-written tools in offline packages.
 
 ### API-023 · Platforms and environments not verified
 
