@@ -14,13 +14,14 @@ from __future__ import annotations
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Query, Request, Response
+from fastapi.responses import FileResponse
 from nodestro_runtime.engine import start_fields
 from nodestro_runtime.forms import check_values, input_text
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.schemas import LANGUAGES, RunSummary, Workflow
 from pydantic import BaseModel, Field
 
-from . import api_guide, exporter
+from . import api_guide, exporter, portable_build
 from .api import Ctx, _quote
 from .api_examples import ApiExamples, examples
 from .api_guide import ApiGuide
@@ -365,12 +366,49 @@ def list_exports(publication_id: str, ctx: Ctx) -> list[exporter.ExportRecord]:
 
 @router.get("/exports/{export_id}/download", dependencies=READ)
 def download_export(export_id: str, ctx: Ctx) -> Response:
-    record, data = exporter.content(ctx, export_id)
-    return Response(
-        data,
-        media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{_quote(record.file_name)}"},
-    )
+    headers = {"Content-Disposition": "attachment; filename*=UTF-8''{name}"}
+    record, path = exporter.content_path(ctx, export_id)
+    headers["Content-Disposition"] = headers["Content-Disposition"].format(name=_quote(record.file_name))
+    if record.size <= 256 * 1024 * 1024:
+        # Small exports: the SHA-256 is checked on every download (a changed file is refused).
+        record, data = exporter.content(ctx, export_id)
+        return Response(data, media_type="application/zip", headers=headers)
+    # Portable packages with models are streamed from disk (their size was checked).
+    return FileResponse(path, media_type="application/zip", headers=headers)
+
+
+# ---- portable packages (background jobs) ---------------------------------------------------
+
+
+@router.post("/publications/{publication_id}/export-jobs", status_code=202, dependencies=EDIT)
+def start_export_job(publication_id: str, body: ExportIn, ctx: Ctx) -> portable_build.ExportJob:
+    """Build a portable package in the background (``options.kind`` must be ``portable``)."""
+    publication = ctx.publications.get(publication_id)
+    release, _ = _served(ctx, publication, body.number)
+    options = body.options
+    if options.kind != "portable":
+        raise NodestroError("export.not_portable", "Only portable packages are built as jobs")
+    found = exporter.check(ctx, publication, release, options)
+    if not found.ok:
+        first = next(item for item in found.problems if item.level == "error")
+        raise NodestroError(first.code, first.message, **first.params)
+    return portable_build.runner(ctx).start(publication, release, options)
+
+
+@router.get("/publications/{publication_id}/export-jobs", dependencies=READ)
+def list_export_jobs(publication_id: str, ctx: Ctx) -> list[portable_build.ExportJob]:
+    ctx.publications.get(publication_id)
+    return portable_build.runner(ctx).for_publication(publication_id)
+
+
+@router.get("/export-jobs/{job_id}", dependencies=READ)
+def get_export_job(job_id: str, ctx: Ctx) -> portable_build.ExportJob:
+    return portable_build.runner(ctx).get(job_id)
+
+
+@router.post("/export-jobs/{job_id}/cancel", dependencies=EDIT)
+def cancel_export_job(job_id: str, ctx: Ctx) -> portable_build.ExportJob:
+    return portable_build.runner(ctx).cancel(job_id)
 
 
 # ---- the optional AI guide ---------------------------------------------------------------

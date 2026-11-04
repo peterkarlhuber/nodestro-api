@@ -56,8 +56,9 @@ from pydantic import BaseModel, Field
 
 from . import __version__
 from .api_examples import KEY_VARIABLE, examples
+from .export_models import LocalModelInfo, ModelUse, NetworkNeed
 from .publishing import Publication, PublicationEvent, Release
-from .serving import ApiLimits, ServedRelease
+from .serving import ApiLimits, ServedRelease, openapi_document
 
 if TYPE_CHECKING:
     from nodestro_runtime.storage import DocumentStore
@@ -124,20 +125,45 @@ SOFTWARE.
 # ---- options, checks, records -----------------------------------------------------------
 
 
+ExportLanguage = Literal["de", "en", "es", "fr", "pt-BR", "it"]
+ExportKind = Literal["standard", "portable"]
+
+
 class ExportOptions(BaseModel):
+    #: ``standard``: the FastAPI source project (Python and the libraries are installed by the user);
+    #: ``portable``: a ready-to-run folder for one platform with its own Python, every library, a launcher and,
+    #: optionally, the local models and their server (:mod:`nodestro_api.portable_build`).
+    kind: ExportKind = "standard"
     #: ``git``: install orkexa from its repository at the exact commit; ``bundle``: copy its source
-    #: into the project.
+    #: into the project (a portable package always contains it).
     orkexa: Literal["git", "bundle"] = "git"
-    #: Required for ``bundle``: the user may pass the library's source on.
+    #: Required for ``bundle`` and ``portable``: the user may pass the library's source (and, in a portable
+    #: package, the bundled runtime) on.
     confirm_distribution: bool = False
     #: Knowledge files (ids) whose content is copied into the project.
     knowledge: list[str] = Field(default_factory=list)
     #: Persistent memory spaces whose current content becomes the project's starting memory.
     memory: list[str] = Field(default_factory=list)
-    #: Language of the README (German or English).
-    language: Literal["de", "en"] = "en"
+    #: Language of the README and of the web interface's first start.
+    language: ExportLanguage = "en"
     #: An accepted AI-written guide to add as ``docs/AI_GUIDE.md`` (see :mod:`nodestro_api.api_guide`).
     guide_id: str | None = None
+    #: The web interface (a generic static app configured from the release, :mod:`nodestro_api.webui_server`).
+    web_ui: bool = False
+    #: Portable: the target platform (``linux-x86_64``, ``windows-x86_64``, ``macos-arm64`` ...; ``None``: this
+    #: computer's).
+    platform: str | None = None
+    #: Portable: include the release's local models and the model server (Ollama) for the target.
+    local_models: bool = True
+    #: Portable: the package must run without any network connection; the check refuses everything that would
+    #: need one (cloud models, server tools, endpoints, tools that only run in a Docker sandbox).
+    offline: bool = False
+    #: Portable: the user may pass on the bundled models whose license this installation cannot confirm.
+    confirm_models: bool = False
+    #: Portable: Python, libraries and the model server may be downloaded for the target (shown in the check).
+    allow_downloads: bool = True
+    #: Where the application copies result files to (relative to its folder, or absolute; ``""``: ``results``).
+    output_dir: str = Field(default="", max_length=500)
 
 
 class ExportResource(BaseModel):
@@ -150,6 +176,28 @@ class ExportResource(BaseModel):
     included: bool = False
 
 
+class PortableCheck(BaseModel):
+    """What a portable package of the release would contain and need (:mod:`nodestro_api.portable_build`)."""
+
+    platform: str
+    platforms: list[dict[str, str]] = Field(default_factory=list)
+    providers: list[str] = Field(default_factory=list)
+    models: list[ModelUse] = Field(default_factory=list)
+    local_models: list[LocalModelInfo] = Field(default_factory=list)
+    #: The local models the package will contain.
+    bundled_models: list[str] = Field(default_factory=list)
+    network_needs: list[NetworkNeed] = Field(default_factory=list)
+    downloads: list[dict[str, Any]] = Field(default_factory=list)
+    #: Estimated size of the unpacked package in bytes.
+    estimated_bytes: int = 0
+    #: Every model runs locally and nothing needs a network connection at run time.
+    offline_capable: bool = False
+    #: What the target computer needs (codes, see the README and the dialog).
+    target_requirements: list[str] = Field(default_factory=list)
+    #: The most memory one bundled model needs (bytes).
+    memory_bytes: int | None = None
+
+
 class ExportCheck(BaseModel):
     ok: bool
     problems: list[CheckIssue] = Field(default_factory=list)
@@ -159,6 +207,7 @@ class ExportCheck(BaseModel):
     runtime_modules: list[str] = Field(default_factory=list)
     runtime: dict[str, str] = Field(default_factory=dict)
     files: list[str] = Field(default_factory=list)
+    portable: PortableCheck | None = None
 
 
 class ExportRecord(BaseModel):
@@ -223,11 +272,16 @@ class _Imports(ast.NodeVisitor):
                 self._add(package, alias.name)
 
 
-def runtime_modules(dirs: dict[str, Path] | None = None) -> list[str]:
-    """The modules an exported project needs (``package.module``), from :data:`RUNTIME_ROOTS` and their imports."""
+#: The extra roots of a portable package: its launcher (which brings the provider key store).
+PORTABLE_ROOTS = ("nodestro_api.portable",)
+
+
+def runtime_modules(dirs: dict[str, Path] | None = None, extra: tuple[str, ...] = ()) -> list[str]:
+    """The modules an exported project needs (``package.module``), from :data:`RUNTIME_ROOTS` (and ``extra``) and
+    their imports."""
     dirs = dirs or _package_dirs()
     seen: set[str] = set()
-    queue = list(RUNTIME_ROOTS)
+    queue = [*RUNTIME_ROOTS, *extra]
     while queue:
         name = queue.pop()
         if name in seen:
@@ -274,7 +328,8 @@ def _sha(data: bytes) -> str:
 # ---- dependencies ------------------------------------------------------------------------
 
 #: What the exported application itself needs (orkexa with its provider SDKs comes separately).
-_APP_PACKAGES = ("fastapi", "uvicorn[standard]", "pydantic", "pypdf")
+#: python-multipart: runs started with multipart/form-data (file uploads, the web interface).
+_APP_PACKAGES = ("fastapi", "uvicorn[standard]", "python-multipart", "pydantic", "pypdf")
 #: The agent library with every provider SDK (Anthropic, OpenAI, Gemini, boto3 for Amazon Bedrock) and PDF support.
 _LIBRARY = "orkexa[all,pdf]"
 _DEV_PACKAGES = ("pytest", "httpx")
@@ -400,6 +455,7 @@ def _issue(code: str, message: str, level: Literal["error", "warning", "info"] =
 
 def check(ctx: Nodestro, publication: Publication, release: Release, options: ExportOptions) -> ExportCheck:
     """What the export would contain and what to know before downloading it; nothing is written."""
+    options = normalized(options)
     bundle = release.bundle
     problems: list[CheckIssue] = []
     resources: list[ExportResource] = []
@@ -596,11 +652,21 @@ def check(ctx: Nodestro, publication: Publication, release: Release, options: Ex
             problems.append(
                 _issue("export.guide_not_accepted", "The AI guide must be reviewed and accepted first", level="error")
             )
+    portable = _portable_check(ctx, release, options, problems) if options.kind == "portable" else None
+    if options.web_ui:
+        problems.append(
+            _issue(
+                "export.web_ui",
+                "The web interface is included: the operator signs in with a one-time link, others with an API key",
+                level="info",
+            )
+        )
     direct, _, agent_line = dependencies(options, bundle)
     order = {"error": 0, "warning": 1, "info": 2}
     problems.sort(key=lambda item: order[item.level])
     files = sorted(_project_files(ctx, publication, release, options, dry_run=True))
     return ExportCheck(
+        portable=portable,
         ok=not any(item.level == "error" for item in problems),
         problems=problems,
         resources=resources,
@@ -609,6 +675,181 @@ def check(ctx: Nodestro, publication: Publication, release: Release, options: Ex
         runtime_modules=runtime_modules(),
         runtime={"nodestro": runtime_version, "orkexa": library_version},
         files=files,
+    )
+
+
+def normalized(options: ExportOptions) -> ExportOptions:
+    """A portable package always contains orkexa's source (it installs nothing)."""
+    if options.kind == "portable" and options.orkexa != "bundle":
+        return options.model_copy(update={"orkexa": "bundle"})
+    return options
+
+
+def _workspace_retrieval(ctx: Nodestro) -> tuple[str, str | None]:
+    settings = ctx.settings()
+    mode = getattr(settings, "knowledge_retrieval", None) or "fts"
+    return str(mode), getattr(settings, "embedding_model", None)
+
+
+def _portable_check(
+    ctx: Nodestro, release: Release, options: ExportOptions, problems: list[CheckIssue]
+) -> PortableCheck:
+    """The portable package's own checks: platform, local models, licenses, offline operation, downloads, size."""
+    from . import export_models, portable_build
+
+    bundle = release.bundle
+    platform_id = options.platform or portable_build.host_platform()
+    platform = portable_build.PLATFORMS.get(platform_id)
+    if platform is None:
+        problems.append(_issue("export.platform_unknown", f"Unknown platform {platform_id}", level="error"))
+        platform = portable_build.PLATFORMS[portable_build.host_platform()]
+    mode, embedding = _workspace_retrieval(ctx)
+    uses = export_models.model_uses(bundle, embedding_model=embedding, workspace_mode=mode)
+    local = export_models.local_models(ctx, uses)
+    needs = export_models.network_needs(bundle, uses)
+    bundled: list[str] = []
+    if local and options.local_models:
+        for item in local:
+            if not item.installed:
+                problems.append(
+                    _issue(
+                        "export.local_model_missing",
+                        f"The local model {item.name} is not installed here; install it (Settings, Local models) "
+                        "or choose another model before exporting",
+                        level="error",
+                        model=item.name,
+                    )
+                )
+                continue
+            if item.redistribution != "permitted" and not options.confirm_models:
+                problems.append(
+                    _issue(
+                        "export.model_license_unconfirmed",
+                        f"The license of {item.name} is not known here: confirm that you may pass the model on",
+                        level="error",
+                        model=item.name,
+                    )
+                )
+            bundled.append(item.name)
+        if bundled:
+            problems.append(
+                _issue(
+                    "export.local_models_bundled",
+                    f"The local models {', '.join(bundled)} and the model server (Ollama) are included",
+                    level="info",
+                    models=", ".join(bundled),
+                )
+            )
+    elif local:
+        problems.append(
+            _issue(
+                "export.local_models_external",
+                "The local models are not included: the target computer needs an Ollama with "
+                + ", ".join(item.name for item in local)
+                + " (OLLAMA_BASE_URL)",
+                level="warning",
+                models=", ".join(item.name for item in local),
+            )
+        )
+    online = [item for item in needs if item.kind != "docker_sandbox"]
+    untrusted = [item.name for item in needs if item.kind == "docker_sandbox"]
+    if options.offline:
+        if online:
+            problems.append(
+                _issue(
+                    "export.offline_network",
+                    "Offline operation is not possible: "
+                    + ", ".join(f"{item.name} ({item.kind})" for item in online)
+                    + " need a network connection; use local models or switch offline off",
+                    level="error",
+                    needs=", ".join(item.name for item in online),
+                )
+            )
+        if untrusted:
+            problems.append(
+                _issue(
+                    "export.offline_untrusted_tools",
+                    "AI-generated tools run only in a Docker sandbox, whose image needs a download: "
+                    + ", ".join(untrusted),
+                    level="error",
+                    tools=", ".join(untrusted),
+                )
+            )
+        if local and not options.local_models:
+            problems.append(
+                _issue(
+                    "export.offline_models_excluded",
+                    "Offline operation needs the local models in the package",
+                    level="error",
+                )
+            )
+    elif untrusted:
+        problems.append(
+            _issue(
+                "export.untrusted_tools_docker",
+                "AI-generated tools run only in an isolated Docker sandbox: the target computer needs Docker for "
+                + ", ".join(untrusted),
+                level="warning",
+                tools=", ".join(untrusted),
+            )
+        )
+    if not options.confirm_distribution:
+        problems.append(
+            _issue(
+                "export.portable_distribution",
+                "Confirm that you may pass on the source code of orkexa, which a portable package contains",
+                level="error",
+            )
+        )
+    downloads = portable_build.downloads(ctx, platform, local_models=bool(bundled))
+    missing = [item for item in downloads if not item.cached]
+    if missing and not options.allow_downloads:
+        problems.append(
+            _issue(
+                "export.download_needed",
+                "Building needs downloads that are not in the cache: " + ", ".join(item.what for item in missing),
+                level="error",
+                items=", ".join(item.what for item in missing),
+            )
+        )
+    elif missing:
+        problems.append(
+            _issue(
+                "export.downloads",
+                "Building downloads " + ", ".join(item.what for item in missing) + " for the target platform once",
+                level="info",
+                size=sum(item.size for item in missing),
+                items=", ".join(item.what for item in missing),
+            )
+        )
+    model_bytes = sum(item.size for item in local if item.name in bundled)
+    estimated = (
+        portable_build.PYTHON_SIZE
+        + portable_build.LIBRARIES_SIZE
+        + (portable_build.OLLAMA_SIZE.get(platform.ollama[0], 120_000_000) if bundled else 0)
+        + model_bytes
+    )
+    memory = max((item.memory_bytes or 0 for item in local if item.name in bundled), default=0) or None
+    requirements = [f"os.{platform.id}"]
+    if memory:
+        requirements.append("memory")
+    if untrusted:
+        requirements.append("docker")
+    if online:
+        requirements.append("network")
+    return PortableCheck(
+        platform=platform.id,
+        platforms=[{"id": item.id, "label": item.label} for item in portable_build.PLATFORMS.values()],
+        providers=sorted({use.provider for use in uses}),
+        models=uses,
+        local_models=local,
+        bundled_models=bundled,
+        network_needs=needs,
+        downloads=[item.model_dump(mode="json") for item in downloads],
+        estimated_bytes=estimated,
+        offline_capable=not online and not untrusted and (not local or (bool(bundled) and len(bundled) == len(local))),
+        target_requirements=requirements,
+        memory_bytes=memory,
     )
 
 
@@ -1122,27 +1363,44 @@ def test_runtime_does_not_need_the_studio():
 '''
 
 
-def _upload_section(curl: str | None, german: bool) -> str:
+#: README templates and their text fragments per language (``readme/standard.<lang>.md``, ``portable.<lang>.md``,
+#: ``strings.<lang>.json``); a language without a file falls back to English.
+README_DIR = Path(__file__).parent / "readme"
+
+
+#: The port of a portable package (``config/settings.toml``); the source export documents uvicorn's 8000.
+PORTABLE_PORT = 8800
+
+
+def example_base(options: ExportOptions) -> str:
+    return f"http://127.0.0.1:{PORTABLE_PORT if options.kind == 'portable' else 8000}"
+
+
+def readme_template(kind: str, language: str) -> str:
+    for code in (language, "en"):
+        path = README_DIR / f"{kind}.{code}.md"
+        if path.is_file():
+            return path.read_text(encoding="utf-8")
+    raise FileNotFoundError(f"README template {kind} is missing")
+
+
+def readme_strings(language: str) -> dict[str, str]:
+    english: dict[str, str] = json.loads((README_DIR / "strings.en.json").read_text(encoding="utf-8"))
+    path = README_DIR / f"strings.{language}.json"
+    if language == "en" or not path.is_file():
+        return english
+    return {**english, **json.loads(path.read_text(encoding="utf-8"))}
+
+
+def _upload_section(curl: str | None, strings: dict[str, str]) -> str:
     """The README part on sending files as ``multipart/form-data`` (only for forms with file fields)."""
     if not curl:
         return ""
-    if german:
-        intro = (
-            "Dateien gehen als Base64 im JSON-Körper oder als `multipart/form-data`: ein Teil je Datei, benannt nach "
-            "seinem Feld, die übrigen Werte als JSON im Teil `values`. Hochgeladene Dateien gelten nur für diesen Lauf."
-        )
-    else:
-        intro = (
-            "Files travel as Base64 in the JSON body or as `multipart/form-data`: one part per file, named after its "
-            "field, the other values as JSON in the part `values`. Uploaded files belong to that run only."
-        )
-    return f"\n{intro}\n\n```bash\n{curl}\n```\n"
+    return f"\n{strings['upload_intro']}\n\n```bash\n{curl}\n```\n"
 
 
-def _approval_steps(count: int, german: bool) -> str:
-    if german:
-        return f"{count} Freigabeschritt" if count == 1 else f"{count} Freigabeschritte"
-    return f"{count} approval step" if count == 1 else f"{count} approval steps"
+def _approval_steps(count: int, strings: dict[str, str]) -> str:
+    return strings["approval_one" if count == 1 else "approval_many"].replace("{count}", str(count))
 
 
 def _readme(
@@ -1157,12 +1415,13 @@ def _readme(
     base_urls: dict[str, str] | None = None,
     provider_settings: dict[str, dict[str, Any]] | None = None,
 ) -> str:
-    sample = examples(served, "http://127.0.0.1:8000")
-    german = options.language == "de"
+    portable = options.kind == "portable"
+    sample = examples(served, example_base(options))
+    strings = readme_strings(options.language)
     name = project_name(publication)
     bundle = release.bundle
     agent_git = options.orkexa == "git"
-    text = _README_DE if german else _README_EN
+    text = readme_template("portable" if portable else "standard", options.language)
     providers = release_providers(bundle)
     replacements = {
         "{title}": publication.name,
@@ -1181,59 +1440,25 @@ def _readme(
         "{curl_result}": sample.curl["result"],
         "{curl_events}": sample.curl["events"],
         "{curl_approve}": sample.curl["approve"],
-        "{upload}": _upload_section(sample.curl.get("upload"), german),
+        "{upload}": _upload_section(sample.curl.get("upload"), strings),
         "{key_variable}": KEY_VARIABLE,
-        "{approvals}": _approval_steps(bundle.approvals(), german),
+        "{approvals}": _approval_steps(bundle.approvals(), strings),
         "{limits}": "\n".join(
             f"| `LIMIT_{key.upper()}` | `{value}` |" for key, value in publication.limits.model_dump().items()
         ),
-        "{agent_install}": (_AGENT_GIT_DE if german else _AGENT_GIT_EN)
-        if agent_git
-        else (_AGENT_BUNDLE_DE if german else _AGENT_BUNDLE_EN),
+        "{agent_install}": strings["agent_git" if agent_git else "agent_bundle"],
         "{tools}": ", ".join(f"`{item}`" for item in tools) or "-",
         "{knowledge_in}": ", ".join(included) or "-",
         "{knowledge_out}": ", ".join(excluded) or "-",
         "{memory}": ", ".join(memory) or "-",
         "{guide}": ("\n- [docs/AI_GUIDE.md](docs/AI_GUIDE.md)" if options.guide_id else ""),
         "{providers}": ", ".join(PROVIDERS[item].label for item in providers if item in PROVIDERS) or "-",
-        "{provider_rows}": _provider_rows(providers, german, base_urls, provider_settings),
+        "{provider_rows}": _provider_rows(providers, strings, base_urls, provider_settings),
+        "{port}": str(PORTABLE_PORT),
     }
     for key, value in replacements.items():
         text = text.replace(key, value)
     return text
-
-
-_AGENT_GIT_EN = """`orkexa` is not on PyPI; it is installed from its GitHub repository at the exact commit Nodestro
-used (see `pyproject.toml`). While the repository is private, installing needs read access to
-`github.com/peterkarlhuber/orkexa`, e.g. a token:
-
-```bash
-git config --global url."https://x-access-token:<TOKEN>@github.com/peterkarlhuber/orkexa".insteadOf \\
-  "https://github.com/peterkarlhuber/orkexa"
-```
-
-Without that access the installation fails. Export again with "include the library" if the project has
-to install without it."""
-
-_AGENT_GIT_DE = """`orkexa` gibt es nicht auf PyPI; es wird aus seinem GitHub-Repository installiert, genau in dem
-Commit, den Nodestro verwendet hat (siehe `pyproject.toml`). Solange das Repository privat ist, brauchst du
-für die Installation Lesezugriff auf `github.com/peterkarlhuber/orkexa`, zum Beispiel mit einem Token:
-
-```bash
-git config --global url."https://x-access-token:<TOKEN>@github.com/peterkarlhuber/orkexa".insteadOf \\
-  "https://github.com/peterkarlhuber/orkexa"
-```
-
-Ohne diesen Zugriff schlägt die Installation fehl. Exportiere erneut mit „Library mitliefern“, wenn das
-Projekt ohne Zugriff installierbar sein muss."""
-
-_AGENT_BUNDLE_EN = """`orkexa` is included as source code in `vendor/orkexa` (MIT license, see its `LICENSE`) and
-installed from there; no access to its repository is needed. The person who exported this project
-confirmed that they may pass the library on. Keep that in mind before sharing the project."""
-
-_AGENT_BUNDLE_DE = """`orkexa` liegt als Quellcode in `vendor/orkexa` (MIT-Lizenz, siehe dortige `LICENSE`) und
-wird von dort installiert; ein Zugriff auf das Repository ist nicht nötig. Beim Export wurde bestätigt,
-dass die Library weitergegeben werden darf. Beachte das, bevor du das Projekt weitergibst."""
 
 
 def _aws_issues(ctx: Nodestro, provider: str) -> list[CheckIssue]:
@@ -1292,11 +1517,18 @@ def _aws_region(provider: str, settings: dict[str, dict[str, Any]] | None) -> st
 
 def _provider_rows(
     providers: list[str],
-    german: bool,
+    strings: dict[str, str],
     base_urls: dict[str, str] | None,
     settings: dict[str, dict[str, Any]] | None = None,
 ) -> str:
     """The README table rows of the providers' environment variables."""
+
+    def say(key: str, **values: str) -> str:
+        text = strings[key]
+        for name, value in values.items():
+            text = text.replace("{" + name + "}", value)
+        return text
+
     rows: list[str] = []
     for provider in providers:
         info = PROVIDERS.get(provider)
@@ -1306,355 +1538,18 @@ def _provider_rows(
             names = " / ".join(f"`{name}`" for name in info.region_env_vars)
             region = _aws_region(provider, settings)
             shown = f" (`{region}`)" if region else ""
-            if german:
-                rows.append(f"| {names} | AWS-Region für {info.label}; ohne sie gilt die exportierte Region{shown}. |")
-                rows.append(
-                    "| `AWS_PROFILE`, `AWS_ACCESS_KEY_ID`, ... | Anmeldung bei AWS über die Standard-Credential-Chain "
-                    "dieses Rechners (Umgebung, `~/.aws`, IAM-Rolle); das Projekt enthält keine AWS-Zugangsdaten. |"
-                )
-            else:
-                rows.append(f"| {names} | The AWS region for {info.label}; without it the exported region{shown}. |")
-                rows.append(
-                    "| `AWS_PROFILE`, `AWS_ACCESS_KEY_ID`, ... | AWS sign-in through the default credential chain of "
-                    "this machine (environment, `~/.aws`, IAM role); the project contains no AWS credentials. |"
-                )
+            rows.append(f"| {names} | {say('aws_region', label=info.label, shown=shown)} |")
+            rows.append(f"| `AWS_PROFILE`, `AWS_ACCESS_KEY_ID`, ... | {say('aws_signin')} |")
             continue
         if info.needs_key:
             names = " / ".join(f"`{name}`" for name in info.env_vars)
-            text = (
-                f"Der Schlüssel für {info.label}. Ohne ihn antwortet ein Start mit 503."
-                if german
-                else f"The key for {info.label}. Without it, starting a run answers 503."
-            )
-            rows.append(f"| {names} | {text} |")
+            rows.append(f"| {names} | {say('key', label=info.label)} |")
             continue
         default = (base_urls or {}).get(provider) or info.default_base_url
         shown = f" (`{default}`)" if default else ""
-        if german:
-            rows.append(f"| `{base_url_variable(provider)}` | Basis-URL von {info.label}{shown}. |")
-            rows.append(
-                f"| `{provider.upper()}_API_KEY` | Schlüssel für {info.label}, falls der Server einen verlangt. |"
-            )
-        else:
-            rows.append(f"| `{base_url_variable(provider)}` | The base URL of {info.label}{shown}. |")
-            rows.append(f"| `{provider.upper()}_API_KEY` | A key for {info.label}, if the server needs one. |")
+        rows.append(f"| `{base_url_variable(provider)}` | {say('base_url', label=info.label, shown=shown)} |")
+        rows.append(f"| `{provider.upper()}_API_KEY` | {say('endpoint_key', label=info.label)} |")
     return "\n".join(rows)
-
-
-_README_EN = """# {title}: workflow API
-
-This project serves the Nodestro workflow **{title}** as an HTTP API, independent of Nodestro Studio.
-It was exported from release **v{number}** (workflow version v{version}, published {published},
-digest `{digest}`) and contains:
-
-- `workflow/release.json`: the published workflow, its sub-workflows and the code of its tools, frozen;
-- `nodestro_runtime/` and `nodestro_api/`: the execution engine of Nodestro (nodestro-runtime {nodestro}) and
-  the HTTP layer of published workflows, copied unchanged (versions, source commits and checksums in
-  `RUNTIME.json`), so the workflow runs exactly as in the studio: parallel agents, decisions, approvals,
-  sub-workflows, tools, budgets and result files;
-- `app/`: the application (`main.py`), its configuration (`config.py`), the request models (`schemas.py`)
-  and a tool to create API keys (`keys.py`);
-- `tests/`: tests with a simulated model (no cost) and `examples/`.{guide}
-
-Nothing is sent to Nodestro. The API needs access to the AI providers of its agents ({providers}) and its
-own API keys for its clients.
-
-## Requirements
-
-- Python {python} (the versions in `requirements.lock` were taken from Nodestro running on Python {python})
-- Access to {providers} (see "Configure")
-
-### orkexa (agent library)
-
-{agent_install}
-
-## Install
-
-```bash
-python -m venv .venv && . .venv/bin/activate
-pip install -r requirements.lock
-# or with uv:  uv sync   (creates uv.lock; needs network access)
-cp .env.example .env
-```
-
-## Configure
-
-All settings come from environment variables or `.env` (see `app/config.py`):
-
-| Variable | Meaning |
-| --- | --- |
-{provider_rows}
-| `API_KEYS` | The keys of your clients (hashes only, see below). Empty: every request is refused. |
-| `DATA_DIR` | Where runs, approvals, files and memory are stored (default `./data`). |
-| `API_DOCS` | `local` (default: `/docs` only from this computer), `on` or `off`. |
-| `RUN_RETENTION_DAYS` | Delete runs older than this many days at start (0 keeps everything). |
-| `TOOL_SANDBOX` | `subprocess` (default) or `docker`, see below. |
-
-`TOOL_SANDBOX=subprocess` runs only tools a person wrote in the tool editor, as a process of this server.
-`TOOL_SANDBOX=docker` runs every own tool in an isolated container. It needs Docker and Orkexa's sandbox image
-`orkexa-sandbox`, which you build once from Orkexa's repository at the commit of the installed `orkexa`
-(`docker build -t orkexa-sandbox -f docker/sandbox.Dockerfile .`; its base image is pinned by digest and its
-packages by hash) and check with `python -m orkexa.dynamic.docker --self-test`. Nodestro's studio uses its own
-runtime image instead, which an export cannot build. A container has no network, a read-only file system, no
-capabilities and an unprivileged user; tools run in it only after the Docker daemon passed Orkexa's preflight and
-the in-container self-test (checked in the background at the start), and always by the id of the image that passed,
-never by the tag. AI-generated tools run only with `docker`; without it, or until that check passed, runs that use
-them are refused.
-
-### API keys
-
-```bash
-python -m app.keys new --name "My app" --scopes run,read
-```
-
-prints a key (give it to the client, it is shown once) and the line for `API_KEYS`. Permissions:
-`run` (start, cancel, continue), `read` (status, result, events, files, usage), `approve` (decide
-approvals). Separate several entries with `;`. Keys of Nodestro are never part of an export.
-
-### Limits
-
-The limits of the published API apply; override them with:
-
-| Variable | Exported value |
-| --- | --- |
-{limits}
-
-`LIMIT_DAILY_BUDGET_USD` stops new runs once the runs of the last 24 hours cost that much;
-`LIMIT_RUN_BUDGET_USD` stops a single run. Exceeded limits answer `429` with a code.
-
-## Start
-
-```bash
-uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
-
-The API then answers on this computer only. To serve other computers, listen on `0.0.0.0` **behind HTTPS**
-(e.g. a reverse proxy, or `--ssl-certfile`/`--ssl-keyfile`): keys must not travel unencrypted.
-Interactive documentation: http://127.0.0.1:8000/docs
-
-## Use
-
-Runs are asynchronous: starting answers `202` with a `run_id`; then ask for the status, follow the events
-and fetch the result.
-
-```bash
-export {key_variable}=ndk_...
-{curl_start}
-```
-
-The request body (`examples/request.json`):
-
-```json
-{request}
-```
-{upload}
-```bash
-{curl_status}
-{curl_result}
-{curl_events}
-```
-
-Status values: `queued`, `running`, `awaiting_approval`, `succeeded`, `failed`, `cancelled`. Sending the
-same `Idempotency-Key` again returns the run that already started, so retries never start a run twice.
-The events are Server-Sent Events; after a lost connection, reconnect with `Last-Event-ID`; the first event is
-always the complete current status. `examples/client.py` does all of this in Python.
-
-## Approvals
-
-This workflow has {approvals}. A run that reaches one pauses with the status
-`awaiting_approval`; the status lists what to review. A key with the permission `approve` decides:
-
-```bash
-{curl_approve}
-```
-
-`approval_id` may be left out when only one approval waits. Every decision is stored with the run (who, when,
-comment); a second decision on the same approval answers `409`. Waiting runs survive restarts.
-
-## Result files and data
-
-Result files the workflow writes are listed under `/runs/{run_id}/files`. Everything is stored in
-`DATA_DIR/runtime.db` (runs with their steps, usage and cost, approvals, files, uploads, memory) and
-`DATA_DIR/tools`. Knowledge included in the export: {knowledge_in}. Not included (the agents run without
-it): {knowledge_out}. Starting memory: {memory}. Tools: {tools}.
-
-## Errors and costs
-
-Errors have the form `{"error": {"status", "code", "message", "params"}}`. Every run records tokens and
-estimated cost (status and result: `usage`); `/api/published/{slug}/usage` sums them up. A run that was
-interrupted by a restart is marked `failed` (`run.interrupted`) and can be continued with
-`POST /runs/{run_id}/resume`.
-
-## Tests
-
-```bash
-pip install pytest httpx
-pytest
-```
-
-The tests use a simulated model: they cost nothing and check the routes, validation, keys, limits,
-idempotency, a complete run, approvals across a restart and that the runtime is unchanged.
-"""
-
-_README_DE = """# {title}: Workflow-API
-
-Dieses Projekt stellt den Nodestro-Workflow **{title}** als HTTP-API bereit, unabhängig von Nodestro Studio.
-Es wurde aus der Veröffentlichung **v{number}** exportiert (Workflow-Version v{version}, veröffentlicht am
-{published}, Prüfsumme `{digest}`) und enthält:
-
-- `workflow/release.json`: den veröffentlichten Workflow, seine Unterworkflows und den Code seiner Tools,
-  unveränderlich;
-- `nodestro_runtime/` und `nodestro_api/`: die Ausführungs-Engine von Nodestro (nodestro-runtime {nodestro})
-  und die HTTP-Schicht veröffentlichter Workflows, unverändert kopiert (Versionen, Quell-Commits und
-  Prüfsummen in `RUNTIME.json`). Der Workflow läuft daher genau wie im Studio: parallele Agenten,
-  Entscheidungen, Freigaben, Unterworkflows, Tools, Budgets und Ergebnisdateien;
-- `app/`: die Anwendung (`main.py`), ihre Konfiguration (`config.py`), die Anfragemodelle (`schemas.py`)
-  und ein Werkzeug für API-Schlüssel (`keys.py`);
-- `tests/`: Tests mit einem simulierten Modell (kostenlos) und `examples/`.{guide}
-
-Nichts wird an Nodestro gesendet. Die API braucht Zugang zu den KI-Anbietern ihrer Agenten ({providers})
-und eigene API-Schlüssel für ihre Clients.
-
-## Voraussetzungen
-
-- Python {python} (die Versionen in `requirements.lock` stammen aus Nodestro unter Python {python})
-- Zugang zu {providers} (siehe „Konfiguration“)
-
-### orkexa (Agenten-Library)
-
-{agent_install}
-
-## Installation
-
-```bash
-python -m venv .venv && . .venv/bin/activate
-pip install -r requirements.lock
-# oder mit uv:  uv sync   (erzeugt uv.lock; braucht Netzwerkzugriff)
-cp .env.example .env
-```
-
-## Konfiguration
-
-Alle Einstellungen kommen aus Umgebungsvariablen oder `.env` (siehe `app/config.py`):
-
-| Variable | Bedeutung |
-| --- | --- |
-{provider_rows}
-| `API_KEYS` | Die Schlüssel deiner Clients (nur Hashes, siehe unten). Leer: Jede Anfrage wird abgelehnt. |
-| `DATA_DIR` | Ablage für Läufe, Freigaben, Dateien und Memory (Standard `./data`). |
-| `API_DOCS` | `local` (Standard: `/docs` nur von diesem Rechner), `on` oder `off`. |
-| `RUN_RETENTION_DAYS` | Läufe, die älter sind, werden beim Start gelöscht (0 behält alles). |
-| `TOOL_SANDBOX` | `subprocess` (Standard) oder `docker`, siehe unten. |
-
-`TOOL_SANDBOX=subprocess` führt nur Tools aus, die eine Person im Tool-Editor geschrieben hat, als Prozess
-dieses Servers. `TOOL_SANDBOX=docker` führt jedes eigene Tool in einem isolierten Container aus. Dafür braucht es
-Docker und Orkexas Sandbox-Image `orkexa-sandbox`, das du einmal aus Orkexas Repository im Commit des installierten
-`orkexa` baust (`docker build -t orkexa-sandbox -f docker/sandbox.Dockerfile .`; sein Basis-Image ist per Digest,
-seine Pakete per Hash festgelegt) und mit `python -m orkexa.dynamic.docker --self-test` prüfst. Nodestros Studio
-nutzt stattdessen sein eigenes Runtime-Image, das ein Export nicht bauen kann. Ein Container hat kein Netzwerk, ein
-schreibgeschütztes Dateisystem, keine Capabilities und einen Benutzer ohne Rechte; Tools laufen darin erst, nachdem
-der Docker-Daemon Orkexas Vorabprüfung und den Selbsttest im Container bestanden hat (beim Start im Hintergrund
-geprüft), und immer über die ID des geprüften Images, nie über den Tag. KI-generierte Tools laufen nur mit
-`docker`; ohne, oder solange diese Prüfung nicht bestanden ist, werden Läufe, die sie nutzen, abgelehnt.
-
-### API-Schlüssel
-
-```bash
-python -m app.keys new --name "Meine App" --scopes run,read
-```
-
-gibt einen Schlüssel aus (für den Client, er wird nur einmal angezeigt) und die Zeile für `API_KEYS`.
-Rechte: `run` (starten, abbrechen, fortsetzen), `read` (Status, Ergebnis, Ereignisse, Dateien, Nutzung),
-`approve` (Freigaben entscheiden). Mehrere Einträge trennst du mit `;`. Schlüssel aus Nodestro werden nie
-exportiert.
-
-### Limits
-
-Es gelten die Limits der veröffentlichten API; du überschreibst sie mit:
-
-| Variable | Exportierter Wert |
-| --- | --- |
-{limits}
-
-`LIMIT_DAILY_BUDGET_USD` stoppt neue Läufe, sobald die Läufe der letzten 24 Stunden so viel gekostet haben;
-`LIMIT_RUN_BUDGET_USD` stoppt einen einzelnen Lauf. Überschrittene Limits antworten mit `429` und einem Code.
-
-## Starten
-
-```bash
-uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
-
-Die API antwortet dann nur auf diesem Rechner. Für andere Rechner lauschst du auf `0.0.0.0` **hinter HTTPS**
-(z. B. ein Reverse Proxy oder `--ssl-certfile`/`--ssl-keyfile`): Schlüssel dürfen nicht unverschlüsselt
-übertragen werden. Interaktive Dokumentation: http://127.0.0.1:8000/docs
-
-## Verwenden
-
-Läufe sind asynchron: Der Start antwortet mit `202` und einer `run_id`; danach fragst du den Status ab,
-folgst den Ereignissen und holst das Ergebnis.
-
-```bash
-export {key_variable}=ndk_...
-{curl_start}
-```
-
-Der Anfragekörper (`examples/request.json`):
-
-```json
-{request}
-```
-{upload}
-```bash
-{curl_status}
-{curl_result}
-{curl_events}
-```
-
-Status: `queued`, `running`, `awaiting_approval`, `succeeded`, `failed`, `cancelled`. Sendest du denselben
-`Idempotency-Key` erneut, kommt der bereits gestartete Lauf zurück; Wiederholungen starten also nie einen
-zweiten Lauf. Die Ereignisse sind Server-Sent Events; nach einem Verbindungsabbruch verbindest du dich mit
-`Last-Event-ID` neu, und das erste Ereignis ist immer der vollständige aktuelle Status. `examples/client.py`
-zeigt alles in Python.
-
-## Freigaben
-
-Dieser Workflow hat {approvals}. Ein Lauf, der einen erreicht, pausiert mit dem Status
-`awaiting_approval`; der Status zeigt, was zu prüfen ist. Ein Schlüssel mit dem Recht `approve` entscheidet:
-
-```bash
-{curl_approve}
-```
-
-`approval_id` kann entfallen, wenn nur eine Freigabe wartet. Jede Entscheidung wird mit dem Lauf gespeichert
-(wer, wann, Kommentar); eine zweite Entscheidung zur selben Freigabe antwortet mit `409`. Wartende Läufe
-überstehen Neustarts.
-
-## Ergebnisdateien und Daten
-
-Ergebnisdateien des Workflows stehen unter `/runs/{run_id}/files`. Alles liegt in `DATA_DIR/runtime.db`
-(Läufe mit Schritten, Nutzung und Kosten, Freigaben, Dateien, Uploads, Memory) und `DATA_DIR/tools`. Im
-Export enthaltenes Wissen: {knowledge_in}. Nicht enthalten (die Agenten laufen ohne): {knowledge_out}.
-Start-Memory: {memory}. Tools: {tools}.
-
-## Fehler und Kosten
-
-Fehler haben die Form `{"error": {"status", "code", "message", "params"}}`. Jeder Lauf speichert Tokens und
-geschätzte Kosten (Status und Ergebnis: `usage`); `/api/published/{slug}/usage` fasst sie zusammen. Ein
-Lauf, der durch einen Neustart unterbrochen wurde, ist `failed` (`run.interrupted`) und lässt sich mit
-`POST /runs/{run_id}/resume` fortsetzen.
-
-## Tests
-
-```bash
-pip install pytest httpx
-pytest
-```
-
-Die Tests verwenden ein simuliertes Modell: Sie kosten nichts und prüfen Routen, Validierung, Schlüssel,
-Limits, Idempotenz, einen vollständigen Lauf, Freigaben über einen Neustart und die Unverändertheit der
-Runtime.
-"""
 
 
 def _env_example(
@@ -1813,6 +1708,7 @@ def _project_files(
     dry_run: bool = False,
 ) -> dict[str, bytes]:
     """Every file of the project, by its path inside the project folder."""
+    options = normalized(options)
     bundle = release.bundle
     files: dict[str, bytes] = {}
 
@@ -1824,12 +1720,24 @@ def _project_files(
     # Runtime: byte-identical copies of the installed packages.
     checksums: dict[str, str] = {}
     dirs = _package_dirs()
-    for name in runtime_modules(dirs):
+    for name in runtime_modules(dirs, PORTABLE_ROOTS if options.kind == "portable" else ()):
         package, _, module = name.partition(".")
         path = f"{package}/{module}.py"
         data = b"" if dry_run else (dirs[package] / f"{module}.py").read_bytes()
         add(path, data)
         checksums[path] = _sha(data)
+    if options.web_ui or options.kind == "portable":
+        # The web interface's static files (its translations also hold the launcher's messages).
+        webui = dirs["nodestro_api"] / "webui"
+        for file in sorted(webui.rglob("*")):
+            if not file.is_file() or file.name.startswith("."):
+                continue
+            if not options.web_ui and file.parent.name != "i18n":
+                continue
+            path = f"nodestro_api/webui/{file.relative_to(webui).as_posix()}"
+            data = b"" if dry_run else file.read_bytes()
+            add(path, data)
+            checksums[path] = _sha(data)
     for package, directory in dirs.items():
         data = b"" if dry_run else (directory / "__init__.py").read_bytes()
         add(f"{package}/__init__.py", data)
@@ -1906,6 +1814,7 @@ def _project_files(
         "base_urls": base_urls,
         "capabilities": capabilities,
         "settings": provider_settings,
+        **_retrieval_manifest(ctx, bundle, knowledge_in),
         "knowledge_included": [ref.id for ref in bundle.knowledge if ref.name in knowledge_in],
         "knowledge_excluded": [ref.id for ref in bundle.knowledge if ref.name in knowledge_out],
         "memory_included": memory_in,
@@ -1957,7 +1866,10 @@ def _project_files(
             provider_settings,
         ),
     )
-    sample = examples(served, "http://127.0.0.1:8000")
+    sample = examples(served, example_base(options))
+    # The API's contract as a file (OpenAPI 3): the same document the running application serves.
+    document = openapi_document(ctx.serving, served, servers=[example_base(options)])
+    add("openapi.json", (json.dumps(document, indent=2, ensure_ascii=False) + "\n").encode())
     add("examples/request.json", json.dumps(sample.request, indent=2, ensure_ascii=False) + "\n")
     add("examples/client.py", sample.python)
     add(
@@ -1976,6 +1888,32 @@ def _project_files(
         guide = ctx.store.get_raw(GUIDES, options.guide_id) or {}
         add("docs/AI_GUIDE.md", str(guide.get("markdown", "")))
     return files
+
+
+def _retrieval_manifest(ctx: Nodestro, bundle: ReleaseBundle, knowledge_in: list[str]) -> dict[str, Any]:
+    """The knowledge search mode and embedding model the export keeps (only when an agent searches semantically)."""
+    from .export_models import retrieval_modes
+
+    mode, embedding = _workspace_retrieval(ctx)
+    if not knowledge_in or not embedding or not retrieval_modes(bundle, mode) & {"vector", "hybrid"}:
+        return {}
+    return {"knowledge_retrieval": mode if mode in ("vector", "hybrid") else "fts", "embedding_model": embedding}
+
+
+def project_files(
+    ctx: Nodestro, publication: Publication, release: Release, options: ExportOptions
+) -> dict[str, bytes]:
+    """Every file of the standard project (a portable package adds its Python, libraries and launcher)."""
+    return _project_files(ctx, publication, release, options)
+
+
+def record_export(ctx: Nodestro, publication: Publication, release: Release, record: ExportRecord) -> None:
+    """Store an export's record and note it in the publication's history (the ZIP is already written)."""
+    ctx.store.put(EXPORTS, record.id, record)
+    publication.history.append(
+        PublicationEvent(kind="exported", details={"release": release.number, "export": record.id})
+    )
+    ctx.publications._put(publication)
 
 
 def _provider_manifest(
@@ -2035,6 +1973,9 @@ def export(ctx: Nodestro, publication: Publication, release: Release, options: E
     if not found.ok:
         first = next(item for item in found.problems if item.level == "error")
         raise NodestroError(first.code, first.message, **first.params)
+    options = normalized(options)
+    if options.kind == "portable":
+        raise NodestroError("export.portable_job", "A portable package is built as a job (export jobs)")
     files = _project_files(ctx, publication, release, options)
     data = build_zip(files, project_name(publication))
     record = ExportRecord(
@@ -2052,11 +1993,7 @@ def export(ctx: Nodestro, publication: Publication, release: Release, options: E
     target = ctx.config.data_dir / "exports"
     target.mkdir(parents=True, exist_ok=True)
     (target / f"{record.id}.zip").write_bytes(data)
-    ctx.store.put(EXPORTS, record.id, record)
-    publication.history.append(
-        PublicationEvent(kind="exported", details={"release": release.number, "export": record.id})
-    )
-    ctx.publications._put(publication)
+    record_export(ctx, publication, release, record)
     return record
 
 
@@ -2098,6 +2035,20 @@ def content(ctx: Nodestro, export_id: str) -> tuple[ExportRecord, bytes]:
     if _sha(data) != record.sha256:
         raise NodestroError("export.file_changed", "The ZIP file of this export was changed; export again")
     return record, data
+
+
+def content_path(ctx: Nodestro, export_id: str) -> tuple[ExportRecord, Path]:
+    """The ZIP of an export on disk (large portable packages are streamed, never read into memory); its size and
+    SHA-256 are checked against the record first."""
+    record = ctx.store.get(EXPORTS, export_id, ExportRecord)
+    if record is None:
+        raise KeyError(export_id)
+    path = ctx.config.data_dir / "exports" / f"{record.id}.zip"
+    if not path.is_file():
+        raise NodestroError("export.file_missing", "The ZIP file of this export is gone; export again")
+    if path.stat().st_size != record.size:
+        raise NodestroError("export.file_changed", "The ZIP file of this export was changed; export again")
+    return record, path
 
 
 __all__ = [

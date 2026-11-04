@@ -142,9 +142,11 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # read: + a run's budget and the open budget requests (BUDGET-1)
         # read: + local models overview, recommendation, jobs, job; the semantic index's status
         # read: + the models per agent of a template copy (EX-011)
-        "read": 114,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
+        # read: + a publication's portable export jobs and one job (portable export)
+        "read": 116,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
         # MCP status, servers, server, tools (WP-3); tool approval inbox, run questions, pre-grants, state (S-2b)
-        "edit": 51,  # + the tool panel's test run (review H-1, was run); + semantic index rebuild, cancel, remove
+        # edit: + starting and cancelling a portable export job (like the synchronous export)
+        "edit": 53,  # + the tool panel's test run (review H-1, was run); + semantic index rebuild, cancel, remove
         # run: + sending a live run chat message (LRC-1)
         # run: + deciding a run's budget request (BUDGET-1; the route also checks starter or admin)
         "run": 33,  # + deciding a tool call (S-2b); - the tool panel's test run (review H-1)

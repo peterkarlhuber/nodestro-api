@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Portable export and web interface: `ExportOptions` gains `kind` (`standard`, `portable`), `web_ui`, `platform`,
+  `local_models`, `offline`, `confirm_models`, `allow_downloads` and `output_dir`; `ExportCheck.portable` lists every
+  model with its role, installation state, size, memory, license and the network needs. A ready-to-run package is
+  built as a background job (`POST /publications/{id}/export-jobs`, `GET /publications/{id}/export-jobs`,
+  `GET /export-jobs/{id}`, `POST /export-jobs/{id}/cancel`): its own Python, every library for the target platform
+  (hash-locked), a launcher (`start`, `stop`, `status`, `open`, `configure`, `keys`, `check`), optionally the local
+  models with Ollama (SHA-256 verified) and a web interface in six languages. No key is ever in a package. Both
+  export kinds now carry `openapi.json` and a README in the export language (de, en, es, fr, it, pt-BR), and include
+  `python-multipart` so `multipart/form-data` uploads work in standard exports too. Thinking models served by the
+  exported Ollama report `reasoning` and use the CPU saving mode without a GPU. See `docs/portable-export.md`.
 - Pin nodestro-runtime 2f1de71 (runtime #108 to #110: checked key figures, the built-in `table_totals` tool, orkexa
   6e61862 so local Ollama agents with a structured result call their tools) and nodestro-examples c05ae45 (examples
   #67: production-downtime and four more templates take their key figures from a tool). OpenAPI: `OutputField.source`
