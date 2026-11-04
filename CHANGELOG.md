@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Knowledge search bounds (API3-10, contract change): `GET /api/knowledge/search` takes `k` from 1 to 50 and `q`
+  of at most 2000 characters; other values answer 422 (before: any `k`, `k <= 0` answered 400 from the runtime).
 - Exported applications (backend audit round 3): `/docs` serves a vendored, pinned Swagger UI (exports carry
   `nodestro_api/swagger_ui`) instead of loading it from a CDN into the web interface's origin; request bodies are
   limited before the key check (`BodyLimitMiddleware` in exported applications and the network listener; the

@@ -26193,7 +26193,7 @@
     },
     "/api/knowledge/search": {
       "get": {
-        "description": "``mode``: full text, semantic or both (default: the workspace's setting); never a silent fallback.",
+        "description": "``mode``: full text, semantic or both (default: the workspace's setting); never a silent fallback.\n\n``k`` is 1 to 50 hits and ``q`` at most 2000 characters (larger values answer 422).",
         "operationId": "search_knowledge_api_knowledge_search_get",
         "parameters": [
           {
@@ -26201,6 +26201,7 @@
             "name": "q",
             "required": true,
             "schema": {
+              "maxLength": 2000,
               "title": "Q",
               "type": "string"
             }
@@ -26227,6 +26228,8 @@
             "required": false,
             "schema": {
               "default": 8,
+              "maximum": 50,
+              "minimum": 1,
               "title": "K",
               "type": "integer"
             }

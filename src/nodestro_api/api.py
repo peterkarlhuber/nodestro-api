@@ -1930,15 +1930,22 @@ async def upload_knowledge(
     return added
 
 
+#: Knowledge search bounds (API3-10): hits per search and the length of the query text.
+SEARCH_MAX_HITS = 50
+SEARCH_QUERY_CHARS = 2000
+
+
 @router.get("/knowledge/search", dependencies=READ)
 def search_knowledge(
     ctx: Ctx,
-    q: str,
+    q: Annotated[str, Query(max_length=SEARCH_QUERY_CHARS)],
     file_ids: str | None = None,
-    k: int = 8,
+    k: Annotated[int, Query(ge=1, le=SEARCH_MAX_HITS)] = 8,
     mode: Literal["fts", "vector", "hybrid"] | None = None,
 ) -> list[SearchHit]:
-    """``mode``: full text, semantic or both (default: the workspace's setting); never a silent fallback."""
+    """``mode``: full text, semantic or both (default: the workspace's setting); never a silent fallback.
+
+    ``k`` is 1 to 50 hits and ``q`` at most 2000 characters (larger values answer 422)."""
     ids = [item for item in (file_ids or "").split(",") if item] or None
     return [
         SearchHit(
