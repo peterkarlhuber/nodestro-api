@@ -150,6 +150,9 @@ def test_the_command_line_refuses_network_bindings(tmp_path: Path, monkeypatch: 
 
     started: list[str] = []
     monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: started.append("run"))
+    # The command line serves through uvicorn.Server once a "ready" callback is given; never bind a real port here.
+    monkeypatch.setattr(uvicorn.Server, "run", lambda self, *args, **kwargs: started.append("run"))
+    monkeypatch.setattr(cli, "port_problem", lambda host, port: None)
     monkeypatch.delenv("NODESTRO_ALLOWED_HOSTS", raising=False)
     # The command line writes these into the environment; monkeypatch restores them afterwards.
     monkeypatch.setenv("NODESTRO_HOST", "127.0.0.1")

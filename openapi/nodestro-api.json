@@ -4583,6 +4583,15 @@
             "title": "License",
             "type": "string"
           },
+          "license_source": {
+            "default": "ollama",
+            "enum": [
+              "ollama",
+              "upstream"
+            ],
+            "title": "License Source",
+            "type": "string"
+          },
           "listed_capabilities": {
             "items": {
               "type": "string"
@@ -5538,6 +5547,25 @@
           "captured_at"
         ],
         "title": "ContextRef",
+        "type": "object"
+      },
+      "ContractField": {
+        "description": "A field of a team's output contract with its description in the language (its label for people).",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "ContractField",
         "type": "object"
       },
       "ConversationDetail": {
@@ -9223,7 +9251,14 @@
             "type": "array"
           },
           "hardware": {
-            "$ref": "#/components/schemas/Hardware"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Hardware"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "manageable": {
             "title": "Manageable",
@@ -19756,6 +19791,13 @@
             "title": "Contract",
             "type": "array"
           },
+          "contract_fields": {
+            "items": {
+              "$ref": "#/components/schemas/ContractField"
+            },
+            "title": "Contract Fields",
+            "type": "array"
+          },
           "description": {
             "title": "Description",
             "type": "string"
@@ -26193,7 +26235,7 @@
     },
     "/api/knowledge/search": {
       "get": {
-        "description": "``mode``: full text, semantic or both (default: the workspace's setting); never a silent fallback.",
+        "description": "``mode``: full text, semantic or both (default: the workspace's setting); never a silent fallback.\n\n``k`` is 1 to 50 hits and ``q`` at most 2000 characters (larger values answer 422).",
         "operationId": "search_knowledge_api_knowledge_search_get",
         "parameters": [
           {
@@ -26201,6 +26243,7 @@
             "name": "q",
             "required": true,
             "schema": {
+              "maxLength": 2000,
               "title": "Q",
               "type": "string"
             }
@@ -26227,6 +26270,8 @@
             "required": false,
             "schema": {
               "default": 8,
+              "maximum": 50,
+              "minimum": 1,
               "title": "K",
               "type": "integer"
             }
@@ -26748,6 +26793,7 @@
     },
     "/api/local-models": {
       "get": {
+        "description": "The local model server's state, the catalog, this computer's hardware and the recommendations.\n\nFor a server's tenants the server's machine stays hidden: ``hardware`` is ``null``, the status has no\n``base_url``, ``runtime_path``, ``models_dir``, ``free_bytes`` or ``detected_external``, and advice and\nrecommendation reasons that describe the machine (memory, CPU, GPU, model speed or size) are left out.",
         "operationId": "local_overview_api_local_models_get",
         "responses": {
           "200": {
@@ -29165,7 +29211,7 @@
         "summary": "List Export Jobs"
       },
       "post": {
-        "description": "Build a portable package in the background (``options.kind`` must be ``portable``).",
+        "description": "Build a portable package in the background (``options.kind`` must be ``portable``).\n\nOn a server this answers ``403 export.server_unsupported`` unless its operator enabled export jobs\n(``NODESTRO_SERVER_EXPORT_JOBS=1``); then one package is built at a time on the whole server\n(``export.busy`` otherwise) and a package larger than ``NODESTRO_SERVER_EXPORT_MAX_BYTES`` (default 2 GiB) is\nrefused (``403 export.server_too_large`` from the estimate, or the job fails with that code).",
         "operationId": "start_export_job_api_publications__publication_id__export_jobs_post",
         "parameters": [
           {

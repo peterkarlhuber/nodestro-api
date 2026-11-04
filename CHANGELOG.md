@@ -2,6 +2,62 @@
 
 ## Unreleased
 
+- OpenAPI regenerated for the nodestro-examples 64e534a pin: `TemplateTeam.contract_fields` (`ContractField`: `name`,
+  `description`).
+- A server's tenants no longer learn the server's memory, CPU or GPU through the local model advice
+  (`local.cpu_only`, `local.memory_low`, `local.model_slow`, `local.model_too_large`) or the recommendation reasons
+  `no_gpu` and `hardware_limit` (`GET /api/local-models`, `GET /api/local-models/recommend`; follow-up of API3-08,
+  UX round 3 handover B-1). The desktop and Local Docker are unchanged.
+- Pin nodestro-runtime 40c8c06 (runtime #113, backend audit round 3; orkexa e9c2147, axentra 0a1d1cc) and
+  nodestro-examples 64e534a (examples #70 team `contract_fields`, #71 runtime pin). The contract
+  gains the local catalog's `license_source`.
+
+- Export check speed (UX handover B2): the module closure of an export and the dependency closure are kept per
+  installed package version and file change time instead of being computed on every `POST .../export/check`
+  (about 1 s per call before, 0.1 s after the first one here; 2.7-10 s were measured on a slower machine).
+- Importing a folder that is no offline model package (no `orkexa-models.json`, unknown format, a bad entry) answers
+  `400 local.invalid_package` with `params.reason` (orkexa's code) and `params.path` instead of `agent.OllamaError`
+  (UX handover B3).
+- Portable export check (UX handover B5): no `export.distribution_unconfirmed` ("or choose the Git reference") for
+  `kind: "portable"`, which always bundles orkexa (`export.portable_distribution` asks instead); `export.downloads` and
+  `export.download_needed` carry `params.downloads` as codes (`python`, `libraries`, `ollama`) for translation
+  (`params.items` stays).
+- Unknown ids (DX handover B12, error-code change): a route's own unknown workflow, run or publication answers 404 with
+  `workflow.not_found`, `run.not_found` or `publication.not_found` (params `id`, `kind`, and `name` as before) and
+  "Workflow 'wf_x' does not exist"; other unknown names keep `not_found`.
+- `nodestro-api` (DX handover B2): a taken port stops with exit code 2 and one sentence ("Port 8000 on 127.0.0.1 is
+  already in use ... Start with --port <number> or stop the other program") before anything says "running"; "running
+  at" is printed once the server listens. `cli.serve` takes an optional `ready` callback (used by the studio's
+  `nodestro` to open the browser only then) and `cli.port_problem`/`cli.require_free_port` are new.
+- Export with the Git reference to orkexa (DX handover B1): the check no longer warns `export.private_repository`
+  (orkexa's repository is public), the README in six languages says installing needs access to github.com and no
+  longer advises a token in the global git configuration, the Dockerfile comment says the same, and the manifest
+  key `orkexa.private_repository_access_needed` is now `orkexa.network_access_needed`.
+- Checks that may ask a local model server (RT3-04 pattern) no longer run on the event loop: the agent test's
+  check and providers, the provider check before a published run starts (studio and exported applications), the
+  assistant model check of the architect, the assistant and the run chat, and the model check of a test series.
+  `Benchmarks.start` is now a coroutine. No API change.
+- Portable packages (API3-04): on POSIX the launcher creates `data/` and `logs/` owner-only (`0700`, `application.log`
+  `0600`) and narrows them when they are inside the package, so other users of a shared computer cannot read runs,
+  results, the knowledge or the log.
+- Local models on a server (API3-08, contract change): for a server's tenants `GET /api/local-models` returns
+  `hardware: null` (the field is now nullable) and a status without `base_url`, `runtime_path`, `models_dir`,
+  `free_bytes` and `detected_external` (null); catalog, installed models and recommendations are unchanged.
+- Portable export jobs on a server (API3-07): on the server profile `POST /publications/{id}/export-jobs` answers
+  `403 export.server_unsupported` unless the operator sets `NODESTRO_SERVER_EXPORT_JOBS=1`; then one build at a time
+  on the whole server (`export.busy`) and a size limit per package (`NODESTRO_SERVER_EXPORT_MAX_BYTES`, default 2 GiB,
+  `403 export.server_too_large`). Desktop and Nodestro Local Docker are unchanged. See `docs/portable-export.md`.
+- Knowledge search bounds (API3-10, contract change): `GET /api/knowledge/search` takes `k` from 1 to 50 and `q`
+  of at most 2000 characters; other values answer 422 (before: any `k`, `k <= 0` answered 400 from the runtime).
+- Exported applications (backend audit round 3): `/docs` serves a vendored, pinned Swagger UI (exports carry
+  `nodestro_api/swagger_ui`) instead of loading it from a CDN into the web interface's origin; request bodies are
+  limited before the key check (`BodyLimitMiddleware` in exported applications and the network listener; the
+  published `approve`/`resume` bodies get the JSON limit, answered as `413 request.too_large` in the published
+  APIs' error format; web sign-in at most 4 KiB, provider setup 16 KiB); the generated `app/main.py` writes the
+  workflow name as an escaped string. Portable packages: `start --host` obeys the HTTPS rule for serving the
+  network, the one-time sign-in link is no longer written to the log file, the bundled Python's build
+  configuration no longer names the exporting computer's data folder, and `output_dir` values with characters
+  outside the Basic Multilingual Plane give a valid `config/settings.toml`.
 - Pin nodestro-runtime c6f0240 (runtime #111, #112: orkexa 22f2910, the Ollama runtime of another platform) and
   nodestro-examples ed350b2 (examples #68, #69: the same runtime pin). No API change from the pins.
 - Portable export and web interface: `ExportOptions` gains `kind` (`standard`, `portable`), `web_ui`, `platform`,

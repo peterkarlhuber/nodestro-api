@@ -88,7 +88,7 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     codes = {item["code"]: item["level"] for item in check["problems"]}
     assert codes["export.knowledge_excluded"] == "warning"
     assert codes["export.memory_empty"] == "info"
-    assert codes["export.private_repository"] == "warning"
+    assert "export.private_repository" not in codes  # orkexa's repository is public (DX handover B1)
     assert {item["kind"] for item in check["resources"]} == {"knowledge", "memory"}
     assert "nodestro_runtime/engine.py" in check["files"]
     assert "nodestro_api/standalone.py" in check["files"]
@@ -110,7 +110,10 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     # + nodestro_api.export_models (every model of the release, incl. orchestrators) and nodestro_api.webui_server
     # (the optional web interface of an export).
     expected |= {"nodestro_api.export_models", "nodestro_api.webui_server"}
-    assert len(modules) == 52 and expected | {"nodestro_runtime.local_models"} <= set(modules)
+    # + nodestro_api.body_limit and nodestro_runtime.traces (its trace limit): the exported application limits
+    # request bodies like the studio (backend audit 3, API3-02).
+    expected |= {"nodestro_api.body_limit", "nodestro_runtime.traces"}
+    assert len(modules) == 54 and expected | {"nodestro_runtime.local_models"} <= set(modules)
     assert "nodestro_runtime.local_service" not in modules
     # The audit/usage hook protocol is exported (tool approvals and the usage log import it); the Axentra
     # integration itself is server-only and never part of an export.
@@ -180,9 +183,12 @@ def test_export_contains_no_secrets_and_is_reproducible(exported: Callable[..., 
         manifest = json.loads(archive.read(f"{root}/workflow/manifest.json"))
         readme = archive.read(f"{root}/README.md").decode()
     assert manifest["secrets_included"] is False
-    assert manifest["orkexa"]["private_repository_access_needed"] is True
+    assert manifest["orkexa"]["network_access_needed"] is True
+    assert "private_repository_access_needed" not in manifest["orkexa"]
     assert manifest["providers"] == ["anthropic"]
     assert "orkexa" in readme and "API_KEYS" in readme and "ANTHROPIC_API_KEY" in readme
+    # Never advise a token in the git configuration (it would be stored in plain text in ~/.gitconfig).
+    assert "x-access-token" not in readme and "insteadOf" not in readme and "private" not in readme
     assert "This workflow has 1 approval step." in readme
     history = client.get(f"/api/publications/{publication['id']}/exports").json()
     assert [item["id"] for item in history] == [second["id"], first["id"]]
@@ -194,7 +200,9 @@ def test_runtime_is_copied_unchanged(exported: Callable[..., Any], tmp_path: Pat
     runtime = json.loads((project / "RUNTIME.json").read_text())
     dirs = {"nodestro_runtime": Path(nodestro_runtime.__file__).parent, "nodestro_api": Path(exporter.__file__).parent}
     modules = {name.replace(".", "/") + ".py" for name in exporter.runtime_modules()}
-    assert set(runtime["files"]) == modules | {"nodestro_runtime/__init__.py", "nodestro_api/__init__.py"}
+    # The vendored Swagger UI of /docs is copied unchanged as well (backend audit 3, API3-01).
+    swagger = {f"nodestro_api/swagger_ui/{name}" for name in exporter._SWAGGER_FILES}
+    assert set(runtime["files"]) == modules | swagger | {"nodestro_runtime/__init__.py", "nodestro_api/__init__.py"}
     for name in runtime["files"]:
         package, _, file = name.partition("/")
         assert (project / name).read_bytes() == (dirs[package] / file).read_bytes()
@@ -467,3 +475,20 @@ def test_an_installation_without_test_tools_exports(
     pyproject = (project / "pyproject.toml").read_text()
     assert '"pytest>=8",' in pyproject  # the floor its generated tests need, not a pin
     assert f'"httpx=={real("httpx")}",' in pyproject  # an installed test tool stays pinned
+
+
+def test_the_module_analysis_is_kept_between_checks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """UX handover B2: the export check parsed every runtime module on each call (about a second)."""
+    first = exporter.runtime_modules()
+    parsed: list[str] = []
+    original = exporter.ast.parse
+    monkeypatch.setattr(exporter.ast, "parse", lambda source, *a, **k: parsed.append("x") or original(source, *a, **k))
+    assert exporter.runtime_modules() == first
+    assert parsed == []
+    # A changed file of a package (a development checkout) is analysed again.
+    folder = tmp_path / "pkg"
+    folder.mkdir()
+    (folder / "a.py").write_text("x = 1\n")
+    before = exporter._source_stamp({"nodestro_api": folder})
+    os.utime(folder / "a.py", ns=(1, 10**18))
+    assert exporter._source_stamp({"nodestro_api": folder}) != before

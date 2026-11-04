@@ -20,14 +20,15 @@ from __future__ import annotations
 import asyncio
 from typing import Literal
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Request, Response
 from nodestro_runtime.knowledge import KnowledgeIndexStatus
 from nodestro_runtime.local_models import CATALOG, TASKS, Hardware, LocalModelInfo, Recommendation, fits, recommend_all
 from nodestro_runtime.local_service import BuildInput, LocalAdvice, LocalJob, LocalStatus, build_inputs
+from orkexa.local import OllamaError
 from pydantic import BaseModel, Field
 
 from .api import Ctx
-from .permissions import EDIT, INSTALL, READ
+from .permissions import EDIT, INSTALL, READ, Permission, Principal
 from .serving import ApiError
 
 router = APIRouter(prefix="/api")
@@ -46,7 +47,8 @@ class CatalogEntry(LocalModelInfo):
 class LocalOverview(BaseModel):
     status: LocalStatus
     catalog: list[CatalogEntry]
-    hardware: Hardware
+    #: This computer's hardware; ``None`` for a server's tenants (the server's machine belongs to its operator).
+    hardware: Hardware | None
     recommendations: list[Recommendation]
     #: Hints for this computer: small context window, no GPU, slow or too large models, the CPU saving mode.
     advice: list[LocalAdvice] = Field(default_factory=list)
@@ -101,8 +103,44 @@ def _manageable(ctx: Ctx) -> None:
         raise ApiError(403, "local.server_managed", "The local model server of a server belongs to its operator")
 
 
+def _operator_view(ctx: Ctx, request: Request) -> bool:
+    """Whether the request may see the machine behind the local model server: everywhere but on a server, where
+    only a principal with ``install`` may (no tenant role holds it)."""
+    if ctx.local_models.profile != "server":
+        return True
+    principal: Principal | None = getattr(request.state, "principal", None)
+    return principal is not None and principal.allows(Permission.INSTALL)
+
+
+#: Advice and recommendation reasons that describe the machine itself (memory, CPU count, GPU, model speed or size
+#: against the hardware): a server's tenants do not get them (API3-08 follow-up, UX handover B-1).
+_MACHINE_ADVICE = {"local.cpu_only", "local.memory_low", "local.model_slow", "local.model_too_large"}
+_MACHINE_REASONS = {"no_gpu", "hardware_limit"}
+
+
+def _without_machine_reasons(recommendation: Recommendation) -> Recommendation:
+    reasons = [reason for reason in recommendation.reasons if reason not in _MACHINE_REASONS]
+    return recommendation.model_copy(update={"reasons": reasons})
+
+
+#: What a server's tenants do not see of the local model server's state (API3-08): its folders, executable and
+#: addresses on the server's machine.
+_MACHINE_FIELDS = {
+    "base_url": None,
+    "runtime_path": None,
+    "models_dir": None,
+    "free_bytes": None,
+    "detected_external": None,
+}
+
+
 @router.get("/local-models", dependencies=READ)
-async def local_overview(ctx: Ctx) -> LocalOverview:
+async def local_overview(ctx: Ctx, request: Request) -> LocalOverview:
+    """The local model server's state, the catalog, this computer's hardware and the recommendations.
+
+    For a server's tenants the server's machine stays hidden: ``hardware`` is ``null``, the status has no
+    ``base_url``, ``runtime_path``, ``models_dir``, ``free_bytes`` or ``detected_external``, and advice and
+    recommendation reasons that describe the machine (memory, CPU, GPU, model speed or size) are left out."""
     service = ctx.local_models
     status = await asyncio.to_thread(service.status)
     hardware = await asyncio.to_thread(service.hardware)
@@ -124,21 +162,24 @@ async def local_overview(ctx: Ctx) -> LocalOverview:
         preferences=service.preferences(),
     )
     saving = await asyncio.to_thread(ctx.reasoning_saving)
+    operator = _operator_view(ctx, request)
+    advice = service.advice(status, reasoning_saving=saving)
     return LocalOverview(
-        status=status,
+        status=status if operator else status.model_copy(update=_MACHINE_FIELDS),
         catalog=catalog,
-        hardware=hardware,
-        recommendations=recommendations,
-        advice=service.advice(status, reasoning_saving=saving),
+        hardware=hardware if operator else None,
+        recommendations=recommendations if operator else [_without_machine_reasons(r) for r in recommendations],
+        advice=advice if operator else [hint for hint in advice if hint.code not in _MACHINE_ADVICE],
         manageable=service.profile != "server",
     )
 
 
 @router.get("/local-models/recommend", dependencies=READ)
-async def local_recommend(ctx: Ctx, task: str) -> Recommendation:
+async def local_recommend(ctx: Ctx, request: Request, task: str) -> Recommendation:
     if task not in TASKS:
         raise ApiError(400, "local.task_unknown", f"Unknown task {task!r}", task=task)
-    return await asyncio.to_thread(ctx.local_models.recommend, task)
+    found = await asyncio.to_thread(ctx.local_models.recommend, task)
+    return found if _operator_view(ctx, request) else _without_machine_reasons(found)
 
 
 @router.post("/local-models/start", dependencies=INSTALL)
@@ -195,7 +236,14 @@ async def local_import(body: ImportIn, ctx: Ctx) -> LocalJob:
         if not body.name:
             raise ApiError(400, "local.name_missing", "Name the model to create from the GGUF file")
         return await asyncio.to_thread(ctx.local_models.import_gguf, body.name, body.path, projector=body.projector)
-    return await asyncio.to_thread(ctx.local_models.import_package, body.path, body.models)
+    try:
+        return await asyncio.to_thread(ctx.local_models.import_package, body.path, body.models)
+    except OllamaError as exc:
+        # The package's structure is checked before the job starts (no manifest, unknown format, a bad entry): a
+        # code the studio translates instead of agent.OllamaError (UX handover B3).
+        if exc.code == "unreachable" or exc.code == "timeout":
+            raise
+        raise ApiError(400, "local.invalid_package", str(exc), reason=exc.code, path=body.path) from None
 
 
 @router.delete("/local-models/models/{name:path}", status_code=204, dependencies=INSTALL)

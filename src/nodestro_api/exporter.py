@@ -17,7 +17,7 @@ The project is generated deterministically, without any AI request:
 - ``tests/``: tests with a simulated model (no cost), ``examples/`` and a README.
 
 The agent library ``orkexa`` is not on PyPI. The user chooses how the export gets it: ``git``
-names the exact commit of its repository (installing needs access to it while it is private),
+names the exact commit of its public repository (installing needs access to github.com),
 ``bundle`` copies the library's source into ``vendor/`` (only after confirming the right to pass
 it on; the MIT license text travels with it). Both are stated in the README and the manifest.
 
@@ -31,7 +31,9 @@ exported: no API keys of any provider, no credentials in URLs, no settings.
 from __future__ import annotations
 
 import ast
+import contextlib
 from datetime import datetime
+import functools
 import hashlib
 from importlib import metadata
 import io
@@ -272,14 +274,54 @@ class _Imports(ast.NodeVisitor):
                 self._add(package, alias.name)
 
 
+#: The vendored Swagger UI files an export serves at ``/docs`` (with their license files).
+_SWAGGER_FILES = (
+    "swagger-ui-bundle.js",
+    "swagger-ui.css",
+    "favicon-32x32.png",
+    "nodestro-init.js",
+    "swagger-ui-bundle.js.LICENSE.txt",
+    "LICENSE",
+    "NOTICE",
+)
+
 #: The extra roots of a portable package: its launcher (which brings the provider key store).
 PORTABLE_ROOTS = ("nodestro_api.portable",)
 
 
 def runtime_modules(dirs: dict[str, Path] | None = None, extra: tuple[str, ...] = ()) -> list[str]:
     """The modules an exported project needs (``package.module``), from :data:`RUNTIME_ROOTS` (and ``extra``) and
-    their imports."""
+    their imports.
+
+    Parsing every module takes about a second, and the export check runs on each change of the export dialog: the
+    result is kept per installed version of the packages and the modification times of their files (an edited
+    development checkout is parsed again)."""
     dirs = dirs or _package_dirs()
+    key = tuple(sorted((package, str(path)) for package, path in dirs.items()))
+    return list(_runtime_modules(key, extra, _source_stamp(dirs)))
+
+
+def _source_stamp(dirs: dict[str, Path]) -> tuple[tuple[str, str, int], ...]:
+    """What the module closure depends on: each package's installed version and the newest change of its files."""
+    stamp: list[tuple[str, str, int]] = []
+    for package, folder in sorted(dirs.items()):
+        dist = next((name for name, module in RUNTIME_PACKAGES.items() if module == package), package)
+        try:
+            version = _version(dist)
+        except metadata.PackageNotFoundError:
+            version = ""
+        newest = 0
+        with contextlib.suppress(OSError):
+            newest = max((entry.stat().st_mtime_ns for entry in folder.glob("*.py")), default=0)
+        stamp.append((package, version, newest))
+    return tuple(stamp)
+
+
+@functools.lru_cache(maxsize=16)
+def _runtime_modules(
+    dirs_key: tuple[tuple[str, str], ...], extra: tuple[str, ...], _stamp: tuple[tuple[str, str, int], ...]
+) -> tuple[str, ...]:
+    dirs = {key: Path(path) for key, path in dirs_key}
     seen: set[str] = set()
     queue = [*RUNTIME_ROOTS, *extra]
     while queue:
@@ -297,7 +339,7 @@ def runtime_modules(dirs: dict[str, Path] | None = None, extra: tuple[str, ...] 
     leaked = seen & STUDIO_ONLY
     if leaked:
         raise RuntimeError(f"Studio modules would be exported: {sorted(leaked)}")
-    return sorted(seen)
+    return tuple(sorted(seen))
 
 
 def runtime_sources() -> dict[str, dict[str, str]]:
@@ -351,7 +393,19 @@ def _dev_requirement(name: str) -> str:
 
 
 def _closure(names: list[str]) -> dict[str, str]:
-    """``{distribution: version}`` of the installed requirements of ``names`` (with extras, markers)."""
+    """``{distribution: version}`` of the installed requirements of ``names`` (with extras, markers); kept per the
+    installed versions of ``names`` (reading the metadata of every distribution is slow)."""
+    versions = []
+    for item in names:
+        try:
+            versions.append(_version(Requirement(item).name))
+        except metadata.PackageNotFoundError:
+            versions.append("")
+    return dict(_closure_cached(tuple(names), tuple(versions)))
+
+
+@functools.lru_cache(maxsize=32)
+def _closure_cached(names: tuple[str, ...], _versions: tuple[str, ...]) -> tuple[tuple[str, str], ...]:
     environment = default_environment()
     found: dict[str, str] = {}
     queue: list[tuple[str, set[str]]] = []
@@ -379,7 +433,7 @@ def _closure(names: list[str]) -> dict[str, str]:
                 if not applies:
                     continue
             queue.append((requirement.name, set(requirement.extras)))
-    return found
+    return tuple(found.items())
 
 
 def _orkexa_git() -> str:
@@ -531,7 +585,9 @@ def check(ctx: Nodestro, publication: Publication, release: Release, options: Ex
                 tools=", ".join(foreign),
             )
         )
-    if options.orkexa == "bundle" and not options.confirm_distribution:
+    # A portable package always contains orkexa (there is no Git reference to choose): its own check asks for the
+    # confirmation (export.portable_distribution).
+    if options.orkexa == "bundle" and not options.confirm_distribution and options.kind != "portable":
         problems.append(
             _issue(
                 "export.distribution_unconfirmed",
@@ -539,15 +595,9 @@ def check(ctx: Nodestro, publication: Publication, release: Release, options: Ex
                 level="error",
             )
         )
-    if options.orkexa == "git":
-        problems.append(
-            _issue(
-                "export.private_repository",
-                "Installing the export needs read access to the repository peterkarlhuber/orkexa while it is private",
-                level="warning",
-            )
-        )
-    else:
+    # The Git reference names orkexa's public repository: nothing to warn about (the README says that installing
+    # needs github.com); never advise putting a token into the git configuration.
+    if options.orkexa != "git":
         problems.append(
             _issue(
                 "export.bundled_library",
@@ -810,6 +860,7 @@ def _portable_check(
                 "Building needs downloads that are not in the cache: " + ", ".join(item.what for item in missing),
                 level="error",
                 items=", ".join(item.what for item in missing),
+                downloads=[item.what for item in missing],
             )
         )
     elif missing:
@@ -820,6 +871,7 @@ def _portable_check(
                 level="info",
                 size=sum(item.size for item in missing),
                 items=", ".join(item.what for item in missing),
+                downloads=[item.what for item in missing],
             )
         )
     model_bytes = sum(item.size for item in local if item.name in bundled)
@@ -939,7 +991,7 @@ def _field_annotation(field: InputField) -> str:
     return f"{annotation} | None = Field(default=None, description={description})"
 
 
-_MAIN = '''"""The API of the exported workflow {name!r} (generated by Nodestro, release v{number}).
+_MAIN = '''"""The API of the exported workflow {name} (generated by Nodestro, release v{number}).
 
 Start:  uvicorn app.main:app --host 127.0.0.1 --port 8000
 """
@@ -1683,7 +1735,7 @@ def _library_license() -> str:
 
 def _dockerfile(agent_git: bool) -> str:
     note = (
-        "# orkexa comes from its Git repository: build with access to it while it is private (see README).\n"
+        "# orkexa comes from its public Git repository: building needs access to github.com (see README).\n"
         if agent_git
         else ""
     )
@@ -1738,6 +1790,13 @@ def _project_files(
             data = b"" if dry_run else file.read_bytes()
             add(path, data)
             checksums[path] = _sha(data)
+    # The API reference (``/docs``) with the vendored Swagger UI (no CDN in the application's origin, API3-01).
+    swagger = dirs["nodestro_api"] / "swagger_ui"
+    for name in _SWAGGER_FILES:
+        path = f"nodestro_api/swagger_ui/{name}"
+        data = b"" if dry_run else (swagger / name).read_bytes()
+        add(path, data)
+        checksums[path] = _sha(data)
     for package, directory in dirs.items():
         data = b"" if dry_run else (directory / "__init__.py").read_bytes()
         add(f"{package}/__init__.py", data)
@@ -1753,7 +1812,9 @@ def _project_files(
     )
     add("NODESTRO_LICENSE", NODESTRO_LICENSE)
     add("app/__init__.py", "")
-    add("app/main.py", _MAIN.format(name=publication.name, number=release.number))
+    # The name goes into a docstring of generated code: as a JSON string every quote, backslash and line break is
+    # escaped, so a name can never end the docstring and become code (backend audit 3, API3-06).
+    add("app/main.py", _MAIN.format(name=json.dumps(publication.name), number=release.number))
     add("app/config.py", _CONFIG)
     add("app/keys.py", _KEYS)
     add("app/schemas.py", schemas_source(bundle))
@@ -1808,7 +1869,7 @@ def _project_files(
         "orkexa": {
             "mode": options.orkexa,
             "requirement": "vendor/orkexa" if options.orkexa == "bundle" else _orkexa_git(),
-            "private_repository_access_needed": options.orkexa == "git",
+            "network_access_needed": options.orkexa == "git",
         },
         "providers": providers,
         "base_urls": base_urls,

@@ -2,7 +2,7 @@
   "upload_intro": "Files travel as Base64 in the JSON body or as `multipart/form-data`: one part per file, named after its field, the other values as JSON in the part `values`. Uploaded files belong to that run only.",
   "approval_one": "{count} approval step",
   "approval_many": "{count} approval steps",
-  "agent_git": "`orkexa` is not on PyPI; it is installed from its GitHub repository at the exact commit Nodestro\nused (see `pyproject.toml`). While the repository is private, installing needs read access to\n`github.com/peterkarlhuber/orkexa`, e.g. a token:\n\n```bash\ngit config --global url.\"https://x-access-token:<TOKEN>@github.com/peterkarlhuber/orkexa\".insteadOf \\\n  \"https://github.com/peterkarlhuber/orkexa\"\n```\n\nWithout that access the installation fails. Export again with \"include the library\" if the project has\nto install without it.",
+  "agent_git": "`orkexa` is not on PyPI; it is installed from its public GitHub repository at the exact commit Nodestro\nused (see `pyproject.toml`), so installing needs access to github.com. No account or token is needed. Export\nagain with \"include the library\" if the project has to install without access to github.com.",
   "agent_bundle": "`orkexa` is included as source code in `vendor/orkexa` (MIT license, see its `LICENSE`) and\ninstalled from there; no access to its repository is needed. The person who exported this project\nconfirmed that they may pass the library on. Keep that in mind before sharing the project.",
   "aws_region": "The AWS region for {label}; without it the exported region{shown}.",
   "aws_signin": "AWS sign-in through the default credential chain of this machine (environment, `~/.aws`, IAM role); the project contains no AWS credentials.",

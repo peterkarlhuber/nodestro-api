@@ -17,7 +17,11 @@ Limits per kind of route (:data:`ROUTE_LIMITS`), configurable through the enviro
   a declared size above 50 MB (fixed);
 - ``published``, the studio's test of a published API: the published APIs' 80 MB (fixed).
 
-The published workflow APIs (``/api/published``) keep their own limit and error format (:func:`serving.read_body`).
+The published workflow APIs (``/api/published``) keep their own limit and error format (:func:`serving.read_body`),
+except for their routes with a small JSON body (``approve``, ``resume``, :data:`PUBLISHED_SMALL`): FastAPI reads such a
+body before the API key is checked, so these get the ``json`` limit here, answered in the published APIs' error format.
+The exported application (:mod:`nodestro_api.standalone`) and the network listener (:mod:`nodestro_api.network`) use
+this middleware too.
 """
 
 from __future__ import annotations
@@ -51,6 +55,9 @@ ROUTE_LIMITS: tuple[tuple[frozenset[str], re.Pattern[str], str], ...] = tuple(
         ({"POST"}, r"^/api/publications/[^/]+/test$", "published"),
     )
 )
+
+#: Published routes whose body is a small JSON object parsed by FastAPI before the key check (audit 3, API3-02).
+PUBLISHED_SMALL = re.compile(r"^/api/published/[^/]+/runs/[^/]+/(approve|resume)$")
 
 _VARIABLES = {
     "json": ("NODESTRO_MAX_REQUEST_BYTES", 2 * MIB),
@@ -89,7 +96,7 @@ class BodyLimits:
     def for_request(self, method: str, path: str) -> int | None:
         """The limit of one request; ``None`` for the published APIs (they check their own)."""
         if path == PUBLISHED_PREFIX or path.startswith(PUBLISHED_PREFIX + "/"):
-            return None
+            return self.json if PUBLISHED_SMALL.match(path) else None
         kind = next(
             (kind for methods, pattern, kind in ROUTE_LIMITS if method in methods and pattern.match(path)), None
         )
@@ -111,11 +118,13 @@ class BodyLimitMiddleware:
         if limit is None:
             await self.app(scope, receive, send)
             return
+        path = str(scope.get("path", ""))
+        published = path == PUBLISHED_PREFIX or path.startswith(PUBLISHED_PREFIX + "/")
         for name, value in scope.get("headers") or []:
             if name == b"content-length":
                 declared = value.decode("latin-1").strip()
                 if declared.isdigit() and int(declared) > limit:
-                    await _too_large(send, limit)
+                    await _too_large(send, limit, published=published)
                     return
         received = 0
         exceeded = False
@@ -140,7 +149,7 @@ class BodyLimitMiddleware:
                 # Whatever the application answers to the cut body, the client gets the 413.
                 if message["type"] == "http.response.start" and not started:
                     started = True
-                    await _too_large(send, limit)
+                    await _too_large(send, limit, published=published)
                 return
             if message["type"] == "http.response.start":
                 started = True
@@ -152,18 +161,19 @@ class BodyLimitMiddleware:
             if not exceeded:
                 raise
         if exceeded and not started:
-            await _too_large(send, limit)
+            await _too_large(send, limit, published=published)
 
 
-async def _too_large(send: Send, limit: int) -> None:
+async def _too_large(send: Send, limit: int, *, published: bool = False) -> None:
     limit_mb = max(limit // MIB, 1)
-    body = json.dumps(
-        {
-            "detail": f"The request is too large: at most {limit_mb} MB are accepted here",
-            "code": "request.too_large",
-            "params": {"limit_mb": limit_mb},
-        }
-    ).encode()
+    message = f"The request is too large: at most {limit_mb} MB are accepted here"
+    # The published APIs answer in their own format (``{"error": {...}}``, :class:`serving.ApiError`).
+    found: dict[str, object] = (
+        {"error": {"status": 413, "code": "request.too_large", "message": message, "params": {"limit_mb": limit_mb}}}
+        if published
+        else {"detail": message, "code": "request.too_large", "params": {"limit_mb": limit_mb}}
+    )
+    body = json.dumps(found).encode()
     await send(
         {
             "type": "http.response.start",
@@ -178,4 +188,4 @@ async def _too_large(send: Send, limit: int) -> None:
     await send({"type": "http.response.body", "body": body})
 
 
-__all__ = ["ROUTE_LIMITS", "BodyLimitMiddleware", "BodyLimits"]
+__all__ = ["PUBLISHED_SMALL", "ROUTE_LIMITS", "BodyLimitMiddleware", "BodyLimits"]

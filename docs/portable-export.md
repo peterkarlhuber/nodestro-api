@@ -43,6 +43,22 @@ Both carry `openapi.json` (the same document the running application serves) and
    stored, not compressed). The build works in `DATA_DIR/export-work/<job>` and needs about twice the estimated
    size free; it never holds the package in memory. Downloads are cached and reused.
 
+### On a server
+
+On the server profile (`NODESTRO_PROFILE=server`) export jobs are **off**: `POST /publications/{id}/export-jobs`
+answers `403 export.server_unsupported` for every tenant role. A build downloads Python and libraries, writes
+hundreds of megabytes (gigabytes with models) and runs in the API process, so only the server's operator can switch
+it on, for every tenant at once:
+
+| Variable | Effect |
+|---|---|
+| `NODESTRO_SERVER_EXPORT_JOBS=1` | export jobs are allowed (any other value: refused) |
+| `NODESTRO_SERVER_EXPORT_MAX_BYTES` | size limit of one package in bytes (default 2 GiB): a larger estimate answers `403 export.server_too_large`, a finished ZIP above it is deleted and the job fails with that code |
+
+With the opt-in, one package is built at a time on the whole server, across all tenants (`400 export.busy`
+otherwise). Packages stay in the tenant's `exports` folder until the tenant deletes them; there is no automatic
+retention. The standard export (`POST /publications/{id}/exports`) is not affected.
+
 ## Security model
 
 - **No secrets in packages.** No Nodestro key, no provider key, no AWS credential. Keys are entered on the target
@@ -60,6 +76,10 @@ Both carry `openapi.json` (the same document the running application serves) and
 - **Tools.** Unchanged Docker-first rule: person-written tools run as subprocesses; AI-generated tools only in the
   Docker sandbox (`[tools] sandbox = "docker"`), never as a fallback without it. An offline package refuses
   AI-generated tools at export time.
+- **Local files.** On Linux and macOS the launcher keeps `data/` and `logs/` owner-only (`0700`, the log file
+  `0600`): created that way, and narrowed on start when they are inside the package (older packages). A data or log
+  folder configured outside the package keeps the modes its owner gave it once it exists. Key files and the
+  launcher's state are `0600`.
 - **Integrity.** `lib.lock` (hashes), `SHA256SUMS`, model blobs by SHA-256, Ollama archives pinned by Orkexa.
 
 ## Platforms

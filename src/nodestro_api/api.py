@@ -121,6 +121,10 @@ def actor_id(request: Request) -> str:
     return principal.id if principal is not None else "local"
 
 
+#: Path parameters whose unknown id answers with a code of its kind (any other unknown name: ``not_found``).
+_NOT_FOUND_KINDS = {"workflow_id": "workflow", "run_id": "run", "publication_id": "publication"}
+
+
 def _error(status_code: int, code: str, detail: str, **params: Any) -> JSONResponse:
     """An error response: ``detail`` is the technical text, ``code``/``params`` the UI message."""
     return JSONResponse({"detail": detail, "code": code, "params": params}, status_code=status_code)
@@ -134,8 +138,16 @@ def install_error_handlers(app: FastAPI) -> None:
     async def bad_request(_: Request, exc: Exception) -> JSONResponse:
         return _error(400, "bad_request", str(exc))
 
-    async def not_found(_: Request, exc: Exception) -> JSONResponse:
+    async def not_found(request: Request, exc: Exception) -> JSONResponse:
         name = str(exc.args[0]) if exc.args else ""
+        # The id of the route's own record gets a code of its kind (DX handover B12): ``workflow.not_found``,
+        # ``run.not_found``, ``publication.not_found``, with ``id`` and ``kind``; ``name`` stays for older clients.
+        for param, kind in _NOT_FOUND_KINDS.items():
+            if name and request.path_params.get(param) == name:
+                label = kind.capitalize()
+                return _error(
+                    404, f"{kind}.not_found", f"{label} {name!r} does not exist", name=name, id=name, kind=kind
+                )
         return _error(404, "not_found", f"Not found: {name}", name=name)
 
     async def upstream(_: Request, exc: Exception) -> JSONResponse:
@@ -1642,6 +1654,14 @@ async def test_agent(body: AgentTestIn, ctx: Ctx, request: Request) -> AgentTest
             "Testing a changed agent configuration needs the permission 'edit'",
             permission=Permission.EDIT.value,
         )
+    # The checks may ask a local model server (/api/show, /api/ps): never on the event loop (RT3-04 pattern).
+    await asyncio.to_thread(_check_agent_test, ctx, body)
+    result, tracker = await asyncio.to_thread(ctx.tester.run, body)
+    ctx.usage_log.record("agent_test", tracker.records, label=body.agent.name, ref=result.id, tracker=tracker)
+    return result
+
+
+def _check_agent_test(ctx: Nodestro, body: AgentTestIn) -> None:
     blocking = [issue for issue in ctx.builder.validate(body.agent) if issue.level == "error"]
     if blocking:
         raise NodestroError(
@@ -1653,9 +1673,6 @@ async def test_agent(body: AgentTestIn, ctx: Ctx, request: Request) -> AgentTest
     if body.agent.quality.enabled:
         models.add(body.agent.quality.judge_model)
     ctx.require_providers(models)  # fail fast: agent and judge need their providers
-    result, tracker = await asyncio.to_thread(ctx.tester.run, body)
-    ctx.usage_log.record("agent_test", tracker.records, label=body.agent.name, ref=result.id, tracker=tracker)
-    return result
 
 
 @router.get("/agents/templates", dependencies=READ)
@@ -1930,15 +1947,22 @@ async def upload_knowledge(
     return added
 
 
+#: Knowledge search bounds (API3-10): hits per search and the length of the query text.
+SEARCH_MAX_HITS = 50
+SEARCH_QUERY_CHARS = 2000
+
+
 @router.get("/knowledge/search", dependencies=READ)
 def search_knowledge(
     ctx: Ctx,
-    q: str,
+    q: Annotated[str, Query(max_length=SEARCH_QUERY_CHARS)],
     file_ids: str | None = None,
-    k: int = 8,
+    k: Annotated[int, Query(ge=1, le=SEARCH_MAX_HITS)] = 8,
     mode: Literal["fts", "vector", "hybrid"] | None = None,
 ) -> list[SearchHit]:
-    """``mode``: full text, semantic or both (default: the workspace's setting); never a silent fallback."""
+    """``mode``: full text, semantic or both (default: the workspace's setting); never a silent fallback.
+
+    ``k`` is 1 to 50 hits and ``q`` at most 2000 characters (larger values answer 422)."""
     ids = [item for item in (file_ids or "").split(",") if item] or None
     return [
         SearchHit(

@@ -64,6 +64,52 @@ logger = logging.getLogger(__name__)
 
 JOBS = "export_jobs"
 
+#: On a server, portable packages are built only when its operator switches it on (API3-07): ``1`` enables export
+#: jobs for every tenant, with one build at a time on the whole server and a size limit per package.
+SERVER_JOBS_ENV = "NODESTRO_SERVER_EXPORT_JOBS"
+#: The size limit of one package on a server (bytes, the estimate before the build and the finished ZIP).
+SERVER_MAX_BYTES_ENV = "NODESTRO_SERVER_EXPORT_MAX_BYTES"
+SERVER_MAX_BYTES = 2 * 1024**3
+#: One build at a time on a server, across all tenants (each tenant has its own :class:`JobRunner`).
+_SERVER_SLOT = threading.Lock()
+
+
+def server_jobs_enabled(environ: dict[str, str] | None = None) -> bool:
+    return (os.environ if environ is None else environ).get(SERVER_JOBS_ENV, "").strip() == "1"
+
+
+def server_max_bytes(environ: dict[str, str] | None = None) -> int:
+    raw = (os.environ if environ is None else environ).get(SERVER_MAX_BYTES_ENV, "").strip()
+    try:
+        value = int(raw) if raw else SERVER_MAX_BYTES
+    except ValueError:
+        value = SERVER_MAX_BYTES
+    return value if value > 0 else SERVER_MAX_BYTES
+
+
+def server_admission(ctx: Nodestro, estimated_bytes: int) -> None:
+    """Refuses an export job on a server (``403``) unless the operator enabled them and the estimated package fits
+    the size limit. Other profiles (desktop, Nodestro Local Docker) are not limited here."""
+    if ctx.profile.kind != "server":
+        return
+    from .serving import ApiError
+
+    if not server_jobs_enabled():
+        raise ApiError(
+            403,
+            "export.server_unsupported",
+            "Portable packages are not built on this server; its operator can enable them",
+        )
+    limit = server_max_bytes()
+    if estimated_bytes > limit:
+        raise ApiError(
+            403,
+            "export.server_too_large",
+            "This package is larger than this server allows",
+            size=estimated_bytes,
+            limit=limit,
+        )
+
 
 @dataclass(frozen=True)
 class Platform:
@@ -215,6 +261,9 @@ class JobRunner:
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 raise NodestroError("export.busy", "Another export is being built; wait for it or cancel it")
+            server = self.ctx.profile.kind == "server"
+            if server and not _SERVER_SLOT.acquire(blocking=False):
+                raise NodestroError("export.busy", "Another export is being built on this server; try again later")
             job = ExportJob(
                 publication_id=publication.id,
                 release_number=release.number,
@@ -225,9 +274,17 @@ class JobRunner:
             cancel = threading.Event()
             self._cancel[job.id] = cancel
             self._thread = threading.Thread(
-                target=self._run, args=(job, publication, release, options, cancel), name="nodestro-export", daemon=True
+                target=self._run,
+                args=(job, publication, release, options, cancel, server),
+                name="nodestro-export",
+                daemon=True,
             )
-            self._thread.start()
+            try:
+                self._thread.start()
+            except BaseException:
+                if server:
+                    _SERVER_SLOT.release()
+                raise
         return job
 
     def cancel(self, job_id: str) -> ExportJob:
@@ -249,6 +306,7 @@ class JobRunner:
         release: Release,
         options: ExportOptions,
         cancel: threading.Event,
+        server: bool = False,
     ) -> None:
         progress = Progress(self.ctx, job, cancel)
         try:
@@ -266,6 +324,8 @@ class JobRunner:
             job.finished_at = now()
             self.ctx.store.put(JOBS, job.id, job)
             self._cancel.pop(job.id, None)
+            if server:
+                _SERVER_SLOT.release()
 
 
 def runner(ctx: Nodestro) -> JobRunner:
@@ -439,6 +499,33 @@ def _run(command: list[str], env: dict[str, str], progress: Progress, *, cwd: Pa
     if process.returncode != 0:
         raise NodestroError("export.uv_failed", text.strip()[-3000:] or "uv failed", command=" ".join(command[1:3]))
     return text
+
+
+#: The install prefix python-build-standalone builds with (what its build configuration names before uv patches it).
+NEUTRAL_PREFIX = "/install"
+_PREFIX = re.compile(r"""["'](?:prefix|exec_prefix)["']: ["']([^"']+)["']""")
+
+
+def neutral_python_paths(target: Path, source: Path) -> list[Path]:
+    """Remove the exporting computer's folder from the copied Python's build configuration (API3-05).
+
+    uv writes the folder it installed Python to (here ``<data>/export-cache/python/...``, which names the exporting
+    user's home folder) into ``_sysconfigdata_*.py``; the package gets python-build-standalone's neutral prefix
+    instead. The values only matter for compiling extensions, which a package never does."""
+    known = {str(source), str(source.resolve())}
+    changed: list[Path] = []
+    for file in sorted(target.glob("lib/python3.*/_sysconfigdata_*.py")):
+        text = file.read_text(encoding="utf-8")
+        # The prefix uv wrote, also when the cache was moved since (then it is not ``source``).
+        written = {match for match in _PREFIX.findall(text) if match != NEUTRAL_PREFIX}
+        prefixes = sorted(known | written, key=len, reverse=True)
+        cleaned = text
+        for prefix in prefixes:
+            cleaned = cleaned.replace(prefix, NEUTRAL_PREFIX)
+        if cleaned != text:
+            file.write_text(cleaned, encoding="utf-8")
+            changed.append(file)
+    return changed
 
 
 def install_python(ctx: Nodestro, platform: Platform, progress: Progress, *, allow_downloads: bool) -> Path:
@@ -711,6 +798,12 @@ def start_scripts(platform: Platform) -> dict[str, tuple[str, int]]:
     return found
 
 
+def _toml_string(value: str) -> str:
+    """A TOML basic string: JSON's escapes are TOML's, but not its surrogate pairs (so no ``ensure_ascii``), and TOML
+    also needs DEL escaped (API3-09)."""
+    return json.dumps(value, ensure_ascii=False).replace("\x7f", "\\u007f")
+
+
 def settings_toml(options: ExportOptions, *, context_length: int) -> str:
     """``config/settings.toml``: safe defaults that work right after unpacking."""
     output = options.output_dir.strip() or "results"
@@ -734,7 +827,7 @@ allowed_hosts = []
 data_dir = "data"
 # A copy of every result file goes to <output_dir>/<date>_<run>/ (relative or absolute; "" turns it off).
 # A folder that cannot be created or written falls back to "results" next to this file.
-output_dir = {json.dumps(output)}
+output_dir = {_toml_string(output)}
 # Delete runs older than this many days at start (0 keeps everything).
 run_retention_days = 0
 log_dir = "logs"
@@ -896,6 +989,7 @@ def _assemble(
     shutil.copytree(python_dir, stage / "python", symlinks=True)
     for marker in (stage / "python").glob("lib/python3.*/EXTERNALLY-MANAGED"):
         marker.unlink()
+    neutral_python_paths(stage / "python", python_dir)
     python_version = re.sub(r"^cpython-([0-9.]+)-.*$", r"\1", python_dir.name)
     site = stage / "python" / platform.site_packages(python_minor())
     site.mkdir(parents=True, exist_ok=True)
@@ -993,6 +1087,14 @@ def _assemble(
     root = f"{exporter.project_name(publication)}-v{release.number}-{platform.id}"
     target = target_dir / f"{record_id}.zip"
     size = write_zip(stage, root, target, progress, posix=not platform.windows)
+    if ctx.profile.kind == "server" and size > server_max_bytes():
+        target.unlink(missing_ok=True)
+        raise NodestroError(
+            "export.server_too_large",
+            "This package is larger than this server allows",
+            size=size,
+            limit=server_max_bytes(),
+        )
     record = exporter.ExportRecord(
         id=record_id,
         publication_id=publication.id,

@@ -1019,7 +1019,8 @@ class StudioHost:
         # Every provider the release's agents use must be configured (bare model ids of older
         # releases are Anthropic's); no other provider stands in for a missing one.
         try:
-            self.ctx.require_providers(set(bundle.models))
+            # May ask a local model server (/api/ps): never on the event loop (RT3-04 pattern).
+            await asyncio.to_thread(self.ctx.require_providers, set(bundle.models))
         except MissingApiKeyError as exc:
             # Amazon Bedrock without settings or without an operator role (provider.not_configured,
             # provider.bedrock_not_available, provider.auth_not_allowed, provider.region_missing) lands here too.

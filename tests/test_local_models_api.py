@@ -181,3 +181,18 @@ def test_usage_reports_local_requests(make_app: MakeApp) -> None:
     client = make_app()
     total = client.get("/api/usage").json()["total"]
     assert total["local_requests"] == 0
+
+
+def test_a_folder_that_is_no_offline_package_has_its_own_code(
+    make_app: MakeApp, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """UX handover B3: not agent.OllamaError with an English text, but local.invalid_package (translated)."""
+    monkeypatch.delenv("NODESTRO_OLLAMA_BINARY", raising=False)
+    client = make_app(local_defaults=True)
+    folder = tmp_path / "not-a-package"
+    folder.mkdir()
+    (folder / "readme.txt").write_text("x")
+    answer = client.post("/api/local-models/import", json={"kind": "package", "path": str(folder)})
+    assert answer.status_code == 400, answer.text
+    assert answer.json()["code"] == "local.invalid_package"
+    assert answer.json()["params"]["reason"] == "invalid_package"

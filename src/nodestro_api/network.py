@@ -25,6 +25,7 @@ from fastapi import FastAPI
 from nodestro_runtime.problems import NodestroError
 from pydantic import BaseModel, Field
 
+from .body_limit import BodyLimitMiddleware, BodyLimits
 from .serving import ServingCore, build_router
 
 if TYPE_CHECKING:
@@ -66,6 +67,8 @@ def network_app(core: ServingCore) -> FastAPI:
     """The whole application of the network listener: published endpoints and a health check."""
     app = FastAPI(title="Nodestro published workflows", docs_url=None, redoc_url=None, openapi_url=None)
     app.include_router(build_router(core, channel="network"))
+    # Bodies that FastAPI reads before the key check (approve, resume) are limited like the studio's (API3-02).
+    app.add_middleware(BodyLimitMiddleware, limits=BodyLimits.from_env())
 
     @app.get("/health", include_in_schema=False)
     def health() -> dict[str, str]:

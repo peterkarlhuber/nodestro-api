@@ -37,8 +37,16 @@ def test_unknown_routes_methods_and_malformed_json(make_app: Callable[..., TestC
     assert method.headers["allow"] == "GET"
     broken = client.post("/api/workflows", content=b'{"name": ', headers={"content-type": "application/json"})
     assert broken.status_code == 400 and _shape(broken.json()) and broken.json()["code"] == "request.malformed"
-    # A known route with an unknown id keeps its own code.
-    assert client.get("/api/workflows/nope").json()["code"] == "not_found"
+    # A known route with an unknown id answers with the code of its kind (DX handover B12); ``name`` stays.
+    unknown = client.get("/api/workflows/nope")
+    assert unknown.status_code == 404 and _shape(unknown.json())
+    assert unknown.json()["code"] == "workflow.not_found"
+    assert unknown.json()["params"] == {"name": "nope", "id": "nope", "kind": "workflow"}
+    assert unknown.json()["detail"] == "Workflow 'nope' does not exist"
+    run = client.get("/api/runs/run_nope").json()
+    assert (run["code"], run["params"]["kind"]) == ("run.not_found", "run")
+    publication = client.get("/api/publications/pub_nope/runs").json()
+    assert publication["code"] == "publication.not_found"
 
 
 def test_published_apis_keep_their_error_format(make_app: Callable[..., TestClient]) -> None:

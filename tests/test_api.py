@@ -170,6 +170,10 @@ def test_knowledge_upload_search_and_agent_views(make_app: Callable[..., TestCli
     assert hits[0]["file_id"] == garantie
     scoped = client.get("/api/knowledge/search", params={"q": "Garantie", "file_ids": versand}).json()
     assert scoped == []
+    # Bounds (API3-10): 1 to 50 hits, at most 2000 characters of query text.
+    for params in ({"q": "Garantie", "k": 0}, {"q": "Garantie", "k": 51}, {"q": "x" * 2001}):
+        assert client.get("/api/knowledge/search", params=params).status_code == 422, params
+    assert client.get("/api/knowledge/search", params={"q": "Garantie", "k": 50}).status_code == 200
 
     changed = client.patch(f"/api/knowledge/{garantie}", json={"description": "Garantiebedingungen"}).json()
     assert changed["description"] == "Garantiebedingungen"

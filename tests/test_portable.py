@@ -494,3 +494,31 @@ def test_the_google_sdk_is_packaged_only_for_a_release_that_uses_gemini(model: s
     direct, _ = portable_build.requirements(exporter.ExportOptions(kind="portable"), bundle)
     assert any(item.startswith("google-genai") for item in direct) is with_google
     assert any(item.startswith("anthropic") for item in direct)
+
+
+def test_the_portable_check_has_no_git_reference_and_names_downloads_by_code(
+    published: Callable[..., tuple[TestClient, dict[str, Any]]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """UX handover B5: a portable package always bundles orkexa (no "choose the Git reference" error); downloads are
+    named by codes the studio can translate."""
+    studio, publication = published()
+    monkeypatch.setattr(
+        portable_build,
+        "downloads",
+        lambda ctx, platform, local_models: [
+            portable_build.Download(what="python", size=10, cached=False),
+            portable_build.Download(what="libraries", size=10, cached=False),
+        ],
+    )
+    url = f"/api/publications/{publication['id']}/export/check"
+    options: dict[str, Any] = {"kind": "portable", "platform": portable_build.host_platform(), "allow_downloads": False}
+    codes = {item["code"]: item for item in studio.post(url, json={"options": options}).json()["problems"]}
+    assert "export.portable_distribution" in codes and "export.distribution_unconfirmed" not in codes
+    assert codes["export.download_needed"]["params"]["downloads"] == ["python", "libraries"]
+    options.update(confirm_distribution=True, allow_downloads=True)
+    codes = {item["code"]: item for item in studio.post(url, json={"options": options}).json()["problems"]}
+    assert codes["export.downloads"]["params"]["downloads"] == ["python", "libraries"]
+    assert codes["export.downloads"]["params"]["items"] == "python, libraries"  # kept for older clients
+    # The source project still asks before copying orkexa.
+    standard = studio.post(url, json={"options": {"orkexa": "bundle"}}).json()["problems"]
+    assert "export.distribution_unconfirmed" in {item["code"] for item in standard}
