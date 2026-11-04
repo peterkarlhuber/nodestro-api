@@ -7,8 +7,11 @@ no browser is opened. Data, settings and keys are shared with the studio (``~/.n
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 import os
 from pathlib import Path
+import socket
+import sys
 
 
 def parser(prog: str, description: str) -> argparse.ArgumentParser:
@@ -56,11 +59,38 @@ def prepare(args: argparse.Namespace) -> str:
     return f"http://{'localhost' if args.host in ('127.0.0.1', '0.0.0.0') else args.host}:{args.port}"
 
 
-def serve(factory: str, args: argparse.Namespace) -> None:
+def port_problem(host: str, port: int) -> str | None:
+    """Why the server cannot listen on ``host:port`` (``None``: it can). Checked before anything says "running"."""
+    family = socket.AF_INET6 if ":" in host else socket.AF_INET
+    try:
+        with socket.socket(family, socket.SOCK_STREAM) as probe:
+            if os.name == "posix":  # as uvicorn binds: a port in TIME_WAIT is free, a listening one is not
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            probe.bind((host, port))
+    except OSError as error:
+        if error.errno in (98, 48, 10048):  # EADDRINUSE on Linux, macOS, Windows
+            return (
+                f"Port {port} on {host} is already in use (another Nodestro or another program). "
+                "Start with --port <number> or stop the other program."
+            )
+        return f"Cannot listen on {host}:{port}: {error.strerror or error}"
+    return None
+
+
+def require_free_port(args: argparse.Namespace) -> None:
+    """Exit with code 2 and one sentence when the port is taken (DX handover B2)."""
+    problem = port_problem(args.host, args.port)
+    if problem is not None:
+        print(problem, file=sys.stderr)
+        raise SystemExit(2)
+
+
+def serve(factory: str, args: argparse.Namespace, ready: Callable[[], None] | None = None) -> None:
     """Run ``factory`` (``module:function`` returning the FastAPI app) with uvicorn.
 
-    Stops with one sentence instead of a traceback when the studio API would be offered to the network
-    without a login (``create_app`` refuses it as well).
+    ``ready`` is called once the server listens (it prints "running at" and opens the browser), never when the
+    start fails. Stops with one sentence instead of a traceback when the studio API would be offered to the
+    network without a login (``create_app`` refuses it as well).
     """
     from nodestro_runtime.mcp.vault import vault_box_from_env
     from nodestro_runtime.problems import NodestroError
@@ -92,7 +122,21 @@ def serve(factory: str, args: argparse.Namespace) -> None:
     except NodestroError as error:
         raise SystemExit(str(error)) from None
 
-    uvicorn.run(factory, factory=True, host=args.host, port=args.port, reload=args.reload, log_level="info")
+    if args.reload or ready is None:
+        if ready is not None:
+            ready()  # the reloader binds in another process
+        uvicorn.run(factory, factory=True, host=args.host, port=args.port, reload=args.reload, log_level="info")
+        return
+    server = uvicorn.Server(uvicorn.Config(factory, factory=True, host=args.host, port=args.port, log_level="info"))
+    startup = server.startup
+
+    async def started(sockets: list[socket.socket] | None = None) -> None:
+        await startup(sockets=sockets)
+        if server.started:
+            ready()
+
+    server.startup = started  # type: ignore[method-assign]
+    server.run()
 
 
 def _receive_secrets(fd: int | None) -> None:
@@ -141,8 +185,12 @@ def _refuse_a_used_data_directory() -> None:
 def main(argv: list[str] | None = None) -> None:
     args = parser("nodestro-api", "Nodestro API - the HTTP backend without the studio").parse_args(argv)
     url = prepare(args)
-    print(f"Nodestro API is running at {url}/api  (reference: {url}/api/docs, stop with Ctrl+C)")
-    serve("nodestro_api.app:create_app", args)
+    require_free_port(args)
+    serve(
+        "nodestro_api.app:create_app",
+        args,
+        ready=lambda: print(f"Nodestro API is running at {url}/api  (reference: {url}/api/docs, stop with Ctrl+C)"),
+    )
 
 
 def load_dotenv(path: Path) -> None:

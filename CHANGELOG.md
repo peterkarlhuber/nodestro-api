@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `nodestro-api` (DX handover B2): a taken port stops with exit code 2 and one sentence ("Port 8000 on 127.0.0.1 is
+  already in use ... Start with --port <number> or stop the other program") before anything says "running"; "running
+  at" is printed once the server listens. `cli.serve` takes an optional `ready` callback (used by the studio's
+  `nodestro` to open the browser only then) and `cli.port_problem`/`cli.require_free_port` are new.
 - Export with the Git reference to orkexa (DX handover B1): the check no longer warns `export.private_repository`
   (orkexa's repository is public), the README in six languages says installing needs access to github.com and no
   longer advises a token in the global git configuration, the Dockerfile comment says the same, and the manifest
