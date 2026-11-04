@@ -277,8 +277,9 @@ None known.
   window per path (one tenant admin polling `refresh=1` throttles another's status refresh, not the self-test); the
   diagnosis (`GET /api/diagnostics`, permission `install`) still waits up to 5 s outside the waiter cap; the runtime's
   periodic preflight (TTL) is still started by any status read, as before. Related (round 3, API3-08): server
-  tenants without the `install` permission now get `GET /api/local-models` without hardware, paths or the local model
-  server address, but `GET /api/local-models/jobs` still shows job target paths.
+  tenants without the `install` permission now get `GET /api/local-models` without hardware, paths, the local model
+  server address, or advice and recommendation reasons that describe the machine; the catalog's `fits` flag per model
+  and the recommended models still hint at its size, and `GET /api/local-models/jobs` still shows job target paths.
 - **Next step:** Decide whether Docker host detail on a server goes to the operator only (a server-operator
   permission instead of tenant `admin`), and whether the windows should be per tenant. The studio shows
   `throttled`/`retry_after`, `refresh_ignored` and `redacted` (nodestro-studio ST-033) and the SDK returns them
@@ -303,14 +304,19 @@ None known.
   permission as `/api/runs`. Regenerate the contract and the SDK types.
 - **Depends on:** None
 
-### API-053 · Developer messages: exported client, export README, local models, server check
+### API-053 · Developer messages: export check and jobs, not-found names, exported client, server check
 
-- **Priority:** P4 Optional · **Status:** Open · **Refs:** UX round 3 DX handovers B15-B18
-- **What:** The exported `examples/client.py` has a fixed base URL and prints a traceback on HTTP errors; the export
+- **Priority:** P4 Optional · **Status:** Open · **Refs:** UX round 3 DX handovers B15-B18, apicodes handovers B-2 to B-4
+- **What:** The export check does not report `export.server_unsupported` or the server's size limit up front, so the
+  refusal appears only on "Build package"; export jobs carry no `error_params`, so a failed job's message loses its
+  details; the `*.not_found` codes send no display name, so the studio cannot name the missing item (UX round 3
+  apicodes handovers B-2 to B-4). The exported `examples/client.py` has a fixed base URL and prints a traceback on HTTP errors; the export
   README shows an approval section and "-" when the workflow has no approval steps, and the exported approval test
   returns instead of skipping; `local.*` task errors do not list the allowed tasks; `nodestro-server check` prints
   all profile problems in one line.
-- **Next step:** `NODESTRO_BASE_URL` with the current default and the error code from the JSON body in the client;
+- **Next step:** Report the server refusal and limit in the export check; add `error_params` to export jobs; add
+  `params.display` where the name is known. `NODESTRO_BASE_URL` with the current default and the error code from the
+  JSON body in the client;
   leave out the empty approval section, "none" instead of "-", `pytest.skip`; `params.allowed`; one problem per line.
 - **Depends on:** None
 
