@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- A server's tenants no longer learn the server's memory, CPU or GPU through the local model advice
+  (`local.cpu_only`, `local.memory_low`, `local.model_slow`, `local.model_too_large`) or the recommendation reasons
+  `no_gpu` and `hardware_limit` (`GET /api/local-models`, `GET /api/local-models/recommend`; follow-up of API3-08,
+  UX round 3 handover B-1). The desktop and Local Docker are unchanged.
+- Pin nodestro-runtime 40c8c06 (runtime #113, backend audit round 3; orkexa e9c2147, axentra 0a1d1cc). The contract
+  gains the local catalog's `license_source`.
+
 - Export check speed (UX handover B2): the module closure of an export and the dependency closure are kept per
   installed package version and file change time instead of being computed on every `POST .../export/check`
   (about 1 s per call before, 0.1 s after the first one here; 2.7-10 s were measured on a slower machine).

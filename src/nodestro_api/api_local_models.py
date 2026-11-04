@@ -112,6 +112,17 @@ def _operator_view(ctx: Ctx, request: Request) -> bool:
     return principal is not None and principal.allows(Permission.INSTALL)
 
 
+#: Advice and recommendation reasons that describe the machine itself (memory, CPU count, GPU, model speed or size
+#: against the hardware): a server's tenants do not get them (API3-08 follow-up, UX handover B-1).
+_MACHINE_ADVICE = {"local.cpu_only", "local.memory_low", "local.model_slow", "local.model_too_large"}
+_MACHINE_REASONS = {"no_gpu", "hardware_limit"}
+
+
+def _without_machine_reasons(recommendation: Recommendation) -> Recommendation:
+    reasons = [reason for reason in recommendation.reasons if reason not in _MACHINE_REASONS]
+    return recommendation.model_copy(update={"reasons": reasons})
+
+
 #: What a server's tenants do not see of the local model server's state (API3-08): its folders, executable and
 #: addresses on the server's machine.
 _MACHINE_FIELDS = {
@@ -127,8 +138,9 @@ _MACHINE_FIELDS = {
 async def local_overview(ctx: Ctx, request: Request) -> LocalOverview:
     """The local model server's state, the catalog, this computer's hardware and the recommendations.
 
-    For a server's tenants the server's machine stays hidden: ``hardware`` is ``null`` and the status has no
-    ``base_url``, ``runtime_path``, ``models_dir``, ``free_bytes`` or ``detected_external``."""
+    For a server's tenants the server's machine stays hidden: ``hardware`` is ``null``, the status has no
+    ``base_url``, ``runtime_path``, ``models_dir``, ``free_bytes`` or ``detected_external``, and advice and
+    recommendation reasons that describe the machine (memory, CPU, GPU, model speed or size) are left out."""
     service = ctx.local_models
     status = await asyncio.to_thread(service.status)
     hardware = await asyncio.to_thread(service.hardware)
@@ -151,21 +163,23 @@ async def local_overview(ctx: Ctx, request: Request) -> LocalOverview:
     )
     saving = await asyncio.to_thread(ctx.reasoning_saving)
     operator = _operator_view(ctx, request)
+    advice = service.advice(status, reasoning_saving=saving)
     return LocalOverview(
         status=status if operator else status.model_copy(update=_MACHINE_FIELDS),
         catalog=catalog,
         hardware=hardware if operator else None,
-        recommendations=recommendations,
-        advice=service.advice(status, reasoning_saving=saving),
+        recommendations=recommendations if operator else [_without_machine_reasons(r) for r in recommendations],
+        advice=advice if operator else [hint for hint in advice if hint.code not in _MACHINE_ADVICE],
         manageable=service.profile != "server",
     )
 
 
 @router.get("/local-models/recommend", dependencies=READ)
-async def local_recommend(ctx: Ctx, task: str) -> Recommendation:
+async def local_recommend(ctx: Ctx, request: Request, task: str) -> Recommendation:
     if task not in TASKS:
         raise ApiError(400, "local.task_unknown", f"Unknown task {task!r}", task=task)
-    return await asyncio.to_thread(ctx.local_models.recommend, task)
+    found = await asyncio.to_thread(ctx.local_models.recommend, task)
+    return found if _operator_view(ctx, request) else _without_machine_reasons(found)
 
 
 @router.post("/local-models/start", dependencies=INSTALL)

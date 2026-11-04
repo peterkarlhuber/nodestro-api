@@ -26767,7 +26767,7 @@
     },
     "/api/local-models": {
       "get": {
-        "description": "The local model server's state, the catalog, this computer's hardware and the recommendations.\n\nFor a server's tenants the server's machine stays hidden: ``hardware`` is ``null`` and the status has no\n``base_url``, ``runtime_path``, ``models_dir``, ``free_bytes`` or ``detected_external``.",
+        "description": "The local model server's state, the catalog, this computer's hardware and the recommendations.\n\nFor a server's tenants the server's machine stays hidden: ``hardware`` is ``null``, the status has no\n``base_url``, ``runtime_path``, ``models_dir``, ``free_bytes`` or ``detected_external``, and advice and\nrecommendation reasons that describe the machine (memory, CPU, GPU, model speed or size) are left out.",
         "operationId": "local_overview_api_local_models_get",
         "responses": {
           "200": {
