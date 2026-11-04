@@ -6,7 +6,8 @@
   (`local.cpu_only`, `local.memory_low`, `local.model_slow`, `local.model_too_large`) or the recommendation reasons
   `no_gpu` and `hardware_limit` (`GET /api/local-models`, `GET /api/local-models/recommend`; follow-up of API3-08,
   UX round 3 handover B-1). The desktop and Local Docker are unchanged.
-- Pin nodestro-runtime 40c8c06 (runtime #113, backend audit round 3; orkexa e9c2147, axentra 0a1d1cc). The contract
+- Pin nodestro-runtime 40c8c06 (runtime #113, backend audit round 3; orkexa e9c2147, axentra 0a1d1cc) and
+  nodestro-examples 64e534a (examples #70 team `contract_fields`, #71 runtime pin). The contract
   gains the local catalog's `license_source`.
 
 - Export check speed (UX handover B2): the module closure of an export and the dependency closure are kept per
