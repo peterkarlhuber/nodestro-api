@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Portable export check (UX handover B5): no `export.distribution_unconfirmed` ("or choose the Git reference") for
+  `kind: "portable"`, which always bundles orkexa (`export.portable_distribution` asks instead); `export.downloads` and
+  `export.download_needed` carry `params.downloads` as codes (`python`, `libraries`, `ollama`) for translation
+  (`params.items` stays).
 - Unknown ids (DX handover B12, error-code change): a route's own unknown workflow, run or publication answers 404 with
   `workflow.not_found`, `run.not_found` or `publication.not_found` (params `id`, `kind`, and `name` as before) and
   "Workflow 'wf_x' does not exist"; other unknown names keep `not_found`.

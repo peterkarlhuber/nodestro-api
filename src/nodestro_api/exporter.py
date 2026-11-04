@@ -542,7 +542,9 @@ def check(ctx: Nodestro, publication: Publication, release: Release, options: Ex
                 tools=", ".join(foreign),
             )
         )
-    if options.orkexa == "bundle" and not options.confirm_distribution:
+    # A portable package always contains orkexa (there is no Git reference to choose): its own check asks for the
+    # confirmation (export.portable_distribution).
+    if options.orkexa == "bundle" and not options.confirm_distribution and options.kind != "portable":
         problems.append(
             _issue(
                 "export.distribution_unconfirmed",
@@ -815,6 +817,7 @@ def _portable_check(
                 "Building needs downloads that are not in the cache: " + ", ".join(item.what for item in missing),
                 level="error",
                 items=", ".join(item.what for item in missing),
+                downloads=[item.what for item in missing],
             )
         )
     elif missing:
@@ -825,6 +828,7 @@ def _portable_check(
                 level="info",
                 size=sum(item.size for item in missing),
                 items=", ".join(item.what for item in missing),
+                downloads=[item.what for item in missing],
             )
         )
     model_bytes = sum(item.size for item in local if item.name in bundled)
