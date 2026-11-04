@@ -9223,7 +9223,14 @@
             "type": "array"
           },
           "hardware": {
-            "$ref": "#/components/schemas/Hardware"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Hardware"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "manageable": {
             "title": "Manageable",
@@ -26751,6 +26758,7 @@
     },
     "/api/local-models": {
       "get": {
+        "description": "The local model server's state, the catalog, this computer's hardware and the recommendations.\n\nFor a server's tenants the server's machine stays hidden: ``hardware`` is ``null`` and the status has no\n``base_url``, ``runtime_path``, ``models_dir``, ``free_bytes`` or ``detected_external``.",
         "operationId": "local_overview_api_local_models_get",
         "responses": {
           "200": {

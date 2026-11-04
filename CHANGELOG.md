@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Local models on a server (API3-08, contract change): for a server's tenants `GET /api/local-models` returns
+  `hardware: null` (the field is now nullable) and a status without `base_url`, `runtime_path`, `models_dir`,
+  `free_bytes` and `detected_external` (null); catalog, installed models and recommendations are unchanged.
 - Portable export jobs on a server (API3-07): on the server profile `POST /publications/{id}/export-jobs` answers
   `403 export.server_unsupported` unless the operator sets `NODESTRO_SERVER_EXPORT_JOBS=1`; then one build at a time
   on the whole server (`export.busy`) and a size limit per package (`NODESTRO_SERVER_EXPORT_MAX_BYTES`, default 2 GiB,

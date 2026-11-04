@@ -20,14 +20,14 @@ from __future__ import annotations
 import asyncio
 from typing import Literal
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Request, Response
 from nodestro_runtime.knowledge import KnowledgeIndexStatus
 from nodestro_runtime.local_models import CATALOG, TASKS, Hardware, LocalModelInfo, Recommendation, fits, recommend_all
 from nodestro_runtime.local_service import BuildInput, LocalAdvice, LocalJob, LocalStatus, build_inputs
 from pydantic import BaseModel, Field
 
 from .api import Ctx
-from .permissions import EDIT, INSTALL, READ
+from .permissions import EDIT, INSTALL, READ, Permission, Principal
 from .serving import ApiError
 
 router = APIRouter(prefix="/api")
@@ -46,7 +46,8 @@ class CatalogEntry(LocalModelInfo):
 class LocalOverview(BaseModel):
     status: LocalStatus
     catalog: list[CatalogEntry]
-    hardware: Hardware
+    #: This computer's hardware; ``None`` for a server's tenants (the server's machine belongs to its operator).
+    hardware: Hardware | None
     recommendations: list[Recommendation]
     #: Hints for this computer: small context window, no GPU, slow or too large models, the CPU saving mode.
     advice: list[LocalAdvice] = Field(default_factory=list)
@@ -101,8 +102,32 @@ def _manageable(ctx: Ctx) -> None:
         raise ApiError(403, "local.server_managed", "The local model server of a server belongs to its operator")
 
 
+def _operator_view(ctx: Ctx, request: Request) -> bool:
+    """Whether the request may see the machine behind the local model server: everywhere but on a server, where
+    only a principal with ``install`` may (no tenant role holds it)."""
+    if ctx.local_models.profile != "server":
+        return True
+    principal: Principal | None = getattr(request.state, "principal", None)
+    return principal is not None and principal.allows(Permission.INSTALL)
+
+
+#: What a server's tenants do not see of the local model server's state (API3-08): its folders, executable and
+#: addresses on the server's machine.
+_MACHINE_FIELDS = {
+    "base_url": None,
+    "runtime_path": None,
+    "models_dir": None,
+    "free_bytes": None,
+    "detected_external": None,
+}
+
+
 @router.get("/local-models", dependencies=READ)
-async def local_overview(ctx: Ctx) -> LocalOverview:
+async def local_overview(ctx: Ctx, request: Request) -> LocalOverview:
+    """The local model server's state, the catalog, this computer's hardware and the recommendations.
+
+    For a server's tenants the server's machine stays hidden: ``hardware`` is ``null`` and the status has no
+    ``base_url``, ``runtime_path``, ``models_dir``, ``free_bytes`` or ``detected_external``."""
     service = ctx.local_models
     status = await asyncio.to_thread(service.status)
     hardware = await asyncio.to_thread(service.hardware)
@@ -124,10 +149,11 @@ async def local_overview(ctx: Ctx) -> LocalOverview:
         preferences=service.preferences(),
     )
     saving = await asyncio.to_thread(ctx.reasoning_saving)
+    operator = _operator_view(ctx, request)
     return LocalOverview(
-        status=status,
+        status=status if operator else status.model_copy(update=_MACHINE_FIELDS),
         catalog=catalog,
-        hardware=hardware,
+        hardware=hardware if operator else None,
         recommendations=recommendations,
         advice=service.advice(status, reasoning_saving=saving),
         manageable=service.profile != "server",
