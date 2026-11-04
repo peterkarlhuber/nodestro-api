@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Pin nodestro-runtime c6f0240 (runtime #111, #112: orkexa 22f2910, the Ollama runtime of another platform) and
+  nodestro-examples ed350b2 (examples #68, #69: the same runtime pin). No API change from the pins.
 - Portable export and web interface: `ExportOptions` gains `kind` (`standard`, `portable`), `web_ui`, `platform`,
   `local_models`, `offline`, `confirm_models`, `allow_downloads` and `output_dir`; `ExportCheck.portable` lists every
   model with its role, installation state, size, memory, license and the network needs. A ready-to-run package is
