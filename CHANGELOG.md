@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Unknown ids (DX handover B12, error-code change): a route's own unknown workflow, run or publication answers 404 with
+  `workflow.not_found`, `run.not_found` or `publication.not_found` (params `id`, `kind`, and `name` as before) and
+  "Workflow 'wf_x' does not exist"; other unknown names keep `not_found`.
 - `nodestro-api` (DX handover B2): a taken port stops with exit code 2 and one sentence ("Port 8000 on 127.0.0.1 is
   already in use ... Start with --port <number> or stop the other program") before anything says "running"; "running
   at" is printed once the server listens. `cli.serve` takes an optional `ready` callback (used by the studio's

@@ -121,6 +121,10 @@ def actor_id(request: Request) -> str:
     return principal.id if principal is not None else "local"
 
 
+#: Path parameters whose unknown id answers with a code of its kind (any other unknown name: ``not_found``).
+_NOT_FOUND_KINDS = {"workflow_id": "workflow", "run_id": "run", "publication_id": "publication"}
+
+
 def _error(status_code: int, code: str, detail: str, **params: Any) -> JSONResponse:
     """An error response: ``detail`` is the technical text, ``code``/``params`` the UI message."""
     return JSONResponse({"detail": detail, "code": code, "params": params}, status_code=status_code)
@@ -134,8 +138,16 @@ def install_error_handlers(app: FastAPI) -> None:
     async def bad_request(_: Request, exc: Exception) -> JSONResponse:
         return _error(400, "bad_request", str(exc))
 
-    async def not_found(_: Request, exc: Exception) -> JSONResponse:
+    async def not_found(request: Request, exc: Exception) -> JSONResponse:
         name = str(exc.args[0]) if exc.args else ""
+        # The id of the route's own record gets a code of its kind (DX handover B12): ``workflow.not_found``,
+        # ``run.not_found``, ``publication.not_found``, with ``id`` and ``kind``; ``name`` stays for older clients.
+        for param, kind in _NOT_FOUND_KINDS.items():
+            if name and request.path_params.get(param) == name:
+                label = kind.capitalize()
+                return _error(
+                    404, f"{kind}.not_found", f"{label} {name!r} does not exist", name=name, id=name, kind=kind
+                )
         return _error(404, "not_found", f"Not found: {name}", name=name)
 
     async def upstream(_: Request, exc: Exception) -> JSONResponse:
