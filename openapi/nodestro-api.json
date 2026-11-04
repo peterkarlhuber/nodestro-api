@@ -4583,6 +4583,15 @@
             "title": "License",
             "type": "string"
           },
+          "license_source": {
+            "default": "ollama",
+            "enum": [
+              "ollama",
+              "upstream"
+            ],
+            "title": "License Source",
+            "type": "string"
+          },
           "listed_capabilities": {
             "items": {
               "type": "string"
