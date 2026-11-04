@@ -17,7 +17,7 @@ The project is generated deterministically, without any AI request:
 - ``tests/``: tests with a simulated model (no cost), ``examples/`` and a README.
 
 The agent library ``orkexa`` is not on PyPI. The user chooses how the export gets it: ``git``
-names the exact commit of its repository (installing needs access to it while it is private),
+names the exact commit of its public repository (installing needs access to github.com),
 ``bundle`` copies the library's source into ``vendor/`` (only after confirming the right to pass
 it on; the MIT license text travels with it). Both are stated in the README and the manifest.
 
@@ -550,15 +550,9 @@ def check(ctx: Nodestro, publication: Publication, release: Release, options: Ex
                 level="error",
             )
         )
-    if options.orkexa == "git":
-        problems.append(
-            _issue(
-                "export.private_repository",
-                "Installing the export needs read access to the repository peterkarlhuber/orkexa while it is private",
-                level="warning",
-            )
-        )
-    else:
+    # The Git reference names orkexa's public repository: nothing to warn about (the README says that installing
+    # needs github.com); never advise putting a token into the git configuration.
+    if options.orkexa != "git":
         problems.append(
             _issue(
                 "export.bundled_library",
@@ -1694,7 +1688,7 @@ def _library_license() -> str:
 
 def _dockerfile(agent_git: bool) -> str:
     note = (
-        "# orkexa comes from its Git repository: build with access to it while it is private (see README).\n"
+        "# orkexa comes from its public Git repository: building needs access to github.com (see README).\n"
         if agent_git
         else ""
     )
@@ -1828,7 +1822,7 @@ def _project_files(
         "orkexa": {
             "mode": options.orkexa,
             "requirement": "vendor/orkexa" if options.orkexa == "bundle" else _orkexa_git(),
-            "private_repository_access_needed": options.orkexa == "git",
+            "network_access_needed": options.orkexa == "git",
         },
         "providers": providers,
         "base_urls": base_urls,

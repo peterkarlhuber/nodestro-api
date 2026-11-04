@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Export with the Git reference to orkexa (DX handover B1): the check no longer warns `export.private_repository`
+  (orkexa's repository is public), the README in six languages says installing needs access to github.com and no
+  longer advises a token in the global git configuration, the Dockerfile comment says the same, and the manifest
+  key `orkexa.private_repository_access_needed` is now `orkexa.network_access_needed`.
 - Checks that may ask a local model server (RT3-04 pattern) no longer run on the event loop: the agent test's
   check and providers, the provider check before a published run starts (studio and exported applications), the
   assistant model check of the architect, the assistant and the run chat, and the model check of a test series.

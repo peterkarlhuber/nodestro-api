@@ -88,7 +88,7 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     codes = {item["code"]: item["level"] for item in check["problems"]}
     assert codes["export.knowledge_excluded"] == "warning"
     assert codes["export.memory_empty"] == "info"
-    assert codes["export.private_repository"] == "warning"
+    assert "export.private_repository" not in codes  # orkexa's repository is public (DX handover B1)
     assert {item["kind"] for item in check["resources"]} == {"knowledge", "memory"}
     assert "nodestro_runtime/engine.py" in check["files"]
     assert "nodestro_api/standalone.py" in check["files"]
@@ -183,9 +183,12 @@ def test_export_contains_no_secrets_and_is_reproducible(exported: Callable[..., 
         manifest = json.loads(archive.read(f"{root}/workflow/manifest.json"))
         readme = archive.read(f"{root}/README.md").decode()
     assert manifest["secrets_included"] is False
-    assert manifest["orkexa"]["private_repository_access_needed"] is True
+    assert manifest["orkexa"]["network_access_needed"] is True
+    assert "private_repository_access_needed" not in manifest["orkexa"]
     assert manifest["providers"] == ["anthropic"]
     assert "orkexa" in readme and "API_KEYS" in readme and "ANTHROPIC_API_KEY" in readme
+    # Never advise a token in the git configuration (it would be stored in plain text in ~/.gitconfig).
+    assert "x-access-token" not in readme and "insteadOf" not in readme and "private" not in readme
     assert "This workflow has 1 approval step." in readme
     history = client.get(f"/api/publications/{publication['id']}/exports").json()
     assert [item["id"] for item in history] == [second["id"], first["id"]]
