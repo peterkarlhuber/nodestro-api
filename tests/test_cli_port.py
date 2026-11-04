@@ -37,14 +37,29 @@ def test_main_stops_before_saying_running(
     monkeypatch.setenv("NODESTRO_DATA_DIR", str(tmp_path / "data"))
     for key in ("NODESTRO_PROFILE", "NODESTRO_HOST"):
         monkeypatch.delenv(key, raising=False)
+    import uvicorn
+
     served: list[Any] = []
-    monkeypatch.setattr(cli, "serve", lambda *args, **kwargs: served.append(args))
+    monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: served.append(args))
+    monkeypatch.setattr(uvicorn, "Server", lambda *args, **kwargs: served.append(args))
     with _listening() as taken, pytest.raises(SystemExit) as stopped:
         cli.main(["--port", str(taken.getsockname()[1])])
     assert stopped.value.code == 2
     out = capsys.readouterr()
     assert "running" not in out.out and "already in use" in out.err
     assert served == []
+
+
+def test_a_network_address_is_refused_as_such_before_the_port_check(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The port check comes after the refusals: an address that cannot be bound still gets the login refusal."""
+    monkeypatch.setenv("NODESTRO_DATA_DIR", str(tmp_path / "data"))
+    for key in ("NODESTRO_PROFILE", "NODESTRO_HOST", "NODESTRO_ALLOWED_HOSTS"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(cli, "require_free_port", lambda args: pytest.fail("port checked before the refusal"))
+    with pytest.raises(SystemExit, match="no login"):
+        cli.main(["--host", "192.168.1.20"])
 
 
 def test_running_is_printed_after_the_server_listens(tmp_path: Path) -> None:

@@ -121,6 +121,9 @@ def serve(factory: str, args: argparse.Namespace, ready: Callable[[], None] | No
             )
     except NodestroError as error:
         raise SystemExit(str(error)) from None
+    # After the refusals above (a network address without a login is refused as such, not as a busy port) and
+    # before anything says "running": a taken port stops here with one sentence, exit code 2 (DX handover B2).
+    require_free_port(args)
 
     if args.reload or ready is None:
         if ready is not None:
@@ -185,7 +188,6 @@ def _refuse_a_used_data_directory() -> None:
 def main(argv: list[str] | None = None) -> None:
     args = parser("nodestro-api", "Nodestro API - the HTTP backend without the studio").parse_args(argv)
     url = prepare(args)
-    require_free_port(args)
     serve(
         "nodestro_api.app:create_app",
         args,

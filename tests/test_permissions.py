@@ -100,6 +100,9 @@ def test_create_app_without_a_configuration_follows_the_environment(
 def command_line(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[..., list[str]]:
     started: list[str] = []
     monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: started.append("run"))
+    # The command line serves through uvicorn.Server once a "ready" callback is given; never bind a real port here.
+    monkeypatch.setattr(uvicorn.Server, "run", lambda self, *args, **kwargs: started.append("run"))
+    monkeypatch.setattr(cli, "port_problem", lambda host, port: None)
     # The command line writes these into the environment; monkeypatch restores them afterwards.
     monkeypatch.setenv("NODESTRO_HOST", "127.0.0.1")
     for name in ("NODESTRO_DATA_DIR", "NODESTRO_PROFILE"):
