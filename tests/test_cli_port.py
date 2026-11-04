@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import queue
 import socket
 import subprocess
 import sys
+import threading
 import time
 from typing import Any
 
@@ -68,6 +70,8 @@ def test_running_is_printed_after_the_server_listens(tmp_path: Path) -> None:
         port = probe.getsockname()[1]
     env = {**os.environ, "NODESTRO_DATA_DIR": str(tmp_path / "data")}
     env.pop("NODESTRO_PROFILE", None)
+    # Through a pipe Python buffers its output unless told otherwise: the line must arrive without that help.
+    env.pop("PYTHONUNBUFFERED", None)
     process = subprocess.Popen(
         [sys.executable, "-c", f"from nodestro_api.cli import main; main(['--port', '{port}'])"],
         stdout=subprocess.PIPE,
@@ -77,11 +81,15 @@ def test_running_is_printed_after_the_server_listens(tmp_path: Path) -> None:
     )
     try:
         assert process.stdout is not None
+        lines: queue.Queue[str] = queue.Queue()
+        stdout = process.stdout
+        threading.Thread(target=lambda: [lines.put(line) for line in stdout], daemon=True).start()
         deadline = time.monotonic() + 90
         line = ""
         while time.monotonic() < deadline and "running at" not in line:
-            line = process.stdout.readline()
-            if not line and process.poll() is not None:
+            try:
+                line = lines.get(timeout=max(0.1, deadline - time.monotonic()))
+            except queue.Empty:
                 break
         assert "Nodestro API is running at" in line
         # It listens by the time it says so.

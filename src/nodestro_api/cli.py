@@ -191,7 +191,10 @@ def main(argv: list[str] | None = None) -> None:
     serve(
         "nodestro_api.app:create_app",
         args,
-        ready=lambda: print(f"Nodestro API is running at {url}/api  (reference: {url}/api/docs, stop with Ctrl+C)"),
+        # flush: a parent that reads the output through a pipe (the desktop, a script) sees it at once.
+        ready=lambda: print(
+            f"Nodestro API is running at {url}/api  (reference: {url}/api/docs, stop with Ctrl+C)", flush=True
+        ),
     )
 
 
