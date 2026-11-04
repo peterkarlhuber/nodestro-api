@@ -1,0 +1,57 @@
+name: Portable packages
+
+# Builds a real portable package of a small workflow on each platform it supports and runs it there: self-test,
+# start, web interface, a run through the API, stop and a second start (tests/test_portable_smoke.py). Local models
+# are not part of this test (they are tested end to end on Linux; see docs/portable-export.md).
+
+on:
+  pull_request:
+    paths:
+      - "src/nodestro_api/portable*.py"
+      - "src/nodestro_api/webui*/**"
+      - "src/nodestro_api/webui_server.py"
+      - "src/nodestro_api/standalone.py"
+      - "src/nodestro_api/exporter.py"
+      - "src/nodestro_api/export_models.py"
+      - "src/nodestro_api/readme/**"
+      - "tests/test_portable_smoke.py"
+      - ".github/workflows/portable.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: "Linux x64", os: ubuntu-latest }
+          - { name: "Linux ARM64", os: ubuntu-24.04-arm }
+          - { name: "Windows x64", os: windows-latest }
+          # The studio's own dependencies have no ARM64 build on Windows (cryptography through google-genai), so the
+          # job runs an emulated x64 Python and builds and runs the native ARM64 package.
+          - { name: "Windows ARM64", os: windows-11-arm, arch: x64, platform: windows-arm64 }
+          - { name: "macOS Apple Silicon", os: macos-latest }
+          - { name: "macOS Intel", os: macos-15-intel }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          architecture: ${{ matrix.arch }}
+          cache: pip
+      # Not ".[dev]": its PostgreSQL driver has no wheel for Windows ARM64, and the package needs none of it.
+      - name: Install
+        run: pip install -e . "pytest>=8" "httpx>=0.27"
+      - name: Build and run a portable package
+        env:
+          NODESTRO_PORTABLE_SMOKE: "1"
+          NODESTRO_PORTABLE_PLATFORM: ${{ matrix.platform }}
+        run: pytest -q tests/test_portable_smoke.py -p no:cacheprovider

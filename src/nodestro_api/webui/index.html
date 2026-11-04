@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="referrer" content="no-referrer">
+  <title>Nodestro</title>
+  <link rel="icon" type="image/png" href="/ui/assets/brand/nodestro-mark-128.png">
+  <link rel="stylesheet" href="/ui/assets/app.css">
+  <script src="/ui/assets/markdown.js" defer></script>
+  <script src="/ui/assets/app.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main" data-i18n="a11y.skip">Skip to content</a>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/" aria-label="Nodestro">
+        <img class="logo logo-light" src="/ui/assets/brand/nodestro-logo.png" alt="Nodestro" width="160" height="35">
+        <img class="logo logo-dark" src="/ui/assets/brand/nodestro-logo-on-dark.png" alt="Nodestro" width="160" height="35">
+      </a>
+      <div class="app-title">
+        <span class="app-name" id="app-name"></span>
+        <span class="app-version" id="app-version"></span>
+      </div>
+      <nav class="topnav" aria-label="Main" data-i18n-aria="a11y.main_nav">
+        <button type="button" class="navlink" id="nav-run" data-view="run" hidden data-i18n="nav.run">Run</button>
+        <button type="button" class="navlink" id="nav-history" data-view="history" hidden data-i18n="nav.history">History</button>
+        <button type="button" class="navlink" id="nav-setup" data-view="setup" hidden data-i18n="nav.setup">Settings</button>
+      </nav>
+      <div class="tools">
+        <label class="visually-hidden" for="language" data-i18n="a11y.language">Language</label>
+        <select id="language" class="compact"></select>
+        <button type="button" class="icon-button" id="theme" data-i18n-title="a11y.theme" data-i18n-aria="a11y.theme" title="Theme">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>
+        </button>
+        <button type="button" class="ghost" id="sign-out" hidden data-i18n="auth.sign_out">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+
+    <section id="view-loading" class="view center">
+      <div class="spinner" aria-hidden="true"></div>
+      <p data-i18n="common.loading">Loading ...</p>
+    </section>
+
+    <section id="view-signin" class="view center" hidden>
+      <div class="card signin">
+        <img class="mark" src="/ui/assets/brand/nodestro-mark-128.png" alt="" width="56" height="56">
+        <h1 id="signin-title"></h1>
+        <p class="muted" id="signin-description"></p>
+        <form id="signin-form" novalidate>
+          <label for="signin-key" data-i18n="auth.key_label">API key</label>
+          <input id="signin-key" name="key" type="password" autocomplete="off" spellcheck="false" required>
+          <p class="hint" data-i18n="auth.key_hint">Ask the operator of this application for a key with the scope "run".</p>
+          <p class="error" id="signin-error" role="alert" hidden></p>
+          <button type="submit" class="primary" data-i18n="auth.sign_in">Sign in</button>
+        </form>
+        <p class="hint operator-hint" data-i18n="auth.operator_hint">Operator of this computer: open the link shown in the start window.</p>
+      </div>
+    </section>
+
+    <section id="view-run" class="view" hidden>
+      <div class="hero">
+        <p class="eyebrow" data-i18n="run.eyebrow">Workflow</p>
+        <h1 id="workflow-name"></h1>
+        <p class="lead" id="workflow-description"></p>
+        <div id="provider-banner" class="banner warning" hidden></div>
+      </div>
+      <div class="layout">
+        <form id="run-form" class="card form" novalidate>
+          <h2 data-i18n="run.input_title">Input</h2>
+          <div id="fields"></div>
+          <p class="error" id="form-error" role="alert" hidden></p>
+          <div class="actions">
+            <button type="submit" class="primary" id="start" data-i18n="run.start">Start</button>
+            <button type="reset" class="ghost" data-i18n="run.reset">Reset</button>
+          </div>
+        </form>
+        <section class="card run" id="run-panel" aria-labelledby="run-title">
+          <div class="run-head">
+            <h2 id="run-title" data-i18n="run.result_title">Result</h2>
+            <span class="badge" id="run-status" hidden></span>
+          </div>
+          <div id="run-empty" class="empty">
+            <svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="12" cy="24" r="5"/><circle cx="36" cy="12" r="5"/><circle cx="36" cy="36" r="5"/><path d="M17 22l14-8M17 26l14 8"/></svg>
+            <p data-i18n="run.empty">Fill in the form and start the workflow. Progress and results appear here.</p>
+          </div>
+          <div id="run-body" hidden>
+            <p class="meta" id="run-meta"></p>
+            <ol class="steps" id="steps" aria-label="Steps" data-i18n-aria="run.steps"></ol>
+            <div id="live" class="live" hidden>
+              <h3 data-i18n="run.live_text">Live output</h3>
+              <pre id="live-text"></pre>
+            </div>
+            <div id="approvals"></div>
+            <div id="run-error" class="banner danger" role="alert" hidden></div>
+            <div id="output" class="output"></div>
+            <div id="files"></div>
+            <div class="actions" id="run-actions">
+              <button type="button" class="danger-ghost" id="cancel" hidden data-i18n="run.cancel">Cancel</button>
+              <button type="button" class="ghost" id="retry" hidden data-i18n="run.retry">Run again</button>
+              <button type="button" class="ghost" id="copy" hidden data-i18n="run.copy">Copy result</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section id="view-history" class="view" hidden>
+      <div class="hero compact">
+        <h1 data-i18n="history.title">Recent runs</h1>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table class="runs">
+            <thead><tr>
+              <th scope="col" data-i18n="history.started">Started</th>
+              <th scope="col" data-i18n="history.status">Status</th>
+              <th scope="col" data-i18n="history.duration">Duration</th>
+              <th scope="col"><span class="visually-hidden" data-i18n="history.open">Open</span></th>
+            </tr></thead>
+            <tbody id="history-rows"></tbody>
+          </table>
+        </div>
+        <p class="empty-line" id="history-empty" hidden data-i18n="history.empty">No runs yet.</p>
+      </div>
+    </section>
+
+    <section id="view-setup" class="view" hidden>
+      <div class="hero compact">
+        <h1 data-i18n="setup.title">Settings</h1>
+        <p class="lead" data-i18n="setup.lead">Only you, the operator of this computer, see this page.</p>
+      </div>
+      <div class="grid">
+        <section class="card" aria-labelledby="providers-title">
+          <h2 id="providers-title" data-i18n="setup.providers">AI providers</h2>
+          <p class="muted" data-i18n="setup.providers_hint">Keys stay on this computer (data/secrets) and are never shown again or sent to the browser.</p>
+          <div id="providers"></div>
+        </section>
+        <section class="card" aria-labelledby="output-title">
+          <h2 id="output-title" data-i18n="setup.output">Result folder</h2>
+          <div id="output-dir"></div>
+        </section>
+        <section class="card" aria-labelledby="models-title">
+          <h2 id="models-title" data-i18n="setup.models">Local models</h2>
+          <div id="local-models"></div>
+        </section>
+        <section class="card" aria-labelledby="api-title">
+          <h2 id="api-title" data-i18n="setup.api">Programming interface</h2>
+          <p class="muted" data-i18n="setup.api_hint">Other programs start this workflow through the API with their own key (start window: keys new).</p>
+          <p><a id="api-docs" href="/docs" data-i18n="setup.api_docs">Open the API reference</a> · <a id="api-openapi" href="#" data-i18n="setup.api_openapi">OpenAPI file</a></p>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <img src="/ui/assets/brand/nodestro-mark-128.png" alt="" width="18" height="18">
+    <span>Nodestro · Connecting Intelligence</span>
+  </footer>
+  <template id="tpl-step"><li class="step"><span class="dot" aria-hidden="true"></span><span class="label"></span><span class="state"></span></li></template>
+</body>
+</html>

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+import dataclasses
 from datetime import timedelta
 import json
 import logging
@@ -111,6 +112,13 @@ class StandaloneSettings(BaseModel):
     #: ``user-authored``); ``docker``: every own tool runs in an isolated container. AI-generated tools and tools
     #: of unknown provenance run only with ``docker`` (ADR-0006), otherwise they are refused.
     tool_sandbox: Literal["subprocess", "docker"] = "subprocess"
+    #: Where a copy of every result file is written (``<folder>/<date>_<run id>/<file>``); relative paths are
+    #: relative to the project; empty: result files stay in the database only (download through the API).
+    output_dir: str = ""
+    #: The web interface (``nodestro_api/webui``, if the export has it): ``on`` or ``off``.
+    web_ui: Literal["on", "off"] = "on"
+    #: The language the web interface starts in.
+    ui_language: str = "en"
 
     @classmethod
     def from_env(cls, environ: dict[str, str] | None = None) -> StandaloneSettings:
@@ -129,6 +137,9 @@ class StandaloneSettings(BaseModel):
             run_retention_days=int(env.get("RUN_RETENTION_DAYS") or 0),
             tool_timeout_seconds=float(env.get("TOOL_TIMEOUT_SECONDS") or 60),
             tool_sandbox=env.get("TOOL_SANDBOX") or "subprocess",  # type: ignore[arg-type]
+            output_dir=env.get("OUTPUT_DIR") or "",
+            web_ui="off" if (env.get("WEB_UI") or "on").lower() in ("off", "0", "false", "no") else "on",
+            ui_language=env.get("UI_LANGUAGE") or "en",
         )
 
 
@@ -155,6 +166,10 @@ class Manifest(BaseModel):
     #: Provider settings that are not credentials (Amazon Bedrock: ``region``, ``data_residency``; ``AWS_REGION``
     #: overrides the region, an exported ``eu_only`` stays in force).
     settings: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    #: How the knowledge search ranks when an agent says ``default`` (the studio's setting at export time), and the
+    #: embedding model of ``vector``/``hybrid`` searches (an Ollama model; the semantic index is built on first use).
+    knowledge_retrieval: Literal["fts", "vector", "hybrid"] = "fts"
+    embedding_model: str | None = None
 
 
 class StandaloneHost:
@@ -170,6 +185,8 @@ class StandaloneHost:
         """``client_factory(provider)`` replaces the SDK clients (tests)."""
         self.project_dir = project_dir
         self.settings = settings
+        #: The web interface (:mod:`nodestro_api.webui_server`), set by :func:`create_app` when it is served.
+        self.web_ui: Any = None
         workflow_dir = project_dir / "workflow"
         self.bundle = ReleaseBundle.model_validate_json((workflow_dir / "release.json").read_text(encoding="utf-8"))
         self.manifest = Manifest.model_validate_json((workflow_dir / "manifest.json").read_text(encoding="utf-8"))
@@ -194,6 +211,12 @@ class StandaloneHost:
         self.builtin = set(tools.builtin)
         builder = AgentBuilder(tools, self.knowledge, self.memory)
         builder.declared = lambda provider: dict(self.manifest.capabilities.get(provider) or {})
+        # Local models: what the model server reports for each model (``/api/show``), as in the studio.
+        self._reported: dict[str, tuple[float, dict[str, Any]]] = {}
+        self._gpu: bool | None = None
+        builder.reported = self.reported_capabilities
+        self.knowledge.retrieval = lambda: (self.manifest.knowledge_retrieval, self.manifest.embedding_model)
+        self.knowledge.embedding_model = self._embedding_model
         self._client_factory = client_factory
         self.runs = RunManager(
             self.store,
@@ -215,7 +238,14 @@ class StandaloneHost:
         )
         self.runs.environments = lambda _run: self.environment
         self.files = ResultFiles(self.store)
-        self.runs.after_run = self.files.write_outputs
+        self.output_dir, self.output_warning = resolve_output_dir(project_dir, settings.output_dir)
+
+        def after_run(run: Run) -> None:
+            self.files.write_outputs(run)
+            if self.output_dir is not None:
+                copy_result_files(self.files, run, self.output_dir)
+
+        self.runs.after_run = after_run
         self.limits = ApiLimits.model_validate({**self.manifest.limits.model_dump(), **settings.limits})
         self._seed(workflow_dir)
         self.served = ServedRelease(
@@ -280,6 +310,82 @@ class StandaloneHost:
         self.docker_monitor.status()  # the first check starts in the background
         return make()
 
+    # ---- local models ---------------------------------------------------------------
+
+    def ollama_url(self) -> str | None:
+        """The local model server's address (``OLLAMA_BASE_URL`` without ``/v1``; the launcher of a portable
+        package sets it to the Ollama it started), else the exported one."""
+        url = os.environ.get("OLLAMA_BASE_URL") or self.manifest.base_urls.get("ollama") or ""
+        return url.removesuffix("/").removesuffix("/v1").rstrip("/") or None
+
+    def reported_capabilities(self, model: str) -> dict[str, Any]:
+        """What the local model server reports for ``model`` (``/api/show``), cached for ten minutes; ``{}`` while
+        it cannot be asked (the agent check then names what is unknown)."""
+        import time
+
+        from orkexa.local import OllamaClient, OllamaError
+
+        name = model.removeprefix("ollama:")
+        cached = self._reported.get(name)
+        if cached is not None and time.monotonic() - cached[0] < 600:
+            return cached[1]
+        url = self.ollama_url()
+        if url is None:
+            return {}
+        try:
+            details = OllamaClient(url, allow_remote=True, timeout=10).show(name)
+        except (OllamaError, OSError, ValueError):
+            return {}
+        overrides = {key: str(value) for key, value in details.capability_overrides().items()}
+        if "completion" in details.capabilities:  # as the studio: Ollama reports ``thinking`` for reasoning models
+            overrides.setdefault("reasoning", "supported" if "thinking" in details.capabilities else "unsupported")
+        self._reported[name] = (time.monotonic(), overrides)
+        return overrides
+
+    def reasoning_saving(self) -> bool:
+        """The CPU saving mode of local thinking models, as in the studio: on a computer without a GPU they answer
+        at effort ``medium`` without thinking (``NODESTRO_LOCAL_REASONING=full`` turns this off)."""
+        if os.environ.get("NODESTRO_LOCAL_REASONING", "auto").strip().lower() == "full":
+            return False
+        if self._gpu is None:
+            from nodestro_runtime.local_models import detect_hardware
+
+            try:
+                self._gpu = detect_hardware().gpu != "none"
+            except Exception:  # unknown hardware never saves
+                self._gpu = True
+        return not self._gpu
+
+    def _embedding_model(self, name: str) -> Any:
+        from orkexa.embeddings import OllamaEmbeddings
+
+        url = self.ollama_url()
+        if url is None:
+            raise NodestroError("local.not_running", "No local model server is configured (OLLAMA_BASE_URL)")
+        return OllamaEmbeddings(name.removeprefix("ollama:"), base_url=url, allow_remote=True)
+
+    def prepare_knowledge_index(self) -> None:
+        """Build the semantic index of the included knowledge once (``vector``/``hybrid`` exports): the vectors are
+        not part of an export, they are computed here with the same embedding model."""
+        if self.manifest.knowledge_retrieval == "fts" or not self.manifest.embedding_model:
+            return
+        if not self.manifest.knowledge_included:
+            return
+        try:
+            status = self.knowledge.index_status()
+            if status.state in ("ready",) or (status.job is not None and status.job.state == "running"):
+                return
+            self.knowledge.start_reindex(self.manifest.embedding_model)
+        except NodestroError as exc:
+            logger.warning("The semantic index of the knowledge cannot be built yet: %s", exc)
+
+    # ---- web interface --------------------------------------------------------------
+
+    def session_identity(self, request: Request) -> KeyIdentity | None:
+        """The identity of the web interface's session cookie (``None`` without the interface or a session)."""
+        ui = getattr(self, "web_ui", None)
+        return ui.identity(request) if ui is not None else None
+
     def close(self) -> None:
         self.knowledge.close()
         self.memory.close()
@@ -312,17 +418,36 @@ class StandaloneHost:
         """The connection of a provider from the environment; raises when its key or endpoint is missing (Amazon
         Bedrock: ``provider.region_missing`` without a region; no AWS call is made here)."""
         client = self._client_factory(provider) if self._client_factory is not None else None
-        return environment_connection(
+        found = environment_connection(
             provider,
             base_urls=self.manifest.base_urls,
             capabilities=self.manifest.capabilities,
             client=client,
             settings=self.manifest.settings,
         )
+        if provider == "ollama":  # what the model server reports completes the declared capabilities
+            found = dataclasses.replace(
+                found, reported=self.reported_capabilities, reasoning_saving=self.reasoning_saving()
+            )
+        return found
+
+    def providers(self) -> list[str]:
+        """The providers of every model the release uses: agents, fallbacks, judges, orchestrators and the embedding
+        model of semantic knowledge search (``bundle.models`` of older releases lacks the orchestrators)."""
+        from .export_models import model_uses
+
+        found = {provider_of(model) for model in self.bundle.models}
+        uses = model_uses(
+            self.bundle,
+            embedding_model=self.manifest.embedding_model,
+            workspace_mode=self.manifest.knowledge_retrieval,
+        )
+        found.update(use.provider for use in uses)
+        return sorted(found)
 
     async def prepare_start(self, release: ServedRelease) -> None:
         try:
-            for provider in sorted({provider_of(model) for model in self.bundle.models}):
+            for provider in self.providers():
                 self.connection(provider)
         except NodestroError as exc:  # MissingApiKeyError among them
             raise ApiError(
@@ -362,6 +487,95 @@ class StandaloneHost:
 
 
 _LOCAL = {"127.0.0.1", "::1", "localhost", "testclient"}
+#: File names Windows reserves in every folder.
+_RESERVED = frozenset(
+    {"con", "prn", "aux", "nul", *(f"com{n}" for n in range(1, 10)), *(f"lpt{n}" for n in range(1, 10))}
+)
+
+
+def resolve_output_dir(project_dir: Path, configured: str) -> tuple[Path | None, str | None]:
+    """The folder result files are copied to, and a warning when the configured one cannot be used.
+
+    A relative path is relative to the project. When the configured folder cannot be created or written (for
+    example an absolute path of the exporting computer that does not exist here), the portable default
+    ``results`` next to the project is used and the warning says why; ``(None, None)`` when nothing is configured.
+    """
+    if not configured.strip():
+        return None, None
+    wanted = Path(os.path.expandvars(os.path.expanduser(configured.strip())))
+    target = wanted if wanted.is_absolute() else project_dir / wanted
+    problem = _writable(target)
+    if problem is None:
+        return target.resolve(), None
+    fallback = project_dir / "results"
+    if fallback.resolve() != target.resolve() and _writable(fallback) is None:
+        logger.warning("The output folder %s cannot be used (%s); result files go to %s", target, problem, fallback)
+        return fallback.resolve(), f"{target}: {problem}"
+    logger.warning("The output folder %s cannot be used (%s); result files stay in the database", target, problem)
+    return None, f"{target}: {problem}"
+
+
+def _writable(folder: Path) -> str | None:
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        probe = folder / f".write-test-{os.getpid()}"
+        probe.write_bytes(b"")
+        probe.unlink()
+    except OSError as exc:
+        return exc.strerror or type(exc).__name__
+    return None
+
+
+def safe_file_name(name: str, fallback: str = "result") -> str:
+    """A file name that is safe on Windows, macOS and Linux: no folders, no control or reserved characters, no
+    reserved device names, at most 120 characters (the extension kept)."""
+    base = name.replace("\\", "/").rsplit("/", 1)[-1]
+    base = "".join("_" if ord(char) < 32 or char in '<>:"|?*' else char for char in base).strip(" .")
+    if not base:
+        base = fallback
+    stem, dot, extension = base.rpartition(".")
+    if not dot:
+        stem, extension = base, ""
+    if stem.split(".")[0].lower() in _RESERVED:
+        stem = f"_{stem}"
+    extension = extension[:16]
+    stem = stem[: 120 - len(extension) - 1] if extension else stem[:120]
+    return f"{stem}.{extension}" if extension else stem
+
+
+def copy_result_files(files: ResultFiles, run: Run, folder: Path) -> list[Path]:
+    """Copy a finished run's result files to ``<folder>/<date>_<run id>/``; never overwrites anything."""
+    entries = [entry for entry in files.list(run.id) if not entry.error_code]
+    if not entries:
+        return []
+    stamp = (run.finished_at or now()).strftime("%Y-%m-%d_%H%M%S")
+    target = folder / f"{stamp}_{run.id}"
+    target.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+    taken: set[str] = set()
+    for entry in entries:
+        _, data = files.content(run.id, entry.id)
+        name = safe_file_name(entry.name)
+        stem, dot, extension = name.rpartition(".")
+        if not dot:
+            stem, extension = name, ""
+        number = 1
+        while True:
+            candidate = (
+                name if number == 1 else (f"{stem} ({number}).{extension}" if extension else f"{stem} ({number})")
+            )
+            if candidate.lower() not in taken:
+                try:
+                    with (target / candidate).open("xb") as writer:  # exclusive: never overwrite
+                        writer.write(data)
+                except FileExistsError:
+                    pass
+                else:
+                    taken.add(candidate.lower())
+                    written.append(target / candidate)
+                    break
+            number += 1
+    return written
 
 
 def create_app(
@@ -369,11 +583,33 @@ def create_app(
     *,
     settings: StandaloneSettings | None = None,
     client_factory: Callable[[str], Any] | None = None,
+    web_ui: Callable[[StandaloneHost, ServingCore], Any] | None = None,
 ) -> FastAPI:
-    """The FastAPI application of an exported project; ``client_factory(provider)`` replaces SDK clients."""
+    """The FastAPI application of an exported project; ``client_factory(provider)`` replaces SDK clients.
+
+    ``web_ui(host, core)`` returns the :class:`~nodestro_api.webui_server.WebUi` to serve (the launcher of a portable
+    package passes one with the operator's launch link and the provider setup); without it the interface, if the
+    project has one and ``WEB_UI`` is not ``off``, offers sign-in with an API key only."""
     settings = settings or StandaloneSettings.from_env()
     host = StandaloneHost(project_dir, settings, client_factory=client_factory)
     core = ServingCore(host)
+    ui = None
+    if settings.web_ui == "on" and (Path(__file__).resolve().parent / "webui" / "index.html").is_file():
+        from .webui_server import UiOptions, WebUi
+
+        if web_ui is not None:
+            ui = web_ui(host, core)
+        else:
+            ui = WebUi(
+                host,
+                UiOptions(
+                    language=settings.ui_language,
+                    output_dir=str(host.output_dir) if host.output_dir else None,
+                    output_dir_warning=host.output_warning,
+                ),
+                auth_failed=core.auth_failed,
+            )
+        host.web_ui = ui
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -383,8 +619,9 @@ def create_app(
         removed = host.cleanup()
         if removed:
             logger.info("Deleted %s runs older than %s days", removed, settings.run_retention_days)
-        if not settings.api_keys:
+        if not settings.api_keys and ui is None:
             logger.warning("API_KEYS is empty: every request will be refused (see README, 'API keys')")
+        host.prepare_knowledge_index()
         yield
         await host.runs.shutdown()
         host.close()
@@ -404,6 +641,11 @@ def create_app(
     @app.get("/health", include_in_schema=False)
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    if ui is not None:
+        from .webui_server import build_router as ui_router
+
+        app.include_router(ui_router(ui))
 
     def openapi() -> dict[str, Any]:
         if app.openapi_schema is None:

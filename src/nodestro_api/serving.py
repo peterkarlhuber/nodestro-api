@@ -815,6 +815,12 @@ class ServingCore:
         token = header[7:].strip() if header[:7].lower() == "bearer " else request.headers.get("x-api-key", "")
         client = request.client.host if request.client else "unknown"
         if not token:
+            # The web interface of an exported project: a browser session instead of a key (``session_identity``
+            # checks the cookie and that a state-changing request comes from the application's own page).
+            session_identity = getattr(self.host, "session_identity", None)
+            identity = session_identity(request) if session_identity is not None else None
+            if identity is not None:
+                return identity  # type: ignore[no-any-return]
             raise ApiError(
                 401,
                 "auth.missing",
@@ -824,14 +830,7 @@ class ServingCore:
         parsed = parse_token(token)
         identity = self.host.verify(*parsed) if parsed is not None else None
         if identity is None:
-            wait = self._failures.allow(f"auth:{client}", self.MAX_AUTH_FAILURES)
-            if wait is not None:
-                raise ApiError(
-                    429,
-                    "auth.too_many_failures",
-                    "Too many invalid keys; try again later",
-                    headers={"Retry-After": str(int(wait))},
-                )
+            self.auth_failed(client)
             raise ApiError(
                 401,
                 "auth.invalid",
@@ -839,6 +838,17 @@ class ServingCore:
                 headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
             )
         return identity
+
+    def auth_failed(self, client: str) -> None:
+        """Count a failed authentication of ``client``; ``429`` once it failed too often within a minute."""
+        wait = self._failures.allow(f"auth:{client}", self.MAX_AUTH_FAILURES)
+        if wait is not None:
+            raise ApiError(
+                429,
+                "auth.too_many_failures",
+                "Too many invalid keys; try again later",
+                headers={"Retry-After": str(int(wait))},
+            )
 
     def authorize(self, identity: KeyIdentity, release: ServedRelease, scope: Scope) -> None:
         if release.publication_id not in identity.publications:

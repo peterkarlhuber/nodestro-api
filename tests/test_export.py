@@ -107,7 +107,10 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     # + nodestro_runtime.value_checks (key figures the engine checks against tool results; runtime #108)
     expected = {"nodestro_runtime.extensions", "nodestro_runtime.docker_status", "nodestro_runtime.run_budget"}
     expected.add("nodestro_runtime.value_checks")
-    assert len(modules) == 50 and expected | {"nodestro_runtime.local_models"} <= set(modules)
+    # + nodestro_api.export_models (every model of the release, incl. orchestrators) and nodestro_api.webui_server
+    # (the optional web interface of an export).
+    expected |= {"nodestro_api.export_models", "nodestro_api.webui_server"}
+    assert len(modules) == 52 and expected | {"nodestro_runtime.local_models"} <= set(modules)
     assert "nodestro_runtime.local_service" not in modules
     # The audit/usage hook protocol is exported (tool approvals and the usage log import it); the Axentra
     # integration itself is server-only and never part of an export.

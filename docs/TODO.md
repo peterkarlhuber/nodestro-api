@@ -11,9 +11,9 @@
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 0 |
-| P2 Medium | 4 |
-| P3 Low | 19 |
-| P4 Optional | 5 |
+| P2 Medium | 5 |
+| P3 Low | 20 |
+| P4 Optional | 6 |
 
 **Release blockers:** None for this repository.
 
@@ -154,6 +154,24 @@ None known.
 
 ## Features and enhancements
 
+### API-045 · Offline container image of a published workflow
+
+- **Priority:** P4 Optional · **Status:** Open · **Refs:** portable export work order (2026-11-04),
+  `docs/portable-export.md` ("Container image")
+- **What:** The source export's `Dockerfile` is the container route; it needs a network to install. A real offline
+  image (pinned glibc base image, the Linux portable package as a layer, OCI layout written without a Docker daemon)
+  was evaluated and deferred. The Linux portable package already runs unchanged in a container.
+- **Next step:** Assemble an OCI layout from a pinned base image digest plus the package, sign it, and test `docker
+  load` + `docker run --network none` in CI.
+
+### API-046 · Portable packages are not code-signed
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** portable export work order (2026-11-04)
+- **What:** macOS Gatekeeper and Windows SmartScreen ask once before the first start (the README explains it). The
+  bundled Python and Ollama binaries keep their upstream signatures where they have one.
+- **Next step:** Needs signing identities (Apple Developer ID, Windows code-signing certificate) owned by the
+  project; then sign and notarize in the export job or in a separate release step.
+
 ### API-044 · Reindex jobs run inside the API process
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** local models work order (2026-11-03)
@@ -275,6 +293,16 @@ None known.
 - **Next step:** Keep the server image e2e of budget decisions green with every pin bump.
 
 ## Platform coverage
+
+### API-047 · Portable packages: platforms tested only by the CI smoke test
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** `.github/workflows/portable.yml`, `docs/portable-export.md`
+- **What:** Linux x86-64 is tested end to end (offline container without Python or network, a real local model
+  run, restart, browser E2E). Linux ARM64, Windows x64/ARM64 and macOS Apple Silicon/Intel are covered only by the
+  CI smoke test (build, self-test, start, a run without a model call, stop, restart): no local models, no browser,
+  no Gatekeeper/SmartScreen. Windows ARM64 has no `sqlite-vec` wheel (semantic search falls back to full text). Releases using Gemini cannot be
+  packaged for macOS Intel or Windows ARM64 (no `cryptography` wheel since 46.0.4).
+- **Next step:** Run a package with local models on real macOS and Windows machines, and a browser check there.
 
 ### API-023 · Platforms and environments not verified
 

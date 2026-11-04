@@ -6495,6 +6495,16 @@
             "title": "Ok",
             "type": "boolean"
           },
+          "portable": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PortableCheck"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "problems": {
             "items": {
               "$ref": "#/components/schemas/CheckIssue"
@@ -6557,11 +6567,149 @@
         "title": "ExportIn",
         "type": "object"
       },
+      "ExportJob": {
+        "description": "A portable export being built (kept in the database; a restart marks a running one as interrupted).",
+        "properties": {
+          "bytes_done": {
+            "default": 0,
+            "title": "Bytes Done",
+            "type": "integer"
+          },
+          "bytes_total": {
+            "default": 0,
+            "title": "Bytes Total",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "export_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Export Id"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "log": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Log",
+            "type": "array"
+          },
+          "message": {
+            "default": "",
+            "title": "Message",
+            "type": "string"
+          },
+          "options": {
+            "additionalProperties": true,
+            "title": "Options",
+            "type": "object"
+          },
+          "progress": {
+            "default": 0.0,
+            "title": "Progress",
+            "type": "number"
+          },
+          "publication_id": {
+            "title": "Publication Id",
+            "type": "string"
+          },
+          "release_number": {
+            "title": "Release Number",
+            "type": "integer"
+          },
+          "state": {
+            "default": "running",
+            "enum": [
+              "running",
+              "done",
+              "failed",
+              "cancelled"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "step": {
+            "default": "check",
+            "title": "Step",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "publication_id",
+          "release_number"
+        ],
+        "title": "ExportJob",
+        "type": "object"
+      },
       "ExportOptions": {
         "properties": {
+          "allow_downloads": {
+            "default": true,
+            "title": "Allow Downloads",
+            "type": "boolean"
+          },
           "confirm_distribution": {
             "default": false,
             "title": "Confirm Distribution",
+            "type": "boolean"
+          },
+          "confirm_models": {
+            "default": false,
+            "title": "Confirm Models",
             "type": "boolean"
           },
           "guide_id": {
@@ -6575,6 +6723,15 @@
             ],
             "title": "Guide Id"
           },
+          "kind": {
+            "default": "standard",
+            "enum": [
+              "standard",
+              "portable"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
           "knowledge": {
             "items": {
               "type": "string"
@@ -6586,10 +6743,19 @@
             "default": "en",
             "enum": [
               "de",
-              "en"
+              "en",
+              "es",
+              "fr",
+              "pt-BR",
+              "it"
             ],
             "title": "Language",
             "type": "string"
+          },
+          "local_models": {
+            "default": true,
+            "title": "Local Models",
+            "type": "boolean"
           },
           "memory": {
             "items": {
@@ -6597,6 +6763,11 @@
             },
             "title": "Memory",
             "type": "array"
+          },
+          "offline": {
+            "default": false,
+            "title": "Offline",
+            "type": "boolean"
           },
           "orkexa": {
             "default": "git",
@@ -6606,6 +6777,28 @@
             ],
             "title": "Orkexa",
             "type": "string"
+          },
+          "output_dir": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Output Dir",
+            "type": "string"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform"
+          },
+          "web_ui": {
+            "default": false,
+            "title": "Web Ui",
+            "type": "boolean"
           }
         },
         "title": "ExportOptions",
@@ -8883,6 +9076,136 @@
         "title": "LocalJob",
         "type": "object"
       },
+      "LocalModelInfo": {
+        "description": "A local model of a release, as this installation knows it.",
+        "properties": {
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "catalog": {
+            "default": false,
+            "title": "Catalog",
+            "type": "boolean"
+          },
+          "context": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context"
+          },
+          "cpu_friendly": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Friendly"
+          },
+          "digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Digest"
+          },
+          "installed": {
+            "default": false,
+            "title": "Installed",
+            "type": "boolean"
+          },
+          "kind": {
+            "default": "chat",
+            "enum": [
+              "chat",
+              "embedding"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "license": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "License"
+          },
+          "memory_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Bytes"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "redistribution": {
+            "default": "unknown",
+            "enum": [
+              "permitted",
+              "unknown"
+            ],
+            "title": "Redistribution",
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "enum": [
+                "agent",
+                "fallback",
+                "judge",
+                "orchestrator",
+                "embedding"
+              ],
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "size": {
+            "default": 0,
+            "title": "Size",
+            "type": "integer"
+          },
+          "used_by": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Used By",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "LocalModelInfo",
+        "type": "object"
+      },
       "LocalOverview": {
         "properties": {
           "advice": {
@@ -10696,6 +11019,51 @@
         "title": "ModelSpeed",
         "type": "object"
       },
+      "ModelUse": {
+        "description": "One model of a release and where it is used.",
+        "properties": {
+          "local": {
+            "title": "Local",
+            "type": "boolean"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "enum": [
+                "agent",
+                "fallback",
+                "judge",
+                "orchestrator",
+                "embedding"
+              ],
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "used_by": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Used By",
+            "type": "array"
+          }
+        },
+        "required": [
+          "model",
+          "provider",
+          "local"
+        ],
+        "title": "ModelUse",
+        "type": "object"
+      },
       "NeededRequirement": {
         "description": "A direct requirement of a scope: the union of what its tools need.",
         "properties": {
@@ -10777,6 +11145,45 @@
           }
         },
         "title": "NetworkConfig",
+        "type": "object"
+      },
+      "NetworkNeed": {
+        "description": "Something the release needs a network connection or an outside service for.",
+        "properties": {
+          "detail": {
+            "default": "",
+            "title": "Detail",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "cloud_model",
+              "endpoint",
+              "server_tool",
+              "mcp",
+              "docker_sandbox",
+              "ollama_cloud"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "used_by": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Used By",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "name"
+        ],
+        "title": "NetworkNeed",
         "type": "object"
       },
       "NetworkStatus": {
@@ -12088,6 +12495,101 @@
           "requirement"
         ],
         "title": "PlannedTool",
+        "type": "object"
+      },
+      "PortableCheck": {
+        "description": "What a portable package of the release would contain and need (:mod:`nodestro_api.portable_build`).",
+        "properties": {
+          "bundled_models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Bundled Models",
+            "type": "array"
+          },
+          "downloads": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Downloads",
+            "type": "array"
+          },
+          "estimated_bytes": {
+            "default": 0,
+            "title": "Estimated Bytes",
+            "type": "integer"
+          },
+          "local_models": {
+            "items": {
+              "$ref": "#/components/schemas/LocalModelInfo"
+            },
+            "title": "Local Models",
+            "type": "array"
+          },
+          "memory_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Bytes"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ModelUse"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "network_needs": {
+            "items": {
+              "$ref": "#/components/schemas/NetworkNeed"
+            },
+            "title": "Network Needs",
+            "type": "array"
+          },
+          "offline_capable": {
+            "default": false,
+            "title": "Offline Capable",
+            "type": "boolean"
+          },
+          "platform": {
+            "title": "Platform",
+            "type": "string"
+          },
+          "platforms": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Platforms",
+            "type": "array"
+          },
+          "providers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Providers",
+            "type": "array"
+          },
+          "target_requirements": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Target Requirements",
+            "type": "array"
+          }
+        },
+        "required": [
+          "platform"
+        ],
+        "title": "PortableCheck",
         "type": "object"
       },
       "Position": {
@@ -24927,6 +25429,84 @@
         "summary": "Diagnostics Connection"
       }
     },
+    "/api/export-jobs/{job_id}": {
+      "get": {
+        "operationId": "get_export_job_api_export_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportJob"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Export Job"
+      }
+    },
+    "/api/export-jobs/{job_id}/cancel": {
+      "post": {
+        "operationId": "cancel_export_job_api_export_jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportJob"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Cancel Export Job"
+      }
+    },
     "/api/exports/{export_id}/download": {
       "get": {
         "operationId": "download_export_api_exports__export_id__download_get",
@@ -28540,6 +29120,97 @@
           }
         },
         "summary": "Set Enabled"
+      }
+    },
+    "/api/publications/{publication_id}/export-jobs": {
+      "get": {
+        "operationId": "list_export_jobs_api_publications__publication_id__export_jobs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "publication_id",
+            "required": true,
+            "schema": {
+              "title": "Publication Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ExportJob"
+                  },
+                  "title": "Response List Export Jobs Api Publications  Publication Id  Export Jobs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Export Jobs"
+      },
+      "post": {
+        "description": "Build a portable package in the background (``options.kind`` must be ``portable``).",
+        "operationId": "start_export_job_api_publications__publication_id__export_jobs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "publication_id",
+            "required": true,
+            "schema": {
+              "title": "Publication Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportJob"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Start Export Job"
       }
     },
     "/api/publications/{publication_id}/export/check": {
