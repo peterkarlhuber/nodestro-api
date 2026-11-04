@@ -18,9 +18,9 @@ is [PLATFORM.md](https://github.com/peterkarlhuber/nodestro-studio/blob/master/d
 | Area | Modules |
 | --- | --- |
 | Application | `app` (`create_app`), `context` (`AppConfig`; `Nodestro` extends the runtime `Workspace`), `cli` (`nodestro-api`), `local_access` (Host/Origin guard) |
-| Studio REST API `/api` | `api`, `api_data`, `api_inputs`, `api_examples`, `api_python`, `api_architect`, `api_assistant`, `api_automation`, `api_guide`, `api_publish`, `api_pricing` (model prices, reconciliation), `api_mcp` (connected MCP services) |
+| Studio REST API `/api` | `api`, `api_data`, `api_inputs`, `api_examples`, `api_python`, `api_architect`, `api_assistant`, `api_automation`, `api_guide`, `api_publish`, `api_pricing` (model prices, reconciliation), `api_mcp` (connected MCP services), `api_local_models` (local models and the semantic knowledge index), `api_budget`, `api_run_chat`, `api_tool_approvals`, `api_notifications`, `api_reference` (the API reference page) |
 | Published APIs `/api/published/{slug}` | `serving` (shared with exports), `publishing`, `release_gate` (opt-in release gate), `api_keys`, `network` (separate listener for the local network) |
-| Export | `exporter` (ZIP with runtime, lock file, tests; orkexa from Git or bundled), `standalone` |
+| Export | `exporter` (ZIP with runtime, lock file, tests; orkexa from Git or bundled), `standalone`, `export_models`; portable packages: `portable_build`, `portable` (the launcher), `portable_secrets`, `webui_server` (see [docs/portable-export.md](docs/portable-export.md)) |
 | Services | `pricing_setup` (price sync on desktop and server), `assistants`, `architect`, `assistant`, `assistant_context`, `docs_index`, `batches`, `benchmarks`, `schedules`, `backup`, `organize`, `search`, `diagnostics` |
 | Contract | `openapi` and `openapi/nodestro-api.json` |
 
@@ -230,6 +230,10 @@ Commands:
   `nodestro-price-reference` is reserved (the server's reference prices).
 - `nodestro-server pricing status|sync|approve VERSION|reject VERSION [--note …]`: the reference prices: their state
   and open reviews, a sync now, and the decision on a review.
+- Members and tenants (`members`, `set-role`, `remove-member`, `revoke-sessions`, `suspend-tenant`, `resume-tenant`),
+  tenant secrets (`secrets reencrypt`), Axentra platform services (`axentra`), input file storage (`files`) and
+  database roles (`db`): `nodestro-server <command> --help` shows the arguments, and the runbook in the
+  `nodestro-server` repository (`docs/RUNBOOK.md`) describes when to use them.
 
 API and worker processes start only when the database schema is current and Docker is reachable: on a server tool
 code runs only in containers (ADR-0006), so a server without a container runtime does not start
@@ -343,7 +347,15 @@ API layer (copied unchanged, listed with versions and SHA-256 checksums in `RUNT
 versions (`requirements.lock`), key tooling (`python -m app.keys`), examples, a Dockerfile and its own tests with a
 simulated model. orkexa is installed from its repository at the pinned commit, or bundled as source code
 (`vendor/orkexa`, only after confirming its redistribution). The project contains no provider or API keys; keys are
-configured as hashes in `API_KEYS`. The README of the project is written in English or German.
+configured as hashes in `API_KEYS`. The README of the project is written in the export language (`de`, `en`, `es`,
+`fr`, `it` or `pt-BR`; templates in `nodestro_api/readme/`).
+
+`POST /api/publications/{id}/exports` builds this source project synchronously (`kind: "standard"`, the default);
+`POST /api/publications/{id}/export/check` lists the problems first (errors block, warnings and notes do not), and
+`GET /api/exports/{id}/download` returns the ZIP file. A **portable export** (`kind: "portable"`) is a ready-to-run
+package for one platform with its own Python, every library, start scripts and optionally the local models and Ollama;
+it is built as a background job (`POST /api/publications/{id}/export-jobs`, `GET /api/export-jobs/{id}`). See
+[docs/portable-export.md](docs/portable-export.md).
 
 Amazon Bedrock in an export: the manifest keeps only the region and the data residency (`settings.bedrock`; an
 `eu_only` stays in force), never an AWS profile name, a role or a key. The exported API signs in with the AWS default
@@ -390,8 +402,8 @@ Open work (known bugs, follow-ups and planned improvements) is listed in [docs/T
 - One process per data directory: limits, idempotency and key changes are synchronized within the process, not
   between several server processes. The runtime enforces it with a lock file (`nodestro.lock`): a second `nodestro`
   or `nodestro-api` on the same data directory stops at start. Do not run the app with several uvicorn workers.
-- The interactive reference `/api/docs` loads Swagger UI from a CDN and needs internet access; the OpenAPI document
-  itself (`/api/openapi.json`) is served locally.
+- The interactive reference `/api/docs` serves a vendored copy of Swagger UI (`nodestro_api/swagger_ui`, version and
+  checksums in its `VENDORED.md`) and works offline; the OpenAPI document itself is `/api/openapi.json`.
 - Without network access enabled, the published endpoints answer only this computer; with it, TLS is the
   operator's responsibility (certificate, key, or a reverse proxy).
 - The desktop's studio API has no login and only listens on loopback addresses; the published workflow APIs (with
