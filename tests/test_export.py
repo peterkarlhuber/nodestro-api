@@ -475,3 +475,20 @@ def test_an_installation_without_test_tools_exports(
     pyproject = (project / "pyproject.toml").read_text()
     assert '"pytest>=8",' in pyproject  # the floor its generated tests need, not a pin
     assert f'"httpx=={real("httpx")}",' in pyproject  # an installed test tool stays pinned
+
+
+def test_the_module_analysis_is_kept_between_checks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """UX handover B2: the export check parsed every runtime module on each call (about a second)."""
+    first = exporter.runtime_modules()
+    parsed: list[str] = []
+    original = exporter.ast.parse
+    monkeypatch.setattr(exporter.ast, "parse", lambda source, *a, **k: parsed.append("x") or original(source, *a, **k))
+    assert exporter.runtime_modules() == first
+    assert parsed == []
+    # A changed file of a package (a development checkout) is analysed again.
+    folder = tmp_path / "pkg"
+    folder.mkdir()
+    (folder / "a.py").write_text("x = 1\n")
+    before = exporter._source_stamp({"nodestro_api": folder})
+    os.utime(folder / "a.py", ns=(1, 10**18))
+    assert exporter._source_stamp({"nodestro_api": folder}) != before

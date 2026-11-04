@@ -31,7 +31,9 @@ exported: no API keys of any provider, no credentials in URLs, no settings.
 from __future__ import annotations
 
 import ast
+import contextlib
 from datetime import datetime
+import functools
 import hashlib
 from importlib import metadata
 import io
@@ -289,8 +291,37 @@ PORTABLE_ROOTS = ("nodestro_api.portable",)
 
 def runtime_modules(dirs: dict[str, Path] | None = None, extra: tuple[str, ...] = ()) -> list[str]:
     """The modules an exported project needs (``package.module``), from :data:`RUNTIME_ROOTS` (and ``extra``) and
-    their imports."""
+    their imports.
+
+    Parsing every module takes about a second, and the export check runs on each change of the export dialog: the
+    result is kept per installed version of the packages and the modification times of their files (an edited
+    development checkout is parsed again)."""
     dirs = dirs or _package_dirs()
+    key = tuple(sorted((package, str(path)) for package, path in dirs.items()))
+    return list(_runtime_modules(key, extra, _source_stamp(dirs)))
+
+
+def _source_stamp(dirs: dict[str, Path]) -> tuple[tuple[str, str, int], ...]:
+    """What the module closure depends on: each package's installed version and the newest change of its files."""
+    stamp: list[tuple[str, str, int]] = []
+    for package, folder in sorted(dirs.items()):
+        dist = next((name for name, module in RUNTIME_PACKAGES.items() if module == package), package)
+        try:
+            version = _version(dist)
+        except metadata.PackageNotFoundError:
+            version = ""
+        newest = 0
+        with contextlib.suppress(OSError):
+            newest = max((entry.stat().st_mtime_ns for entry in folder.glob("*.py")), default=0)
+        stamp.append((package, version, newest))
+    return tuple(stamp)
+
+
+@functools.lru_cache(maxsize=16)
+def _runtime_modules(
+    dirs_key: tuple[tuple[str, str], ...], extra: tuple[str, ...], _stamp: tuple[tuple[str, str, int], ...]
+) -> tuple[str, ...]:
+    dirs = {key: Path(path) for key, path in dirs_key}
     seen: set[str] = set()
     queue = [*RUNTIME_ROOTS, *extra]
     while queue:
@@ -308,7 +339,7 @@ def runtime_modules(dirs: dict[str, Path] | None = None, extra: tuple[str, ...] 
     leaked = seen & STUDIO_ONLY
     if leaked:
         raise RuntimeError(f"Studio modules would be exported: {sorted(leaked)}")
-    return sorted(seen)
+    return tuple(sorted(seen))
 
 
 def runtime_sources() -> dict[str, dict[str, str]]:
@@ -362,7 +393,19 @@ def _dev_requirement(name: str) -> str:
 
 
 def _closure(names: list[str]) -> dict[str, str]:
-    """``{distribution: version}`` of the installed requirements of ``names`` (with extras, markers)."""
+    """``{distribution: version}`` of the installed requirements of ``names`` (with extras, markers); kept per the
+    installed versions of ``names`` (reading the metadata of every distribution is slow)."""
+    versions = []
+    for item in names:
+        try:
+            versions.append(_version(Requirement(item).name))
+        except metadata.PackageNotFoundError:
+            versions.append("")
+    return dict(_closure_cached(tuple(names), tuple(versions)))
+
+
+@functools.lru_cache(maxsize=32)
+def _closure_cached(names: tuple[str, ...], _versions: tuple[str, ...]) -> tuple[tuple[str, str], ...]:
     environment = default_environment()
     found: dict[str, str] = {}
     queue: list[tuple[str, set[str]]] = []
@@ -390,7 +433,7 @@ def _closure(names: list[str]) -> dict[str, str]:
                 if not applies:
                     continue
             queue.append((requirement.name, set(requirement.extras)))
-    return found
+    return tuple(found.items())
 
 
 def _orkexa_git() -> str:

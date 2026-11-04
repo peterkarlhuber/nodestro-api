@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Export check speed (UX handover B2): the module closure of an export and the dependency closure are kept per
+  installed package version and file change time instead of being computed on every `POST .../export/check`
+  (about 1 s per call before, 0.1 s after the first one here; 2.7-10 s were measured on a slower machine).
 - Importing a folder that is no offline model package (no `orkexa-models.json`, unknown format, a bad entry) answers
   `400 local.invalid_package` with `params.reason` (orkexa's code) and `params.path` instead of `agent.OllamaError`
   (UX handover B3).
