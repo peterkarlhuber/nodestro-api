@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Portable export jobs on a server (API3-07): on the server profile `POST /publications/{id}/export-jobs` answers
+  `403 export.server_unsupported` unless the operator sets `NODESTRO_SERVER_EXPORT_JOBS=1`; then one build at a time
+  on the whole server (`export.busy`) and a size limit per package (`NODESTRO_SERVER_EXPORT_MAX_BYTES`, default 2 GiB,
+  `403 export.server_too_large`). Desktop and Nodestro Local Docker are unchanged. See `docs/portable-export.md`.
 - Knowledge search bounds (API3-10, contract change): `GET /api/knowledge/search` takes `k` from 1 to 50 and `q`
   of at most 2000 characters; other values answer 422 (before: any `k`, `k <= 0` answered 400 from the runtime).
 - Exported applications (backend audit round 3): `/docs` serves a vendored, pinned Swagger UI (exports carry

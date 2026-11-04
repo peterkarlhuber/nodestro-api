@@ -29168,7 +29168,7 @@
         "summary": "List Export Jobs"
       },
       "post": {
-        "description": "Build a portable package in the background (``options.kind`` must be ``portable``).",
+        "description": "Build a portable package in the background (``options.kind`` must be ``portable``).\n\nOn a server this answers ``403 export.server_unsupported`` unless its operator enabled export jobs\n(``NODESTRO_SERVER_EXPORT_JOBS=1``); then one package is built at a time on the whole server\n(``export.busy`` otherwise) and a package larger than ``NODESTRO_SERVER_EXPORT_MAX_BYTES`` (default 2 GiB) is\nrefused (``403 export.server_too_large`` from the estimate, or the job fails with that code).",
         "operationId": "start_export_job_api_publications__publication_id__export_jobs_post",
         "parameters": [
           {

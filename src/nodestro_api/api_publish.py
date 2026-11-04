@@ -382,7 +382,12 @@ def download_export(export_id: str, ctx: Ctx) -> Response:
 
 @router.post("/publications/{publication_id}/export-jobs", status_code=202, dependencies=EDIT)
 def start_export_job(publication_id: str, body: ExportIn, ctx: Ctx) -> portable_build.ExportJob:
-    """Build a portable package in the background (``options.kind`` must be ``portable``)."""
+    """Build a portable package in the background (``options.kind`` must be ``portable``).
+
+    On a server this answers ``403 export.server_unsupported`` unless its operator enabled export jobs
+    (``NODESTRO_SERVER_EXPORT_JOBS=1``); then one package is built at a time on the whole server
+    (``export.busy`` otherwise) and a package larger than ``NODESTRO_SERVER_EXPORT_MAX_BYTES`` (default 2 GiB) is
+    refused (``403 export.server_too_large`` from the estimate, or the job fails with that code)."""
     publication = ctx.publications.get(publication_id)
     release, _ = _served(ctx, publication, body.number)
     options = body.options
@@ -392,6 +397,8 @@ def start_export_job(publication_id: str, body: ExportIn, ctx: Ctx) -> portable_
     if not found.ok:
         first = next(item for item in found.problems if item.level == "error")
         raise NodestroError(first.code, first.message, **first.params)
+    # On a server only with the operator's opt-in, one build at a time and a size limit (API3-07).
+    portable_build.server_admission(ctx, found.portable.estimated_bytes if found.portable else 0)
     return portable_build.runner(ctx).start(publication, release, options)
 
 
