@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Importing a folder that is no offline model package (no `orkexa-models.json`, unknown format, a bad entry) answers
+  `400 local.invalid_package` with `params.reason` (orkexa's code) and `params.path` instead of `agent.OllamaError`
+  (UX handover B3).
 - Portable export check (UX handover B5): no `export.distribution_unconfirmed` ("or choose the Git reference") for
   `kind: "portable"`, which always bundles orkexa (`export.portable_distribution` asks instead); `export.downloads` and
   `export.download_needed` carry `params.downloads` as codes (`python`, `libraries`, `ollama`) for translation

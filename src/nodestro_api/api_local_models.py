@@ -24,6 +24,7 @@ from fastapi import APIRouter, Request, Response
 from nodestro_runtime.knowledge import KnowledgeIndexStatus
 from nodestro_runtime.local_models import CATALOG, TASKS, Hardware, LocalModelInfo, Recommendation, fits, recommend_all
 from nodestro_runtime.local_service import BuildInput, LocalAdvice, LocalJob, LocalStatus, build_inputs
+from orkexa.local import OllamaError
 from pydantic import BaseModel, Field
 
 from .api import Ctx
@@ -221,7 +222,14 @@ async def local_import(body: ImportIn, ctx: Ctx) -> LocalJob:
         if not body.name:
             raise ApiError(400, "local.name_missing", "Name the model to create from the GGUF file")
         return await asyncio.to_thread(ctx.local_models.import_gguf, body.name, body.path, projector=body.projector)
-    return await asyncio.to_thread(ctx.local_models.import_package, body.path, body.models)
+    try:
+        return await asyncio.to_thread(ctx.local_models.import_package, body.path, body.models)
+    except OllamaError as exc:
+        # The package's structure is checked before the job starts (no manifest, unknown format, a bad entry): a
+        # code the studio translates instead of agent.OllamaError (UX handover B3).
+        if exc.code == "unreachable" or exc.code == "timeout":
+            raise
+        raise ApiError(400, "local.invalid_package", str(exc), reason=exc.code, path=body.path) from None
 
 
 @router.delete("/local-models/models/{name:path}", status_code=204, dependencies=INSTALL)
