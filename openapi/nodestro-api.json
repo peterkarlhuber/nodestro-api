@@ -11507,6 +11507,15 @@
             "title": "Required",
             "type": "boolean"
           },
+          "source": {
+            "default": "model",
+            "enum": [
+              "model",
+              "tool"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
           "type": {
             "default": "string",
             "enum": [

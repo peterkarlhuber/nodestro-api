@@ -12,7 +12,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 import nodestro_examples as library
 from nodestro_runtime.schemas import LANGUAGES
-from nodestro_runtime.testing import AnswerAll, AnswerAllClient, sample_instance
+from nodestro_runtime.testing import AnswerAll, AnswerAllClient, computing_call, sample_instance
 import pytest
 
 from conftest import Parsed, text
@@ -301,6 +301,11 @@ class Override(AnswerAll):
         self.values = values
 
     def _answer(self, request: dict[str, Any]) -> Any:
+        # The chosen numbers are key figures a tool must compute (source="tool"): compute them first, like a model.
+        numbers = [value for value in self.values.values() if isinstance(value, (int, float))]
+        computed = computing_call(request, numbers)
+        if computed is not None:
+            return computed
         model = request.get("output_format")
         if model is not None and model.__name__ != "_Verdict":
             with self._lock:

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Pin nodestro-runtime 2f1de71 (runtime #108 to #110: checked key figures, the built-in `table_totals` tool, orkexa
+  6e61862 so local Ollama agents with a structured result call their tools) and nodestro-examples c05ae45 (examples
+  #67: production-downtime and four more templates take their key figures from a tool). OpenAPI: `OutputField.source`
+  (`model` or `tool`). The export carries the new runtime module `value_checks`.
 - Pin nodestro-runtime 7cb9b4b (runtime #107: a local quality judge answers without thinking in the CPU saving
   mode, longer request timeout for local model servers) and nodestro-examples 36488a6 (examples #65). No API change.
 - Pin nodestro-runtime 3006ce0 (runtime #106) and nodestro-examples be55542 (examples #64: task profiles per agent, `agent_plan`, `ModelChoice.agents`).
