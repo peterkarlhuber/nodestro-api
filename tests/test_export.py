@@ -110,7 +110,10 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     # + nodestro_api.export_models (every model of the release, incl. orchestrators) and nodestro_api.webui_server
     # (the optional web interface of an export).
     expected |= {"nodestro_api.export_models", "nodestro_api.webui_server"}
-    assert len(modules) == 52 and expected | {"nodestro_runtime.local_models"} <= set(modules)
+    # + nodestro_api.body_limit and nodestro_runtime.traces (its trace limit): the exported application limits
+    # request bodies like the studio (backend audit 3, API3-02).
+    expected |= {"nodestro_api.body_limit", "nodestro_runtime.traces"}
+    assert len(modules) == 54 and expected | {"nodestro_runtime.local_models"} <= set(modules)
     assert "nodestro_runtime.local_service" not in modules
     # The audit/usage hook protocol is exported (tool approvals and the usage log import it); the Axentra
     # integration itself is server-only and never part of an export.
@@ -194,7 +197,9 @@ def test_runtime_is_copied_unchanged(exported: Callable[..., Any], tmp_path: Pat
     runtime = json.loads((project / "RUNTIME.json").read_text())
     dirs = {"nodestro_runtime": Path(nodestro_runtime.__file__).parent, "nodestro_api": Path(exporter.__file__).parent}
     modules = {name.replace(".", "/") + ".py" for name in exporter.runtime_modules()}
-    assert set(runtime["files"]) == modules | {"nodestro_runtime/__init__.py", "nodestro_api/__init__.py"}
+    # The vendored Swagger UI of /docs is copied unchanged as well (backend audit 3, API3-01).
+    swagger = {f"nodestro_api/swagger_ui/{name}" for name in exporter._SWAGGER_FILES}
+    assert set(runtime["files"]) == modules | swagger | {"nodestro_runtime/__init__.py", "nodestro_api/__init__.py"}
     for name in runtime["files"]:
         package, _, file = name.partition("/")
         assert (project / name).read_bytes() == (dirs[package] / file).read_bytes()

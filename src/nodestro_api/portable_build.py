@@ -441,6 +441,29 @@ def _run(command: list[str], env: dict[str, str], progress: Progress, *, cwd: Pa
     return text
 
 
+#: The install prefix python-build-standalone builds with (what its build configuration names before uv patches it).
+NEUTRAL_PREFIX = "/install"
+
+
+def neutral_python_paths(target: Path, source: Path) -> list[Path]:
+    """Remove the exporting computer's folder from the copied Python's build configuration (API3-05).
+
+    uv writes the folder it installed Python to (here ``<data>/export-cache/python/...``, which names the exporting
+    user's home folder) into ``_sysconfigdata_*.py``; the package gets python-build-standalone's neutral prefix
+    instead. The values only matter for compiling extensions, which a package never does."""
+    prefixes = sorted({str(source), str(source.resolve())}, key=len, reverse=True)
+    changed: list[Path] = []
+    for file in sorted(target.glob("lib/python3.*/_sysconfigdata_*.py")):
+        text = file.read_text(encoding="utf-8")
+        cleaned = text
+        for prefix in prefixes:
+            cleaned = cleaned.replace(prefix, NEUTRAL_PREFIX)
+        if cleaned != text:
+            file.write_text(cleaned, encoding="utf-8")
+            changed.append(file)
+    return changed
+
+
 def install_python(ctx: Nodestro, platform: Platform, progress: Progress, *, allow_downloads: bool) -> Path:
     found = cached_python(ctx, platform)
     if found is not None:
@@ -711,6 +734,12 @@ def start_scripts(platform: Platform) -> dict[str, tuple[str, int]]:
     return found
 
 
+def _toml_string(value: str) -> str:
+    """A TOML basic string: JSON's escapes are TOML's, but not its surrogate pairs (so no ``ensure_ascii``), and TOML
+    also needs DEL escaped (API3-09)."""
+    return json.dumps(value, ensure_ascii=False).replace("\x7f", "\\u007f")
+
+
 def settings_toml(options: ExportOptions, *, context_length: int) -> str:
     """``config/settings.toml``: safe defaults that work right after unpacking."""
     output = options.output_dir.strip() or "results"
@@ -734,7 +763,7 @@ allowed_hosts = []
 data_dir = "data"
 # A copy of every result file goes to <output_dir>/<date>_<run>/ (relative or absolute; "" turns it off).
 # A folder that cannot be created or written falls back to "results" next to this file.
-output_dir = {json.dumps(output)}
+output_dir = {_toml_string(output)}
 # Delete runs older than this many days at start (0 keeps everything).
 run_retention_days = 0
 log_dir = "logs"
@@ -896,6 +925,7 @@ def _assemble(
     shutil.copytree(python_dir, stage / "python", symlinks=True)
     for marker in (stage / "python").glob("lib/python3.*/EXTERNALLY-MANAGED"):
         marker.unlink()
+    neutral_python_paths(stage / "python", python_dir)
     python_version = re.sub(r"^cpython-([0-9.]+)-.*$", r"\1", python_dir.name)
     site = stage / "python" / platform.site_packages(python_minor())
     site.mkdir(parents=True, exist_ok=True)

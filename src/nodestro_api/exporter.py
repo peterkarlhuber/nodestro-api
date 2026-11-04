@@ -272,6 +272,17 @@ class _Imports(ast.NodeVisitor):
                 self._add(package, alias.name)
 
 
+#: The vendored Swagger UI files an export serves at ``/docs`` (with their license files).
+_SWAGGER_FILES = (
+    "swagger-ui-bundle.js",
+    "swagger-ui.css",
+    "favicon-32x32.png",
+    "nodestro-init.js",
+    "swagger-ui-bundle.js.LICENSE.txt",
+    "LICENSE",
+    "NOTICE",
+)
+
 #: The extra roots of a portable package: its launcher (which brings the provider key store).
 PORTABLE_ROOTS = ("nodestro_api.portable",)
 
@@ -1738,6 +1749,13 @@ def _project_files(
             data = b"" if dry_run else file.read_bytes()
             add(path, data)
             checksums[path] = _sha(data)
+    # The API reference (``/docs``) with the vendored Swagger UI (no CDN in the application's origin, API3-01).
+    swagger = dirs["nodestro_api"] / "swagger_ui"
+    for name in _SWAGGER_FILES:
+        path = f"nodestro_api/swagger_ui/{name}"
+        data = b"" if dry_run else (swagger / name).read_bytes()
+        add(path, data)
+        checksums[path] = _sha(data)
     for package, directory in dirs.items():
         data = b"" if dry_run else (directory / "__init__.py").read_bytes()
         add(f"{package}/__init__.py", data)

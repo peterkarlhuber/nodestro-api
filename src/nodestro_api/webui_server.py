@@ -45,7 +45,7 @@ from nodestro_runtime.engine import start_fields
 from nodestro_runtime.file_formats import accept_extensions
 from pydantic import BaseModel, Field
 
-from .serving import ApiError, KeyAuthenticatedRoute, KeyIdentity, parse_token
+from .serving import ApiError, KeyAuthenticatedRoute, KeyIdentity, parse_token, read_body
 
 if TYPE_CHECKING:
     from .standalone import StandaloneHost
@@ -76,6 +76,9 @@ CSP = (
     "form-action 'self'; frame-ancestors 'none'"
 )
 _SAFE = frozenset({"GET", "HEAD", "OPTIONS"})
+#: Body limits of the sign-in and of the provider setup (``413 request.too_large`` above).
+_SIGN_IN_BYTES = 4096
+_SETUP_BYTES = 16384
 
 
 @dataclass
@@ -362,8 +365,9 @@ def build_router(ui: WebUi) -> APIRouter:
     @router.post("/ui/api/session")
     async def sign_in(request: Request) -> JSONResponse:
         check_same_origin(request)
+        # Read at most 4 KiB (no session yet: a large body must not be kept in memory, API3-02).
         try:
-            body = json.loads((await request.body())[:4096] or b"{}")
+            body = json.loads(await read_body(request, _SIGN_IN_BYTES) or b"{}")
         except ValueError:
             body = {}
         token = str(body.get("api_key") or "").strip() if isinstance(body, dict) else ""
@@ -412,7 +416,7 @@ def build_router(ui: WebUi) -> APIRouter:
         if ui.set_provider is None:
             raise ApiError(404, "ui.setup_unavailable", "Provider keys are configured outside this application")
         try:
-            body = json.loads((await request.body())[:16384] or b"{}")
+            body = json.loads(await read_body(request, _SETUP_BYTES) or b"{}")
         except ValueError:
             raise ApiError(422, "request.invalid", "Send a JSON object") from None
         if not isinstance(body, dict):

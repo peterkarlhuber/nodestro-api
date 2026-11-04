@@ -87,12 +87,14 @@ class Console:
     def __init__(self, language: str) -> None:
         self.texts = _messages(language)
 
-    def say(self, key: str, **values: Any) -> None:
+    def say(self, key: str, *, log: bool = True, **values: Any) -> None:
+        """Print a message; ``log=False`` keeps it out of the log file (the one-time sign-in link, API3-04)."""
         text = self.texts.get(key, key)
         with suppress(KeyError, IndexError, ValueError):
             text = text.format(**values)
         print(text, flush=True)
-        logger.info("%s", text)
+        if log:
+            logger.info("%s", text)
 
 
 # ---- settings -------------------------------------------------------------------------------------------------
@@ -431,9 +433,10 @@ def _setup_logging(settings: Settings) -> Path:
     return folder
 
 
-def _network_problem(settings: Settings) -> str | None:
-    """Why serving other computers is refused (``None``: it is allowed or not wanted)."""
-    host = settings.host
+def _network_problem(settings: Settings, host: str | None = None) -> str | None:
+    """Why serving other computers is refused (``None``: it is allowed or not wanted). ``host``: the address that
+    will be served (``start --host`` wins over the settings, so it is checked too, API3-03)."""
+    host = host or settings.host
     if host in LOOPBACK:
         return None
     if settings.get("server", "behind_proxy"):
@@ -457,14 +460,14 @@ def start(args: argparse.Namespace, settings: Settings) -> int:
         if not args.no_browser:
             _open_browser(running, console)
         return 0
-    if _network_problem(settings):
+    host = args.host or settings.host
+    if _network_problem(settings, host):
         console.say("network_needs_tls")
         return 2
     for key, value in settings.environment().items():
         os.environ.setdefault(key, value)
     if not os.environ.get("API_KEYS"):
         os.environ["API_KEYS"] = _api_keys(data_dir)
-    host = args.host or settings.host
     port = _choose_port(host, args.port or settings.port)
     info = package_info(settings.root)
     from .portable_secrets import ProviderSecrets
@@ -561,7 +564,7 @@ def _serve(
                 if settings.get("server", "open_browser") and not args.no_browser:
                     _open(f"{url}/ui/launch?token={launch}")
                 else:
-                    console.say("launch_link", url=f"{url}/ui/launch?token={launch}")
+                    console.say("launch_link", log=False, url=f"{url}/ui/launch?token={launch}")
                 console.say("how_to_stop")
                 return
             time.sleep(0.2)

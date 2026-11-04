@@ -322,7 +322,9 @@ def test_the_export_carries_the_region_and_never_aws_credentials(
     fields = ["profile_name", "role_arn", "external_id", "aws_access_key_id", "aws_secret_access_key", "AKIA", "ASIA"]
     for name, content in members.items():
         text = content.decode("utf-8", errors="replace")
-        for item in [*values, *([] if name.endswith(".py") else fields)]:
+        # The vendored Swagger UI (minified third-party files, pinned by SHA-256) is code as well.
+        code = name.endswith(".py") or "/nodestro_api/swagger_ui/" in name
+        for item in [*values, *([] if code else fields)]:
             assert item not in text, f"{item!r} in {name}"
 
 

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Exported applications (backend audit round 3): `/docs` serves a vendored, pinned Swagger UI (exports carry
+  `nodestro_api/swagger_ui`) instead of loading it from a CDN into the web interface's origin; request bodies are
+  limited before the key check (`BodyLimitMiddleware` in exported applications and the network listener; the
+  published `approve`/`resume` bodies get the JSON limit, answered as `413 request.too_large` in the published
+  APIs' error format; web sign-in at most 4 KiB, provider setup 16 KiB); the generated `app/main.py` writes the
+  workflow name as an escaped string. Portable packages: `start --host` obeys the HTTPS rule for serving the
+  network, the one-time sign-in link is no longer written to the log file, the bundled Python's build
+  configuration no longer names the exporting computer's data folder, and `output_dir` values with characters
+  outside the Basic Multilingual Plane give a valid `config/settings.toml`.
 - Pin nodestro-runtime c6f0240 (runtime #111, #112: orkexa 22f2910, the Ollama runtime of another platform) and
   nodestro-examples ed350b2 (examples #68, #69: the same runtime pin). No API change from the pins.
 - Portable export and web interface: `ExportOptions` gains `kind` (`standard`, `portable`), `web_ui`, `platform`,

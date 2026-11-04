@@ -33,7 +33,7 @@ from typing import Any, Literal
 
 from fastapi import FastAPI, Request
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from nodestro_runtime import docker_status
 from nodestro_runtime.agent_builder import AgentBuilder
 from nodestro_runtime.engine import RunEnvironment, RunManager
@@ -51,6 +51,7 @@ from orkexa import StoredFile
 from orkexa.dynamic import DockerSandbox, Sandbox, SubprocessSandbox
 from pydantic import BaseModel, Field
 
+from .body_limit import BodyLimitMiddleware, BodyLimits
 from .serving import (
     ApiError,
     ApiLimits,
@@ -578,6 +579,61 @@ def copy_result_files(files: ResultFiles, run: Run, folder: Path) -> list[Path]:
     return written
 
 
+#: The vendored Swagger UI (``nodestro_api/swagger_ui``, see ``VENDORED.md``; an export carries the files it serves).
+_DOCS_DIR = Path(__file__).resolve().parent / "swagger_ui"
+_DOCS_ASSETS = {
+    "swagger-ui-bundle.js": "text/javascript; charset=utf-8",
+    "swagger-ui.css": "text/css; charset=utf-8",
+    "favicon-32x32.png": "image/png",
+    "nodestro-init.js": "text/javascript; charset=utf-8",
+}
+#: The reference page's policy: its own files only (Swagger UI sets inline styles), no frames.
+_DOCS_CSP = (
+    "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+    "connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; "
+    "frame-ancestors 'none'"
+)
+
+
+def _install_docs(app: FastAPI) -> None:
+    """``/docs`` with the vendored Swagger UI: no CDN, no inline script, a strict Content-Security-Policy."""
+    import html
+
+    page = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{html.escape(app.title)} - API reference</title>
+<link rel="icon" type="image/png" href="/docs/assets/favicon-32x32.png">
+<link rel="stylesheet" href="/docs/assets/swagger-ui.css">
+</head>
+<body>
+<div id="swagger-ui" data-openapi-url="/openapi.json"></div>
+<script src="/docs/assets/swagger-ui-bundle.js"></script>
+<script src="/docs/assets/nodestro-init.js"></script>
+</body>
+</html>
+"""
+    headers = {
+        "Content-Security-Policy": _DOCS_CSP,
+        "X-Frame-Options": "DENY",
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer",
+    }
+
+    @app.get("/docs", include_in_schema=False)
+    def docs() -> HTMLResponse:
+        return HTMLResponse(page, headers=headers)
+
+    @app.get("/docs/assets/{name}", include_in_schema=False)
+    def docs_asset(name: str) -> Any:
+        media_type = _DOCS_ASSETS.get(name)
+        if media_type is None or not (_DOCS_DIR / name).is_file():
+            return JSONResponse({"error": {"status": 404, "code": "not_found", "message": "Not found"}}, 404)
+        return FileResponse(_DOCS_DIR / name, media_type=media_type, headers={"X-Content-Type-Options": "nosniff"})
+
+
 def create_app(
     project_dir: Path,
     *,
@@ -631,12 +687,19 @@ def create_app(
         version=str(host.served.number),
         description=host.served.description or f"Exported Nodestro workflow {host.served.slug}",
         lifespan=lifespan,
-        docs_url=None if settings.api_docs == "off" else "/docs",
+        # FastAPI's own page loads Swagger UI from a CDN into this origin (API2-01, API3-01): the reference is served
+        # from the vendored files below instead, or not at all.
+        docs_url=None,
         redoc_url=None,
         openapi_url=None if settings.api_docs == "off" else "/openapi.json",
     )
     app.state.host = host
     app.include_router(build_router(core, channel="network", release=host.served))
+    # Request bodies are limited like the studio's (API3-02): the published routes that FastAPI parses before the
+    # key check and the web interface's own endpoints; starting a run keeps the published APIs' own limit.
+    app.add_middleware(BodyLimitMiddleware, limits=BodyLimits.from_env())
+    if settings.api_docs != "off" and (_DOCS_DIR / "swagger-ui-bundle.js").is_file():
+        _install_docs(app)
 
     @app.get("/health", include_in_schema=False)
     def health() -> dict[str, str]:
@@ -659,7 +722,7 @@ def create_app(
 
         @app.middleware("http")
         async def local_docs(request: Request, call_next: Any) -> Any:
-            if request.url.path in ("/docs", "/openapi.json", "/docs/oauth2-redirect"):
+            if request.url.path in ("/docs", "/openapi.json") or request.url.path.startswith("/docs/"):
                 client = request.client.host if request.client else ""
                 if client not in _LOCAL:
                     return JSONResponse({"error": {"status": 404, "code": "not_found", "message": "Not found"}}, 404)
