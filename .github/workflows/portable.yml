@@ -33,7 +33,9 @@ jobs:
           - { name: "Linux x64", os: ubuntu-latest }
           - { name: "Linux ARM64", os: ubuntu-24.04-arm }
           - { name: "Windows x64", os: windows-latest }
-          - { name: "Windows ARM64", os: windows-11-arm }
+          # The studio's own dependencies have no ARM64 build on Windows (cryptography through google-genai), so the
+          # job runs an emulated x64 Python and builds and runs the native ARM64 package.
+          - { name: "Windows ARM64", os: windows-11-arm, arch: x64, platform: windows-arm64 }
           - { name: "macOS Apple Silicon", os: macos-latest }
           - { name: "macOS Intel", os: macos-15-intel }
     steps:
@@ -43,6 +45,7 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.13"
+          architecture: ${{ matrix.arch }}
           cache: pip
       # Not ".[dev]": its PostgreSQL driver has no wheel for Windows ARM64, and the package needs none of it.
       - name: Install
@@ -50,4 +53,5 @@ jobs:
       - name: Build and run a portable package
         env:
           NODESTRO_PORTABLE_SMOKE: "1"
+          NODESTRO_PORTABLE_PLATFORM: ${{ matrix.platform }}
         run: pytest -q tests/test_portable_smoke.py -p no:cacheprovider

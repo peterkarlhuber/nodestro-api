@@ -99,7 +99,8 @@ def test_a_portable_package_runs_on_this_computer(make_app: Callable[..., TestCl
         "kind": "portable",
         "web_ui": True,
         "language": "de",
-        "platform": host_platform(),
+        # CI can build another platform than the host Python's (Windows ARM64 from an emulated x64 Python).
+        "platform": os.environ.get("NODESTRO_PORTABLE_PLATFORM") or host_platform(),
         "confirm_distribution": True,
         "output_dir": "ergebnisse",
     }
