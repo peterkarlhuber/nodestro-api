@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Pin nodestro-runtime 7cb9b4b (runtime #107: a local quality judge answers without thinking in the CPU saving
+  mode, longer request timeout for local model servers) and nodestro-examples 36488a6 (examples #65). No API change.
 - Pin nodestro-runtime 3006ce0 (runtime #106) and nodestro-examples be55542 (examples #64: task profiles per agent, `agent_plan`, `ModelChoice.agents`).
 - Models per agent for example copies (EX-011): `GET /api/library/{template_id}/models` lists every agent of the
   template with its task profile and the model a copy gives it. In a workspace with local models that is the installed
