@@ -5549,6 +5549,25 @@
         "title": "ContextRef",
         "type": "object"
       },
+      "ContractField": {
+        "description": "A field of a team's output contract with its description in the language (its label for people).",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "ContractField",
+        "type": "object"
+      },
       "ConversationDetail": {
         "properties": {
           "attachment_states": {
@@ -19770,6 +19789,13 @@
               "type": "string"
             },
             "title": "Contract",
+            "type": "array"
+          },
+          "contract_fields": {
+            "items": {
+              "$ref": "#/components/schemas/ContractField"
+            },
+            "title": "Contract Fields",
             "type": "array"
           },
           "description": {

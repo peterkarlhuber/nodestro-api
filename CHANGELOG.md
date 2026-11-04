@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- OpenAPI regenerated for the nodestro-examples 64e534a pin: `TemplateTeam.contract_fields` (`ContractField`: `name`,
+  `description`).
 - A server's tenants no longer learn the server's memory, CPU or GPU through the local model advice
   (`local.cpu_only`, `local.memory_low`, `local.model_slow`, `local.model_too_large`) or the recommendation reasons
   `no_gpu` and `hardware_limit` (`GET /api/local-models`, `GET /api/local-models/recommend`; follow-up of API3-08,
