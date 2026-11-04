@@ -478,3 +478,12 @@ def test_check_works_on_a_fresh_installation_without_a_local_model_folder(
     checked = studio.post(f"/api/publications/{publication['id']}/export/check", json={"options": options})
     assert checked.status_code == 200, checked.text
     assert checked.json()["portable"]["local_models"] == []
+
+
+def test_windows_on_arm_gets_the_x64_package(monkeypatch: pytest.MonkeyPatch) -> None:
+    import platform
+
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+    monkeypatch.setattr(platform, "machine", lambda: "ARM64")
+    assert portable_build.host_platform() == "windows-x86_64"
+    assert "windows-arm64" not in portable_build.PLATFORMS

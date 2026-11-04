@@ -69,7 +69,7 @@ Both carry `openapi.json` (the same document the running application serves) and
 | Linux x86-64 | yes | locally: build, offline start in a clean container without network or Python, real local model run, results, stop/restart, browser E2E; CI smoke (`portable.yml`) |
 | Linux ARM64 | yes | CI smoke only (no local models) |
 | Windows x64 | yes | CI smoke only (no local models) |
-| Windows ARM64 | yes | CI smoke only; semantic knowledge search falls back to full text (no `sqlite-vec` wheel) |
+| Windows ARM64 | no own package: the Windows x64 package runs in Windows 11's x64 emulation | CI smoke only (the x64 package on `windows-11-arm`). `cryptography` has published no `win_arm64` wheel since 46.0.4, so native libraries cannot be installed without a compiler |
 | macOS Apple Silicon | yes | CI smoke only (no local models) |
 | macOS Intel | yes | CI smoke only (no local models) |
 

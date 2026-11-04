@@ -33,7 +33,8 @@ jobs:
           - { name: "Linux x64", os: ubuntu-latest }
           - { name: "Linux ARM64", os: ubuntu-24.04-arm }
           - { name: "Windows x64", os: windows-latest }
-          - { name: "Windows ARM64", os: windows-11-arm }
+          # The x64 package in Windows 11's x64 emulation (there is no native ARM64 package; docs/portable-export.md).
+          - { name: "Windows ARM64 (x64 package)", os: windows-11-arm, arch: x64 }
           - { name: "macOS Apple Silicon", os: macos-latest }
           - { name: "macOS Intel", os: macos-15-intel }
     steps:
@@ -43,8 +44,9 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.13"
+          architecture: ${{ matrix.arch }}
           cache: pip
-      # Not ".[dev]": its PostgreSQL driver has no wheel for Windows ARM64, and the package needs none of it.
+      # Not ".[dev]": the smoke test needs none of the server dependencies.
       - name: Install
         run: pip install -e . "pytest>=8" "httpx>=0.27"
       - name: Build and run a portable package

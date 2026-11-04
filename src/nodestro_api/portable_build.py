@@ -103,16 +103,11 @@ PLATFORMS: dict[str, Platform] = {
             ("windows", "x86_64"),
             True,
         ),
-        Platform(
-            "windows-arm64",
-            "Windows ARM64",
-            "windows-aarch64-none",
-            "aarch64-pc-windows-msvc",
-            ("windows", "arm64"),
-            True,
-        ),
     )
 }
+# No Windows ARM64 package: cryptography (through google-auth) publishes no win_arm64 wheel since 46.0.4, so the
+# libraries cannot be installed without a compiler. Windows 11 on ARM runs the x64 package in its built-in
+# emulation (tested in CI on windows-11-arm), and host_platform() picks that package there.
 
 #: Ollama's license file of the pinned release (MIT), checked like the archive (same pin as nodestro-desktop).
 OLLAMA_LICENSE_URL = "https://raw.githubusercontent.com/ollama/ollama/v{version}/LICENSE"
@@ -1127,6 +1122,8 @@ def host_platform() -> str:
     )
     name = {"darwin": "macos"}.get(system, system)
     candidate = f"{name}-{machine}"
+    if candidate == "windows-arm64":  # the x64 package under Windows' emulation (see PLATFORMS)
+        return "windows-x86_64"
     return candidate if candidate in PLATFORMS else "linux-x86_64"
 
 

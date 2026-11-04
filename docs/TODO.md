@@ -300,7 +300,8 @@ None known.
 - **What:** Linux x86-64 is tested end to end (offline container without Python or network, a real local model
   run, restart, browser E2E). Linux ARM64, Windows x64/ARM64 and macOS Apple Silicon/Intel are covered only by the
   CI smoke test (build, self-test, start, a run without a model call, stop, restart): no local models, no browser,
-  no Gatekeeper/SmartScreen. Windows ARM64 has no `sqlite-vec` wheel (semantic search falls back to full text).
+  no Gatekeeper/SmartScreen. Windows ARM64 has no native package (no `win_arm64` wheel of `cryptography` since 46.0.4); it runs the x64 package in
+  Windows' emulation.
 - **Next step:** Run a package with local models on real macOS and Windows machines, and a browser check there.
 
 ### API-023 · Platforms and environments not verified
