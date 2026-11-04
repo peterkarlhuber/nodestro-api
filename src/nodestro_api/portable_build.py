@@ -443,6 +443,7 @@ def _run(command: list[str], env: dict[str, str], progress: Progress, *, cwd: Pa
 
 #: The install prefix python-build-standalone builds with (what its build configuration names before uv patches it).
 NEUTRAL_PREFIX = "/install"
+_PREFIX = re.compile(r"""["'](?:prefix|exec_prefix)["']: ["']([^"']+)["']""")
 
 
 def neutral_python_paths(target: Path, source: Path) -> list[Path]:
@@ -451,10 +452,13 @@ def neutral_python_paths(target: Path, source: Path) -> list[Path]:
     uv writes the folder it installed Python to (here ``<data>/export-cache/python/...``, which names the exporting
     user's home folder) into ``_sysconfigdata_*.py``; the package gets python-build-standalone's neutral prefix
     instead. The values only matter for compiling extensions, which a package never does."""
-    prefixes = sorted({str(source), str(source.resolve())}, key=len, reverse=True)
+    known = {str(source), str(source.resolve())}
     changed: list[Path] = []
     for file in sorted(target.glob("lib/python3.*/_sysconfigdata_*.py")):
         text = file.read_text(encoding="utf-8")
+        # The prefix uv wrote, also when the cache was moved since (then it is not ``source``).
+        written = {match for match in _PREFIX.findall(text) if match != NEUTRAL_PREFIX}
+        prefixes = sorted(known | written, key=len, reverse=True)
         cleaned = text
         for prefix in prefixes:
             cleaned = cleaned.replace(prefix, NEUTRAL_PREFIX)

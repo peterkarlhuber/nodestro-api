@@ -131,6 +131,11 @@ def test_the_bundled_python_does_not_name_the_exporting_computer(tmp_path: Path)
     text = config.read_text()
     assert str(tmp_path) not in text and "'/install/lib'" in text
     assert other.read_text() == "# untouched\n"
+    # A cache that was moved since uv installed it: the prefix written in the file is replaced too.
+    moved = tmp_path / "old" / "home" / "bob" / "cpython"
+    config.write_text(f'build_time_vars = {{"prefix": "{moved}", "exec_prefix": "{moved}", "LIBDIR": "{moved}/lib"}}\n')
+    assert portable_build.neutral_python_paths(target, source) == [config]
+    assert str(tmp_path) not in config.read_text() and '"/install/lib"' in config.read_text()
 
 
 @pytest.mark.parametrize("folder", ["Ergebnisse/😀 Berichte", "a\x7fb", 'C:\\Daten\\"Ablage"\n#x = 1', "results"])
