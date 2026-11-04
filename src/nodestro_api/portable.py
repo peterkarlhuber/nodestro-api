@@ -44,6 +44,7 @@ from pathlib import Path
 import platform
 import secrets
 import socket
+import stat
 import sys
 import threading
 import time
@@ -189,6 +190,23 @@ def _api_keys(data_dir: Path) -> str:
     if not file.is_file():
         return ""
     return ";".join(line.strip() for line in file.read_text(encoding="utf-8").splitlines() if line.strip())
+
+
+def _private_folder(folder: Path, root: Path) -> None:
+    """Keeps a folder of the person's data owner-only on POSIX (``0700``, API3-04): created that way, and narrowed
+    when it is the package's own (inside ``root``, e.g. ``data`` or ``logs`` from an older version). A folder named
+    elsewhere that already exists is left as its owner set it. Errors are left to the folder check."""
+    if os.name != "posix":
+        return
+    try:
+        if not folder.exists():
+            folder.mkdir(mode=0o700, parents=True)
+            folder.chmod(0o700)
+        elif folder.is_dir() and folder.resolve().is_relative_to(root.resolve()):
+            if stat.S_IMODE(folder.stat().st_mode) & 0o077:
+                folder.chmod(0o700)
+    except OSError:
+        return
 
 
 def _check_folder(folder: Path) -> str | None:
@@ -424,8 +442,12 @@ def _browser_host(host: str) -> str:
 
 def _setup_logging(settings: Settings) -> Path:
     folder = settings.path(settings.get("data", "log_dir") or "logs")
+    _private_folder(folder, settings.root)
     folder.mkdir(parents=True, exist_ok=True)
     handler = logging.handlers.RotatingFileHandler(folder / "application.log", maxBytes=5_000_000, backupCount=3)
+    if os.name == "posix":
+        with suppress(OSError):
+            (folder / "application.log").chmod(0o600)
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     root = logging.getLogger()
     root.addHandler(handler)
@@ -449,6 +471,7 @@ def _network_problem(settings: Settings, host: str | None = None) -> str | None:
 def start(args: argparse.Namespace, settings: Settings) -> int:
     console = Console(settings.language)
     data_dir = settings.data_dir
+    _private_folder(data_dir, settings.root)
     problem = _check_folder(data_dir)
     if problem is not None:
         console.say("data_dir_unusable", folder=str(data_dir), problem=problem)
@@ -697,6 +720,7 @@ def keys(args: argparse.Namespace, settings: Settings) -> int:
     from .serving import SCOPES, hash_secret, new_key
 
     file = settings.data_dir / "api-keys.txt"
+    _private_folder(file.parent, settings.root)
     file.parent.mkdir(parents=True, exist_ok=True)
     lines = file.read_text(encoding="utf-8").splitlines() if file.is_file() else []
     if args.action == "list":
@@ -737,6 +761,7 @@ def check(settings: Settings, *, full: bool = False) -> int:
             results.append((f"import {module}", True, ""))
         except Exception as exc:  # report every failure
             results.append((f"import {module}", False, f"{type(exc).__name__}: {exc}"))
+    _private_folder(settings.data_dir, settings.root)
     data_problem = _check_folder(settings.data_dir)
     results.append(("data folder", data_problem is None, data_problem or str(settings.data_dir)))
     info = package_info(settings.root)

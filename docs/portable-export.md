@@ -76,6 +76,10 @@ retention. The standard export (`POST /publications/{id}/exports`) is not affect
 - **Tools.** Unchanged Docker-first rule: person-written tools run as subprocesses; AI-generated tools only in the
   Docker sandbox (`[tools] sandbox = "docker"`), never as a fallback without it. An offline package refuses
   AI-generated tools at export time.
+- **Local files.** On Linux and macOS the launcher keeps `data/` and `logs/` owner-only (`0700`, the log file
+  `0600`): created that way, and narrowed on start when they are inside the package (older packages). A data or log
+  folder configured outside the package keeps the modes its owner gave it once it exists. Key files and the
+  launcher's state are `0600`.
 - **Integrity.** `lib.lock` (hashes), `SHA256SUMS`, model blobs by SHA-256, Ollama archives pinned by Orkexa.
 
 ## Platforms

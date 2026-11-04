@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Portable packages (API3-04): on POSIX the launcher creates `data/` and `logs/` owner-only (`0700`, `application.log`
+  `0600`) and narrows them when they are inside the package, so other users of a shared computer cannot read runs,
+  results, the knowledge or the log.
 - Local models on a server (API3-08, contract change): for a server's tenants `GET /api/local-models` returns
   `hardware: null` (the field is now nullable) and a status without `base_url`, `runtime_path`, `models_dir`,
   `free_bytes` and `detected_external` (null); catalog, installed models and recommendations are unchanged.

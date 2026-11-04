@@ -89,6 +89,8 @@ def test_start_host_argument_obeys_the_network_rule(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(portable, "_choose_port", lambda host, port: port)
     for key in ("API_KEYS", "NODESTRO_HOST"):
         monkeypatch.delenv(key, raising=False)
+    for key, value in settings.environment().items():  # start() sets them; restored after the test
+        monkeypatch.setenv(key, value)
     # The network without TLS is refused, whether it comes from the settings file or from --host.
     assert portable.start(argparse.Namespace(no_browser=True, host="0.0.0.0", port=None), settings) == 2
     assert served == []
@@ -148,3 +150,50 @@ def test_the_settings_file_reads_back_any_output_folder(folder: str) -> None:
 
     text = portable_build.settings_toml(ExportOptions(kind="portable", output_dir=folder), context_length=32768)
     assert tomllib.loads(text)["data"]["output_dir"] == folder.strip()
+
+
+@pytest.mark.skipif(not hasattr(__import__("os"), "getuid"), reason="POSIX file modes")
+def test_the_data_and_log_folders_are_owner_only(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """API3-04: on a shared Unix computer other users cannot read runs, results or the log."""
+    import os
+    import stat
+
+    package = tmp_path / "package"
+    package.mkdir()
+    (package / "logs").mkdir(mode=0o755)  # from an older version
+    (package / "logs").chmod(0o755)
+    elsewhere = tmp_path / "shared"
+    elsewhere.mkdir()
+    elsewhere.chmod(0o755)
+    settings = portable.Settings(package, {"data": {"data_dir": "data", "log_dir": "logs"}})
+    monkeypatch.setattr(portable, "_serve", lambda *args: 0)
+    monkeypatch.setattr(portable, "_choose_port", lambda host, port: port)
+    for key in ("API_KEYS", "NODESTRO_HOST", "DATA_DIR"):
+        monkeypatch.delenv(key, raising=False)
+    for key, value in settings.environment().items():  # start() sets them; restored after the test
+        monkeypatch.setenv(key, value)
+    root = logging.getLogger()
+    handlers = list(root.handlers)
+    level = root.level
+    old_umask = os.umask(0o022)
+    try:
+        assert portable.start(argparse.Namespace(no_browser=True, host=None, port=None), settings) == 0
+    finally:
+        os.umask(old_umask)
+        for handler in root.handlers[:]:
+            if handler not in handlers:
+                handler.close()
+                root.removeHandler(handler)
+        root.setLevel(level)
+
+    def mode(path: Path) -> int:
+        return stat.S_IMODE(path.stat().st_mode)
+
+    assert mode(package / "data") == 0o700
+    assert mode(package / "logs") == 0o700
+    assert mode(package / "logs" / "application.log") == 0o600
+    # A folder the person named outside the package keeps the modes its owner gave it.
+    portable._private_folder(elsewhere, package)
+    assert mode(elsewhere) == 0o755
+    portable._private_folder(elsewhere / "new", package)
+    assert mode(elsewhere / "new") == 0o700
