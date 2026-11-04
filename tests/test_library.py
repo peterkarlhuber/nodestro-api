@@ -571,3 +571,22 @@ def test_a_published_example_takes_a_sample_file_and_returns_its_result_files(
     files = client.get(f"{PUBLISHED}/{slug}/runs/{run_id}/files", headers=auth(token)).json()
     listed = files["files"] if isinstance(files, dict) else files
     assert sorted(item["format"] for item in listed) == ["pdf", "xlsx"]
+
+
+@pytest.mark.parametrize("language", ["de", "en"])
+def test_team_details_pass_through_unchanged(make_app: Callable[..., TestClient], language: str) -> None:
+    """The library's team summaries reach the studio as the library builds them, including fields newer libraries
+    add (examples #70: ``contract_fields`` with the contract's descriptions, translated capability tags)."""
+    client = make_app()
+    template = "research-hypotheses"
+    expected = library.detail(template, language).model_dump(mode="json")
+    answer = client.get(f"/api/library/{template}", params={"language": language})
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["team_details"] == expected["team_details"]
+    assert answer.json()["team_details"], "the template has teams"
+    if "contract_fields" in library.TemplateTeam.model_fields:
+        for team in answer.json()["team_details"]:
+            assert [item["name"] for item in team["contract_fields"]] == team["contract"]
+            assert all(item["description"] for item in team["contract_fields"])
+        schema = client.get("/api/openapi.json").json()["components"]["schemas"]
+        assert "contract_fields" in schema["TemplateTeam"]["properties"]
