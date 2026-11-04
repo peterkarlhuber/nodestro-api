@@ -20,6 +20,7 @@ database and reported under ``/api/published/<slug>/usage``.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 import dataclasses
@@ -448,8 +449,9 @@ class StandaloneHost:
 
     async def prepare_start(self, release: ServedRelease) -> None:
         try:
+            # An Ollama connection asks the model server (/api/ps): never on the event loop (RT3-04 pattern).
             for provider in self.providers():
-                self.connection(provider)
+                await asyncio.to_thread(self.connection, provider)
         except NodestroError as exc:  # MissingApiKeyError among them
             raise ApiError(
                 503,

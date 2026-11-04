@@ -1642,6 +1642,14 @@ async def test_agent(body: AgentTestIn, ctx: Ctx, request: Request) -> AgentTest
             "Testing a changed agent configuration needs the permission 'edit'",
             permission=Permission.EDIT.value,
         )
+    # The checks may ask a local model server (/api/show, /api/ps): never on the event loop (RT3-04 pattern).
+    await asyncio.to_thread(_check_agent_test, ctx, body)
+    result, tracker = await asyncio.to_thread(ctx.tester.run, body)
+    ctx.usage_log.record("agent_test", tracker.records, label=body.agent.name, ref=result.id, tracker=tracker)
+    return result
+
+
+def _check_agent_test(ctx: Nodestro, body: AgentTestIn) -> None:
     blocking = [issue for issue in ctx.builder.validate(body.agent) if issue.level == "error"]
     if blocking:
         raise NodestroError(
@@ -1653,9 +1661,6 @@ async def test_agent(body: AgentTestIn, ctx: Ctx, request: Request) -> AgentTest
     if body.agent.quality.enabled:
         models.add(body.agent.quality.judge_model)
     ctx.require_providers(models)  # fail fast: agent and judge need their providers
-    result, tracker = await asyncio.to_thread(ctx.tester.run, body)
-    ctx.usage_log.record("agent_test", tracker.records, label=body.agent.name, ref=result.id, tracker=tracker)
-    return result
 
 
 @router.get("/agents/templates", dependencies=READ)

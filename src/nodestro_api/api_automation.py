@@ -159,7 +159,7 @@ def plan_benchmark(suite_id: str, body: BenchmarkStart, ctx: Ctx) -> BenchmarkPl
 
 @router.post("/benchmarks/{suite_id}/runs", status_code=201, dependencies=RUN)
 async def start_benchmark(suite_id: str, body: BenchmarkStart, ctx: Ctx) -> BenchmarkRun:
-    return ctx.benchmarks.start(suite_id, body)
+    return await ctx.benchmarks.start(suite_id, body)
 
 
 @router.get("/benchmarks/{suite_id}/runs", dependencies=READ)

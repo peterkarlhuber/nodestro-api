@@ -102,12 +102,15 @@ def get_snapshot(conversation_id: str, snapshot_id: str, ctx: Ctx) -> Snapshot:
 @router.post("/conversations/{conversation_id}/messages", status_code=201, dependencies=RUN)
 async def send_message(conversation_id: str, body: SendRequest, ctx: Ctx) -> SentMessage:
     """Store the message and start the answer; follow it via its events."""
-    return ctx.assistant.send(conversation_id, body, loop=asyncio.get_running_loop())
+    # send() checks the model's connection (a local model server is asked): off the event loop (RT3-04 pattern).
+    loop = asyncio.get_running_loop()
+    return await asyncio.to_thread(ctx.assistant.send, conversation_id, body, loop=loop)
 
 
 @router.post("/conversations/{conversation_id}/messages/{message_id}/retry", dependencies=RUN)
 async def retry_message(conversation_id: str, message_id: str, body: RetryRequest, ctx: Ctx) -> ChatMessage:
-    return ctx.assistant.retry(conversation_id, message_id, body, loop=asyncio.get_running_loop())
+    loop = asyncio.get_running_loop()
+    return await asyncio.to_thread(ctx.assistant.retry, conversation_id, message_id, body, loop=loop)
 
 
 @router.post("/conversations/{conversation_id}/messages/{message_id}/cancel", dependencies=RUN)

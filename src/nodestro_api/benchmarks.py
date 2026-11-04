@@ -511,12 +511,13 @@ class Benchmarks:
             confirm_external=start.confirm_external,
         )
 
-    def start(self, suite_id: str, start: BenchmarkStart) -> BenchmarkRun:
+    async def start(self, suite_id: str, start: BenchmarkStart) -> BenchmarkRun:
         suite = self.suite(suite_id)
         if not suite.cases:
             raise BenchmarkError("benchmark.no_cases", "The test series has no test cases")
         workflow = self._workflow(suite, start.version)
-        models = self._models(workflow, start)
+        # The check of the models may ask a local model server: never on the event loop (RT3-04 pattern).
+        models = await asyncio.to_thread(self._models, workflow, start)
         tested = with_models(workflow, models)
         bench = BenchmarkRun(
             suite_id=suite.id,

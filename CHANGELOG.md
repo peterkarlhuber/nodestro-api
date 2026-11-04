@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Checks that may ask a local model server (RT3-04 pattern) no longer run on the event loop: the agent test's
+  check and providers, the provider check before a published run starts (studio and exported applications), the
+  assistant model check of the architect, the assistant and the run chat, and the model check of a test series.
+  `Benchmarks.start` is now a coroutine. No API change.
 - Portable packages (API3-04): on POSIX the launcher creates `data/` and `logs/` owner-only (`0700`, `application.log`
   `0600`) and narrows them when they are inside the package, so other users of a shared computer cannot read runs,
   results, the knowledge or the log.

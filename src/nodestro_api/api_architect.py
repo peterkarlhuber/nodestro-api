@@ -26,7 +26,8 @@ router = APIRouter(prefix="/api")
 @router.post("/architect/jobs", status_code=201, dependencies=RUN)
 async def start_architect(body: ArchitectRequest, ctx: Ctx) -> ArchitectJob:
     """Start designing (``create``) or revising (``revise``) a workflow; returns at once."""
-    ctx.connect_model(ctx.settings().assistant_model)  # fail fast without provider settings
+    # Fail fast without provider settings; a local model server is asked off the event loop (RT3-04 pattern).
+    await asyncio.to_thread(ctx.connect_model, ctx.settings().assistant_model)
     return ctx.architect.start(body, loop=asyncio.get_running_loop())
 
 
