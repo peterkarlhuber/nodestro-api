@@ -480,10 +480,17 @@ def test_check_works_on_a_fresh_installation_without_a_local_model_folder(
     assert checked.json()["portable"]["local_models"] == []
 
 
-def test_windows_on_arm_gets_the_x64_package(monkeypatch: pytest.MonkeyPatch) -> None:
-    import platform
-
-    monkeypatch.setattr(platform, "system", lambda: "Windows")
-    monkeypatch.setattr(platform, "machine", lambda: "ARM64")
-    assert portable_build.host_platform() == "windows-x86_64"
-    assert "windows-arm64" not in portable_build.PLATFORMS
+@pytest.mark.parametrize(
+    ("model", "with_google"), [("anthropic:claude-haiku-4-5", False), ("gemini:gemini-3-flash", True)]
+)
+def test_the_google_sdk_is_packaged_only_for_a_release_that_uses_gemini(model: str, with_google: bool) -> None:
+    writer = agent_node("writer", "WRITER")
+    writer["agent"]["model"] = model
+    bundle = _release_bundle(
+        [{"id": "start", "type": "start"}, writer, {"id": "out", "type": "output"}],
+        [edge("start", "writer"), edge("writer", "out")],
+    )
+    bundle.python = []
+    direct, _ = portable_build.requirements(exporter.ExportOptions(kind="portable"), bundle)
+    assert any(item.startswith("google-genai") for item in direct) is with_google
+    assert any(item.startswith("anthropic") for item in direct)

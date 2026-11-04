@@ -69,9 +69,14 @@ Both carry `openapi.json` (the same document the running application serves) and
 | Linux x86-64 | yes | locally: build, offline start in a clean container without network or Python, real local model run, results, stop/restart, browser E2E; CI smoke (`portable.yml`) |
 | Linux ARM64 | yes | CI smoke only (no local models) |
 | Windows x64 | yes | CI smoke only (no local models) |
-| Windows ARM64 | no own package: the Windows x64 package runs in Windows 11's x64 emulation | CI smoke only (the x64 package on `windows-11-arm`). `cryptography` has published no `win_arm64` wheel since 46.0.4, so native libraries cannot be installed without a compiler |
+| Windows ARM64 | yes, unless the release uses Gemini | CI smoke only; semantic knowledge search falls back to full text (no `sqlite-vec` wheel) |
 | macOS Apple Silicon | yes | CI smoke only (no local models) |
-| macOS Intel | yes | CI smoke only (no local models) |
+| macOS Intel | yes, unless the release uses Gemini | CI smoke only (no local models) |
+
+Google's SDK (Gemini) goes into a package only when the release uses Gemini. It needs `cryptography`, which has
+published no ready-built package for macOS Intel or Windows ARM64 since 46.0.4, so such a package is refused with
+`export.libraries_unavailable` for those two platforms (the Windows x64 package runs on Windows 11 on ARM in its x64
+emulation).
 
 "CI smoke" builds a package of a workflow without models on the runner, runs `check`, starts it, loads the
 interface, runs the workflow through the API, stops and restarts it (`tests/test_portable_smoke.py`). Packages are

@@ -118,7 +118,7 @@ def test_a_portable_package_runs_on_this_computer(make_app: Callable[..., TestCl
         return job["state"] != "running"
 
     _wait_for(finished, 1500, "the build")
-    assert job["state"] == "done", job
+    assert job["state"] == "done", f"{job.get('error_code')}: {job.get('error')} (step {job.get('step')})"
     archive = studio.get(f"/api/exports/{job['export_id']}/download")
     assert archive.status_code == 200
     target = tmp_path / "zip" / "package.zip"
