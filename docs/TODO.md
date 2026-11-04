@@ -306,18 +306,20 @@ None known.
 
 ### API-053 · Developer messages: export check and jobs, not-found names, exported client, server check
 
-- **Priority:** P4 Optional · **Status:** Open · **Refs:** UX round 3 DX handovers B15-B18, apicodes handovers B-2 to B-4
+- **Priority:** P4 Optional · **Status:** Open · **Refs:** UX round 3 DX handovers B15-B18, apicodes handovers B-2 to B-4, examples handovers B-2 and B-4
 - **What:** The export check does not report `export.server_unsupported` or the server's size limit up front, so the
   refusal appears only on "Build package"; export jobs carry no `error_params`, so a failed job's message loses its
   details; the `*.not_found` codes send no display name, so the studio cannot name the missing item (UX round 3
   apicodes handovers B-2 to B-4). The exported `examples/client.py` has a fixed base URL and prints a traceback on HTTP errors; the export
   README shows an approval section and "-" when the workflow has no approval steps, and the exported approval test
   returns instead of skipping; `local.*` task errors do not list the allowed tasks; `nodestro-server check` prints
-  all profile problems in one line.
+  all profile problems in one line. Workflow summaries list contract field names only (no descriptions), and the
+  model plan of `/api/library/{id}/models` names parts by id only (examples handovers B-2, B-4).
 - **Next step:** Report the server refusal and limit in the export check; add `error_params` to export jobs; add
   `params.display` where the name is known. `NODESTRO_BASE_URL` with the current default and the error code from the
   JSON body in the client;
-  leave out the empty approval section, "none" instead of "-", `pytest.skip`; `params.allowed`; one problem per line.
+  leave out the empty approval section, "none" instead of "-", `pytest.skip`; `params.allowed`; one problem per line; contract
+  field objects in summaries and `part_name` in the model plan.
 - **Depends on:** None
 
 ## Tests and quality assurance
