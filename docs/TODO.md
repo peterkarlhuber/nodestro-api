@@ -3,7 +3,7 @@
 > Open work for this repository: release blockers, known bugs, security follow-ups, technical debt and planned improvements.
 > GitHub issues are the source of truth for details; this file is the entry point and summary.
 >
-> **Last full review:** 2026-11-04 against `master` at `b55793a` (internal backend audit round 3).
+> **Last full review:** 2026-11-05 against `master` at `8e097a0` (quality round 3 close-out; TODO consolidated).
 
 ## Summary
 
@@ -11,15 +11,17 @@
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 0 |
-| P2 Medium | 5 |
+| P2 Medium | 6 |
 | P3 Low | 21 |
 | P4 Optional | 8 |
 
-**Release blockers:** None for this repository.
+**Release blockers:** None for this repository; every entry below is not a release blocker. The next desktop
+preview is gated by nodestro-desktop DSK-001 (new candidate and Go/No-Go).
 
 The desktop API is in solid shape. Most open work is in the multi-process server profile: batch leases, observability,
-key rotation, published APIs on the server. The rest is follow-up from the internal backend audit and the UX
-initiative of 2026-11-01. Live Run Chat (LRC-1) is merged (#49).
+key rotation, published APIs on the server. The portable export (#85, hardened in #87) still needs an independent
+security review (API-054). The rest is follow-up from the internal backend audits and the UX rounds (round 3
+handovers in API-016, API-052 and API-053). Live Run Chat (LRC-1) is merged (#49).
 
 ## Priorities and statuses
 
@@ -37,6 +39,18 @@ Statuses: `Open`, `In progress` (PR linked), `Blocked` (names the blocker), `Nee
 None known.
 
 ## Security
+
+Tool approvals (`NODESTRO_TOOL_APPROVALS`, off by default and staying off) need the independent S-2 review tracked as
+nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes here. No separate entry in this file.
+
+### API-054 · Independent security review of the portable export
+
+- **Priority:** P2 Medium · **Status:** Needs external review · **Refs:** #85, #87, nodestro-studio #121,
+  `docs/portable-export.md`; backend audit round 3 (internal review only)
+- **What:** The portable export (a standalone package with its own web interface and launcher) and the hardening of
+  #87 were reviewed internally only. An internal audit does not replace an independent security review.
+- **Next step:** Have the export, the exported app and the launcher reviewed independently; record the result here.
+- **Depends on:** None
 
 ### API-001 · Cleanup of idle tenant contexts on the server
 
@@ -116,7 +130,7 @@ None known.
   nodestro-server RUNBOOK.
 - **Depends on:** None
 
-### API-043 · Idempotent run starts are serialised per API process only
+### API-043 · Idempotent run starts are serialized per API process only
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** backend audit round 2 re-verification R2V-03, API2-08
 - **What:** Run starts with an `Idempotency-Key` (studio and published API) check and record the key under a lock
@@ -212,7 +226,8 @@ None known.
 - **Priority:** P3 Low · **Status:** Open · **Refs:** #54, UX audit AD-20
 - **What:** The usage report has no budget fields: daily budget use per publication, runs stopped by budget.
 - **Next step:** Add a `budgets` section to `UsageReport`, then regenerate the contract and the SDK types.
-- **Depends on:** nodestro-studio ST-014 (Usage page "Budgets" card)
+- **Depends on:** nodestro-studio ST-014 (Usage page "Budgets" card). Re-confirmed unchanged by UX round 3 (backlog
+  handover H3).
 
 ### API-018 · Expose the decision result and the run-level failure cause (X-01, AD-02)
 
@@ -221,7 +236,8 @@ None known.
   no run-level cause. Both shapes come from the runtime.
 - **Next step:** Once runtime RT-005 and RT-012 land, update the response models and docstrings, regenerate the
   OpenAPI document, and add API tests.
-- **Depends on:** nodestro-runtime RT-005, RT-012; consumed by nodestro-studio ST-003 (studio #81)
+- **Depends on:** nodestro-runtime RT-005, RT-012; consumed by nodestro-studio ST-003 (studio #81). Re-confirmed
+  unchanged by UX round 3 (backlog handover H2).
 
 ### API-019 · Member and role management for tenant admins (server)
 
@@ -271,7 +287,7 @@ None known.
 ### API-028 · Docker sandbox status: residual risks after the security review (DS-6, DS-8, DS-12)
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** security review DS-6, DS-8, DS-12, DS-13;
-  `src/nodestro_api/sandbox_status.py`
+  `src/nodestro_api/sandbox_status.py`; backend audit round 3 API3-08 (rest), UX round 3 apicodes handover B-1 (rest)
 - **What:** Readers no longer start checks, see host details or block more than 4 worker threads. Left: on a server
   "admin" is a tenant admin, so every tenant's admins still see the shared host's Docker detail and share one 10 s
   window per path (one tenant admin polling `refresh=1` throttles another's status refresh, not the self-test); the
@@ -296,7 +312,8 @@ None known.
 
 ### API-052 · Run search in `GET /api/search`
 
-- **Priority:** P4 Optional · **Status:** Open · **Refs:** UX round 3 handover H1, studio ST-008 (#83)
+- **Priority:** P4 Optional · **Status:** Open · **Refs:** UX round 3 backlog handover H1, studio ST-008 (done,
+  studio #123; issue studio #83 closed)
 - **What:** The studio's global search filters only the newest 100 runs on the client; older runs are not found,
   and the server profile's search has no runs.
 - **Next step:** Add a `SearchResult` kind `run` (id = run id, title = workflow name, subtitle = status, snippet =
@@ -345,7 +362,8 @@ None known.
 
 ### API-047 · Portable packages: platforms tested only by the CI smoke test
 
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** `.github/workflows/portable.yml`, `docs/portable-export.md`
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** `.github/workflows/portable.yml`, `docs/portable-export.md`,
+  backend audit round 3 API3-11 (info, documentation open)
 - **What:** Linux x86-64 is tested end to end (offline container without Python or network, a real local model
   run, restart, browser E2E). Linux ARM64, Windows x64/ARM64 and macOS Apple Silicon/Intel are covered only by the
   CI smoke test (build, self-test, start, a run without a model call, stop, restart): no local models, no browser,
@@ -354,7 +372,8 @@ None known.
   An offline package does not restrict the network of tools written by people in the workflow; this is not
   documented yet.
 - **Next step:** Run a package with local models on real macOS and Windows machines, and a browser check there.
-  Document the network behavior of person-written tools in offline packages.
+  Document the network behavior of person-written tools in offline packages and the other design notes of API3-11
+  (what the offline mode and the default export do and do not restrict).
 
 ### API-023 · Platforms and environments not verified
 
@@ -398,7 +417,7 @@ None known.
   `server_app.stop_tenant_work`
 - **What:** `stop_tenant_work` stops all background work of a suspended tenant (batches, benchmarks, assistant,
   architect, tool generation jobs, run chat, Python installs). Work that a route runs with `asyncio.to_thread` while
-  its request is open (agent tester, tool check and save, tool-draft tests, backups, OCR) is not cancelled; it ends
+  its request is open (agent tester, tool check and save, tool-draft tests, backups, OCR) is not canceled; it ends
   at its own timeout. A model request already in flight in a stopped tool job finishes and its answer is dropped.
   Until the next `suspension_check` (default 5 s) sees the suspension, a tool job keeps working and an install of
   libraries approved before the suspension may start; once stopped, no install starts (runtime R4-7 check under the
@@ -417,6 +436,8 @@ None known.
 | API-012 | nodestro-sdk | SDK-005 | SDK contract tests use the server contract |
 | API-013 | nodestro-runtime | RT-009 (store time filter) | runtime change first |
 | API-016 | nodestro-runtime | RT-011 | combined code list |
+| (pointer) | nodestro-runtime | RT-055 (origin of an example copy, UX round 3 examples handover B-1) | runtime stores the origin; the API exposes it read-only; full entry in runtime |
+| API-054 | nodestro-studio | portable export dialog (studio #121, ST-047) | one independent review covers both; full entry here |
 | API-043 | nodestro-runtime | RT-045 (atomic insert-if-absent) | runtime change first |
 | API-044 | nodestro-runtime | RT-046 (reindex jobs in the API process) | runtime change first |
 | API-017 | nodestro-studio | ST-014 (AD-20 Usage page card) | studio consumes the field |
@@ -425,7 +446,6 @@ None known.
 | API-023 | nodestro-server | SRV-013 (PostgreSQL load test) | load test runs there |
 | (pointer) | nodestro-local-docker | LD-010 (session hardening) | implementation would be here; tracked there |
 | API-001, API-002, API-005, API-006, API-010, API-019 | nodestro-server | RUNBOOK limitations (pointer rows in its table) | server documents the current limits until these land |
-| (pointer) | nodestro-runtime | X-01 / RT-005 | full entry in runtime |
 
 ## CI access to private repositories
 
