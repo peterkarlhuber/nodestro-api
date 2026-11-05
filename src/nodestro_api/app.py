@@ -109,9 +109,12 @@ def create_app(
             # Local models: the managed Ollama starts in the background when it is installed and not switched off.
             local = asyncio.create_task(asyncio.to_thread(nodestro.local_models.start_on_launch), name="local-models")
             # Reference prices: checked at start when due, then daily; offline the last valid prices stay. The strict
-            # offline mode makes no request at all.
-            if nodestro.price_sync is not None and nodestro.config.price_sync.enabled and not nodestro.strict_offline():
-                prices = asyncio.create_task(nodestro.price_sync.run(stop_prices), name="price-sync")
+            # offline mode makes no request at all, also when it is switched on while the API runs (the loop asks
+            # each round, so switching it off again resumes the checks without a restart).
+            if nodestro.price_sync is not None and nodestro.config.price_sync.enabled:
+                prices = asyncio.create_task(
+                    nodestro.price_sync.run(stop_prices, paused=nodestro.strict_offline), name="price-sync"
+                )
             # Runs paused at a tool call (M6b) or waiting for a budget decision (BUDGET-1): the deadline sweep
             # continues decided and overdue ones.
             sweeping = asyncio.create_task(_sweep_tool_waits(nodestro, stop_prices), name="tool-waits")
