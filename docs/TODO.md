@@ -429,6 +429,7 @@ None known.
 
 | This repo item | Other repo | Other item | Relation |
 |---|---|---|---|
+| (pointer) | nodestro-studio | ST-052 (Dependabot policy: weekly groups, cooldown, manual merge; auto-merge prerequisites) | Full entry in studio |
 | (pointer) | nodestro-runtime | RT-001 (independent S-2 review, covers the approval routes here) | full entry in runtime |
 | API-005 | nodestro-runtime | RT-010 | runtime adds old-key decryption; the operator command lives here |
 | API-009 | nodestro-runtime | RT-014 | runtime provides deletes |
