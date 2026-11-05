@@ -616,3 +616,55 @@ def test_a_worker_checks_docker_from_its_start_and_stops_watching_with_stop(
         "Docker sandbox unavailable (docker-missing): Docker is not installed; "
         "tool code is refused until a check passes"
     ]
+
+
+def test_a_batch_on_the_server_finishes_when_the_worker_ran_its_runs(
+    server: Server, make_worker: Callable[..., Background]
+) -> None:
+    """The API process starts a batch, a worker executes its runs: the batch learns from the stored runs that they
+    ended (the API's own run listeners never hear of a run another process executed)."""
+    alice = server.member("acme", "alice", "owner")
+    workflow = alice.post("/api/workflows", json=FLOW).json()["id"]
+    rows = [{"input": "one"}, {"input": "two"}]
+    created = alice.post("/api/batches", json={"workflow_id": workflow, "rows": rows, "concurrency": 2})
+    assert created.status_code == 201, created.text
+    batch_id = created.json()["id"]
+    worker = make_worker({"ALPHA": [text("first"), text("second")]})
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if worker.call(worker.worker.runner.run_once()) is None:
+            batch = alice.get(f"/api/batches/{batch_id}").json()
+            if all(item["status"] != "pending" for item in batch["items"]):
+                break
+        time.sleep(0.05)
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        batch = alice.get(f"/api/batches/{batch_id}").json()
+        if batch["status"] != "running":
+            break
+        time.sleep(0.1)
+    assert batch["status"] == "finished", batch
+    assert [item["status"] for item in batch["items"]] == ["succeeded", "succeeded"]
+
+
+def test_a_test_series_on_the_server_finishes_when_the_worker_ran_its_runs(
+    server: Server, make_worker: Callable[..., Background]
+) -> None:
+    alice = server.member("acme", "alice", "owner")
+    workflow = alice.post("/api/workflows", json=FLOW).json()["id"]
+    suite = alice.post("/api/benchmarks", json={"workflow_id": workflow, "cases": [{"name": "One", "input": "go"}]})
+    assert suite.status_code == 201, suite.text
+    started = alice.post(f"/api/benchmarks/{suite.json()['id']}/runs", json={"concurrency": 1})
+    assert started.status_code == 201, started.text
+    worker = make_worker({"ALPHA": [text("done")]})
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline and worker.call(worker.worker.runner.run_once()) is None:
+        time.sleep(0.05)
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        series = alice.get(f"/api/benchmark-runs/{started.json()['id']}").json()
+        if series["status"] not in ("running", "evaluating"):
+            break
+        time.sleep(0.1)
+    assert series["status"] == "finished", series
+    assert series["results"][0]["run_status"] == "succeeded"

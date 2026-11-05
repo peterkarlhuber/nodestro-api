@@ -121,6 +121,8 @@ async def sync_prices(ctx: Ctx) -> SyncReport:
     sync = ctx.price_sync
     if sync is None:
         raise ApiError(403, "pricing.reference_read_only", "Reference prices are synchronized by the server's worker")
+    if ctx.strict_offline():
+        raise ApiError(400, "pricing.offline_sync", "The strict offline mode is on: checking prices needs the internet")
     return await asyncio.to_thread(sync.sync, force=True)
 
 

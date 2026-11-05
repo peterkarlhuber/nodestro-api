@@ -97,6 +97,27 @@ def test_downloads_are_refused_offline(make_app: MakeApp) -> None:
     assert missing.status_code == 400 and missing.json()["code"] == "local.file_missing"
 
 
+def test_cloud_assistants_and_price_checks_are_refused_offline(make_app: MakeApp) -> None:
+    """The strict offline mode refuses every assistant call with a cloud model before a request goes out, not only
+    workflow runs: assistant, Workflow Architect, Agent Architect, tool generation; and the manual price check."""
+    client = make_app()  # cloud defaults (the scripted client answers Anthropic)
+    conversation = client.post("/api/assistant/conversations", json={}).json()["id"]
+    assert client.put("/api/settings", json={"strict_offline": True}).json()["strict_offline"] is True
+    refused = [
+        client.post(f"/api/assistant/conversations/{conversation}/messages", json={"content": "Hi"}),
+        client.post("/api/architect/jobs", json={"description": "A blog post", "language": "en"}),
+        client.post("/api/agents/design", json={"description": "Summarizes text"}),
+        client.post("/api/tools/jobs", json={"requirement": "Add two numbers"}),
+    ]
+    for response in refused:
+        assert response.status_code == 400, response.text
+        assert response.json()["code"] == "check.offline_cloud_model", response.text
+        assert response.json()["params"]["model"].startswith("anthropic:")
+    assert not client.fake.messages.calls  # type: ignore[attr-defined]
+    prices = client.post("/api/pricing/sync")
+    assert prices.status_code == 400 and prices.json()["code"] == "pricing.offline_sync"
+
+
 @pytest.fixture
 def managed(make_app: MakeApp, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     if sys.platform == "win32":

@@ -119,6 +119,32 @@ def test_the_desktop_syncs_in_the_background_without_network_when_litellm_is_off
         assert status["sync_enabled"] is True
 
 
+def test_the_background_price_check_asks_the_strict_offline_mode_each_round(tmp_path: Path) -> None:
+    """The loop runs with the strict offline mode as its pause switch (it can change while the API runs)."""
+    from nodestro_runtime.schemas import SettingsIn
+
+    config = AppConfig(data_dir=tmp_path / "data", price_sync=PriceSyncConfig(enabled=True, litellm=False))
+    app = create_app(config, client_factory=lambda _p: None, integrations=[], scheduler=False)
+    nodestro = app.state.nodestro
+    nodestro.update_settings(SettingsIn(strict_offline=True))
+    seen: list[Any] = []
+    original = nodestro.price_sync.run
+
+    async def run(stop: Any, **kwargs: Any) -> None:
+        seen.append(kwargs.get("paused"))
+        await original(stop, **kwargs)
+
+    nodestro.price_sync.run = run
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        import time
+
+        time.sleep(0.2)
+        assert client.get("/api/pricing/status").json()["last_success_at"] is None
+        assert len(seen) == 1 and seen[0] is not None and seen[0]() is True
+        nodestro.update_settings(SettingsIn(strict_offline=False))
+        assert seen[0]() is False
+
+
 def test_the_price_sync_settings_come_from_the_environment(tmp_path: Path) -> None:
     config = PriceSyncConfig.from_env(
         {"NODESTRO_PRICE_SYNC": "off", "NODESTRO_PRICE_LITELLM": "on", "NODESTRO_PRICE_SNAPSHOT_FILE": str(tmp_path)}

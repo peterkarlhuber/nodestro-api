@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Pin nodestro-runtime 57b40d2 (runtime #116: strict offline mode, RT-004, expired budget decisions, missing
+  sqlite-vec) and nodestro-examples f015a4d (examples #74: MCP demo setup texts name the computer where Nodestro runs).
+- In the strict offline mode the background price check makes no request, also when the mode is switched on while the
+  app runs; it resumes when the mode is switched off. `POST /api/pricing/sync` is refused with
+  `pricing.offline_sync` (400). Assistant, architect, agent design and tool generation requests with a cloud model
+  are refused with `check.offline_cloud_model`.
+- On a server, batches and test series now finish when their runs end: the API process that started them reads the
+  runs that the workers execute from the database every two seconds. Only a stopped API process still leaves a batch
+  or series `running` (API-006).
 - OpenAPI regenerated for the nodestro-examples 64e534a pin: `TemplateTeam.contract_fields` (`ContractField`: `name`,
   `description`).
 - A server's tenants no longer learn the server's memory, CPU or GPU through the local model advice
