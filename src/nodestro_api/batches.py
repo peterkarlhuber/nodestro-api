@@ -53,6 +53,8 @@ COLLECTION = "batches"
 ItemStatus = Literal["pending", "invalid", "running", "paused", "succeeded", "failed", "cancelled", "skipped"]
 BatchStatus = Literal["running", "paused", "finished", "cancelled", "stopped", "interrupted"]
 _DONE: frozenset[str] = frozenset({"succeeded", "failed", "cancelled", "skipped", "invalid"})
+#: How often a batch on a server reads its open runs again (their workers do not notify the API process).
+STORED_RUNS_POLL_S = 2.0
 
 
 class BatchError(NodestroError):
@@ -613,7 +615,10 @@ class Batches:
                 if batch.status in ("stopped", "cancelled") and not busy:
                     break
                 # Wait for a run to change, or for the user to continue, pause or cancel.
-                await wake.wait()
+                if self.ctx.shared_storage:
+                    await self._follow_stored(batch, wake)
+                else:
+                    await wake.wait()
         except asyncio.CancelledError:
             batch.status = "interrupted"
             batch.stop_code = "batch.interrupted"
@@ -687,6 +692,27 @@ class Batches:
         self._apply(item, run)
         self._save(batch)
         self._poke(batch.id)
+
+    async def _follow_stored(self, batch: Batch, wake: asyncio.Event) -> None:
+        """On a server the batch's runs execute in workers, so this process's run listeners never hear that one
+        ended: wait for a poke at most :data:`STORED_RUNS_POLL_S` seconds, then read the open items' runs as stored."""
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(wake.wait(), timeout=STORED_RUNS_POLL_S)
+        open_items = [item for item in batch.items if item.run_id and item.status in ("running", "paused")]
+        if not open_items:
+            return
+        runs = await asyncio.to_thread(
+            lambda: [self.ctx.store.get("runs", str(item.run_id), Run) for item in open_items]
+        )
+        changed = False
+        for item, run in zip(open_items, runs, strict=True):
+            if run is None:
+                continue
+            before = (item.status, item.cost_usd)
+            self._apply(item, run)
+            changed = changed or (item.status, item.cost_usd) != before
+        if changed:
+            self._save(batch)
 
     def _sync_item(self, item: BatchItem) -> None:
         if item.run_id and item.status in ("running", "paused"):
