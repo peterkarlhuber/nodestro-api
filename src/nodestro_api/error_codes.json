@@ -528,6 +528,7 @@
   "knowledge.embedding_model_missing": {"params": [], "source": "runtime"},
   "knowledge.index_building": {"params": ["mode"], "source": "runtime"},
   "knowledge.reindex_failed": {"params": [], "source": "runtime"},
+  "knowledge.reindex_interrupted": {"params": [], "source": "runtime"},
   "knowledge.reindex_required": {"params": [], "source": "runtime"},
   "knowledge.reindex_running": {"params": [], "source": "runtime"},
   "knowledge.vectors_missing": {"params": ["mode"], "source": "runtime"},
