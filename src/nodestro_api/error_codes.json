@@ -225,7 +225,7 @@
   "check.local_model_no_tools": {"params": ["model", "node_id"], "source": "runtime"},
   "check.local_model_not_chat": {"params": ["model"], "source": "runtime"},
   "check.local_reasoning_saving": {"params": ["nodes"], "source": "runtime"},
-  "check.local_runtime_missing": {"params": ["provider"], "source": "runtime"},
+  "check.local_runtime_missing": {"params": ["models", "provider", "route"], "source": "runtime"},
   "check.merge_exclusive": {"params": ["decision", "name", "node_id"], "source": "runtime"},
   "check.merge_partial": {"params": ["branches", "name", "node_id"], "source": "runtime"},
   "check.model_unpriced": {"params": ["model", "node_id"], "source": "runtime"},
