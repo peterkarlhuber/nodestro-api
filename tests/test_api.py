@@ -428,6 +428,18 @@ def test_the_openapi_contract_is_up_to_date() -> None:
     assert committed.read_text(encoding="utf-8") == openapi.text(), "run `make openapi`"
 
 
+def test_the_server_openapi_contract_is_up_to_date() -> None:
+    """API-012: the server profile has its own committed contract with the login and tenant routes."""
+    from nodestro_api import openapi
+
+    committed = Path(__file__).resolve().parents[1] / "openapi" / "nodestro-api-server.json"
+    expected = openapi.text(server=True)
+    assert committed.read_text(encoding="utf-8") == expected, "run `python -m nodestro_api.openapi --server ...`"
+    server, desktop = json.loads(expected)["paths"], openapi.document()["paths"]
+    assert {"/api/auth/me", "/api/auth/switch", "/api/auth/logout"} <= set(server) - set(desktop)
+    assert "/api/workflows" in server and "/api/published/{slug}" not in server
+
+
 def test_settings_defaults_match_an_unchanged_installation(make_app: Any) -> None:
     """API-061: ``GET /api/settings/defaults`` names the value of every changeable setting nobody changed, so the
     studio can mark each field as default or changed; the defaults stay when a setting changes."""

@@ -410,7 +410,9 @@ one transaction and only then swaps the directories. One restore runs at a time,
 `openapi/nodestro-api.json` is the OpenAPI document of exactly this API. A test fails while the file does not match
 the code; after changing routes or schemas, `python -m nodestro_api.openapi openapi/nodestro-api.json` writes it
 again. The SDKs in [nodestro-sdk](https://github.com/peterkarlhuber/nodestro-sdk) are generated from it and tested
-against a running server.
+against a running server. `openapi/nodestro-api-server.json` is the document of the server profile (logins and
+tenant switching added, no published APIs yet); `python -m nodestro_api.openapi --server
+openapi/nodestro-api-server.json` writes it, and a test checks it the same way.
 
 ## Development
 
