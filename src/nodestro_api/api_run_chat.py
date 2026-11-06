@@ -7,7 +7,8 @@
   ``client_id`` makes sending idempotent: 201 for a new message, 200 for the one that already exists.
 - ``GET /api/runs/{run_id}/chat/messages/{message_id}`` (``read``): one message.
 - ``GET /api/runs/{run_id}/chat/events`` (``read``): Server-Sent Events: ``snapshot`` (the whole view) on every
-  connect, then ``message`` (a new or changed message) and ``targets`` (what the orchestrators do now); ``end``
+  connect, then ``message`` (a new or changed message), ``answering`` (the reasoning and text of answers this process
+  is writing, as they arrive) and ``targets`` (what the orchestrators do now); ``end``
   when the run ended and no answer is pending, or when access ended. A reconnecting client gets a new snapshot.
 
 ``run_id`` may be the top-level run or any run below it (a team's run): the conversation belongs to the top-level
@@ -32,6 +33,7 @@ from nodestro_runtime.run_chat import (
     MAX_CONTENT_CHARS,
     ChatLimits,
     ChatTarget,
+    LiveAnswer,
     RunMessage,
     answer_question,
     chat_limits,
@@ -55,6 +57,8 @@ MAX_ANSWERS_AT_ONCE = 4
 _answers = threading.BoundedSemaphore(MAX_ANSWERS_AT_ONCE)
 #: How often an open event stream looks at the stored conversation (seconds).
 POLL_SECONDS = 1.0
+#: How often it looks while this process writes an answer to the conversation (its live reasoning and text).
+LIVE_POLL_SECONDS = 0.25
 
 _NOT_FOUND = frozenset({"run_chat.unknown_target"})
 _CONFLICT = frozenset(
@@ -94,6 +98,9 @@ class RunChatView(BaseModel):
     questions_left: int
     #: The model that answers questions (the workspace's assistant model).
     answer_model: str
+    #: Answers being written in this API process: their reasoning and text so far (shown live; an answer written by
+    #: another process shows as a pending question until it is stored).
+    answering: list[LiveAnswer] = Field(default_factory=list)
 
 
 class ChatMessageIn(BaseModel):
@@ -140,6 +147,7 @@ def _view(ctx: Ctx, root: Run) -> RunChatView:
         remaining_budget_usd=chat.remaining_budget(root.id, limits),
         questions_left=max(limits.max_questions - questions, 0),
         answer_model=ctx.settings().assistant_model,
+        answering=chat.live_answers(root.id),
     )
 
 
@@ -251,12 +259,14 @@ async def run_chat_events(run_id: str, request: Request, ctx: Ctx) -> StreamingR
         yield _sse("snapshot", view.model_dump(mode="json"))
         seen = {item.id: (item.status, item.status_at) for item in view.messages}
         shown_targets = [item.model_dump(mode="json") for item in view.targets]
+        shown_answers = [item.model_dump(mode="json") for item in view.answering]
         quiet = 0.0
         while True:
             if not view.active and not any(item.status == "pending" for item in view.messages):
                 yield _sse("end", {"status": view.run_status})
                 return
-            await asyncio.sleep(POLL_SECONDS)
+            # An answer being written here is followed more closely: its reasoning and text show as they arrive.
+            await asyncio.sleep(LIVE_POLL_SECONDS if view.answering else POLL_SECONDS)
             if await request.is_disconnected():
                 return
             if await access.lost():
@@ -273,6 +283,11 @@ async def run_chat_events(run_id: str, request: Request, ctx: Ctx) -> StreamingR
                     seen[item.id] = (item.status, item.status_at)
                     yield _sse("message", item.model_dump(mode="json"))
                     changed = True
+            answers = [item.model_dump(mode="json") for item in view.answering]
+            if answers != shown_answers:
+                shown_answers = answers
+                yield _sse("answering", {"answers": answers})
+                changed = True
             targets = [item.model_dump(mode="json") for item in view.targets]
             if targets != shown_targets:
                 shown_targets = targets

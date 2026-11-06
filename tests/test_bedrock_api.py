@@ -249,7 +249,8 @@ def test_capabilities_of_a_typed_bedrock_model(make_app: Callable[..., TestClien
     meta = client.get("/api/meta").json()
     listed = next(item for item in meta["models"] if item["id"] == MODEL)
     typed = client.get("/api/models/capabilities", params={"model": MODEL}).json()
-    assert typed == {"model": MODEL, "capabilities": listed["capabilities"]}
+    assert typed["model"] == MODEL and typed["capabilities"] == listed["capabilities"]
+    assert typed["reasoning"]["text"] == "summary"  # Claude on Bedrock: summarized thinking
     assert set(typed["capabilities"]) == set(meta["capabilities"])
     arn = f"bedrock:arn:aws:bedrock:eu-central-1:{ACCOUNT}:application-inference-profile/abc"
     found = client.get("/api/models/capabilities", params={"model": arn}).json()

@@ -900,6 +900,9 @@
             "title": "Prompt",
             "type": "string"
           },
+          "reasoning": {
+            "$ref": "#/components/schemas/ReasoningTrace"
+          },
           "reasoning_reduced": {
             "anyOf": [
               {
@@ -1935,6 +1938,13 @@
             ],
             "title": "Question"
           },
+          "reasoning": {
+            "items": {
+              "$ref": "#/components/schemas/ArchitectReasoning"
+            },
+            "title": "Reasoning",
+            "type": "array"
+          },
           "repairs": {
             "default": 0,
             "title": "Repairs",
@@ -1998,6 +2008,53 @@
           "language"
         ],
         "title": "ArchitectJob",
+        "type": "object"
+      },
+      "ArchitectReasoning": {
+        "description": "The reasoning of one request of a job: ``step`` is ``analysis``, ``plan``, ``agent_revision`` or ``repair``.",
+        "properties": {
+          "active": {
+            "default": false,
+            "title": "Active",
+            "type": "boolean"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "thinking",
+                  "summary"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "phases": {
+            "default": 0,
+            "title": "Phases",
+            "type": "integer"
+          },
+          "redacted": {
+            "default": false,
+            "title": "Redacted",
+            "type": "boolean"
+          },
+          "step": {
+            "default": "plan",
+            "title": "Step",
+            "type": "string"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "title": "ArchitectReasoning",
         "type": "object"
       },
       "ArchitectRequest": {
@@ -4834,6 +4891,16 @@
               }
             ],
             "title": "Model"
+          },
+          "reasoning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReasoningTrace"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "reply_to": {
             "anyOf": [
@@ -9354,6 +9421,33 @@
         "title": "LibraryModelPlan",
         "type": "object"
       },
+      "LiveAnswer": {
+        "description": "An answer being written in this process: what has arrived so far (shown live, never stored as such).",
+        "properties": {
+          "question_id": {
+            "title": "Question Id",
+            "type": "string"
+          },
+          "reasoning": {
+            "$ref": "#/components/schemas/ReasoningTrace"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question_id",
+          "run_id"
+        ],
+        "title": "LiveAnswer",
+        "type": "object"
+      },
       "LocalAdvice": {
         "description": "A hint about the local models of this computer; the interface shows its own text for the ``code``.\n\n``value`` and ``recommended`` depend on the code: tokens for ``local.context_small``, tokens per second times ten\nfor ``local.model_slow``, bytes for ``local.memory_low``.",
         "properties": {
@@ -11240,6 +11334,16 @@
           "model": {
             "title": "Model",
             "type": "string"
+          },
+          "reasoning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReasoningStreamInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -12430,6 +12534,31 @@
             "default": "",
             "title": "Thinking",
             "type": "string"
+          },
+          "thinking_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "thinking",
+                  "summary"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thinking Kind"
+          },
+          "thinking_phases": {
+            "default": 0,
+            "title": "Thinking Phases",
+            "type": "integer"
+          },
+          "thinking_redacted": {
+            "default": false,
+            "title": "Thinking Redacted",
+            "type": "boolean"
           },
           "tool_calls": {
             "items": {
@@ -15251,6 +15380,98 @@
         "title": "QualityCriterion",
         "type": "object"
       },
+      "ReasoningStreamInfo": {
+        "description": "What a model's stream transmits of its reasoning, for the interface (``orkexa.ReasoningStream``).",
+        "properties": {
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          },
+          "request_option": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Option"
+          },
+          "requested": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested"
+          },
+          "status": {
+            "default": false,
+            "title": "Status",
+            "type": "boolean"
+          },
+          "text": {
+            "default": "unknown",
+            "enum": [
+              "thinking",
+              "summary",
+              "none",
+              "unknown"
+            ],
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "title": "ReasoningStreamInfo",
+        "type": "object"
+      },
+      "ReasoningTrace": {
+        "description": "The reasoning of one model call sequence as it arrived (a run step, an agent test, a chat answer).",
+        "properties": {
+          "active": {
+            "default": false,
+            "title": "Active",
+            "type": "boolean"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "thinking",
+                  "summary"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "phases": {
+            "default": 0,
+            "title": "Phases",
+            "type": "integer"
+          },
+          "redacted": {
+            "default": false,
+            "title": "Redacted",
+            "type": "boolean"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "title": "ReasoningTrace",
+        "type": "object"
+      },
       "Recommendation": {
         "description": "The model suggested for a task, and why.",
         "properties": {
@@ -17149,6 +17370,13 @@
             "title": "Answer Model",
             "type": "string"
           },
+          "answering": {
+            "items": {
+              "$ref": "#/components/schemas/LiveAnswer"
+            },
+            "title": "Answering",
+            "type": "array"
+          },
           "limits": {
             "$ref": "#/components/schemas/ChatLimits"
           },
@@ -17373,6 +17601,16 @@
           "node_id": {
             "title": "Node Id",
             "type": "string"
+          },
+          "reasoning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReasoningTrace"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "reply_to": {
             "anyOf": [
@@ -19198,6 +19436,11 @@
             "title": "Providers",
             "type": "array"
           },
+          "reasoning_summaries": {
+            "default": false,
+            "title": "Reasoning Summaries",
+            "type": "boolean"
+          },
           "sandbox": {
             "default": "auto",
             "enum": [
@@ -19496,6 +19739,17 @@
               }
             ],
             "title": "Providers"
+          },
+          "reasoning_summaries": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Summaries"
           },
           "sandbox": {
             "anyOf": [

@@ -32,6 +32,7 @@ from nodestro_runtime.profile import ProfileKind
 from nodestro_runtime.providers import CAPABILITY_NAMES, PROVIDERS, ProviderInfo, ProviderStatus, check_model, qualify
 from nodestro_runtime.python_envs import ExportedDefinition, scope_of
 from nodestro_runtime.python_tools import check_with_dependencies, save_with_dependencies, tool_run_sandbox
+from nodestro_runtime.reasoning import ReasoningStreamInfo, model_reasoning
 from nodestro_runtime.reports import FileRequest, ResultFile
 from nodestro_runtime.resume import ResumePlan
 from nodestro_runtime.resume import plan as plan_resume
@@ -330,14 +331,19 @@ class ModelCapabilities(BaseModel):
     #: ``/api/meta``), the same the catalog entries carry. ``None`` for the other providers, whose capabilities
     #: depend on the connection (an endpoint's declared values), and for invalid model names.
     capabilities: dict[str, Literal["supported", "unsupported", "unknown"]] | None = None
+    #: What the model's stream transmits of its reasoning in this workspace (every provider; ``None`` for an invalid
+    #: id): raw thinking text, a provider summary, nothing (with the reason) or unknown, and whether the workspace
+    #: asks for summaries where the provider sends them only on request.
+    reasoning: ReasoningStreamInfo | None = None
 
 
 # No existing response fits a single typed model id: /api/meta lists only the catalog, /agents/validate answers a
 # list of issues and /workflows/check a schema the Workflow Architect shares. Free, local, no request to AWS.
 @router.get("/models/capabilities", dependencies=READ)
-def get_model_capabilities(model: Annotated[str, Query(min_length=1, max_length=2048)]) -> ModelCapabilities:
+def get_model_capabilities(model: Annotated[str, Query(min_length=1, max_length=2048)], ctx: Ctx) -> ModelCapabilities:
     """Orkexa's capabilities of one qualified model id (``bedrock:eu.anthropic...-v1:0``, an ARN; colons kept)."""
-    return ModelCapabilities(model=model, capabilities=model_capabilities(model))
+    reasoning = model_reasoning(ctx.builder, model, summaries=ctx.settings().reasoning_summaries)
+    return ModelCapabilities(model=model, capabilities=model_capabilities(model), reasoning=reasoning)
 
 
 # What the editor needs to show an agent's options by the model's real capabilities (not by provider name): Orkexa's
