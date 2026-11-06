@@ -202,9 +202,12 @@ def _private_folder(folder: Path, root: Path) -> None:
         if not folder.exists():
             folder.mkdir(mode=0o700, parents=True)
             folder.chmod(0o700)
-        elif folder.is_dir() and folder.resolve().is_relative_to(root.resolve()):
-            if stat.S_IMODE(folder.stat().st_mode) & 0o077:
-                folder.chmod(0o700)
+        elif (
+            folder.is_dir()
+            and folder.resolve().is_relative_to(root.resolve())
+            and stat.S_IMODE(folder.stat().st_mode) & 0o077
+        ):
+            folder.chmod(0o700)
     except OSError:
         return
 
