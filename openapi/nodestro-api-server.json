@@ -36093,7 +36093,7 @@
             }
           },
           {
-            "description": "Optional. A retry with the same key (same member, workflow and request, within 24 hours) returns the run that already started (200, ``Idempotent-Replayed: true``) instead of starting another; the same key with a different request is ``409 idempotency.conflict``.",
+            "description": "Optional. A retry with the same key (same member, workflow and request, within 24 hours) returns the run that already started (200, ``Idempotent-Replayed: true``) instead of starting another; the same key with a different request is ``409 idempotency.conflict``, and a retry while the first request is still starting its run is ``409 idempotency.in_progress`` (``Retry-After``).",
             "in": "header",
             "name": "idempotency-key",
             "required": false,
@@ -36107,7 +36107,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Optional. A retry with the same key (same member, workflow and request, within 24 hours) returns the run that already started (200, ``Idempotent-Replayed: true``) instead of starting another; the same key with a different request is ``409 idempotency.conflict``.",
+              "description": "Optional. A retry with the same key (same member, workflow and request, within 24 hours) returns the run that already started (200, ``Idempotent-Replayed: true``) instead of starting another; the same key with a different request is ``409 idempotency.conflict``, and a retry while the first request is still starting its run is ``409 idempotency.in_progress`` (``Retry-After``).",
               "title": "Idempotency-Key"
             }
           }

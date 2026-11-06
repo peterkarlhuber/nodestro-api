@@ -447,6 +447,7 @@
   "gate.suite_variant_only": {"params": [], "source": "api"},
   "gate.tested": {"params": [], "source": "api"},
   "idempotency.conflict": {"params": [], "source": "api"},
+  "idempotency.in_progress": {"params": ["headers"], "source": "api"},
   "identity.access_conflict": {"params": ["revision"], "source": "runtime"},
   "identity.account_disabled": {"params": [], "source": "api"},
   "identity.backfill_required": {"params": ["problems"], "source": "runtime"},

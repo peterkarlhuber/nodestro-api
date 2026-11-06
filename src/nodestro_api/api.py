@@ -1166,7 +1166,8 @@ async def start_run(
             max_length=200,
             description="Optional. A retry with the same key (same member, workflow and request, within 24 hours) "
             "returns the run that already started (200, ``Idempotent-Replayed: true``) instead of starting another; "
-            "the same key with a different request is ``409 idempotency.conflict``.",
+            "the same key with a different request is ``409 idempotency.conflict``, and a retry while the first "
+            "request is still starting its run is ``409 idempotency.in_progress`` (``Retry-After``).",
         ),
     ] = None,
 ) -> Run:
@@ -1187,12 +1188,17 @@ async def start_run(
         json.dumps([workflow_id, body.model_dump(mode="json")], sort_keys=True, default=str).encode()
     ).hexdigest()
     async with ctx.serving.studio_start_lock:
-        earlier = ctx.serving.idempotent_run_id(record_key, fingerprint)
-        if earlier is not None and (run := ctx.runs.get(earlier)) is not None:
+        # Reserved atomically in the store before the run starts, so two API processes never both start it (API-043).
+        claim = ctx.serving.reserve_idempotent_start(record_key, fingerprint, ctx.runs.get)
+        if claim.replay is not None:
             response.status_code = 200
             response.headers["Idempotent-Replayed"] = "true"
-            return run
-        run = await launch(ctx, workflow, body, started_by=started_by)
+            return claim.replay
+        try:
+            run = await launch(ctx, workflow, body, started_by=started_by)
+        except BaseException:
+            ctx.serving.release_idempotent_start(claim)
+            raise
         ctx.serving.remember_idempotent_run(record_key, run.id, fingerprint)
     return run
 
