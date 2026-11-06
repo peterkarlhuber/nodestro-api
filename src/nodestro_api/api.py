@@ -82,6 +82,7 @@ from nodestro_runtime.usage_log import USAGE_SOURCES, UsageEntry
 from nodestro_runtime.versions import VersionSummary, WorkflowVersion
 from orkexa import OrkexaError, ProviderError, UsageTracker
 from orkexa import __version__ as library_version
+from orkexa.retrieval import RetrievalError
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -89,6 +90,7 @@ from . import __version__, library_models, model_readiness, sandbox_status
 from .assistants import AgentDraft, MemorySeed
 from .benchmarks import SuiteIn, TestCase
 from .context import Nodestro
+from .error_text import GENERIC_DETAIL, client_text, current_request_id, log_original
 from .missing import MissingReference
 from .permissions import (
     ADMIN,
@@ -151,10 +153,13 @@ NODESTRO_ERROR_STATUS = {"local.job_running": 409, "lease.lost": 409}
 def install_error_handlers(app: FastAPI) -> None:
     async def nodestro_error(_: Request, exc: Exception) -> JSONResponse:
         assert isinstance(exc, NodestroError)
-        return _error(NODESTRO_ERROR_STATUS.get(exc.code, 400), exc.code, str(exc), **exc.params)
+        return _error(NODESTRO_ERROR_STATUS.get(exc.code, 400), exc.code, client_text(str(exc)), **exc.params)
 
     async def bad_request(_: Request, exc: Exception) -> JSONResponse:
-        return _error(400, "bad_request", str(exc))
+        # No error code of its own: its text may name paths, inputs or library internals (MUP-ONA A2, PS-2).
+        found_id = current_request_id()
+        log_original("bad_request", exc, found_id)
+        return _error(400, "bad_request", GENERIC_DETAIL, request_id=found_id)
 
     async def not_found(request: Request, exc: Exception) -> JSONResponse:
         name = str(exc.args[0]) if exc.args else ""
@@ -173,27 +178,44 @@ def install_error_handlers(app: FastAPI) -> None:
                 return _error(
                     404, f"{kind}.not_found", f"{label} {name!r} does not exist", name=name, id=name, kind=kind
                 )
-        return _error(404, "not_found", f"Not found: {name}", name=name)
+        if name and name in request.path_params.values():
+            return _error(404, "not_found", f"Not found: {name}", name=name)
+        # A key the request did not name (an internal lookup): its text stays in the log (MUP-ONA A2, PS-2).
+        found_id = current_request_id()
+        log_original("not_found", exc, found_id)
+        return _error(404, "not_found", "Not found", name="", request_id=found_id)
 
     async def upstream(_: Request, exc: Exception) -> JSONResponse:
         assert isinstance(exc, ProviderError)
+        # The provider's own message may echo the request or name the installation (MUP-ONA A2, PS-2).
+        found_id = current_request_id()
+        log_original("provider_api", exc, found_id)
         return _error(
-            502, "provider_api", f"{exc.provider} API: {exc}", status=exc.status_code or "", provider=exc.provider
+            502,
+            "provider_api",
+            f"{exc.provider} API answered with an error",
+            status=exc.status_code or "",
+            provider=exc.provider,
+            request_id=found_id,
         )
 
     async def agent_error(_: Request, exc: Exception) -> JSONResponse:
         kind = type(exc).__name__
-        return _error(422, f"agent.{kind}", f"{kind}: {exc}", type=kind)
+        if isinstance(exc, RetrievalError):  # an error code of its own (mode_unsupported, ...): its text is meant
+            return _error(422, f"agent.{kind}", f"{kind}: {client_text(str(exc))}", type=kind)
+        found_id = current_request_id()
+        log_original(f"agent.{kind}", exc, found_id)
+        return _error(422, f"agent.{kind}", f"{kind}: {GENERIC_DETAIL}", type=kind, request_id=found_id)
 
     async def api_error(_: Request, exc: Exception) -> JSONResponse:
         assert isinstance(exc, ApiError)
-        response = _error(exc.status, exc.code, exc.message, **exc.params)
+        response = _error(exc.status, exc.code, client_text(exc.message), **exc.params)
         response.headers.update(exc.headers)  # e.g. Retry-After of a 429
         return response
 
     async def access_error(_: Request, exc: Exception) -> JSONResponse:
         assert isinstance(exc, AccessError)
-        return _error(exc.status, exc.code, str(exc), **exc.params)
+        return _error(exc.status, exc.code, client_text(str(exc)), **exc.params)
 
     async def invalid_request(_: Request, exc: Exception) -> JSONResponse:
         assert isinstance(exc, RequestValidationError)
@@ -201,6 +223,7 @@ def install_error_handlers(app: FastAPI) -> None:
         if any(item["type"] == "json_invalid" for item in errors):
             return _error(400, "request.malformed", "The request body is not valid JSON")
         summary = "; ".join(f"{'.'.join(str(part) for part in item['loc'])}: {item['msg']}" for item in errors)
+        summary = client_text(summary)
         return _error(422, "request.invalid", f"The request is invalid: {summary}"[:500], errors=errors)
 
     async def http_error(_: Request, exc: Exception) -> JSONResponse:
@@ -214,7 +237,7 @@ def install_error_handlers(app: FastAPI) -> None:
             # FastAPI's own answer to a body it could not read or parse.
             response = _error(400, "request.malformed", "The request body could not be read")
         else:
-            response = _error(exc.status_code, f"http.{exc.status_code}", str(exc.detail))
+            response = _error(exc.status_code, f"http.{exc.status_code}", client_text(str(exc.detail)))
         response.headers.update(headers)  # e.g. Allow of a 405
         return response
 
@@ -236,16 +259,33 @@ _VALIDATION_FIELDS = ("loc", "msg", "type")
 
 
 def validation_errors(errors: Sequence[Any]) -> list[dict[str, Any]]:
-    """FastAPI's validation errors as ``params.errors``: ``loc``, ``msg`` and ``type`` of each, without the input."""
+    """FastAPI's validation errors as ``params.errors``: ``loc``, ``msg`` and ``type`` of each, without the input.
+
+    A message that repeats the input (a validator's own text) gets ``[input]`` in its place (MUP-ONA A2, PS-2)."""
     return [
         {
             "loc": [part if isinstance(part, int) else str(part) for part in item.get("loc", ())],
-            "msg": str(item.get("msg", ""))[:300],
+            "msg": client_text(_without_input(str(item.get("msg", "")), item.get("input")))[:300],
             "type": str(item.get("type", "")),
         }
         for item in errors[:50]
         if isinstance(item, dict)
     ]
+
+
+def _without_input(message: str, value: Any) -> str:
+    """``message`` without the text of ``value`` (a string input, or the strings of a list or dict input)."""
+    texts: list[str] = []
+    if isinstance(value, str):
+        texts.append(value)
+    elif isinstance(value, dict):
+        texts += [item for item in value.values() if isinstance(item, str)]
+    elif isinstance(value, list | tuple):
+        texts += [item for item in value if isinstance(item, str)]
+    for text in sorted(texts, key=len, reverse=True):
+        if len(text) >= 4:  # shorter values are words of the message itself ("a", "true")
+            message = message.replace(text, "[input]")
+    return message
 
 
 #: The error answer of the studio API, in the OpenAPI document (``components.schemas``).

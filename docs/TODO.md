@@ -11,7 +11,7 @@
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 1 |
-| P2 Medium | 9 |
+| P2 Medium | 8 |
 | P3 Low | 15 |
 | P4 Optional | 7 |
 
@@ -355,14 +355,6 @@ removed by the change that completes its package here.
   its upload and knowledge paths on the runtime's limited path.
 - **Next step:** After the runtime and orkexa parts merge: map the code, test the routes, bump the runtime pin through
   the pin cascade.
-
-### API-MUP-A2 · Error answers without paths, inputs or library texts
-
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** MP-A2 (PS-2), [MUP-ONA][mup-ona]
-- **What:** Some error answers pass exception texts to clients (`bad_request`, `not_found`, provider and library
-  errors), which can name file paths, inputs or internals.
-- **Next step:** Fixed texts plus `request_id` for exceptions without a code of their own, filtered texts for coded ones
-  (branch `mup/a2-a3-a5-api-hardening`).
 
 ### API-MUP-A3 · Client addresses behind a reverse proxy
 

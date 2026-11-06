@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- MUP-ONA security hardening (A2, A3, A5):
+  - Security (A2, PS-2): error answers name no file system path, input value, credential or library text. An
+    exception without an error code of its own (`bad_request`, a `not_found` for a key the request did not name,
+    `provider_api`, `agent.<error>` except `agent.RetrievalError`) answers with a fixed `detail` and
+    `params.request_id`; its original text is logged with the same id (logger `nodestro_api.errors`, credentials
+    redacted). Coded texts keep their wording with `[path]` for absolute paths; validation messages show `[input]`
+    instead of the input. Statuses and codes are unchanged; clients that read `detail` of these answers get the
+    fixed text.
 - MUP-ONA A0 (security and test baseline, no code change):
   - CI compares the skipped tests of every pytest job with an expectation file (`tests/ci/skipped-<job>.txt`, each
     entry with its reason; `scripts/check_skips.py`): a test that starts to skip, or an expected skip that runs, fails

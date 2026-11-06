@@ -428,6 +428,15 @@ against a running server. `openapi/nodestro-api-server.json` is the document of 
 tenant switching added, no published APIs yet); `python -m nodestro_api.openapi --server
 openapi/nodestro-api-server.json` writes it, and a test checks it the same way.
 
+Error answers of the studio API have the form `{"detail", "code", "params"}`; clients evaluate `code` and
+`params`, never `detail` (an English technical text). `detail` names no file system path, input value, credential
+or library internals: an exception without an error code of its own (`bad_request`, a `not_found` for a key the
+request did not name, `provider_api`, `agent.<error>` except `agent.RetrievalError`) answers with a fixed text and
+`params.request_id`, and its original text is logged (logger `nodestro_api.errors`, credentials redacted) with the
+same request id; on a server it is the `X-Request-ID` of the answer. Texts of codes the API or the runtime raise on
+purpose keep their wording, with absolute paths replaced by `[path]` and credentials redacted. Validation errors
+(`request.invalid`) list `loc`, `msg` and `type`, and a message that repeats the input shows `[input]` instead.
+
 ## Development
 
 ```bash

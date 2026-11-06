@@ -136,7 +136,9 @@ def test_knowledge_files_are_stored_once_and_given_to_the_agents(
     assert next(item for item in files if item["id"] == own[0])["collection"].startswith("Beispiele: ")
 
 
-def test_a_failed_copy_leaves_nothing_behind(make_app: Callable[..., TestClient], monkeypatch: Any) -> None:
+def test_a_failed_copy_leaves_nothing_behind(
+    make_app: Callable[..., TestClient], monkeypatch: Any, caplog: pytest.LogCaptureFixture
+) -> None:
     from nodestro_api import api
 
     client = make_app()
@@ -146,8 +148,12 @@ def test_a_failed_copy_leaves_nothing_behind(make_app: Callable[..., TestClient]
 
     monkeypatch.setattr(api.library_samples, "suite_cases", broken)
     # The parts are saved before the test cases are built; they are removed again.
-    response = client.post("/api/library/business-idea/copy", json={"language": "en", "tests": True})
-    assert response.status_code == 400 and "test cases" in response.json()["detail"]
+    with caplog.at_level("WARNING", logger="nodestro_api.errors"):
+        response = client.post("/api/library/business-idea/copy", json={"language": "en", "tests": True})
+    # The error's own text goes to the log with the answer's request id, not to the client (MUP-ONA A2, PS-2).
+    assert response.status_code == 400 and response.json()["code"] == "bad_request"
+    request_id = response.json()["params"]["request_id"]
+    assert any("test cases" in record.getMessage() and request_id in record.getMessage() for record in caplog.records)
     stored_nothing(client)
 
 
