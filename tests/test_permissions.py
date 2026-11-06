@@ -149,7 +149,8 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # read: + the assistant's file support, a conversation file's content and text (assistant files)
         # read: + a model's profile: capabilities, limits and agent options (params)
         # read: + every publication with its workflow, active release and exports (Publications page)
-        "read": 121,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
+        # read: + the default of every setting (API-061)
+        "read": 122,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
         # MCP status, servers, server, tools (WP-3); tool approval inbox, run questions, pre-grants, state (S-2b)
         # edit: + starting and cancelling a portable export job (like the synchronous export)
         # edit: + uploading and removing a conversation's files (assistant files)
