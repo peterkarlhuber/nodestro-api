@@ -3,7 +3,7 @@
 > Open work for this repository: release blockers, known bugs, security follow-ups, technical debt and planned improvements.
 > GitHub issues are the source of truth for details; this file is the entry point and summary.
 >
-> **Last full review:** 2026-11-05 against `master` at `8e097a0` (quality round 3 close-out; TODO consolidated).
+> **Last full review:** 2026-11-06 against master at 3d6c996 (TODO abatement round)
 
 ## Summary
 
@@ -11,17 +11,17 @@
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 0 |
-| P2 Medium | 6 |
-| P3 Low | 26 |
-| P4 Optional | 14 |
+| P2 Medium | 4 |
+| P3 Low | 20 |
+| P4 Optional | 7 |
 
 **Release blockers:** None for this repository; every entry below is not a release blocker. The next desktop
 preview is gated by nodestro-desktop DSK-001 (new candidate and Go/No-Go).
 
-The desktop API is in solid shape. Most open work is in the multi-process server profile: batch leases, observability,
+The desktop API is in solid shape. Most open work is in the multi-process server profile: worker observability,
 key rotation, published APIs on the server. The portable export (#85, hardened in #87) still needs an independent
 security review (API-054). The rest is follow-up from the internal backend audits and the UX rounds (round 3
-handovers in API-016, API-052 and API-053). Live Run Chat (LRC-1) is merged (#49).
+handovers in API-016 and API-053). Live Run Chat (LRC-1) is merged (#49).
 
 ## Priorities and statuses
 
@@ -59,22 +59,6 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
 - **What:** Hardening follow-up: resource cleanup for idle tenant contexts on the server. Details are kept privately.
 - **Next step:** Add the cleanup, as described in the internal audit.
 
-### API-002 · Rate limiting of the anonymous login start (server)
-
-- **Priority:** P3 Low · **Status:** Open · **Refs:** backend audit A-02 (residual)
-- **What:** Expired login states are now cleaned up. Hardening of the login start (an application-level rate limit
-  and tighter input bounds) is still open; today the nodestro-server RUNBOOK recommends a proxy rate limit.
-- **Next step:** Add the application-level limits as described in the internal audit.
-
-### API-004 · Audit trail for logins, keys, tenants and roles (server)
-
-- **Priority:** P3 Low · **Status:** Open · **Refs:** backend audit D-11
-- **What:** Tool approvals have an audit trail. Logins, API key changes, tenant creation and role changes appear
-  only in the process log. With `NODESTRO_IDENTITY_BACKEND=mirror|axentra` (off by default) Axentra's audit log also
-  records tenant and membership changes and refused logins of its login flow, but nothing reads it back.
-- **Next step:** Add an `audit_events` store (actor, action, target, time) and record these events. Expose the
-  events to tenant admins read-only.
-
 ### API-005 · Rotation of the server secret key
 
 - **Priority:** P2 Medium · **Status:** In progress · **Refs:** #52, nodestro-runtime `docs/AXENTRA.md`
@@ -86,32 +70,7 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
   keyring, and rehearse the procedure on a staging copy (nodestro-server SRV-019).
 - **Depends on:** nodestro-runtime RT-010 (`SecretBox` support for an old key)
 
-### API-055 · Assistant chat files can be passed to a run by id
-
-- **Priority:** P3 Low · **Status:** Open · **Refs:** settings/providers round 2026-11-06 (attachments stream)
-- **What:** A user's own chat file id (unguessable; other users get 404) is accepted as a run input. Not a leak across users, but an implicit path from a chat into a run.
-- **Next step:** Refuse assistant files as run inputs by id, or require an explicit "use in run" action.
-
 ## Bugs and reliability
-
-### API-006 · Batches and test series on the server have no owner or lease
-
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** #51, backend audit C-07 (residual)
-- **What:** After an API process crashes, its batches and test series stay `running` until someone cancels them.
-- **Next step:** Give them an owner and a lease with a reaper, as run jobs have (or move them to the worker queue).
-
-### API-007 · Billing reconciliation hides `not_reconciled` without a billing key
-
-- **Priority:** P3 Low · **Status:** Open · **Refs:** #55, Bedrock final report item 4
-- **What:** A workspace that uses only Bedrock gets `pricing.billing_key_missing` instead of a report that names
-  its unreconciled providers.
-- **Next step:** Return a report with the `not_reconciled` list when no adapter exists.
-
-### API-008 · `nodestro-server check` does not warn about unknown tenant IDs in the Bedrock role list
-
-- **Priority:** P3 Low · **Status:** Open · **Refs:** #56, Bedrock final report item 5
-- **What:** A typo in `NODESTRO_BEDROCK_TENANT_ROLES` silently leaves a tenant without Bedrock.
-- **Next step:** Warn in `check` about role entries for tenants that do not exist.
 
 ### API-009 · Retention for runs, usage log, versions and safety backups
 
@@ -150,31 +109,31 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
 
 ### API-010 · Server profile: published APIs, network listener and backups are not served yet
 
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** README "Server logins", `src/nodestro_api/server_app.py` docstring
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** README "Server logins", `src/nodestro_api/server_app.py`
+  docstring
 - **What:** On the server, the published workflow APIs (with tenant-bound keys) are not served (the S-2 pilot saw
-  405). The network listener and studio backups are not offered there either; operators use `pg_dump`. Batches,
-  test series, assistant drafts and Python environment installs still run in the API process.
-- **Next step:** Design tenant-bound API keys and serve `/api/published/{slug}` per tenant through the worker
-  queue. Document the server backup path in the studio.
+  405; `openapi/nodestro-api-server.json` has no `/api/published` route). The network listener and studio backups
+  are not offered there either; operators use `pg_dump`. Batches, test series, assistant drafts and Python
+  environment installs still run in the API process.
+- **Next step:** (1) Tenant-bound API keys: the key record names its tenant, the key prefix carries no tenant id,
+  and lookup goes through one platform table (key hash -> tenant), so a key never opens another tenant's context.
+  (2) Serve `/api/published/{slug}` in `create_tenant_app` by resolving the key first, then the tenant context, and
+  start runs through the worker queue (`QueuedRuns`), with per-tenant limits. (3) Leave the network listener off on
+  the server (the proxy is the listener) and document that. (4) Document the server backup path (`nodestro-server
+  backup`) in the studio. Each step needs its own security review before it is enabled.
+- **Depends on:** None
 
-### API-011 · Observability for the server profile
+### API-011 · Observability for the server profile: workers and tracing
 
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** backend audit D-10 (residual)
-- **What:** `/api/health` reports database loss (503), and `GET /api/metrics` (Prometheus, only with
-  `NODESTRO_METRICS_TOKEN`; nodestro-runtime `docs/AXENTRA.md`, "Observability") exists. The server still has no
-  JSON log, request or correlation IDs or readiness endpoint separate from liveness, and workers have no liveness
-  signal or metrics listener of their own.
-- **Next step:** Add request IDs and structured logging first, then readiness. The nodestro-server RUNBOOK ("Metrics
-  and status") then documents them.
+- **Priority:** P3 Low · **Status:** Open · **Refs:** backend audit D-10 (residual)
+- **What:** The API process has `/api/health` (liveness with the database), `GET /api/ready` (readiness),
+  `GET /api/metrics` (Prometheus, with `NODESTRO_METRICS_TOKEN`), request ids (`X-Request-ID`) and JSON logs
+  (`NODESTRO_LOG_FORMAT=json`; since the TODO abatement round of 2026-11-06). Workers still have no liveness signal or
+  metrics listener of their own, and there is no tracing (OpenTelemetry).
+- **Next step:** A worker liveness signal (for example a heartbeat row the API's readiness or the metrics expose),
+  then optional OpenTelemetry as an extra that is off by default. The nodestro-server RUNBOOK ("Metrics and status")
+  documents `/api/ready`, `X-Request-ID` and `NODESTRO_LOG_FORMAT`.
 - **Depends on:** nodestro-server (RUNBOOK monitoring section)
-
-### API-012 · No OpenAPI contract for the server routes
-
-- **Priority:** P4 Optional · **Status:** Open · **Refs:** backend audit D-18
-- **What:** `openapi/nodestro-api.json` describes the desktop app. The identity and tenant routes of
-  `create_tenant_app` have no contract, so the SDKs are not contract-tested against the server profile.
-- **Next step:** Generate a second OpenAPI document from `create_tenant_app`, with a test like the existing one.
-- **Depends on:** nodestro-sdk (contract tests, SDK-005)
 
 ## Performance
 
@@ -251,7 +210,7 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
 - **What:** Members, roles and sessions can be managed only with the operator CLI (`set-role`, `remove-member`,
   `revoke-sessions`). Tenant owners have no API for it, and invitations do not exist.
 - **Next step:** Add admin routes for members, roles and invitations (permission `admin`), with audit events
-  (API-004).
+  (the access audit trail, `GET /api/access-audit`, exists).
 - **Depends on:** nodestro-studio (access UI)
 
 ### API-020 · Tool approval phase for published workflow APIs
@@ -308,41 +267,24 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
   (`SandboxStatus`, nodestro-sdk, pin `dde77f5`).
 - **Depends on:** None
 
-### API-042 · Approval nodes are not four-eyes; conversations have no owner
+### API-042 · Approval nodes are not four-eyes
 
 - **Priority:** P4 Optional · **Status:** Open · **Refs:** backend audit round 2 API2-15 (by design)
-- **What:** Inside a tenant, a member with run permission may approve the approval node of their own run, any editor
-  can read, rename or delete assistant conversations, and the edit permission can delete a run with its approval
-  record. This is the documented role model, not a defect.
-- **Next step:** Decide whether approval nodes get a "needs another member" option and conversations get an owner.
+- **What:** Inside a tenant, a member with run permission may approve the approval node of their own run, and the
+  edit permission can delete a run with its approval record. This is the documented role model, not a defect.
+  (Assistant conversations have an owner on the server since the settings/providers round; older ones get one with
+  `nodestro-server assistant backfill-owners`.)
+- **Next step:** Decide whether approval nodes get a "needs another member" option.
 
-### API-052 · Run search in `GET /api/search`
+### API-053 · Developer messages: names of missing items
 
-- **Priority:** P4 Optional · **Status:** Open · **Refs:** UX round 3 backlog handover H1, studio ST-008 (done,
-  studio #123; issue studio #83 closed)
-- **What:** The studio's global search filters only the newest 100 runs on the client; older runs are not found,
-  and the server profile's search has no runs.
-- **Next step:** Add a `SearchResult` kind `run` (id = run id, title = workflow name, subtitle = status, snippet =
-  input excerpt, `workflow_id`), matched on workflow name, input text and run id, newest first, with the same read
-  permission as `/api/runs`. Regenerate the contract and the SDK types.
-- **Depends on:** None
-
-### API-053 · Developer messages: export check and jobs, not-found names, exported client, server check
-
-- **Priority:** P4 Optional · **Status:** Open · **Refs:** UX round 3 DX handovers B15-B18, apicodes handovers B-2 to B-4, examples handovers B-2 and B-4
-- **What:** The export check does not report `export.server_unsupported` or the server's size limit up front, so the
-  refusal appears only on "Build package"; export jobs carry no `error_params`, so a failed job's message loses its
-  details; the `*.not_found` codes send no display name, so the studio cannot name the missing item (UX round 3
-  apicodes handovers B-2 to B-4). The exported `examples/client.py` has a fixed base URL and prints a traceback on HTTP errors; the export
-  README shows an approval section and "-" when the workflow has no approval steps, and the exported approval test
-  returns instead of skipping; `local.*` task errors do not list the allowed tasks; `nodestro-server check` prints
-  all profile problems in one line. Workflow summaries list contract field names only (no descriptions), and the
-  model plan of `/api/library/{id}/models` names parts by id only (examples handovers B-2, B-4).
-- **Next step:** Report the server refusal and limit in the export check; add `error_params` to export jobs; add
-  `params.display` where the name is known. `NODESTRO_BASE_URL` with the current default and the error code from the
-  JSON body in the client;
-  leave out the empty approval section, "none" instead of "-", `pytest.skip`; `params.allowed`; one problem per line; contract
-  field objects in summaries and `part_name` in the model plan.
+- **Priority:** P4 Optional · **Status:** Open · **Refs:** UX round 3 apicodes handovers B-2 to B-4
+- **What:** The `*.not_found` codes send the id they looked for, but no display name, so the studio cannot name a
+  missing item that another one refers to (a sub-workflow, a knowledge collection, a tool). The rest of the entry
+  (export check and jobs, exported client and README, `params.allowed`, server check lines, contract fields in the
+  workflow list, part names in the model plan) was done in the TODO abatement round of 2026-11-06.
+- **Next step:** Where a reference names the missing item (for example a node that points to a deleted workflow),
+  add `params.display`; together with the error code catalog of API-016.
 - **Depends on:** None
 
 ### API-056 · Retention for assistant chat files
@@ -351,53 +293,15 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
 - **What:** Files attached in assistant conversations are kept until the conversation is deleted.
 - **Next step:** Admin-configurable retention, enforced by the existing cleanup job.
 
-### API-057 · Older assistant conversations have no owner on the server
-
-- **Priority:** P4 Optional · **Status:** Open · **Refs:** settings/providers round 2026-11-06 (attachments stream)
-- **What:** Conversations created before the owner field stay visible to the whole tenant.
-- **Next step:** Backfill the owner from the first message's author where it is known; leave the rest tenant-visible and documented.
-
-### API-058 · Published API answer for a blocked local model
-
-- **Priority:** P3 Low · **Status:** Open · **Refs:** settings/providers round 2026-11-06 (missing-model stream)
-- **What:** A published API call refused by `check.local_model_missing` returns the error, but no hint that an operator can fix it in the studio.
-- **Next step:** Add a short operator hint (no internal details) to the error body.
-
-### API-059 · Run chat live answers only within one API process
-
-- **Priority:** P3 Low · **Status:** Open · **Refs:** settings/providers round 2026-11-06 (thinking stream, THINK-2)
-- **What:** Live run chat answers stream only when the run and the chat request share an API process.
-- **Next step:** Relay through the store or event bus used for run events across processes.
-
 ### API-060 · Internal assistants on Anthropic use the default thinking display
 
-- **Priority:** P4 Optional · **Status:** Open · **Refs:** settings/providers round 2026-11-06 (thinking stream, THINK-3)
-- **What:** Internal assistants do not request summarized thinking from Anthropic, so the studio shows "not transmitted".
-- **Next step:** Request `display: summarized` when the user enabled the thinking display.
-
-### API-061 · Settings defaults are not exposed
-
-- **Priority:** P4 Optional · **Status:** Open · **Refs:** settings/providers round 2026-11-06 (settings UI stream)
-- **What:** The studio can mark changed settings only in the Advanced section because the API does not return the defaults.
-- **Next step:** Return the default next to each setting; the studio then shows "default" or "changed" on every field (ST-059).
-
-### API-062 · `local.job_running` is a 400 while `/stop` answers 409
-
-- **Priority:** P4 Optional · **Status:** Open · **Refs:** settings/providers round 2026-11-06 (local setup stream)
-- **What:** Two status codes for the same conflict.
-- **Next step:** Answer 409 for `local.job_running` (compatible: the code stays the same).
-
-### API-063 · Publication overview: running exports and a lighter read
-
-- **Priority:** P4 Optional · **Status:** Open · **Refs:** settings/providers round 2026-11-06 (publications stream)
-- **What:** `GET /api/publication-overview` lists finished exports only and loads the active release bundle per publication.
-- **Next step:** Optionally list running portable export jobs; read a release summary instead of the whole bundle.
-
-### API-065 · Assistant chat does not use `InvalidRequestError.reason`
-
-- **Priority:** P4 Optional · **Status:** Open · **Refs:** settings/providers round 2026-11-06 (Ollama 400 fix, O400-1)
-- **What:** Runs name a refused conversation and a too-large conversation; the assistant chat still reports a generic provider error.
-- **Next step:** Map `reason` to the same codes in the assistant chat.
+- **Priority:** P4 Optional · **Status:** Needs decision · **Refs:** settings/providers round 2026-11-06 (thinking
+  stream, THINK-3)
+- **What:** Internal assistants do not request summarized thinking from Anthropic, so the studio shows "not
+  transmitted". The thinking display is a preference of the browser only; the API does not know it, and requesting
+  `display: summarized` means turning on adaptive thinking for every internal assistant call (cost and latency).
+- **Next step:** Decide whether the preference becomes a workspace setting (or a per-request flag the studio sends);
+  then request `display: summarized` only while it is on.
 
 ## Tests and quality assurance
 
@@ -405,10 +309,9 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** backend audit final report, section 9 ("known test gaps")
 - **What:** The following cases have not been run: schedules changed during a tick with several processes (C-09),
-  atomicity of workflow deletion on a crash (C-16), recovery of test series (C-15), and redaction of the MCP OAuth
-  callback in the access log (D-02).
-- **Next step:** Add PostgreSQL-backed multi-process tests for C-09 and an access-log test for the MCP OAuth
-  callback. Test C-15 and C-16 with a forced crash.
+  atomicity of workflow deletion on a crash (C-16) and recovery of test series (C-15). (The MCP OAuth callback in
+  the access log, D-02, is covered by `test_setup_tokens_and_sign_in_codes_never_reach_the_access_log`.)
+- **Next step:** Add PostgreSQL-backed multi-process tests for C-09. Test C-15 and C-16 with a forced crash.
 
 ### API-040 · Run budget decisions: browser and server image checks
 
@@ -500,7 +403,7 @@ None known.
 | API-005 | nodestro-runtime | RT-010 | runtime adds old-key decryption; the operator command lives here |
 | API-009 | nodestro-runtime | RT-014 | runtime provides deletes |
 | API-011 | nodestro-server | SRV-007 (RUNBOOK monitoring section) | server documents what this adds |
-| API-012 | nodestro-sdk | SDK-005 | SDK contract tests use the server contract |
+| (pointer) | nodestro-sdk | SDK-005 | the server contract `openapi/nodestro-api-server.json` exists now (API-012 done); the SDK contract tests can use it |
 | API-013 | nodestro-runtime | RT-009 (store time filter) | runtime change first |
 | API-016 | nodestro-runtime | RT-011 | combined code list |
 | (pointer) | nodestro-runtime | RT-055 (origin of an example copy, UX round 3 examples handover B-1) | runtime stores the origin; the API exposes it read-only; full entry in runtime |
@@ -512,7 +415,7 @@ None known.
 | API-021 | nodestro-runtime | RT-015 | runtime change first |
 | API-023 | nodestro-server | SRV-013 (PostgreSQL load test) | load test runs there |
 | (pointer) | nodestro-local-docker | LD-010 (session hardening) | implementation would be here; tracked there |
-| API-001, API-002, API-005, API-006, API-010, API-019 | nodestro-server | RUNBOOK limitations (pointer rows in its table) | server documents the current limits until these land |
+| API-001, API-005, API-010, API-019 | nodestro-server | RUNBOOK limitations (pointer rows in its table) | server documents the current limits until these land |
 
 ## CI access to private repositories
 
