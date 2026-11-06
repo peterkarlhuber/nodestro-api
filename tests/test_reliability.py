@@ -549,3 +549,50 @@ def test_workflow_delete_is_one_transaction(make_app: Any, monkeypatch: pytest.M
     assert ctx.store.get_raw("workflows", workflow_id) is not None
     assert len(ctx.versions.all(workflow_id)) == 2
     assert ctx.store.get_raw(SCHEDULES, schedule["id"]) is not None
+
+
+def test_a_live_answer_is_relayed_to_streams_of_other_api_processes(pg_schema: str, tmp_path: Path) -> None:
+    """API-059: the process that writes an answer stores its progress; another process's view shows it while the
+    question is pending, and the relayed document goes when the answer ends (or once the question is settled)."""
+    import threading
+
+    from nodestro_runtime.run_chat import RunMessage
+    from nodestro_runtime.storage_postgres import PostgresDatabase
+
+    from nodestro_api import api_run_chat
+    from nodestro_api.server_app import TenantFiles
+
+    databases = [PostgresDatabase(DSN, schema=pg_schema) for _ in range(2)]
+    writer = TenantFiles(database=databases[0], data_root=tmp_path, integrations=[]).open("acme")
+    reader = TenantFiles(database=databases[1], data_root=tmp_path, integrations=[]).open("acme")
+    try:
+        question = RunMessage(
+            run_id="run_1", target_run_id="run_1", node_id="lead", kind="question", content="Why?", status="pending"
+        )
+        live = writer.runs.chat.begin_answer(question)
+        writer.runs.chat.update_live(question.id, lambda item: setattr(item, "text", "Because"))
+        assert live.question_id == question.id
+        done = threading.Event()
+        relay = threading.Thread(target=api_run_chat.relay_answer, args=(writer, question, done, 0.02))
+        relay.start()
+        deadline = time.monotonic() + 5
+        seen: list[Any] = []
+        while time.monotonic() < deadline and not seen:
+            seen = api_run_chat._answering(reader, "run_1", [question])
+            time.sleep(0.02)
+        assert [(item.question_id, item.text) for item in seen] == [(question.id, "Because")]
+        assert reader.runs.chat.live_answers("run_1") == []  # not this process's own answer
+        done.set()
+        relay.join(5)
+        writer.runs.chat.end_answer(question.id)
+        assert api_run_chat._answering(reader, "run_1", [question]) == []
+        # A document a stopped process left behind goes once its question is no longer pending.
+        reader.store.put(api_run_chat.LIVE_COLLECTION, question.id, live)
+        settled = question.model_copy(update={"status": "failed"})
+        assert api_run_chat._answering(reader, "run_1", [settled]) == []
+        assert reader.store.get(api_run_chat.LIVE_COLLECTION, question.id, type(live)) is None
+    finally:
+        reader.close()
+        writer.close()
+        for database in databases:
+            database.close()
