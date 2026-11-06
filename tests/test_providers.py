@@ -418,9 +418,14 @@ def test_a_missing_provider_never_falls_back(providers_app: Callable[..., TestCl
 
 def test_anthropic_only_options_are_refused_for_other_providers(providers_app: Callable[..., TestClient]) -> None:
     client = providers_app()
-    for option in ({"thinking": "adaptive"}, {"server_tools": ["web_search"]}, {"cache_ttl": "1h"}):
+    # Refused by capability (the model has no such option), with the reason; never dropped silently.
+    for option, code in (
+        ({"thinking": "adaptive"}, "config.option_unsupported"),
+        ({"server_tools": ["web_search"]}, "config.native_tool_unsupported"),
+        ({"cache_ttl": "1h"}, "config.option_unsupported"),
+    ):
         issues = client.post("/api/agents/validate", json={"model": "openai:gpt-5.5", **option}).json()
-        assert [issue["code"] for issue in issues if issue["level"] == "error"] == ["config.anthropic_only"], option
+        assert [issue["code"] for issue in issues if issue["level"] == "error"] == [code], option
     # For Anthropic they stay available.
     assert not [
         issue

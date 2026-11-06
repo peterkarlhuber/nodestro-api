@@ -392,7 +392,7 @@
         "type": "object"
       },
       "AgentConfig": {
-        "description": "Everything about one agent node; mirrors the arguments of ``orkexa.Agent``.\n\n``model`` names the provider and the model (``provider:model``). ``thinking``,\n``thinking_display``, ``cache_control``, ``cache_ttl``, ``fallbacks`` and ``server_tools``\nare options of the Anthropic API (``orkexa.AnthropicOptions``); for other providers\nthey must keep their defaults (see :mod:`nodestro_runtime.agent_builder`).",
+        "description": "Everything about one agent node; mirrors the arguments of ``orkexa.Agent``.\n\n``model`` names the provider and the model (``provider:model``). ``thinking``,\n``thinking_display``, ``thinking_budget``, ``cache_control``, ``cache_ttl``, ``fallbacks`` and\n``server_tools`` depend on what the model supports (:mod:`nodestro_runtime.model_profile`); a model that\ncannot use one refuses a value other than its default (see :mod:`nodestro_runtime.agent_builder`).\n\n``max_tokens`` is the most output tokens per model response (reasoning counts against it); it may not exceed\nthe model's documented or declared maximum (``GET /api/models/profile``). The upper bound here only catches\ntypos: no model accepts more.",
         "properties": {
           "cache_control": {
             "default": true,
@@ -459,7 +459,7 @@
           },
           "max_tokens": {
             "default": 8000,
-            "maximum": 128000.0,
+            "maximum": 1000000.0,
             "minimum": 1.0,
             "title": "Max Tokens",
             "type": "integer"
@@ -548,6 +548,19 @@
               }
             ],
             "title": "Thinking"
+          },
+          "thinking_budget": {
+            "anyOf": [
+              {
+                "maximum": 1000000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thinking Budget"
           },
           "thinking_display": {
             "anyOf": [
@@ -11280,6 +11293,79 @@
         "title": "ModelInfo",
         "type": "object"
       },
+      "ModelLimitsInfo": {
+        "description": ":class:`orkexa.ModelLimits` for the interface (``None``: unknown).",
+        "properties": {
+          "context_window": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window"
+          },
+          "efforts": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Efforts"
+          },
+          "max_output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Output Tokens"
+          },
+          "source": {
+            "default": "unknown",
+            "title": "Source",
+            "type": "string"
+          },
+          "thinking_budget": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thinking Budget"
+          },
+          "thinking_modes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thinking Modes"
+          }
+        },
+        "title": "ModelLimitsInfo",
+        "type": "object"
+      },
       "ModelPolicy": {
         "description": "How a model is chosen from measurements; nothing in it is a quality value of its own.",
         "properties": {
@@ -11313,6 +11399,83 @@
           }
         },
         "title": "ModelPolicy",
+        "type": "object"
+      },
+      "ModelProfile": {
+        "description": "Capabilities, limits and agent options of one model as the workspace runs it.",
+        "properties": {
+          "capabilities": {
+            "additionalProperties": {
+              "enum": [
+                "supported",
+                "unsupported",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "object"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/ModelLimitsInfo"
+          },
+          "max_tokens_limit": {
+            "title": "Max Tokens Limit",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "native_tools": {
+            "items": {
+              "$ref": "#/components/schemas/NativeToolSupport"
+            },
+            "title": "Native Tools",
+            "type": "array"
+          },
+          "options": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/OptionSupport"
+            },
+            "title": "Options",
+            "type": "object"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "reasons": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "max_tokens_limit"
+        ],
+        "title": "ModelProfile",
         "type": "object"
       },
       "ModelSpeed": {
@@ -11416,6 +11579,36 @@
           "local"
         ],
         "title": "ModelUse",
+        "type": "object"
+      },
+      "NativeToolSupport": {
+        "description": "A provider-native tool (run by the provider, never by Nodestro) and whether this model can use it.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "key",
+          "available"
+        ],
+        "title": "NativeToolSupport",
         "type": "object"
       },
       "NeededRequirement": {
@@ -12029,6 +12222,45 @@
           }
         },
         "title": "NodeRun",
+        "type": "object"
+      },
+      "OptionSupport": {
+        "description": "Whether an agent option can be used with a model; ``reason`` says why not (a code the editor translates).\n\nReasons: ``provider`` (the provider's API has no such setting), ``model`` (the model does not accept it),\n``automatic`` (the provider does it by itself, e.g. prompt caching at OpenAI and Gemini), ``not_mapped`` (the\nprovider has a similar feature that Nodestro does not offer as this option), ``unknown`` (not documented for this\nmodel).",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "values": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Values"
+          }
+        },
+        "required": [
+          "available"
+        ],
+        "title": "OptionSupport",
         "type": "object"
       },
       "OrchestratorConfig": {
@@ -13951,6 +14183,20 @@
             ],
             "title": "Data Residency"
           },
+          "limits": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limits"
+          },
           "profile_name": {
             "anyOf": [
               {
@@ -14107,6 +14353,13 @@
           "label": {
             "title": "Label",
             "type": "string"
+          },
+          "limits": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Limits",
+            "type": "object"
           },
           "local_server": {
             "default": false,
@@ -18505,6 +18758,20 @@
           "label": {
             "title": "Label",
             "type": "string"
+          },
+          "providers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Providers",
+            "type": "array"
+          },
+          "unpriced_providers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unpriced Providers",
+            "type": "array"
           }
         },
         "required": [
@@ -18534,6 +18801,16 @@
             "default": 2,
             "title": "Architect Max Repairs",
             "type": "integer"
+          },
+          "architect_retry_max_tokens": {
+            "default": 64000,
+            "title": "Architect Retry Max Tokens",
+            "type": "integer"
+          },
+          "architect_retry_truncated": {
+            "default": true,
+            "title": "Architect Retry Truncated",
+            "type": "boolean"
           },
           "assistant_model": {
             "default": "anthropic:claude-opus-5-5",
@@ -18665,6 +18942,20 @@
             ],
             "title": "Operator Max Run Budget Usd"
           },
+          "output_limit_defaults": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Output Limit Defaults",
+            "type": "object"
+          },
+          "output_limits": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Output Limits",
+            "type": "object"
+          },
           "prefer_european_models": {
             "default": false,
             "title": "Prefer European Models",
@@ -18753,6 +19044,30 @@
               }
             ],
             "title": "Architect Max Repairs"
+          },
+          "architect_retry_max_tokens": {
+            "anyOf": [
+              {
+                "maximum": 1000000.0,
+                "minimum": 1024.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Architect Retry Max Tokens"
+          },
+          "architect_retry_truncated": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Architect Retry Truncated"
           },
           "assistant_model": {
             "anyOf": [
@@ -18899,6 +19214,27 @@
               }
             ],
             "title": "Ocr Enabled"
+          },
+          "output_limits": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Limits"
           },
           "prefer_european_models": {
             "anyOf": [
@@ -28868,6 +29204,48 @@
           }
         },
         "summary": "Get Model Capabilities"
+      }
+    },
+    "/api/models/profile": {
+      "get": {
+        "description": "Capabilities, limits (context window, maximum output, efforts, thinking modes) and agent options of a model.",
+        "operationId": "get_model_profile_api_models_profile_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "model",
+            "required": true,
+            "schema": {
+              "maxLength": 2048,
+              "minLength": 1,
+              "title": "Model",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelProfile"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Model Profile"
       }
     },
     "/api/organize": {
