@@ -1685,9 +1685,7 @@ def _error_lines(error: NodestroError) -> str:
     reasons = [str(item.get("reason", "")) for item in problems or [] if isinstance(item, dict) and item.get("reason")]
     if not reasons:
         return f"{error.code}: {error}"
-    return "\n".join(
-        [f"{error.code}: The server cannot start: {len(reasons)} problems", *(f"- {r}" for r in reasons)]
-    )
+    return "\n".join([f"{error.code}: The server cannot start: {len(reasons)} problems", *(f"- {r}" for r in reasons)])
 
 
 if __name__ == "__main__":  # pragma: no cover
