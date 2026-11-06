@@ -30,6 +30,8 @@ import asyncio
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
+import contextvars
+from copy import deepcopy
 from datetime import datetime
 from decimal import Decimal
 import json
@@ -43,6 +45,8 @@ from nodestro_runtime.catalog import SERVER_TOOLS, models
 from nodestro_runtime.cost_tracking import PricedTracker, PriceMode
 from nodestro_runtime.engine import PLACEHOLDER, node_label, usage_of
 from nodestro_runtime.memory_spaces import SPACE_PATTERN
+from nodestro_runtime.model_profile import OPTION_DEFAULTS
+from nodestro_runtime.output_limits import EffectiveLimit, retry_limit
 from nodestro_runtime.preflight import PROVIDER_CHECKS, WorkflowCheck, preflight
 from nodestro_runtime.pricing import PricingService
 from nodestro_runtime.problems import NodestroError, Problem, library_problem, problem
@@ -51,6 +55,7 @@ from nodestro_runtime.python_deps import analyze as analyze_dependencies
 from nodestro_runtime.python_deps import blocking as blocking_dependency_issues
 from nodestro_runtime.reasoning import ReasoningKind, ReasoningTrace, reasoning_hook
 from nodestro_runtime.schemas import (
+    MAX_TOKENS_BOUND,
     AgentConfig,
     AgentTemplate,
     ApprovalConfig,
@@ -82,7 +87,7 @@ from nodestro_runtime.schemas import (
 )
 from nodestro_runtime.tool_drafts import ToolDraft
 from nodestro_runtime.tool_library import CODING_PROMPT
-from orkexa import Agent, UsageRecord, UsageTracker
+from orkexa import Agent, IncompleteResponseError, UsageRecord, UsageTracker
 from orkexa.dynamic import BudgetExceededError, CodingAgent, check_tool_source, check_tool_tests
 from orkexa.dynamic.policy import RESERVED_TOOL_NAMES
 from orkexa.usage import summarize_usage
@@ -447,6 +452,24 @@ class _JobTracker(PricedTracker):
         if self.cancelled.is_set():
             raise JobCancelled()
 
+    def try_reserve(self, *, agent: str, provider: str, model: str, amount: Decimal | None) -> Any:
+        # A retry with a higher output limit is sent only when its whole cost bound fits into what is left of the
+        # budget: unlike a first request, it is never admitted as an "oversized" request that may overshoot.
+        if _STRICT_BUDGET.get() and self.limit_usd is not None and amount is not None:
+            spent = self.spent_usd
+            if spent + amount > self.limit_usd:
+                raise BudgetExceededError(
+                    f"Budget too small for a retry with a higher output limit: it can cost up to ${amount:.4f}, "
+                    f"${self.limit_usd - spent:.4f} of ${self.limit_usd:.4f} left; request of agent {agent!r} to "
+                    f"{provider}:{model} not sent",
+                    **self._details(self.limit_usd, spent, amount, "request_too_large"),
+                )
+        return super().try_reserve(agent=agent, provider=provider, model=model, amount=amount)
+
+
+#: Set while the architect retries a cut-off answer (see :meth:`_JobTracker.try_reserve`).
+_STRICT_BUDGET: contextvars.ContextVar[bool] = contextvars.ContextVar("architect_strict_budget", default=False)
+
 
 _SNAKE = re.compile(r"[^a-z0-9_]+")
 
@@ -679,6 +702,11 @@ class _Session:
         settings = self.nodestro.settings()
         self.model = settings.assistant_model
         self.default_model = settings.default_model
+        #: Whether a cut-off answer is asked again with a higher output limit, and the highest limit that may use.
+        self.retry_truncated = settings.architect_retry_truncated
+        self.retry_max_tokens = settings.architect_retry_max_tokens
+        #: The operations whose effective output limit was already logged (once per job).
+        self._limits_logged: set[str] = set()
         self.tracker = _JobTracker(
             job.budget_usd,
             cancelled,
@@ -795,18 +823,30 @@ class _Session:
         )
 
     def ask(
-        self, name: str, prompt: str, system: str, output: type[BaseModel], *, effort: Effort, max_tokens: int
+        self, name: str, prompt: str, system: str, output: type[BaseModel], *, effort: Effort, operation: str
     ) -> Any:
+        """One structured answer of the assistant model, with the output limit of ``operation``.
+
+        The limit is the workspace setting ``output_limits.<operation>`` (else the built-in default), capped by the
+        model's maximum; the job log names it, and says so when it was lowered. An answer cut off at the limit
+        (``max_tokens``/``length``) is never used half: with ``architect_retry_truncated`` it is asked once more with
+        a higher limit (doubled, at most ``architect_retry_max_tokens`` and the model's maximum). Every request goes
+        through the job's budget, which reserves the higher limit too; a retry is sent only when that whole bound
+        fits into what is left (never as an oversized request), so it never bypasses the cost limit.
+        Otherwise the job fails with ``architect.truncated``, naming the step, the limit and the setting.
+        """
         self.check()
         self._step, self._reasoning = _DETAILS.get(name, "plan"), None
         connection = self._connection()
+        limit = self.nodestro.output_limit(operation, self.model, connection)
+        self._log_limit(limit)
         agent: Agent[Any] = Agent(
             name=name,
             model=model_id(self.model),
             system_prompt=system,
             output_format=output,
             effort=connection.effort(self.model, effort),
-            max_tokens=max_tokens,
+            max_tokens=limit.value,
             max_tool_rounds=0,
             options=connection.options(),
             max_retries=MAX_RETRIES,
@@ -814,7 +854,78 @@ class _Session:
             **connection.agent_kwargs(self.model),
             **self._hooks(),
         )
-        return agent.ask(prompt)
+        max_tokens = limit.value
+        retrying = False
+        while True:
+            token = _STRICT_BUDGET.set(retrying)
+            try:
+                return agent.ask(prompt, max_tokens=max_tokens)
+            except BudgetExceededError as exc:
+                if not retrying or exc.reason != "request_too_large":
+                    raise
+                # The cut-off answer is the real problem: say so, and why the higher limit was not tried.
+                limit_usd = exc.limit_usd or Decimal(0)
+                left = limit_usd - (exc.spent_usd or Decimal(0))
+                raise NodestroError(
+                    "architect.truncated_over_budget",
+                    f"The answer of step {operation} was cut off at its output limit. A retry with up to "
+                    f"{max_tokens} tokens could cost up to ${exc.requested_usd or 0:.2f}, more than the ${left:.2f} "
+                    "left in the job's budget, so it was not sent. Raise the job's budget or the step's output limit",
+                    operation=operation,
+                    max_tokens=max_tokens,
+                    retry=True,
+                    reason="budget",
+                    budget=float(limit_usd),
+                ) from None
+            except IncompleteResponseError:
+                higher = (
+                    retry_limit(max_tokens, self.retry_max_tokens, connection.model_limits(self.model))
+                    if self.retry_truncated
+                    else None
+                )
+                if higher is None:
+                    raise NodestroError(
+                        "architect.truncated",
+                        f"The answer of step {operation} was cut off at its output limit of {max_tokens} tokens. "
+                        "Raise the limit for this step in the settings (model output limits), or describe a "
+                        "smaller workflow",
+                        operation=operation,
+                        max_tokens=max_tokens,
+                        retry=self.retry_truncated,
+                        reason="limit",
+                    ) from None
+                self.log(
+                    "architect.truncated_retry",
+                    f"The answer was cut off at {max_tokens} tokens; asking again with up to {higher} tokens",
+                    level="warning",
+                    operation=operation,
+                    max_tokens=max_tokens,
+                    higher=higher,
+                )
+                max_tokens = higher
+                retrying = True
+            finally:
+                _STRICT_BUDGET.reset(token)
+
+    def _log_limit(self, limit: EffectiveLimit) -> None:
+        """Name each step's output limit once in the job log; a lowered limit as a warning with the reason."""
+        if limit.operation in self._limits_logged:
+            return
+        self._limits_logged.add(limit.operation)
+        if limit.reduced:
+            self.log(
+                "architect.limit_reduced",
+                f"Output limit of {limit.operation}: {limit.configured} tokens lowered to {limit.value} "
+                f"({limit.reduced.replace('_', ' ')} of the model)",
+                level="warning",
+                **limit.params(),
+            )
+        else:
+            self.log(
+                "architect.limit",
+                f"Output limit of {limit.operation}: {limit.value} tokens ({limit.source})",
+                **limit.params(),
+            )
 
     def _connection(self) -> Connection:
         if self.connection is None:
@@ -900,7 +1011,7 @@ class _Session:
             ANALYST_PROMPT + rule,
             RequirementAnalysis,
             effort="medium",
-            max_tokens=4000,
+            operation="architect_analysis",
         )
         job.analysis = analysis
         job.assumptions = list(analysis.assumptions)
@@ -934,7 +1045,7 @@ class _Session:
             "keys, tool names and output field names stay English snake_case",
         )
         plan: WorkflowPlan = self.ask(
-            PLANNER, prompt, PLAN_PROMPT + rule, WorkflowPlan, effort="high", max_tokens=16000
+            PLANNER, prompt, PLAN_PROMPT + rule, WorkflowPlan, effort="high", operation="architect_plan"
         )
         job.summary = plan.summary
         job.assumptions = list(dict.fromkeys([*job.assumptions, *plan.assumptions]))
@@ -956,7 +1067,7 @@ class _Session:
             f"Resources:\n{json.dumps(self._catalogs(), indent=1, ensure_ascii=False)}"
         )
         plan: WorkflowPlan = self.ask(
-            PLANNER, prompt, REVISE_PROMPT + rule, WorkflowPlan, effort="high", max_tokens=16000
+            PLANNER, prompt, REVISE_PROMPT + rule, WorkflowPlan, effort="high", operation="architect_plan"
         )
         job.summary = plan.summary
         job.assumptions = list(plan.assumptions)
@@ -1314,7 +1425,12 @@ class _Session:
                 f"Allowed models: {json.dumps(self.nodestro.allowed_models())}"
             )
             revision: AgentRevision = self.ask(
-                REVISER, prompt, REVISION_PROMPT + rule, AgentRevision, effort="medium", max_tokens=8000
+                REVISER,
+                prompt,
+                REVISION_PROMPT + rule,
+                AgentRevision,
+                effort="medium",
+                operation="architect_agent",
             )
             current = _apply_revision(current, revision, self.nodestro)
         return self.apply_plan(current, item)
@@ -1358,6 +1474,7 @@ class _Session:
             model=qualify(self.model),
             system_prompt=CODING_PROMPT,
             effort=connection.effort(self.model, "high"),
+            max_tokens=self.nodestro.output_limit("tool_generation", self.model, connection).value,
             credentials={connection.provider: connection.settings(self.model)},
             usage_tracker=self.tracker,
         )
@@ -1637,7 +1754,12 @@ class _Session:
                 f"Allowed models: {json.dumps(self.nodestro.allowed_models())}"
             )
             revision: AgentRevision = self.ask(
-                REPAIRER, prompt, REPAIR_PROMPT + rule, AgentRevision, effort="low", max_tokens=6000
+                REPAIRER,
+                prompt,
+                REPAIR_PROMPT + rule,
+                AgentRevision,
+                effort="low",
+                operation="architect_repair",
             )
             node.agent = _apply_revision(node.agent, revision, self.nodestro, keep=set(self.pending_tools))
             node.label = node.agent.name
@@ -1991,7 +2113,10 @@ def _apply_revision(
     if revision.server_tools is not None:
         config.server_tools = [name for name in dict.fromkeys(revision.server_tools) if name in SERVER_TOOLS]
     if revision.max_tokens is not None:
-        config.max_tokens = min(max(revision.max_tokens, 1024), 64_000)
+        # At least 1,024, at most the agent model's documented or declared maximum (the configuration bound when
+        # unknown); formerly a fixed 64,000 regardless of the model.
+        ceiling = nodestro.builder.limits(config.model).max_output_tokens or MAX_TOKENS_BOUND
+        config.max_tokens = min(max(revision.max_tokens, 1024), ceiling)
     if revision.max_tool_rounds is not None:
         config.max_tool_rounds = min(max(revision.max_tool_rounds, 0), 30)
     return config
@@ -2283,6 +2408,21 @@ def _fix_config(config: AgentConfig, issue: ConfigIssue, nodestro: Nodestro, pen
     if code == "config.duplicate_tool":
         config.tools = list(dict.fromkeys(config.tools))
         config.server_tools = list(dict.fromkeys(config.server_tools))
+        return True
+    if code == "config.max_tokens_above_model" and isinstance(issue.params.get("maximum"), int):
+        config.max_tokens = int(issue.params["maximum"])
+        return True
+    if code == "config.option_unsupported" and issue.params.get("option") in OPTION_DEFAULTS:
+        option = str(issue.params["option"])
+        setattr(config, option, deepcopy(OPTION_DEFAULTS[option]))
+        if option == "thinking":
+            config.thinking_display = None
+        return True
+    if code == "config.native_tool_unsupported":
+        config.server_tools = [name for name in config.server_tools if name != issue.params.get("name")]
+        return True
+    if code == "config.thinking_budget_with_effort":
+        config.effort = None
         return True
     if code == "config.limits_invalid":
         config.max_tokens = max(config.max_tokens, 1024)

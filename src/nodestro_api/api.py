@@ -24,6 +24,7 @@ from nodestro_runtime.engine import check_workflow
 from nodestro_runtime.knowledge import KnowledgeFile
 from nodestro_runtime.launcher import launch
 from nodestro_runtime.memory_spaces import MemoryFile, MemorySpaceInfo, check_space_name
+from nodestro_runtime.model_profile import ModelProfile
 from nodestro_runtime.preflight import WorkflowCheck, preflight
 from nodestro_runtime.preview import ContextPreview, PreviewRequest, build_preview, latest_run
 from nodestro_runtime.problems import NodestroError
@@ -343,6 +344,16 @@ def get_model_capabilities(model: Annotated[str, Query(min_length=1, max_length=
     """Orkexa's capabilities of one qualified model id (``bedrock:eu.anthropic...-v1:0``, an ARN; colons kept)."""
     reasoning = model_reasoning(ctx.builder, model, summaries=ctx.settings().reasoning_summaries)
     return ModelCapabilities(model=model, capabilities=model_capabilities(model), reasoning=reasoning)
+
+
+# What the editor needs to show an agent's options by the model's real capabilities (not by provider name): Orkexa's
+# capabilities with this workspace's declared values, the documented or declared token limits, which model-dependent
+# options apply (with a reason when not) and the provider-native tools. The capabilities route above stays for older
+# clients (Bedrock only). Free and local: no request to any provider.
+@router.get("/models/profile", dependencies=READ)
+def get_model_profile(model: Annotated[str, Query(min_length=1, max_length=2048)], ctx: Ctx) -> ModelProfile:
+    """Capabilities, limits (context window, maximum output, efforts, thinking modes) and agent options of a model."""
+    return ctx.builder.profile(model)
 
 
 def _is_admin(request: Request) -> bool:
