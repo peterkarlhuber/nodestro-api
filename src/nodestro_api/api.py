@@ -269,10 +269,57 @@ _ERROR_RESPONSE = {
 }
 
 
+#: The tag of a studio operation in the OpenAPI document by the first part of its path after ``/api/`` (API-016), so
+#: ``/api/docs`` groups the operations; operations that set their own tag keep it, and any other path is "workspace".
+PATH_TAGS: dict[str, str] = {
+    "workflows": "workflows",
+    "runs": "runs",
+    "approvals": "runs",
+    "budget-requests": "runs",
+    "publications": "publications",
+    "publication-overview": "publications",
+    "api-keys": "publications",
+    "api-network": "publications",
+    "api-guides": "publications",
+    "exports": "publications",
+    "export-jobs": "publications",
+    "local-models": "local models",
+    "mcp": "MCP",
+    "pricing": "pricing",
+    "usage": "pricing",
+    "tools": "tools",
+    "tool-approvals": "tool approvals",
+    "tool-pre-grants": "tool approvals",
+    "python": "Python environments",
+    "sandbox": "tools",
+    "agents": "agents",
+    "models": "agents",
+    "architect": "architect",
+    "assistant": "assistant",
+    "knowledge": "knowledge",
+    "inputs": "knowledge",
+    "memory": "memory",
+    "batches": "automation",
+    "benchmarks": "automation",
+    "benchmark-runs": "automation",
+    "schedules": "automation",
+    "library": "examples",
+    "backup": "backup",
+    "settings": "settings",
+}
+DEFAULT_TAG = "workspace"
+
+
+def path_tag(path: str) -> str:
+    """The OpenAPI tag of a studio path (:data:`PATH_TAGS`)."""
+    first = path.removeprefix("/api/").split("/", 1)[0]
+    return PATH_TAGS.get(first, DEFAULT_TAG)
+
+
 def document_errors(app: FastAPI) -> None:
     """Declare :data:`ERROR_SCHEMA` in the OpenAPI document as the answer of every studio operation's errors (``4XX``,
-    replacing FastAPI's ``422`` with its own validation shape). Published workflow APIs keep their own error format
-    and documentation."""
+    replacing FastAPI's ``422`` with its own validation shape), and tag every untagged studio operation by its path
+    (:func:`path_tag`). Published workflow APIs keep their own error format (``PublishedError``) and tag."""
     generate = app.openapi
 
     def openapi() -> dict[str, Any]:
@@ -288,6 +335,8 @@ def document_errors(app: FastAPI) -> None:
                 responses = operation["responses"]
                 responses.pop("422", None)
                 responses["4XX"] = _ERROR_RESPONSE
+                if not operation.get("tags"):
+                    operation["tags"] = [path_tag(path)]
         schemas = schema.setdefault("components", {}).setdefault("schemas", {})
         schemas[ERROR_SCHEMA_NAME] = ERROR_SCHEMA
         text = json.dumps(schema)

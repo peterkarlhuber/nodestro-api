@@ -564,6 +564,43 @@ class ErrorOut(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
 
 
+class PublishedErrorDetail(BaseModel):
+    """The error of a published API's answer: HTTP status, a stable code, an English message and parameters."""
+
+    status: int
+    code: str
+    message: str
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class PublishedError(BaseModel):
+    """Every error answer of a published API (``{"error": {...}}``; see :class:`ApiError`)."""
+
+    error: PublishedErrorDetail
+
+
+def _errors(*statuses: int) -> dict[int | str, dict[str, Any]]:
+    """The documented error answers of a published route (API-016): every route can answer 401 (no or an unknown
+    key), 403 (the key may not do this, or the API is not reachable on this channel), 404 (unknown API, version or
+    run), 422 (an invalid parameter, in this format, not FastAPI's) and 429 (too many requests or failed
+    authentications); ``statuses`` adds the route's own."""
+    texts = {
+        400: "The body is not JSON or not a valid multipart form (see error.code)",
+        401: "No API key, or an unknown, revoked or expired one (auth.*)",
+        403: "The key may not do this (auth.scope), or the API answers only this computer (lan.not_enabled)",
+        404: "Unknown API, version, run, approval or file (*.not_found)",
+        409: "A conflict with the run's state or an earlier request (see error.code)",
+        413: "The request is too large (request.too_large)",
+        422: "The request does not fit the input form or the route's parameters (request.invalid)",
+        429: "A limit is reached (see error.code and Retry-After)",
+        503: "The API is switched off, or a model provider cannot be used now (Retry-After)",
+    }
+    return {
+        status: {"model": PublishedError, "description": texts[status]}
+        for status in sorted({401, 403, 404, 422, 429, *statuses})
+    }
+
+
 class UsageOut(BaseModel):
     requests: int = 0
     input_tokens: int = 0
@@ -1681,8 +1718,7 @@ def build_router(
         responses={
             202: {"model": RunStatusOut, "description": "Started"},
             200: {"model": RunStatusOut, "description": "Finished in time (wait) or replayed (Idempotency-Key)"},
-            422: {"description": "The request does not fit the input form"},
-            429: {"description": "A limit is reached (see error.code)"},
+            **_errors(400, 409, 413, 422, 503),
         },
         include_in_schema=doc,
     )
@@ -1693,7 +1729,7 @@ def build_router(
         status_code=202,
         summary="Start a run of a specific published version",
         openapi_extra=body_doc,
-        responses={202: {"model": RunStatusOut, "description": "Started"}},
+        responses={202: {"model": RunStatusOut, "description": "Started"}, **_errors(400, 409, 413, 422, 503)},
         include_in_schema=doc,
     )
 
@@ -1703,7 +1739,14 @@ def build_router(
         versions = getattr(core.host, "versions", lambda _slug: [served.number])(slug)
         return core.info(served, versions)
 
-    router.add_api_route("", info, methods=["GET"], summary="What this API expects and returns", include_in_schema=doc)
+    router.add_api_route(
+        "",
+        info,
+        methods=["GET"],
+        summary="What this API expects and returns",
+        responses=_errors(),
+        include_in_schema=doc,
+    )
 
     async def list_runs(request: Request, slug: str) -> list[RunStatusOut]:
         guard(request)
@@ -1722,7 +1765,12 @@ def build_router(
         return found
 
     router.add_api_route(
-        "/runs", list_runs, methods=["GET"], summary="The latest runs of this API", include_in_schema=doc
+        "/runs",
+        list_runs,
+        methods=["GET"],
+        summary="The latest runs of this API",
+        responses=_errors(422),
+        include_in_schema=doc,
     )
 
     async def get_run(request: Request, slug: str, run_id: str) -> RunStatusOut:
@@ -1730,7 +1778,14 @@ def build_router(
         _, served = core.access(request, slug, "read", channel=channel)
         return core.status(served.slug, core.own_run(served, run_id))
 
-    router.add_api_route("/runs/{run_id}", get_run, methods=["GET"], summary="Status of a run", include_in_schema=doc)
+    router.add_api_route(
+        "/runs/{run_id}",
+        get_run,
+        methods=["GET"],
+        summary="Status of a run",
+        responses=_errors(),
+        include_in_schema=doc,
+    )
 
     async def get_result(request: Request, slug: str, run_id: str) -> Response:
         guard(request)
@@ -1742,7 +1797,7 @@ def build_router(
         get_result,
         methods=["GET"],
         summary="Result of a finished run",
-        responses={200: {"model": RunResultOut}, 409: {"description": "Not finished yet"}},
+        responses={200: {"model": RunResultOut}, **_errors(409)},
         include_in_schema=doc,
     )
 
@@ -1760,6 +1815,7 @@ def build_router(
         summary="Progress as Server-Sent Events",
         description="A status event first, then progress events until 'end'. Reconnect with "
         "Last-Event-ID to receive what you missed. ?text=true adds the agents' text as it is written.",
+        responses=_errors(),
         include_in_schema=doc,
     )
 
@@ -1773,7 +1829,12 @@ def build_router(
         return core.status(served.slug, core.host.runs.get(run.id) or run)
 
     router.add_api_route(
-        "/runs/{run_id}/cancel", cancel, methods=["POST"], summary="Cancel a run", include_in_schema=doc
+        "/runs/{run_id}/cancel",
+        cancel,
+        methods=["POST"],
+        summary="Cancel a run",
+        responses=_errors(409),
+        include_in_schema=doc,
     )
 
     async def list_approvals(request: Request, slug: str, run_id: str) -> list[ApprovalOut]:
@@ -1789,6 +1850,7 @@ def build_router(
         list_approvals,
         methods=["GET"],
         summary="Approvals that wait for a decision, with what to review",
+        responses=_errors(),
         include_in_schema=doc,
     )
 
@@ -1805,6 +1867,7 @@ def build_router(
         summary="Approve or reject a waiting approval",
         description="The run continues on the chosen path. A decision is recorded with the key's id; "
         "a second decision on the same approval answers 409.",
+        responses=_errors(409, 413, 422),
         include_in_schema=doc,
     )
 
@@ -1820,6 +1883,7 @@ def build_router(
         methods=["POST"],
         status_code=202,
         summary="Continue a failed run; successful steps are reused",
+        responses=_errors(409, 413, 422, 503),
         include_in_schema=doc,
     )
 
@@ -1830,7 +1894,12 @@ def build_router(
         return [core._file_out(entry) for entry in core.host.files.list(run.id)]
 
     router.add_api_route(
-        "/runs/{run_id}/files", list_files, methods=["GET"], summary="Result files of a run", include_in_schema=doc
+        "/runs/{run_id}/files",
+        list_files,
+        methods=["GET"],
+        summary="Result files of a run",
+        responses=_errors(),
+        include_in_schema=doc,
     )
 
     async def get_file(request: Request, slug: str, run_id: str, file_id: str) -> Response:
@@ -1854,6 +1923,7 @@ def build_router(
         get_file,
         methods=["GET"],
         summary="Download a result file",
+        responses=_errors(),
         include_in_schema=doc,
     )
 
@@ -1864,7 +1934,12 @@ def build_router(
         return core.usage_summary(served, days)
 
     router.add_api_route(
-        "/usage", usage, methods=["GET"], summary="Runs, tokens and cost of this API", include_in_schema=doc
+        "/usage",
+        usage,
+        methods=["GET"],
+        summary="Runs, tokens and cost of this API",
+        responses=_errors(422),
+        include_in_schema=doc,
     )
 
     async def openapi(request: Request, slug: str) -> Response:

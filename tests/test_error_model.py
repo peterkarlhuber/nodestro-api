@@ -72,3 +72,48 @@ def test_the_openapi_document_declares_the_error_answer(make_app: Callable[..., 
             "$ref": "#/components/schemas/ErrorResponse"
         }, (method, path)
         assert "422" not in operation["responses"], (method, path)
+
+
+def test_every_studio_operation_has_a_tag(make_app: Callable[..., TestClient]) -> None:
+    """API-016: ``/api/docs`` groups the studio operations instead of one flat list."""
+    from nodestro_api.api import DEFAULT_TAG, PATH_TAGS, path_tag
+
+    document = make_app().get("/api/openapi.json").json()
+    tags: dict[str, set[str]] = {}
+    for path, operations in document["paths"].items():
+        for method, operation in operations.items():
+            assert operation.get("tags"), (method, path)
+            for tag in operation["tags"]:
+                tags.setdefault(tag, set()).add(path)
+    assert {"workflows", "runs", "publications", "local models", "MCP", "pricing"} <= set(tags)
+    assert "/api/workflows/{workflow_id}" in tags["workflows"] and "/api/runs/{run_id}" in tags["runs"]
+    assert "/api/published/{slug}/runs" in tags["published workflow"]
+    # The fallback stays small: a new kind of route gets a tag of its own.
+    assert len(tags[DEFAULT_TAG]) <= 12, sorted(tags[DEFAULT_TAG])
+    assert path_tag("/api/mcp/servers") == "MCP" and path_tag("/api/health") == DEFAULT_TAG
+    assert set(PATH_TAGS.values()) <= set(tags)
+
+
+def test_published_routes_declare_their_error_answers(make_app: Callable[..., TestClient]) -> None:
+    """API-016: the published routes document every error they answer with, in their own format."""
+    document = make_app().get("/api/openapi.json").json()
+    error = document["components"]["schemas"]["PublishedError"]
+    assert error["required"] == ["error"]
+    detail = document["components"]["schemas"]["PublishedErrorDetail"]
+    assert set(detail["required"]) == {"status", "code", "message"}
+    published = {
+        (path, method): operation["responses"]
+        for path, operations in document["paths"].items()
+        if path.startswith("/api/published")
+        for method, operation in operations.items()
+    }
+    assert len(published) >= 13
+    for (path, method), responses in published.items():
+        assert {"401", "403", "404", "429"} <= set(responses), (method, path)
+        for status, answer in responses.items():
+            if status.startswith(("4", "5")):
+                schema = answer["content"]["application/json"]["schema"]
+                assert schema == {"$ref": "#/components/schemas/PublishedError"}, (method, path, status)
+    start = published[("/api/published/{slug}/runs", "post")]
+    assert {"400", "409", "413", "422", "503"} <= set(start)
+    assert "409" in published[("/api/published/{slug}/runs/{run_id}/result", "get")]
