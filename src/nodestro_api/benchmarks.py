@@ -610,6 +610,10 @@ class Benchmarks:
             await self.ctx.batches.cancel(bench.batch_id)
         return self.run(run_id)
 
+    def active(self) -> list[str]:
+        """The benchmarks this process follows now (their task has not ended)."""
+        return [bench_id for bench_id, task in list(self._tasks.items()) if not task.done()]
+
     async def cancel_all(self, *, stop_code: str) -> list[str]:
         """Stop every benchmark this process follows, the judge's model calls included (a suspended tenant,
         security review SR-03): the following task is cancelled and the benchmark ends as cancelled; its batch is
