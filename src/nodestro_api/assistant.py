@@ -156,8 +156,9 @@ class FileRetention(BaseModel):
     """How long files attached in assistant conversations are kept (API-056), set by an administrator.
 
     ``None`` (the default) keeps them until the user removes them or deletes the conversation, as before. With a
-    number of days, the input file clean-up (``POST /api/inputs/cleanup``) removes every conversation file attached
-    longer ago than that; its conversation and messages stay, and a sent message keeps only the file's name."""
+    number of days, every conversation file attached longer ago than that is removed by the input file clean-up
+    (``POST /api/inputs/cleanup``) and, in the desktop app, at start and then hourly; its conversation and messages
+    stay, and a sent message keeps only the file's name."""
 
     retention_days: int | None = Field(default=None, ge=1, le=3650)
 

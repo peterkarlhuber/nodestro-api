@@ -102,6 +102,7 @@ def create_app(
         prices: asyncio.Task[None] | None = None
         sweeping: asyncio.Task[None] | None = None
         local: asyncio.Task[None] | None = None
+        expiring: asyncio.Task[None] | None = None
         try:
             if scheduler:
                 nodestro.schedules.start()
@@ -119,6 +120,8 @@ def create_app(
             # Runs paused at a tool call (M6b) or waiting for a budget decision (BUDGET-1): the deadline sweep
             # continues decided and overdue ones.
             sweeping = asyncio.create_task(_sweep_tool_waits(nodestro, stop_prices), name="tool-waits")
+            # Assistant chat files past the retention an administrator set (API-056; none by default).
+            expiring = asyncio.create_task(_expire_chat_files(nodestro, stop_prices), name="chat-file-retention")
         except BaseException:
             await shutdown()
             raise
@@ -126,7 +129,7 @@ def create_app(
             yield
         finally:
             stop_prices.set()
-            for task in (prices, sweeping, local):
+            for task in (prices, sweeping, local, expiring):
                 if task is not None:
                     with suppress(Exception):
                         await asyncio.wait_for(task, timeout=5)
@@ -221,6 +224,21 @@ DEV_SERVER_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:5173")
 
 #: How often the desktop looks for runs paused at a tool call whose question was decided or ran out (seconds).
 TOOL_WAIT_SWEEP_SECONDS = 15.0
+
+
+#: How often the desktop removes assistant chat files past their retention period (API-056).
+CHAT_FILE_RETENTION_SECONDS = 3600.0
+
+
+async def _expire_chat_files(nodestro: Any, stop: asyncio.Event, every: float = CHAT_FILE_RETENTION_SECONDS) -> None:
+    """Enforce the retention of assistant chat files at start and then hourly (nothing without a retention period)."""
+    while not stop.is_set():
+        try:
+            await asyncio.to_thread(nodestro.assistant.expire_files)
+        except Exception:
+            logging.getLogger(__name__).exception("Removing assistant chat files past their retention failed")
+        with suppress(asyncio.TimeoutError):
+            await asyncio.wait_for(stop.wait(), timeout=every)
 
 
 async def _sweep_tool_waits(nodestro: Any, stop: asyncio.Event, every: float = TOOL_WAIT_SWEEP_SECONDS) -> None:
