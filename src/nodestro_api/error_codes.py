@@ -25,6 +25,7 @@ from fastapi import APIRouter
 from nodestro_runtime import error_codes as runtime_codes
 from pydantic import BaseModel, Field
 
+from .missing import REFERENCE_KINDS
 from .permissions import READ
 
 router = APIRouter(prefix="/api")
@@ -68,6 +69,8 @@ def api_codes() -> dict[str, set[str]]:
         found.setdefault(f"agent.{name}", set()).add("type")
     for kind in _NOT_FOUND_KINDS.values():  # the not-found answer of a route's own record (api.install_error_handlers)
         found.setdefault(f"{kind}.not_found", set()).update({"name", "id", "kind"})
+    for kind in REFERENCE_KINDS:  # a referenced record that is gone, with the name the reference knew (API-053)
+        found.setdefault(f"{kind}.not_found", set()).update({"name", "id", "kind", "display"})
     return found
 
 

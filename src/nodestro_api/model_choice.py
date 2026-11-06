@@ -42,6 +42,8 @@ from nodestro_runtime.providers import check_model
 from nodestro_runtime.schemas import Workflow
 from pydantic import BaseModel, Field
 
+from .missing import MissingReference, workflow_display
+
 if TYPE_CHECKING:
     from .benchmarks import BenchmarkRun, Suite
     from .context import Nodestro
@@ -175,7 +177,7 @@ def recommend(ctx: Nodestro, suite: Suite, runs: list[BenchmarkRun], node_id: st
     """The recommendation for ``node_id`` of the series' workflow as it is saved now (see the module docstring)."""
     workflow = ctx.store.get("workflows", suite.workflow_id, Workflow)
     if workflow is None:
-        raise KeyError(suite.workflow_id)
+        raise MissingReference("workflow", suite.workflow_id, workflow_display(ctx.store, suite.workflow_id))
     node = next((item for item in workflow.nodes if item.id == node_id), None)
     if node is None or node.agent is None:
         raise ModelChoiceError("model_choice.node_unknown", f"The workflow has no agent {node_id!r}", node=node_id)

@@ -44,6 +44,7 @@ from nodestro_runtime.tool_preflight import UnattendedTrigger, unattended_tool_i
 from pydantic import BaseModel, Field
 
 from .leases import LEASE_SECONDS, PROCESS_OWNER, LeaseLost, expired, lease_until
+from .missing import MissingReference, workflow_display
 
 if TYPE_CHECKING:
     from .context import Nodestro
@@ -443,7 +444,7 @@ class Batches:
             return self.ctx.resolve_workflow(workflow_id, version)
         workflow = self.ctx.store.get("workflows", workflow_id, Workflow)
         if workflow is None:
-            raise KeyError(workflow_id)
+            raise MissingReference("workflow", workflow_id, workflow_display(self.ctx.store, workflow_id))
         return workflow, self.ctx.current_version(workflow)
 
     def _items(self, workflow: Workflow, rows: builtins.list[BatchRow]) -> builtins.list[BatchItem]:

@@ -89,6 +89,7 @@ from . import __version__, library_models, model_readiness, sandbox_status
 from .assistants import AgentDraft, MemorySeed
 from .benchmarks import SuiteIn, TestCase
 from .context import Nodestro
+from .missing import MissingReference
 from .permissions import (
     ADMIN,
     EDIT,
@@ -156,6 +157,13 @@ def install_error_handlers(app: FastAPI) -> None:
 
     async def not_found(request: Request, exc: Exception) -> JSONResponse:
         name = str(exc.args[0]) if exc.args else ""
+        if isinstance(exc, MissingReference):
+            # A record another one refers to is gone: named by the reference where it knew the name (API-053).
+            params: dict[str, Any] = {"name": name, "id": name, "kind": exc.kind}
+            if exc.display:
+                params["display"] = exc.display
+            label = exc.kind.capitalize()
+            return _error(404, f"{exc.kind}.not_found", f"{label} {name!r} does not exist", **params)
         # The id of the route's own record gets a code of its kind (DX handover B12): ``workflow.not_found``,
         # ``run.not_found``, ``publication.not_found``, with ``id`` and ``kind``; ``name`` stays for older clients.
         for param, kind in _NOT_FOUND_KINDS.items():
@@ -1120,7 +1128,7 @@ def preview(body: PreviewRequest, ctx: Ctx) -> ContextPreview:
     if body.run_id:
         run = ctx.runs.get(body.run_id)
         if run is None:
-            raise KeyError(body.run_id)
+            raise MissingReference("run", body.run_id)
     elif body.workflow_id:
         run = latest_run(ctx, body.workflow_id)
     return build_preview(ctx, workflow, body.node_id, given_input=body.input, run=run, given_values=body.values)
