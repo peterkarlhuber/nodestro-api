@@ -352,7 +352,10 @@ memory is shared with the studio; the publish check says so.
   is sent without `Content-Length`.
 - **Idempotency:** a request with `Idempotency-Key` that is repeated with the same body within 24 hours returns the
   run it started (`200`, `Idempotent-Replayed: true`) instead of starting another one; the same key with a different
-  body answers `409 idempotency.conflict`. Keys are separate per publication and API key.
+  body answers `409 idempotency.conflict`. Keys are separate per publication and API key. The key is reserved with one
+  atomic insert in the store before the run starts, so concurrent retries never start two runs, also not on several
+  server processes sharing one PostgreSQL database; a retry that arrives while the first request is still starting
+  its run answers `409 idempotency.in_progress` with `Retry-After: 1`.
 - **Events:** the stream starts with a `status` event, then sends progress events until `end`. After a reconnect
   with `Last-Event-ID`, the events since then are sent again, with increasing ids. `?text=true` adds the agents' text
   as it is written.
@@ -444,9 +447,9 @@ Open work (known bugs, follow-ups and planned improvements) is listed in [docs/T
 
 ## Limitations
 
-- One process per data directory: limits, idempotency and key changes are synchronized within the process, not
-  between several server processes. The runtime enforces it with a lock file (`nodestro.lock`): a second `nodestro`
-  or `nodestro-api` on the same data directory stops at start. Do not run the app with several uvicorn workers.
+- One process per data directory: limits and key changes are synchronized within the process, not between several
+  server processes (Idempotency-Key reservations are atomic in the store). The runtime enforces it with a lock file
+  (`nodestro.lock`): a second `nodestro` or `nodestro-api` on the same data directory stops at start. Do not run the app with several uvicorn workers.
 - The interactive reference `/api/docs` serves a vendored copy of Swagger UI (`nodestro_api/swagger_ui`, version and
   checksums in its `VENDORED.md`) and works offline; the OpenAPI document itself is `/api/openapi.json`.
 - Without network access enabled, the published endpoints answer only this computer; with it, TLS is the

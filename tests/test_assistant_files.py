@@ -391,3 +391,100 @@ def test_a_chat_file_is_never_a_run_input_by_its_id(make_app: Callable[..., Test
     assert start(client, workflow_id)["status"] == "succeeded"
     accepted = client.post(f"/api/workflows/{workflow_id}/runs", json={"input": "x", "file_ids": [own]})
     assert accepted.status_code == 201, accepted.text
+
+
+def test_an_administrator_sets_a_retention_that_the_cleanup_enforces(make_app: Callable[..., TestClient]) -> None:
+    """API-056: without a retention period the clean-up keeps chat files (as before); with one it removes the files
+    attached before it and keeps the conversation, its messages and newer files."""
+    from datetime import timedelta
+
+    from nodestro_runtime.schemas import now
+
+    client = make_app({ASSISTANT: [text("ok")]})
+    nodestro = client.app.state.nodestro  # type: ignore[attr-defined]
+    conversation_id = chat(client)
+    old, recent = attached(client, conversation_id, ("old.txt", b"old"), ("recent.txt", b"recent"))
+    send(client, conversation_id, "Read them", [old, recent])
+    assistant = nodestro.assistant
+    with assistant._lock:
+        conversation = assistant._conversation(conversation_id)
+        conversation.files[0].added_at = now() - timedelta(days=40)
+        updated = conversation.updated_at
+        assistant._save(conversation, touch=False)
+
+    assert client.get("/api/assistant/files/retention").json() == {"retention_days": None}
+    kept = client.post("/api/inputs/cleanup", json={})
+    assert kept.status_code == 200 and kept.json()["assistant_files_expired"] == 0
+    assert old in nodestro.inputs and recent in nodestro.inputs
+
+    for bad in (0, -1, 3651, "soon"):
+        refused = client.put("/api/assistant/files/retention", json={"retention_days": bad})
+        assert refused.status_code == 422, bad
+    saved = client.put("/api/assistant/files/retention", json={"retention_days": 30})
+    assert saved.status_code == 200 and saved.json() == {"retention_days": 30}
+    assert client.get("/api/assistant/files/retention").json() == {"retention_days": 30}
+
+    cleaned = client.post("/api/inputs/cleanup", json={})
+    assert cleaned.status_code == 200 and cleaned.json()["assistant_files_expired"] == 1
+    assert old not in nodestro.inputs and recent in nodestro.inputs
+    detail = client.get(f"/api/assistant/conversations/{conversation_id}").json()
+    assert [item["id"] for item in detail["file_states"]] == [recent]
+    # The conversation and its sent message stay (the message keeps the file's name); its place in the list too.
+    assert [item["name"] for item in detail["history"][0]["files"]] == ["old.txt", "recent.txt"]
+    assert assistant._conversation(conversation_id).updated_at == updated
+    assert client.post("/api/inputs/cleanup", json={}).json()["assistant_files_expired"] == 0
+
+    # Back to "keep with the conversation".
+    assert client.put("/api/assistant/files/retention", json={"retention_days": None}).json() == {
+        "retention_days": None
+    }
+    assert assistant.expire_files(at=now() + timedelta(days=400)) == 0 and recent in nodestro.inputs
+
+
+def test_only_administrators_change_the_retention(make_app: Callable[..., TestClient]) -> None:
+    client = make_app()
+    client.app.state.principal_resolver = lambda _connection: Principal(  # type: ignore[attr-defined]
+        id="eve",
+        permissions=frozenset({Permission.READ, Permission.EDIT, Permission.RUN}),
+        tenant_id="t1",
+        role="editor",
+    )
+    assert client.get("/api/assistant/files/retention").status_code == 200
+    refused = client.put("/api/assistant/files/retention", json={"retention_days": 1})
+    assert refused.status_code == 403
+    assert client.app.state.nodestro.assistant.file_retention().retention_days is None  # type: ignore[attr-defined]
+
+
+def test_the_desktop_enforces_the_retention_by_itself(make_app: Callable[..., TestClient]) -> None:
+    """API-056: the desktop app removes expired chat files at start and then hourly, without a clean-up click."""
+    import asyncio
+    from datetime import timedelta
+
+    from nodestro_runtime.schemas import now
+
+    from nodestro_api.app import _expire_chat_files
+
+    client = make_app({ASSISTANT: [text("ok")]})
+    nodestro = client.app.state.nodestro  # type: ignore[attr-defined]
+    conversation_id = chat(client)
+    [old] = attached(client, conversation_id, ("old.txt", b"old"))
+    assistant = nodestro.assistant
+    with assistant._lock:
+        conversation = assistant._conversation(conversation_id)
+        conversation.files[0].added_at = now() - timedelta(days=3)
+        assistant._save(conversation, touch=False)
+    assert client.put("/api/assistant/files/retention", json={"retention_days": 2}).status_code == 200
+
+    async def one_pass() -> None:
+        stop = asyncio.Event()
+        task = asyncio.create_task(_expire_chat_files(nodestro, stop, every=60))
+        for _ in range(100):
+            if old not in nodestro.inputs:
+                break
+            await asyncio.sleep(0.02)
+        stop.set()
+        await asyncio.wait_for(task, timeout=5)
+
+    asyncio.run(one_pass())
+    assert old not in nodestro.inputs
+    assert client.get(f"/api/assistant/conversations/{conversation_id}").json()["file_states"] == []

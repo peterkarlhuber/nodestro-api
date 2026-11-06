@@ -89,6 +89,7 @@ from . import __version__, library_models, model_readiness, sandbox_status
 from .assistants import AgentDraft, MemorySeed
 from .benchmarks import SuiteIn, TestCase
 from .context import Nodestro
+from .missing import MissingReference
 from .permissions import (
     ADMIN,
     EDIT,
@@ -106,6 +107,7 @@ from .references import Reference, ReferenceKind, references
 from .search import readable_documents, stored_workflows
 from .serving import PREFIX as PUBLISHED_PREFIX
 from .serving import ApiError
+from .tool_versions import ToolVersion, tool_versions
 
 router = APIRouter(prefix="/api")
 
@@ -156,6 +158,13 @@ def install_error_handlers(app: FastAPI) -> None:
 
     async def not_found(request: Request, exc: Exception) -> JSONResponse:
         name = str(exc.args[0]) if exc.args else ""
+        if isinstance(exc, MissingReference):
+            # A record another one refers to is gone: named by the reference where it knew the name (API-053).
+            params: dict[str, Any] = {"name": name, "id": name, "kind": exc.kind}
+            if exc.display:
+                params["display"] = exc.display
+            label = exc.kind.capitalize()
+            return _error(404, f"{exc.kind}.not_found", f"{label} {name!r} does not exist", **params)
         # The id of the route's own record gets a code of its kind (DX handover B12): ``workflow.not_found``,
         # ``run.not_found``, ``publication.not_found``, with ``id`` and ``kind``; ``name`` stays for older clients.
         for param, kind in _NOT_FOUND_KINDS.items():
@@ -260,10 +269,57 @@ _ERROR_RESPONSE = {
 }
 
 
+#: The tag of a studio operation in the OpenAPI document by the first part of its path after ``/api/`` (API-016), so
+#: ``/api/docs`` groups the operations; operations that set their own tag keep it, and any other path is "workspace".
+PATH_TAGS: dict[str, str] = {
+    "workflows": "workflows",
+    "runs": "runs",
+    "approvals": "runs",
+    "budget-requests": "runs",
+    "publications": "publications",
+    "publication-overview": "publications",
+    "api-keys": "publications",
+    "api-network": "publications",
+    "api-guides": "publications",
+    "exports": "publications",
+    "export-jobs": "publications",
+    "local-models": "local models",
+    "mcp": "MCP",
+    "pricing": "pricing",
+    "usage": "pricing",
+    "tools": "tools",
+    "tool-approvals": "tool approvals",
+    "tool-pre-grants": "tool approvals",
+    "python": "Python environments",
+    "sandbox": "tools",
+    "agents": "agents",
+    "models": "agents",
+    "architect": "architect",
+    "assistant": "assistant",
+    "knowledge": "knowledge",
+    "inputs": "knowledge",
+    "memory": "memory",
+    "batches": "automation",
+    "benchmarks": "automation",
+    "benchmark-runs": "automation",
+    "schedules": "automation",
+    "library": "examples",
+    "backup": "backup",
+    "settings": "settings",
+}
+DEFAULT_TAG = "workspace"
+
+
+def path_tag(path: str) -> str:
+    """The OpenAPI tag of a studio path (:data:`PATH_TAGS`)."""
+    first = path.removeprefix("/api/").split("/", 1)[0]
+    return PATH_TAGS.get(first, DEFAULT_TAG)
+
+
 def document_errors(app: FastAPI) -> None:
     """Declare :data:`ERROR_SCHEMA` in the OpenAPI document as the answer of every studio operation's errors (``4XX``,
-    replacing FastAPI's ``422`` with its own validation shape). Published workflow APIs keep their own error format
-    and documentation."""
+    replacing FastAPI's ``422`` with its own validation shape), and tag every untagged studio operation by its path
+    (:func:`path_tag`). Published workflow APIs keep their own error format (``PublishedError``) and tag."""
     generate = app.openapi
 
     def openapi() -> dict[str, Any]:
@@ -279,6 +335,8 @@ def document_errors(app: FastAPI) -> None:
                 responses = operation["responses"]
                 responses.pop("422", None)
                 responses["4XX"] = _ERROR_RESPONSE
+                if not operation.get("tags"):
+                    operation["tags"] = [path_tag(path)]
         schemas = schema.setdefault("components", {}).setdefault("schemas", {})
         schemas[ERROR_SCHEMA_NAME] = ERROR_SCHEMA
         text = json.dumps(schema)
@@ -927,6 +985,10 @@ class LibraryCopy(BaseModel):
     #: The person's model for an agent (agent key from ``GET /api/library/{id}/models`` -> model id); it always wins
     #: over the recommendation and the tiers.
     models: dict[str, str] = Field(default_factory=dict, max_length=200)
+    #: A memory space of the copy's own for its agents with persistent memory (EX-007; the runtime's space name
+    #: rule: letters, digits, spaces, ``_ . -``, 1 to 64). Empty or missing: the template's space, which every copy
+    #: of the template shares. Refused with ``memory.space_name`` before anything is created.
+    memory_space: str | None = Field(default=None, max_length=200)
 
 
 #: Metadata of a knowledge file stored by a copy: the SHA-256 of the file as the library rendered it, so a second
@@ -1056,6 +1118,7 @@ def copy_library_template(template_id: str, body: LibraryCopy, request: Request,
     """
     language = body.language or request_language(request)
     spec = library.structure(template_id)
+    space = check_space_name(body.memory_space) if body.memory_space and body.memory_space.strip() else None
     if body.tests and body.integrations:
         raise ApiError(
             422,
@@ -1071,7 +1134,9 @@ def copy_library_template(template_id: str, body: LibraryCopy, request: Request,
         raise ApiError(422, "library.agent_unknown", str(exc.args[0]) if exc.args else "Unknown agent") from None
     host = _LibraryHost(ctx)
     try:
-        made = library.instantiate(template_id, language, host, models=models, connections=connections)
+        made = library.instantiate(
+            template_id, language, host, models=models, connections=connections, memory_space=space
+        )
         # The copy remembers its origin (runtime RT-055), read-only: example, version, language and which
         # integrations run on sample data.
         origin = WorkflowOrigin(
@@ -1120,7 +1185,7 @@ def preview(body: PreviewRequest, ctx: Ctx) -> ContextPreview:
     if body.run_id:
         run = ctx.runs.get(body.run_id)
         if run is None:
-            raise KeyError(body.run_id)
+            raise MissingReference("run", body.run_id)
     elif body.workflow_id:
         run = latest_run(ctx, body.workflow_id)
     return build_preview(ctx, workflow, body.node_id, given_input=body.input, run=run, given_values=body.values)
@@ -1166,7 +1231,8 @@ async def start_run(
             max_length=200,
             description="Optional. A retry with the same key (same member, workflow and request, within 24 hours) "
             "returns the run that already started (200, ``Idempotent-Replayed: true``) instead of starting another; "
-            "the same key with a different request is ``409 idempotency.conflict``.",
+            "the same key with a different request is ``409 idempotency.conflict``, and a retry while the first "
+            "request is still starting its run is ``409 idempotency.in_progress`` (``Retry-After``).",
         ),
     ] = None,
 ) -> Run:
@@ -1187,12 +1253,17 @@ async def start_run(
         json.dumps([workflow_id, body.model_dump(mode="json")], sort_keys=True, default=str).encode()
     ).hexdigest()
     async with ctx.serving.studio_start_lock:
-        earlier = ctx.serving.idempotent_run_id(record_key, fingerprint)
-        if earlier is not None and (run := ctx.runs.get(earlier)) is not None:
+        # Reserved atomically in the store before the run starts, so two API processes never both start it (API-043).
+        claim = ctx.serving.reserve_idempotent_start(record_key, fingerprint, ctx.runs.get)
+        if claim.replay is not None:
             response.status_code = 200
             response.headers["Idempotent-Replayed"] = "true"
-            return run
-        run = await launch(ctx, workflow, body, started_by=started_by)
+            return claim.replay
+        try:
+            run = await launch(ctx, workflow, body, started_by=started_by)
+        except BaseException:
+            ctx.serving.release_idempotent_start(claim)
+            raise
         ctx.serving.remember_idempotent_run(record_key, run.id, fingerprint)
     return run
 
@@ -1794,16 +1865,31 @@ class _UsageRun(BaseModel):
     cause: _UsageRunCause | None = None
 
 
+#: Runs the usage report reads per keyset page of the store.
+_USAGE_PAGE = 1000
+
+
 def _runs_since(ctx: Nodestro, cutoff: float) -> list[_UsageRun]:
     """Every top-level, not imported run created at ``cutoff`` (a timestamp) or later, newest first (C-04).
 
-    All of them, however many runs are stored: the store has no query by time, so this reads every run (with the
-    lean model above, which keeps that affordable)."""
-    counted = [
-        run
-        for run in ctx.store.list("runs", _UsageRun)
-        if run.created_at.timestamp() >= cutoff and run.imported_at is None and run.parent_run_id is None
-    ]
+    All of them, however many runs are stored, and only them (API-013): keyset pages of the store's creation index
+    with a ``since`` filter (``list_page``), reading only the fields of the lean model above, so runs before the
+    period are never read."""
+    since = datetime.fromtimestamp(cutoff, tz=UTC)
+    counted: list[_UsageRun] = []
+    before: tuple[datetime, str] | None = None
+    while True:
+        page, more = ctx.store.list_page(
+            "runs", _UsageRun, limit=_USAGE_PAGE, before=before, top_level=True, summary=True, since=since
+        )
+        counted += [
+            run
+            for run in page
+            if run.created_at.timestamp() >= cutoff and run.imported_at is None and run.parent_run_id is None
+        ]
+        if not more or not page:
+            break
+        before = (page[-1].created_at, page[-1].id)
     return sorted(counted, key=lambda run: run.created_at, reverse=True)
 
 
@@ -2032,6 +2118,14 @@ def decide_job_dependencies(job_id: str, body: DependencyDecision, ctx: Ctx) -> 
 @router.get("/tools/{name}", dependencies=READ)
 def get_tool(name: str, ctx: Ctx) -> ToolInfo:
     return ctx.tools.get(name)
+
+
+@router.get("/tools/{name}/versions", dependencies=READ)
+def get_tool_versions(name: str, ctx: Ctx) -> list[ToolVersion]:
+    """Every stored version of a tool, newest first, with its code, tests and who wrote it (ST-036): ``editor``
+    (the tool editor), ``adopted`` (an AI version adopted as one's own with exactly that content) or ``ai``. Empty for
+    built-in and MCP tools; 404 for an unknown name."""
+    return tool_versions(ctx.tools, ctx.store, name)
 
 
 @router.delete("/tools/{name}", status_code=204, dependencies=EDIT)

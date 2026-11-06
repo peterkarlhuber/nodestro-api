@@ -3,7 +3,7 @@
 > Open work for this repository: release blockers, known bugs, security follow-ups, technical debt and planned improvements.
 > GitHub issues are the source of truth for details; this file is the entry point and summary.
 >
-> **Last full review:** 2026-11-06 against master at 3d6c996 (TODO abatement round)
+> **Last full review:** 2026-11-06 against master at 0fc2700 (TODO abatement round)
 
 ## Summary
 
@@ -12,7 +12,7 @@
 | P0 Critical | 0 |
 | P1 High | 0 |
 | P2 Medium | 4 |
-| P3 Low | 18 |
+| P3 Low | 14 |
 | P4 Optional | 7 |
 
 **Release blockers:** None for this repository; every entry below is not a release blocker. The next desktop
@@ -20,8 +20,8 @@ preview is gated by nodestro-desktop DSK-001 (new candidate and Go/No-Go).
 
 The desktop API is in solid shape. Most open work is in the multi-process server profile: worker observability,
 key rotation, published APIs on the server. The portable export (#85, hardened in #87) still needs an independent
-security review (API-054). The rest is follow-up from the internal backend audits and the UX rounds (round 3
-handovers in API-016 and API-053). Live Run Chat (LRC-1) is merged (#49).
+security review (API-054). The rest is follow-up from the internal backend audits and the UX rounds. Live Run Chat
+(LRC-1) is merged (#49).
 
 ## Priorities and statuses
 
@@ -95,16 +95,6 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
   nodestro-server RUNBOOK.
 - **Depends on:** None
 
-### API-043 · Idempotent run starts are serialized per API process only
-
-- **Priority:** P3 Low · **Status:** Open · **Refs:** backend audit round 2 re-verification R2V-03, API2-08
-- **What:** Run starts with an `Idempotency-Key` (studio and published API) check and record the key under a lock
-  held by one process. With several API processes behind a load balancer, two concurrent retries with the same key
-  on different processes can each start a run.
-- **Next step:** An atomic insert-if-absent for raw store records (SQLite and PostgreSQL) in nodestro-runtime; reserve
-  the key with it before the run starts.
-- **Depends on:** nodestro-runtime RT-045
-
 ## Architecture and modularity
 
 ### API-010 · Server profile: published APIs, network listener and backups are not served yet
@@ -137,13 +127,7 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
 
 ## Performance
 
-### API-013 · `/api/usage` reads every run of the period
-
-- **Priority:** P3 Low · **Status:** Open · **Refs:** backend audit C-05 (residual)
-- **What:** The totals are now correct, but at 5,000 runs a request took about 0.8 s on SQLite and 1.4 s on
-  PostgreSQL. The time grows linearly with the number of runs.
-- **Next step:** Aggregate in the store (SQL), or read only the usage fields with a `since` filter.
-- **Depends on:** nodestro-runtime RT-009 (store-level time filter)
+None known.
 
 ## Features and enhancements
 
@@ -173,16 +157,6 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
   one for the same tenant (the runtime's final switch stays atomic, but the work is done twice).
 - **Next step:** Run reindex jobs as server batch jobs with a lease once the server profile gets them.
 - **Depends on:** nodestro-runtime RT-046
-
-### API-016 · Error responses of published routes and router tags (X-03 rest)
-
-- **Priority:** P3 Low · **Status:** Open · **Refs:** #53, backend audit X-03, UX round 3 handover B13
-- **What:** The code list exists (`GET /api/error-codes`, `src/nodestro_api/error_codes.json`, kept fresh by
-  `tests/test_error_codes.py`). Still open: the OpenAPI document declares only 422/429 for the published run routes
-  (the real answers include 401, 403, 404, 409, 413 and 503 with `ErrorResponse`), and most studio routes have no tag,
-  so `/api/docs` is one flat list.
-- **Next step:** Declare the error responses of the published routes and tag the studio routers (workflows, runs,
-  publications, local models, MCP, pricing); regenerate the contract and the SDK together.
 
 ### API-019 · Member and role management for tenant admins (server)
 
@@ -256,22 +230,16 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
   `nodestro-server assistant backfill-owners`.)
 - **Next step:** Decide whether approval nodes get a "needs another member" option.
 
-### API-053 · Developer messages: names of missing items
+### API-066 · Assistant file retention on the server runs only with the input clean-up
 
-- **Priority:** P4 Optional · **Status:** Open · **Refs:** UX round 3 apicodes handovers B-2 to B-4
-- **What:** The `*.not_found` codes send the id they looked for, but no display name, so the studio cannot name a
-  missing item that another one refers to (a sub-workflow, a knowledge collection, a tool). The rest of the entry
-  (export check and jobs, exported client and README, `params.allowed`, server check lines, contract fields in the
-  workflow list, part names in the model plan) was done in the TODO abatement round of 2026-11-06.
-- **Next step:** Where a reference names the missing item (for example a node that points to a deleted workflow),
-  add `params.display`; together with the error code catalog of API-016.
+- **Priority:** P4 Optional · **Status:** Open · **Refs:** API-056 (TODO abatement round 2, 2026-11-06)
+- **What:** An administrator sets how long assistant chat files are kept (`PUT /api/assistant/files/retention`,
+  none by default). The desktop app removes expired files at start and hourly; on a server they go only when a
+  member runs the input file clean-up (`POST /api/inputs/cleanup`), because tenant contexts live in the API
+  processes and the worker has no per-tenant clean-up pass yet.
+- **Next step:** Add a per-tenant pass to the server worker's leader clean-up (`ServerWorker.clean_up`) that opens
+  each tenant's store and calls the same expiry, or run it as a server batch job with a lease (see API-009).
 - **Depends on:** None
-
-### API-056 · Retention for assistant chat files
-
-- **Priority:** P3 Low · **Status:** Open · **Refs:** settings/providers round 2026-11-06 (attachments stream)
-- **What:** Files attached in assistant conversations are kept until the conversation is deleted.
-- **Next step:** Admin-configurable retention, enforced by the existing cleanup job.
 
 ### API-060 · Internal assistants on Anthropic use the default thinking display
 
@@ -384,10 +352,7 @@ None known.
 | API-009 | nodestro-runtime | RT-014 | runtime provides deletes |
 | API-011 | nodestro-server | SRV-007 (RUNBOOK monitoring section) | server documents what this adds |
 | (pointer) | nodestro-sdk | SDK-005 | the server contract `openapi/nodestro-api-server.json` exists now (API-012 done); the SDK contract tests can use it |
-| API-013 | nodestro-runtime | RT-009 (store time filter) | runtime part done (`list_page(since=...)`, `list_since`) |
-| API-016 | nodestro-runtime | RT-011 | combined code list |
 | API-054 | nodestro-studio | portable export dialog (studio #121, ST-047) | one independent review covers both; full entry here |
-| API-043 | nodestro-runtime | RT-045 (atomic insert-if-absent) | runtime part done (`put_raw_if_absent`) |
 | API-044 | nodestro-runtime | RT-046 (reindex jobs in the API process) | runtime change first |
 | API-021 | nodestro-runtime | RT-015 | runtime change first |
 | API-023 | nodestro-server | SRV-013 (PostgreSQL load test) | load test runs there |

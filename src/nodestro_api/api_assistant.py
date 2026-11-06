@@ -30,6 +30,7 @@ from .assistant import (
     ChatMessage,
     ConversationDetail,
     ConversationSummary,
+    FileRetention,
     RetryRequest,
     SendRequest,
     SentMessage,
@@ -37,7 +38,7 @@ from .assistant import (
 from .assistant_context import AttachRequest, Snapshot
 from .assistant_files import FileSupport, FileView
 from .docs_index import DocsIndex
-from .permissions import EDIT, READ, RUN, StreamAccess
+from .permissions import ADMIN, EDIT, READ, RUN, StreamAccess
 
 _Body = TypeVar("_Body", SendRequest, RetryRequest)
 
@@ -151,6 +152,20 @@ def get_snapshot(conversation_id: str, snapshot_id: str, ctx: Ctx, request: Requ
 def file_support(ctx: Ctx) -> FileSupport:
     """The formats and limits of files, and whether the assistant's current model reads images and PDFs natively."""
     return ctx.assistant.file_support()
+
+
+@router.get("/files/retention", dependencies=READ)
+def file_retention(ctx: Ctx) -> FileRetention:
+    """How long conversation files are kept (API-056); ``retention_days: null`` keeps them with their conversation."""
+    return ctx.assistant.file_retention()
+
+
+@router.put("/files/retention", dependencies=ADMIN)
+def set_file_retention(body: FileRetention, ctx: Ctx) -> FileRetention:
+    """Set how long conversation files are kept (administrators). The input file clean-up
+    (``POST /api/inputs/cleanup``) and, in the desktop app, an hourly pass remove the older ones; ``null`` keeps them
+    until the conversation is deleted."""
+    return ctx.assistant.set_file_retention(body)
 
 
 @router.post("/conversations/{conversation_id}/files", status_code=201, dependencies=EDIT)

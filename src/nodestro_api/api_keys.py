@@ -17,6 +17,7 @@ from nodestro_runtime.schemas import now
 from nodestro_runtime.storage import DocumentStore
 from pydantic import BaseModel, Field
 
+from .missing import MissingReference
 from .serving import SCOPES, KeyIdentity, hash_secret, new_key, secret_matches
 
 _COLLECTION = "api_keys"
@@ -94,7 +95,7 @@ class ApiKeys:
             raise NodestroError("apikey.no_publication", "Choose at least one published workflow")
         for publication in publications:
             if self.store.get_raw("publications", publication) is None:
-                raise KeyError(publication)
+                raise MissingReference("publication", publication)
         key_id, secret, token = new_key()
         key = ApiKey(
             id=key_id,

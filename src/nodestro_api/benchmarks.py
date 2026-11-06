@@ -55,6 +55,7 @@ from pydantic import BaseModel, Field
 
 from .batches import BatchIn, BatchRow, estimate_cost, tool_warnings, with_models
 from .leases import LEASE_SECONDS, PROCESS_OWNER, LeaseLost, expired, lease_until
+from .missing import MissingReference, workflow_display
 from .model_choice import ModelChoice, ModelPolicy, agent_models, recommend, suite_basis, workflow_basis
 
 if TYPE_CHECKING:
@@ -353,7 +354,7 @@ class Benchmarks:
 
     def _validate(self, data: SuiteIn) -> None:
         if self.ctx.store.get_raw("workflows", data.workflow_id) is None:
-            raise KeyError(data.workflow_id)
+            raise MissingReference("workflow", data.workflow_id, workflow_display(self.ctx.store, data.workflow_id))
         for case in data.cases:
             for rule in case.checks:
                 found = rule_problems(rule)
@@ -389,7 +390,7 @@ class Benchmarks:
             raise BenchmarkError("testcase.run_not_failed", "Only a failed run can be proposed as a test case")
         workflow = self.ctx.store.get("workflows", run.workflow_id, Workflow)
         if workflow is None:
-            raise KeyError(run.workflow_id)
+            raise MissingReference("workflow", run.workflow_id, run.workflow_name)
         sanitizer = Sanitizer(personal_data=request.personal_data)
         text = (run.text_input if run.values else run.input) or ""
         values = sanitizer.known(sanitizer.value(run.values))
@@ -508,7 +509,7 @@ class Benchmarks:
             return self.ctx.resolve_workflow(suite.workflow_id, version)[0]
         stored = self.ctx.store.get("workflows", suite.workflow_id, Workflow)
         if stored is None:
-            raise KeyError(suite.workflow_id)
+            raise MissingReference("workflow", suite.workflow_id, workflow_display(self.ctx.store, suite.workflow_id))
         return stored
 
     def _models(self, workflow: Workflow, start: BenchmarkStart) -> dict[str, str]:

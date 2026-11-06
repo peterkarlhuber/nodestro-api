@@ -5365,6 +5365,22 @@
         "title": "CleanupRequest",
         "type": "object"
       },
+      "CleanupResult": {
+        "properties": {
+          "removed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Removed",
+            "type": "array"
+          }
+        },
+        "required": [
+          "removed"
+        ],
+        "title": "CleanupResult",
+        "type": "object"
+      },
       "CollectionInfo": {
         "properties": {
           "files": {
@@ -7504,6 +7520,26 @@
         "title": "FileRequest",
         "type": "object"
       },
+      "FileRetention": {
+        "description": "How long files attached in assistant conversations are kept (API-056), set by an administrator.\n\n``None`` (the default) keeps them until the user removes them or deletes the conversation, as before. With a\nnumber of days, every conversation file attached longer ago than that is removed by the input file clean-up\n(``POST /api/inputs/cleanup``) and, in the desktop app, at start and then hourly; its conversation and messages\nstay, and a sent message keeps only the file's name.",
+        "properties": {
+          "retention_days": {
+            "anyOf": [
+              {
+                "maximum": 3650.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retention Days"
+          }
+        },
+        "title": "FileRetention",
+        "type": "object"
+      },
       "FileSupport": {
         "description": "What the assistant accepts, and what its current model reads natively.",
         "properties": {
@@ -8099,19 +8135,6 @@
         "title": "GuideIn",
         "type": "object"
       },
-      "HTTPValidationError": {
-        "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "title": "Detail",
-            "type": "array"
-          }
-        },
-        "title": "HTTPValidationError",
-        "type": "object"
-      },
       "Handover": {
         "description": "A proposal to continue in an existing Nodestro function; the user decides there.",
         "properties": {
@@ -8428,6 +8451,32 @@
           "limits"
         ],
         "title": "InfoOut",
+        "type": "object"
+      },
+      "InputCleanupResult": {
+        "properties": {
+          "assistant_files_expired": {
+            "default": 0,
+            "title": "Assistant Files Expired",
+            "type": "integer"
+          },
+          "freed_bytes": {
+            "default": 0,
+            "title": "Freed Bytes",
+            "type": "integer"
+          },
+          "kept_in_use": {
+            "default": 0,
+            "title": "Kept In Use",
+            "type": "integer"
+          },
+          "removed": {
+            "default": 0,
+            "title": "Removed",
+            "type": "integer"
+          }
+        },
+        "title": "InputCleanupResult",
         "type": "object"
       },
       "InputField": {
@@ -9606,6 +9655,18 @@
               }
             ],
             "title": "Language"
+          },
+          "memory_space": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Space"
           },
           "models": {
             "additionalProperties": {
@@ -15792,6 +15853,48 @@
           "release"
         ],
         "title": "PublishOut",
+        "type": "object"
+      },
+      "PublishedError": {
+        "description": "Every error answer of a published API (``{\"error\": {...}}``; see :class:`ApiError`).",
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/PublishedErrorDetail"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "PublishedError",
+        "type": "object"
+      },
+      "PublishedErrorDetail": {
+        "description": "The error of a published API's answer: HTTP status, a stable code, an English message and parameters.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          },
+          "status": {
+            "title": "Status",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "status",
+          "code",
+          "message"
+        ],
+        "title": "PublishedErrorDetail",
         "type": "object"
       },
       "PullIn": {
@@ -23575,6 +23678,100 @@
         "title": "ToolSource",
         "type": "object"
       },
+      "ToolVersion": {
+        "properties": {
+          "author": {
+            "enum": [
+              "editor",
+              "adopted",
+              "ai"
+            ],
+            "title": "Author",
+            "type": "string"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "content_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Hash"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "function_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Function Name"
+          },
+          "own": {
+            "title": "Own",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tests": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tests"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "status",
+          "author",
+          "own"
+        ],
+        "title": "ToolVersion",
+        "type": "object"
+      },
       "TraceImport": {
         "properties": {
           "duplicate": {
@@ -24761,22 +24958,6 @@
         "title": "WorkflowVersion",
         "type": "object"
       },
-      "nodestro_api__api_python__CleanupResult": {
-        "properties": {
-          "removed": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Removed",
-            "type": "array"
-          }
-        },
-        "required": [
-          "removed"
-        ],
-        "title": "CleanupResult",
-        "type": "object"
-      },
       "nodestro_api__benchmarks__CheckResult": {
         "properties": {
           "label": {
@@ -24828,27 +25009,6 @@
           "name"
         ],
         "title": "KnowledgeRef",
-        "type": "object"
-      },
-      "nodestro_runtime__input_files__CleanupResult": {
-        "properties": {
-          "freed_bytes": {
-            "default": 0,
-            "title": "Freed Bytes",
-            "type": "integer"
-          },
-          "kept_in_use": {
-            "default": 0,
-            "title": "Kept In Use",
-            "type": "integer"
-          },
-          "removed": {
-            "default": 0,
-            "title": "Removed",
-            "type": "integer"
-          }
-        },
-        "title": "CleanupResult",
         "type": "object"
       },
       "nodestro_runtime__release__KnowledgeRef": {
@@ -25052,7 +25212,10 @@
             "description": "Error"
           }
         },
-        "summary": "Access Audit Events"
+        "summary": "Access Audit Events",
+        "tags": [
+          "workspace"
+        ]
       }
     },
     "/api/agents/design": {
@@ -25090,7 +25253,10 @@
             "description": "Error"
           }
         },
-        "summary": "Design Agent"
+        "summary": "Design Agent",
+        "tags": [
+          "agents"
+        ]
       }
     },
     "/api/agents/templates": {
@@ -25122,7 +25288,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Templates"
+        "summary": "List Templates",
+        "tags": [
+          "agents"
+        ]
       },
       "post": {
         "operationId": "create_template_api_agents_templates_post",
@@ -25158,7 +25327,10 @@
             "description": "Error"
           }
         },
-        "summary": "Create Template"
+        "summary": "Create Template",
+        "tags": [
+          "agents"
+        ]
       }
     },
     "/api/agents/templates/{template_id}": {
@@ -25190,7 +25362,10 @@
             "description": "Error"
           }
         },
-        "summary": "Delete Template"
+        "summary": "Delete Template",
+        "tags": [
+          "agents"
+        ]
       },
       "put": {
         "operationId": "update_template_api_agents_templates__template_id__put",
@@ -25237,7 +25412,10 @@
             "description": "Error"
           }
         },
-        "summary": "Update Template"
+        "summary": "Update Template",
+        "tags": [
+          "agents"
+        ]
       }
     },
     "/api/agents/test": {
@@ -25276,7 +25454,10 @@
             "description": "Error"
           }
         },
-        "summary": "Test Agent"
+        "summary": "Test Agent",
+        "tags": [
+          "agents"
+        ]
       }
     },
     "/api/agents/validate": {
@@ -25318,7 +25499,10 @@
             "description": "Error"
           }
         },
-        "summary": "Validate Agent"
+        "summary": "Validate Agent",
+        "tags": [
+          "agents"
+        ]
       }
     },
     "/api/api-guides/{guide_id}/decision": {
@@ -25375,7 +25559,10 @@
             "description": "Error"
           }
         },
-        "summary": "Decide Guide"
+        "summary": "Decide Guide",
+        "tags": [
+          "publications"
+        ]
       }
     },
     "/api/api-keys": {
@@ -25407,7 +25594,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Keys"
+        "summary": "List Keys",
+        "tags": [
+          "publications"
+        ]
       },
       "post": {
         "operationId": "create_key_api_api_keys_post",
@@ -25443,7 +25633,10 @@
             "description": "Error"
           }
         },
-        "summary": "Create Key"
+        "summary": "Create Key",
+        "tags": [
+          "publications"
+        ]
       }
     },
     "/api/api-keys/{key_id}": {
@@ -25475,7 +25668,10 @@
             "description": "Error"
           }
         },
-        "summary": "Delete Key"
+        "summary": "Delete Key",
+        "tags": [
+          "publications"
+        ]
       }
     },
     "/api/api-keys/{key_id}/revoke": {
@@ -25514,7 +25710,10 @@
             "description": "Error"
           }
         },
-        "summary": "Revoke Key"
+        "summary": "Revoke Key",
+        "tags": [
+          "publications"
+        ]
       }
     },
     "/api/api-keys/{key_id}/rotate": {
@@ -25554,7 +25753,10 @@
             "description": "Error"
           }
         },
-        "summary": "Rotate Key"
+        "summary": "Rotate Key",
+        "tags": [
+          "publications"
+        ]
       }
     },
     "/api/api-network": {
@@ -25582,7 +25784,10 @@
             "description": "Error"
           }
         },
-        "summary": "Network Status"
+        "summary": "Network Status",
+        "tags": [
+          "publications"
+        ]
       },
       "put": {
         "operationId": "configure_network_api_api_network_put",
@@ -25618,7 +25823,10 @@
             "description": "Error"
           }
         },
-        "summary": "Configure Network"
+        "summary": "Configure Network",
+        "tags": [
+          "publications"
+        ]
       }
     },
     "/api/approvals": {
@@ -25651,7 +25859,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Approvals"
+        "summary": "List Approvals",
+        "tags": [
+          "runs"
+        ]
       }
     },
     "/api/architect/jobs": {
@@ -25690,7 +25901,10 @@
             "description": "Error"
           }
         },
-        "summary": "Start Architect"
+        "summary": "Start Architect",
+        "tags": [
+          "architect"
+        ]
       }
     },
     "/api/architect/jobs/{job_id}": {
@@ -25729,7 +25943,10 @@
             "description": "Error"
           }
         },
-        "summary": "Get Architect Job"
+        "summary": "Get Architect Job",
+        "tags": [
+          "architect"
+        ]
       }
     },
     "/api/architect/jobs/{job_id}/accept": {
@@ -25779,7 +25996,10 @@
             "description": "Error"
           }
         },
-        "summary": "Accept Architect"
+        "summary": "Accept Architect",
+        "tags": [
+          "architect"
+        ]
       }
     },
     "/api/architect/jobs/{job_id}/cancel": {
@@ -25818,7 +26038,10 @@
             "description": "Error"
           }
         },
-        "summary": "Cancel Architect"
+        "summary": "Cancel Architect",
+        "tags": [
+          "architect"
+        ]
       }
     },
     "/api/architect/jobs/{job_id}/discard": {
@@ -25858,7 +26081,10 @@
             "description": "Error"
           }
         },
-        "summary": "Discard Architect"
+        "summary": "Discard Architect",
+        "tags": [
+          "architect"
+        ]
       }
     },
     "/api/architect/jobs/{job_id}/events": {
@@ -25896,7 +26122,10 @@
             "description": "Error"
           }
         },
-        "summary": "Architect Events"
+        "summary": "Architect Events",
+        "tags": [
+          "architect"
+        ]
       }
     },
     "/api/assistant/conversations": {
@@ -25928,7 +26157,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Conversations"
+        "summary": "List Conversations",
+        "tags": [
+          "assistant"
+        ]
       },
       "post": {
         "operationId": "create_conversation_api_assistant_conversations_post",
@@ -25964,7 +26196,10 @@
             "description": "Error"
           }
         },
-        "summary": "Create Conversation"
+        "summary": "Create Conversation",
+        "tags": [
+          "assistant"
+        ]
       }
     },
     "/api/assistant/conversations/{conversation_id}": {
@@ -25997,7 +26232,10 @@
             "description": "Error"
           }
         },
-        "summary": "Delete Conversation"
+        "summary": "Delete Conversation",
+        "tags": [
+          "assistant"
+        ]
       },
       "get": {
         "operationId": "get_conversation_api_assistant_conversations__conversation_id__get",
@@ -26034,7 +26272,10 @@
             "description": "Error"
           }
         },
-        "summary": "Get Conversation"
+        "summary": "Get Conversation",
+        "tags": [
+          "assistant"
+        ]
       },
       "patch": {
         "operationId": "rename_conversation_api_assistant_conversations__conversation_id__patch",
@@ -26081,7 +26322,10 @@
             "description": "Error"
           }
         },
-        "summary": "Rename Conversation"
+        "summary": "Rename Conversation",
+        "tags": [
+          "assistant"
+        ]
       }
     },
     "/api/assistant/conversations/{conversation_id}/attachments": {
@@ -26131,7 +26375,10 @@
             "description": "Error"
           }
         },
-        "summary": "Attach"
+        "summary": "Attach",
+        "tags": [
+          "assistant"
+        ]
       }
     },
     "/api/assistant/conversations/{conversation_id}/attachments/{attachment_id}": {
@@ -26179,7 +26426,10 @@
             "description": "Error"
           }
         },
-        "summary": "Detach"
+        "summary": "Detach",
+        "tags": [
+          "assistant"
+        ]
       }
     },
     "/api/assistant/conversations/{conversation_id}/attachments/{attachment_id}/refresh": {
@@ -26237,7 +26487,10 @@
             "description": "Error"
           }
         },
-        "summary": "Refresh Attachment"
+        "summary": "Refresh Attachment",
+        "tags": [
+          "assistant"
+        ]
       }
     },
     "/api/assistant/conversations/{conversation_id}/files": {
@@ -26291,7 +26544,10 @@
             "description": "Error"
           }
         },
-        "summary": "Upload Files"
+        "summary": "Upload Files",
+        "tags": [
+          "assistant"
+        ]
       }
     },
     "/api/assistant/conversations/{conversation_id}/files/{file_id}": {
@@ -26340,7 +26596,10 @@
             "description": "Error"
           }
         },
-        "summary": "Remove File"
+        "summary": "Remove File",
+        "tags": [
+          "assistant"
+        ]
       }
     },
     "/api/assistant/conversations/{conversation_id}/files/{file_id}/content": {
@@ -26387,7 +26646,10 @@
             "description": "Error"
           }
         },
-        "summary": "File Content"
+        "summary": "File Content",
+        "tags": [
+          "assistant"
+        ]
       }
     },
     "/api/assistant/conversations/{conversation_id}/files/{file_id}/text": {
@@ -26446,7 +26708,10 @@
             "description": "Error"
           }
         },
-        "summary": "File Text"
+        "summary": "File Text",
+        "tags": [
+          "assistant"
+        ]
       }
     },
     "/api/assistant/conversations/{conversation_id}/messages": {
@@ -26496,7 +26761,10 @@
             "description": "Error"
           }
         },
-        "summary": "Send Message"
+        "summary": "Send Message",
+        "tags": [
+          "assistant"
+        ]
       }
     },
     "/api/assistant/conversations/{conversation_id}/messages/{message_id}/cancel": {
@@ -26544,7 +26812,10 @@
             "description": "Error"
           }
         },
-        "summary": "Cancel Message"
+        "summary": "Cancel Message",
+        "tags": [
+          "assistant"
+        ]
       }
     },
     "/api/assistant/conversations/{conversation_id}/messages/{message_id}/events": {
@@ -26591,7 +26862,10 @@
             "description": "Error"
           }
         },
-        "summary": "Message Events"
+        "summary": "Message Events",
+        "tags": [
+          "assistant"
+        ]
       }
     },
     "/api/assistant/conversations/{conversation_id}/messages/{message_id}/retry": {
@@ -26649,7 +26923,10 @@
             "description": "Error"
           }
         },
-        "summary": "Retry Message"
+        "summary": "Retry Message",
+        "tags": [
+          "assistant"
+        ]
       }
     },
     "/api/assistant/conversations/{conversation_id}/snapshots/{snapshot_id}": {
@@ -26698,7 +26975,10 @@
             "description": "Error"
           }
         },
-        "summary": "Get Snapshot"
+        "summary": "Get Snapshot",
+        "tags": [
+          "assistant"
+        ]
       }
     },
     "/api/assistant/docs/search": {
@@ -26760,7 +27040,82 @@
             "description": "Error"
           }
         },
-        "summary": "Search Docs"
+        "summary": "Search Docs",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/assistant/files/retention": {
+      "get": {
+        "description": "How long conversation files are kept (API-056); ``retention_days: null`` keeps them with their conversation.",
+        "operationId": "file_retention_api_assistant_files_retention_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileRetention"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "File Retention",
+        "tags": [
+          "assistant"
+        ]
+      },
+      "put": {
+        "description": "Set how long conversation files are kept (administrators). The input file clean-up\n(``POST /api/inputs/cleanup``) and, in the desktop app, an hourly pass remove the older ones; ``null`` keeps them\nuntil the conversation is deleted.",
+        "operationId": "set_file_retention_api_assistant_files_retention_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileRetention"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileRetention"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Set File Retention",
+        "tags": [
+          "assistant"
+        ]
       }
     },
     "/api/assistant/files/support": {
@@ -26789,7 +27144,10 @@
             "description": "Error"
           }
         },
-        "summary": "File Support"
+        "summary": "File Support",
+        "tags": [
+          "assistant"
+        ]
       }
     },
     "/api/backup": {
@@ -26816,7 +27174,10 @@
             "description": "Error"
           }
         },
-        "summary": "Download Backup"
+        "summary": "Download Backup",
+        "tags": [
+          "backup"
+        ]
       }
     },
     "/api/backup/inspect": {
@@ -26855,7 +27216,10 @@
             "description": "Error"
           }
         },
-        "summary": "Inspect"
+        "summary": "Inspect",
+        "tags": [
+          "backup"
+        ]
       }
     },
     "/api/backup/local": {
@@ -26887,7 +27251,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Local Backups"
+        "summary": "List Local Backups",
+        "tags": [
+          "backup"
+        ]
       }
     },
     "/api/backup/local/{name}": {
@@ -26924,7 +27291,10 @@
             "description": "Error"
           }
         },
-        "summary": "Download Local Backup"
+        "summary": "Download Local Backup",
+        "tags": [
+          "backup"
+        ]
       }
     },
     "/api/backup/local/{name}/inspect": {
@@ -26964,7 +27334,10 @@
             "description": "Error"
           }
         },
-        "summary": "Inspect Local"
+        "summary": "Inspect Local",
+        "tags": [
+          "backup"
+        ]
       }
     },
     "/api/backup/restore": {
@@ -27003,7 +27376,10 @@
             "description": "Error"
           }
         },
-        "summary": "Restore"
+        "summary": "Restore",
+        "tags": [
+          "backup"
+        ]
       }
     },
     "/api/batches": {
@@ -27035,7 +27411,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Batches"
+        "summary": "List Batches",
+        "tags": [
+          "automation"
+        ]
       },
       "post": {
         "operationId": "create_batch_api_batches_post",
@@ -27071,7 +27450,10 @@
             "description": "Error"
           }
         },
-        "summary": "Create Batch"
+        "summary": "Create Batch",
+        "tags": [
+          "automation"
+        ]
       }
     },
     "/api/batches/parse": {
@@ -27110,7 +27492,10 @@
             "description": "Error"
           }
         },
-        "summary": "Parse Batch File"
+        "summary": "Parse Batch File",
+        "tags": [
+          "automation"
+        ]
       }
     },
     "/api/batches/plan": {
@@ -27149,7 +27534,10 @@
             "description": "Error"
           }
         },
-        "summary": "Plan Batch"
+        "summary": "Plan Batch",
+        "tags": [
+          "automation"
+        ]
       }
     },
     "/api/batches/{batch_id}": {
@@ -27181,7 +27569,10 @@
             "description": "Error"
           }
         },
-        "summary": "Delete Batch"
+        "summary": "Delete Batch",
+        "tags": [
+          "automation"
+        ]
       },
       "get": {
         "operationId": "get_batch_api_batches__batch_id__get",
@@ -27218,7 +27609,10 @@
             "description": "Error"
           }
         },
-        "summary": "Get Batch"
+        "summary": "Get Batch",
+        "tags": [
+          "automation"
+        ]
       }
     },
     "/api/batches/{batch_id}/cancel": {
@@ -27257,7 +27651,10 @@
             "description": "Error"
           }
         },
-        "summary": "Cancel Batch"
+        "summary": "Cancel Batch",
+        "tags": [
+          "automation"
+        ]
       }
     },
     "/api/batches/{batch_id}/export": {
@@ -27304,7 +27701,10 @@
             "description": "Error"
           }
         },
-        "summary": "Export Batch"
+        "summary": "Export Batch",
+        "tags": [
+          "automation"
+        ]
       }
     },
     "/api/batches/{batch_id}/pause": {
@@ -27343,7 +27743,10 @@
             "description": "Error"
           }
         },
-        "summary": "Pause Batch"
+        "summary": "Pause Batch",
+        "tags": [
+          "automation"
+        ]
       }
     },
     "/api/batches/{batch_id}/resume": {
@@ -27382,7 +27785,10 @@
             "description": "Error"
           }
         },
-        "summary": "Resume Batch"
+        "summary": "Resume Batch",
+        "tags": [
+          "automation"
+        ]
       }
     },
     "/api/benchmark-runs/compare": {
@@ -27431,7 +27837,10 @@
             "description": "Error"
           }
         },
-        "summary": "Compare Benchmark Runs"
+        "summary": "Compare Benchmark Runs",
+        "tags": [
+          "automation"
+        ]
       }
     },
     "/api/benchmark-runs/{run_id}": {
@@ -27463,7 +27872,10 @@
             "description": "Error"
           }
         },
-        "summary": "Delete Benchmark Run"
+        "summary": "Delete Benchmark Run",
+        "tags": [
+          "automation"
+        ]
       },
       "get": {
         "operationId": "get_benchmark_run_api_benchmark_runs__run_id__get",
@@ -27500,7 +27912,10 @@
             "description": "Error"
           }
         },
-        "summary": "Get Benchmark Run"
+        "summary": "Get Benchmark Run",
+        "tags": [
+          "automation"
+        ]
       }
     },
     "/api/benchmark-runs/{run_id}/cancel": {
@@ -27539,7 +27954,10 @@
             "description": "Error"
           }
         },
-        "summary": "Cancel Benchmark Run"
+        "summary": "Cancel Benchmark Run",
+        "tags": [
+          "automation"
+        ]
       }
     },
     "/api/benchmarks": {
@@ -27589,7 +28007,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Suites"
+        "summary": "List Suites",
+        "tags": [
+          "automation"
+        ]
       },
       "post": {
         "operationId": "create_suite_api_benchmarks_post",
@@ -27625,7 +28046,10 @@
             "description": "Error"
           }
         },
-        "summary": "Create Suite"
+        "summary": "Create Suite",
+        "tags": [
+          "automation"
+        ]
       }
     },
     "/api/benchmarks/{suite_id}": {
@@ -27657,7 +28081,10 @@
             "description": "Error"
           }
         },
-        "summary": "Delete Suite"
+        "summary": "Delete Suite",
+        "tags": [
+          "automation"
+        ]
       },
       "get": {
         "operationId": "get_suite_api_benchmarks__suite_id__get",
@@ -27694,7 +28121,10 @@
             "description": "Error"
           }
         },
-        "summary": "Get Suite"
+        "summary": "Get Suite",
+        "tags": [
+          "automation"
+        ]
       },
       "put": {
         "operationId": "update_suite_api_benchmarks__suite_id__put",
@@ -27741,7 +28171,10 @@
             "description": "Error"
           }
         },
-        "summary": "Update Suite"
+        "summary": "Update Suite",
+        "tags": [
+          "automation"
+        ]
       }
     },
     "/api/benchmarks/{suite_id}/model-choice": {
@@ -27833,7 +28266,10 @@
             "description": "Error"
           }
         },
-        "summary": "Benchmark Model Choice"
+        "summary": "Benchmark Model Choice",
+        "tags": [
+          "automation"
+        ]
       }
     },
     "/api/benchmarks/{suite_id}/plan": {
@@ -27883,7 +28319,10 @@
             "description": "Error"
           }
         },
-        "summary": "Plan Benchmark"
+        "summary": "Plan Benchmark",
+        "tags": [
+          "automation"
+        ]
       }
     },
     "/api/benchmarks/{suite_id}/runs": {
@@ -27926,7 +28365,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Benchmark Runs"
+        "summary": "List Benchmark Runs",
+        "tags": [
+          "automation"
+        ]
       },
       "post": {
         "operationId": "start_benchmark_api_benchmarks__suite_id__runs_post",
@@ -27973,7 +28415,10 @@
             "description": "Error"
           }
         },
-        "summary": "Start Benchmark"
+        "summary": "Start Benchmark",
+        "tags": [
+          "automation"
+        ]
       }
     },
     "/api/budget-requests": {
@@ -28019,7 +28464,10 @@
             "description": "Error"
           }
         },
-        "summary": "Budget Requests"
+        "summary": "Budget Requests",
+        "tags": [
+          "runs"
+        ]
       }
     },
     "/api/diagnostics": {
@@ -28048,7 +28496,10 @@
             "description": "Error"
           }
         },
-        "summary": "Diagnostics"
+        "summary": "Diagnostics",
+        "tags": [
+          "workspace"
+        ]
       }
     },
     "/api/diagnostics/connection": {
@@ -28095,7 +28546,10 @@
             "description": "Error"
           }
         },
-        "summary": "Diagnostics Connection"
+        "summary": "Diagnostics Connection",
+        "tags": [
+          "workspace"
+        ]
       }
     },
     "/api/error-codes": {
@@ -28124,7 +28578,10 @@
             "description": "Error"
           }
         },
-        "summary": "Error Codes"
+        "summary": "Error Codes",
+        "tags": [
+          "workspace"
+        ]
       }
     },
     "/api/export-jobs/{job_id}": {
@@ -28163,7 +28620,10 @@
             "description": "Error"
           }
         },
-        "summary": "Get Export Job"
+        "summary": "Get Export Job",
+        "tags": [
+          "publications"
+        ]
       }
     },
     "/api/export-jobs/{job_id}/cancel": {
@@ -28202,7 +28662,10 @@
             "description": "Error"
           }
         },
-        "summary": "Cancel Export Job"
+        "summary": "Cancel Export Job",
+        "tags": [
+          "publications"
+        ]
       }
     },
     "/api/exports/{export_id}/download": {
@@ -28239,7 +28702,10 @@
             "description": "Error"
           }
         },
-        "summary": "Download Export"
+        "summary": "Download Export",
+        "tags": [
+          "publications"
+        ]
       }
     },
     "/api/health": {
@@ -28271,7 +28737,10 @@
             "description": "Error"
           }
         },
-        "summary": "Health"
+        "summary": "Health",
+        "tags": [
+          "workspace"
+        ]
       }
     },
     "/api/inputs": {
@@ -28299,7 +28768,10 @@
             "description": "Error"
           }
         },
-        "summary": "Input Storage"
+        "summary": "Input Storage",
+        "tags": [
+          "knowledge"
+        ]
       },
       "post": {
         "description": "Check and store files for a run; refused files are reported, never stored.",
@@ -28340,11 +28812,15 @@
             "description": "Error"
           }
         },
-        "summary": "Upload Inputs"
+        "summary": "Upload Inputs",
+        "tags": [
+          "knowledge"
+        ]
       }
     },
     "/api/inputs/cleanup": {
       "post": {
+        "description": "Remove input files nobody uses, with ``older_than_days`` also those of older finished runs, and the\nassistant conversation files past their retention period (when an administrator set one).",
         "operationId": "cleanup_inputs_api_inputs_cleanup_post",
         "requestBody": {
           "content": {
@@ -28361,7 +28837,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/nodestro_runtime__input_files__CleanupResult"
+                  "$ref": "#/components/schemas/InputCleanupResult"
                 }
               }
             },
@@ -28378,7 +28854,10 @@
             "description": "Error"
           }
         },
-        "summary": "Cleanup Inputs"
+        "summary": "Cleanup Inputs",
+        "tags": [
+          "knowledge"
+        ]
       }
     },
     "/api/inputs/formats": {
@@ -28406,7 +28885,10 @@
             "description": "Error"
           }
         },
-        "summary": "Input Formats"
+        "summary": "Input Formats",
+        "tags": [
+          "knowledge"
+        ]
       }
     },
     "/api/inputs/{file_id}": {
@@ -28438,7 +28920,10 @@
             "description": "Error"
           }
         },
-        "summary": "Delete Input"
+        "summary": "Delete Input",
+        "tags": [
+          "knowledge"
+        ]
       },
       "get": {
         "operationId": "input_file_api_inputs__file_id__get",
@@ -28475,7 +28960,10 @@
             "description": "Error"
           }
         },
-        "summary": "Input File"
+        "summary": "Input File",
+        "tags": [
+          "knowledge"
+        ]
       }
     },
     "/api/inputs/{file_id}/content": {
@@ -28512,7 +29000,10 @@
             "description": "Error"
           }
         },
-        "summary": "Input Content"
+        "summary": "Input Content",
+        "tags": [
+          "knowledge"
+        ]
       }
     },
     "/api/inputs/{file_id}/text": {
@@ -28562,7 +29053,10 @@
             "description": "Error"
           }
         },
-        "summary": "Input Text"
+        "summary": "Input Text",
+        "tags": [
+          "knowledge"
+        ]
       }
     },
     "/api/knowledge": {
@@ -28612,7 +29106,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Knowledge"
+        "summary": "List Knowledge",
+        "tags": [
+          "knowledge"
+        ]
       },
       "post": {
         "operationId": "upload_knowledge_api_knowledge_post",
@@ -28652,7 +29149,10 @@
             "description": "Error"
           }
         },
-        "summary": "Upload Knowledge"
+        "summary": "Upload Knowledge",
+        "tags": [
+          "knowledge"
+        ]
       }
     },
     "/api/knowledge/adopt": {
@@ -28691,7 +29191,10 @@
             "description": "Error"
           }
         },
-        "summary": "Adopt Confirm"
+        "summary": "Adopt Confirm",
+        "tags": [
+          "knowledge"
+        ]
       }
     },
     "/api/knowledge/adopt/check": {
@@ -28734,7 +29237,10 @@
             "description": "Error"
           }
         },
-        "summary": "Adopt Check"
+        "summary": "Adopt Check",
+        "tags": [
+          "knowledge"
+        ]
       }
     },
     "/api/knowledge/collections": {
@@ -28766,7 +29272,10 @@
             "description": "Error"
           }
         },
-        "summary": "Knowledge Collections"
+        "summary": "Knowledge Collections",
+        "tags": [
+          "knowledge"
+        ]
       }
     },
     "/api/knowledge/index": {
@@ -28794,7 +29303,10 @@
             "description": "Error"
           }
         },
-        "summary": "Knowledge Drop Vectors"
+        "summary": "Knowledge Drop Vectors",
+        "tags": [
+          "knowledge"
+        ]
       },
       "get": {
         "operationId": "knowledge_index_api_knowledge_index_get",
@@ -28820,7 +29332,10 @@
             "description": "Error"
           }
         },
-        "summary": "Knowledge Index"
+        "summary": "Knowledge Index",
+        "tags": [
+          "knowledge"
+        ]
       }
     },
     "/api/knowledge/index/cancel": {
@@ -28848,7 +29363,10 @@
             "description": "Error"
           }
         },
-        "summary": "Knowledge Cancel Reindex"
+        "summary": "Knowledge Cancel Reindex",
+        "tags": [
+          "knowledge"
+        ]
       }
     },
     "/api/knowledge/index/rebuild": {
@@ -28887,7 +29405,10 @@
             "description": "Error"
           }
         },
-        "summary": "Knowledge Reindex"
+        "summary": "Knowledge Reindex",
+        "tags": [
+          "knowledge"
+        ]
       }
     },
     "/api/knowledge/search": {
@@ -28981,7 +29502,10 @@
             "description": "Error"
           }
         },
-        "summary": "Search Knowledge"
+        "summary": "Search Knowledge",
+        "tags": [
+          "knowledge"
+        ]
       }
     },
     "/api/knowledge/{file_id}": {
@@ -29013,7 +29537,10 @@
             "description": "Error"
           }
         },
-        "summary": "Delete Knowledge"
+        "summary": "Delete Knowledge",
+        "tags": [
+          "knowledge"
+        ]
       },
       "patch": {
         "operationId": "update_knowledge_api_knowledge__file_id__patch",
@@ -29060,7 +29587,10 @@
             "description": "Error"
           }
         },
-        "summary": "Update Knowledge"
+        "summary": "Update Knowledge",
+        "tags": [
+          "knowledge"
+        ]
       }
     },
     "/api/knowledge/{file_id}/content": {
@@ -29097,7 +29627,10 @@
             "description": "Error"
           }
         },
-        "summary": "Knowledge Content"
+        "summary": "Knowledge Content",
+        "tags": [
+          "knowledge"
+        ]
       }
     },
     "/api/knowledge/{file_id}/ocr": {
@@ -29137,7 +29670,10 @@
             "description": "Error"
           }
         },
-        "summary": "Recognise Knowledge"
+        "summary": "Recognise Knowledge",
+        "tags": [
+          "knowledge"
+        ]
       }
     },
     "/api/library": {
@@ -29196,7 +29732,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Library"
+        "summary": "List Library",
+        "tags": [
+          "examples"
+        ]
       }
     },
     "/api/library/{template_id}": {
@@ -29260,7 +29799,10 @@
             "description": "Error"
           }
         },
-        "summary": "Get Library Template"
+        "summary": "Get Library Template",
+        "tags": [
+          "examples"
+        ]
       }
     },
     "/api/library/{template_id}/copy": {
@@ -29310,7 +29852,10 @@
             "description": "Error"
           }
         },
-        "summary": "Copy Library Template"
+        "summary": "Copy Library Template",
+        "tags": [
+          "examples"
+        ]
       }
     },
     "/api/library/{template_id}/models": {
@@ -29374,7 +29919,10 @@
             "description": "Error"
           }
         },
-        "summary": "Library Template Models"
+        "summary": "Library Template Models",
+        "tags": [
+          "examples"
+        ]
       }
     },
     "/api/library/{template_id}/samples/{sample_id}": {
@@ -29445,7 +29993,10 @@
             "description": "Error"
           }
         },
-        "summary": "Download Library Sample"
+        "summary": "Download Library Sample",
+        "tags": [
+          "examples"
+        ]
       }
     },
     "/api/local-models": {
@@ -29474,7 +30025,10 @@
             "description": "Error"
           }
         },
-        "summary": "Local Overview"
+        "summary": "Local Overview",
+        "tags": [
+          "local models"
+        ]
       }
     },
     "/api/local-models/autostart": {
@@ -29512,7 +30066,10 @@
             "description": "Error"
           }
         },
-        "summary": "Local Autostart"
+        "summary": "Local Autostart",
+        "tags": [
+          "local models"
+        ]
       }
     },
     "/api/local-models/benchmark": {
@@ -29551,7 +30108,10 @@
             "description": "Error"
           }
         },
-        "summary": "Local Benchmark"
+        "summary": "Local Benchmark",
+        "tags": [
+          "local models"
+        ]
       }
     },
     "/api/local-models/import": {
@@ -29589,7 +30149,10 @@
             "description": "Error"
           }
         },
-        "summary": "Local Import"
+        "summary": "Local Import",
+        "tags": [
+          "local models"
+        ]
       }
     },
     "/api/local-models/jobs": {
@@ -29621,7 +30184,10 @@
             "description": "Error"
           }
         },
-        "summary": "Local Jobs"
+        "summary": "Local Jobs",
+        "tags": [
+          "local models"
+        ]
       }
     },
     "/api/local-models/jobs/{job_id}": {
@@ -29660,7 +30226,10 @@
             "description": "Error"
           }
         },
-        "summary": "Local Job"
+        "summary": "Local Job",
+        "tags": [
+          "local models"
+        ]
       }
     },
     "/api/local-models/jobs/{job_id}/cancel": {
@@ -29699,7 +30268,10 @@
             "description": "Error"
           }
         },
-        "summary": "Local Cancel"
+        "summary": "Local Cancel",
+        "tags": [
+          "local models"
+        ]
       }
     },
     "/api/local-models/models/{name}": {
@@ -29731,7 +30303,10 @@
             "description": "Error"
           }
         },
-        "summary": "Local Delete"
+        "summary": "Local Delete",
+        "tags": [
+          "local models"
+        ]
       }
     },
     "/api/local-models/pull": {
@@ -29769,7 +30344,10 @@
             "description": "Error"
           }
         },
-        "summary": "Local Pull"
+        "summary": "Local Pull",
+        "tags": [
+          "local models"
+        ]
       }
     },
     "/api/local-models/readiness": {
@@ -29808,7 +30386,10 @@
             "description": "Error"
           }
         },
-        "summary": "Local Readiness"
+        "summary": "Local Readiness",
+        "tags": [
+          "local models"
+        ]
       }
     },
     "/api/local-models/recommend": {
@@ -29847,7 +30428,10 @@
             "description": "Error"
           }
         },
-        "summary": "Local Recommend"
+        "summary": "Local Recommend",
+        "tags": [
+          "local models"
+        ]
       }
     },
     "/api/local-models/runtime": {
@@ -29885,7 +30469,10 @@
             "description": "Error"
           }
         },
-        "summary": "Local Install Runtime"
+        "summary": "Local Install Runtime",
+        "tags": [
+          "local models"
+        ]
       }
     },
     "/api/local-models/setup": {
@@ -29924,7 +30511,10 @@
             "description": "Error"
           }
         },
-        "summary": "Local Setup"
+        "summary": "Local Setup",
+        "tags": [
+          "local models"
+        ]
       }
     },
     "/api/local-models/start": {
@@ -29952,7 +30542,10 @@
             "description": "Error"
           }
         },
-        "summary": "Local Start"
+        "summary": "Local Start",
+        "tags": [
+          "local models"
+        ]
       }
     },
     "/api/local-models/stop": {
@@ -29981,7 +30574,10 @@
             "description": "Error"
           }
         },
-        "summary": "Local Stop"
+        "summary": "Local Stop",
+        "tags": [
+          "local models"
+        ]
       }
     },
     "/api/local-models/storage": {
@@ -30027,7 +30623,10 @@
             "description": "Error"
           }
         },
-        "summary": "Local Storage"
+        "summary": "Local Storage",
+        "tags": [
+          "local models"
+        ]
       }
     },
     "/api/mcp/events": {
@@ -30074,7 +30673,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Events"
+        "summary": "List Events",
+        "tags": [
+          "MCP"
+        ]
       }
     },
     "/api/mcp/servers": {
@@ -30106,7 +30708,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Servers"
+        "summary": "List Servers",
+        "tags": [
+          "MCP"
+        ]
       },
       "post": {
         "operationId": "add_server_api_mcp_servers_post",
@@ -30142,7 +30747,10 @@
             "description": "Error"
           }
         },
-        "summary": "Add Server"
+        "summary": "Add Server",
+        "tags": [
+          "MCP"
+        ]
       }
     },
     "/api/mcp/servers/{server_id}": {
@@ -30174,7 +30782,10 @@
             "description": "Error"
           }
         },
-        "summary": "Remove Server"
+        "summary": "Remove Server",
+        "tags": [
+          "MCP"
+        ]
       },
       "get": {
         "operationId": "get_server_api_mcp_servers__server_id__get",
@@ -30211,7 +30822,10 @@
             "description": "Error"
           }
         },
-        "summary": "Get Server"
+        "summary": "Get Server",
+        "tags": [
+          "MCP"
+        ]
       },
       "put": {
         "operationId": "update_server_api_mcp_servers__server_id__put",
@@ -30258,7 +30872,10 @@
             "description": "Error"
           }
         },
-        "summary": "Update Server"
+        "summary": "Update Server",
+        "tags": [
+          "MCP"
+        ]
       }
     },
     "/api/mcp/servers/{server_id}/discover": {
@@ -30298,7 +30915,10 @@
             "description": "Error"
           }
         },
-        "summary": "Discover Server"
+        "summary": "Discover Server",
+        "tags": [
+          "MCP"
+        ]
       }
     },
     "/api/mcp/servers/{server_id}/environment": {
@@ -30338,7 +30958,10 @@
             "description": "Error"
           }
         },
-        "summary": "Server Environment"
+        "summary": "Server Environment",
+        "tags": [
+          "MCP"
+        ]
       }
     },
     "/api/mcp/servers/{server_id}/environment/plan": {
@@ -30378,7 +31001,10 @@
             "description": "Error"
           }
         },
-        "summary": "Plan Server Environment"
+        "summary": "Plan Server Environment",
+        "tags": [
+          "MCP"
+        ]
       }
     },
     "/api/mcp/servers/{server_id}/oauth/sign-out": {
@@ -30417,7 +31043,10 @@
             "description": "Error"
           }
         },
-        "summary": "Sign Out Oauth"
+        "summary": "Sign Out Oauth",
+        "tags": [
+          "MCP"
+        ]
       }
     },
     "/api/mcp/servers/{server_id}/oauth/start": {
@@ -30457,7 +31086,10 @@
             "description": "Error"
           }
         },
-        "summary": "Start Oauth"
+        "summary": "Start Oauth",
+        "tags": [
+          "MCP"
+        ]
       }
     },
     "/api/mcp/servers/{server_id}/tools": {
@@ -30500,7 +31132,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Tools"
+        "summary": "List Tools",
+        "tags": [
+          "MCP"
+        ]
       }
     },
     "/api/mcp/servers/{server_id}/tools/{name}/decision": {
@@ -30558,7 +31193,10 @@
             "description": "Error"
           }
         },
-        "summary": "Decide Tool"
+        "summary": "Decide Tool",
+        "tags": [
+          "MCP"
+        ]
       }
     },
     "/api/mcp/stats": {
@@ -30587,7 +31225,10 @@
             "description": "Error"
           }
         },
-        "summary": "Mcp Stats"
+        "summary": "Mcp Stats",
+        "tags": [
+          "MCP"
+        ]
       }
     },
     "/api/mcp/status": {
@@ -30615,7 +31256,10 @@
             "description": "Error"
           }
         },
-        "summary": "Mcp Status"
+        "summary": "Mcp Status",
+        "tags": [
+          "MCP"
+        ]
       }
     },
     "/api/memory": {
@@ -30647,7 +31291,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Spaces"
+        "summary": "List Spaces",
+        "tags": [
+          "memory"
+        ]
       }
     },
     "/api/memory/propose": {
@@ -30685,7 +31332,10 @@
             "description": "Error"
           }
         },
-        "summary": "Propose Memory"
+        "summary": "Propose Memory",
+        "tags": [
+          "memory"
+        ]
       }
     },
     "/api/memory/{space}": {
@@ -30717,7 +31367,10 @@
             "description": "Error"
           }
         },
-        "summary": "Clear Memory"
+        "summary": "Clear Memory",
+        "tags": [
+          "memory"
+        ]
       },
       "get": {
         "operationId": "list_memory_api_memory__space__get",
@@ -30758,7 +31411,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Memory"
+        "summary": "List Memory",
+        "tags": [
+          "memory"
+        ]
       }
     },
     "/api/memory/{space}/file": {
@@ -30799,7 +31455,10 @@
             "description": "Error"
           }
         },
-        "summary": "Delete Memory"
+        "summary": "Delete Memory",
+        "tags": [
+          "memory"
+        ]
       },
       "get": {
         "operationId": "read_memory_api_memory__space__file_get",
@@ -30845,7 +31504,10 @@
             "description": "Error"
           }
         },
-        "summary": "Read Memory"
+        "summary": "Read Memory",
+        "tags": [
+          "memory"
+        ]
       },
       "put": {
         "operationId": "write_memory_api_memory__space__file_put",
@@ -30892,7 +31554,10 @@
             "description": "Error"
           }
         },
-        "summary": "Write Memory"
+        "summary": "Write Memory",
+        "tags": [
+          "memory"
+        ]
       }
     },
     "/api/meta": {
@@ -30920,7 +31585,10 @@
             "description": "Error"
           }
         },
-        "summary": "Meta"
+        "summary": "Meta",
+        "tags": [
+          "workspace"
+        ]
       }
     },
     "/api/models/capabilities": {
@@ -30962,7 +31630,10 @@
             "description": "Error"
           }
         },
-        "summary": "Get Model Capabilities"
+        "summary": "Get Model Capabilities",
+        "tags": [
+          "agents"
+        ]
       }
     },
     "/api/models/profile": {
@@ -31004,7 +31675,10 @@
             "description": "Error"
           }
         },
-        "summary": "Get Model Profile"
+        "summary": "Get Model Profile",
+        "tags": [
+          "agents"
+        ]
       }
     },
     "/api/organize": {
@@ -31032,7 +31706,10 @@
             "description": "Error"
           }
         },
-        "summary": "Organize State"
+        "summary": "Organize State",
+        "tags": [
+          "workspace"
+        ]
       }
     },
     "/api/organize/{kind}/{item_id}": {
@@ -31096,7 +31773,10 @@
             "description": "Error"
           }
         },
-        "summary": "Organize Item"
+        "summary": "Organize Item",
+        "tags": [
+          "workspace"
+        ]
       }
     },
     "/api/pricing": {
@@ -31129,7 +31809,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Prices"
+        "summary": "List Prices",
+        "tags": [
+          "pricing"
+        ]
       }
     },
     "/api/pricing/billing-keys": {
@@ -31162,7 +31845,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Billing Keys"
+        "summary": "List Billing Keys",
+        "tags": [
+          "pricing"
+        ]
       }
     },
     "/api/pricing/billing-keys/{provider}": {
@@ -31198,7 +31884,10 @@
             "description": "Error"
           }
         },
-        "summary": "Remove Billing Key"
+        "summary": "Remove Billing Key",
+        "tags": [
+          "pricing"
+        ]
       },
       "put": {
         "description": "Store an admin key of a provider's billing API, encrypted (servers only).",
@@ -31250,7 +31939,10 @@
             "description": "Error"
           }
         },
-        "summary": "Set Billing Key"
+        "summary": "Set Billing Key",
+        "tags": [
+          "pricing"
+        ]
       }
     },
     "/api/pricing/history": {
@@ -31297,7 +31989,10 @@
             "description": "Error"
           }
         },
-        "summary": "Pricing History"
+        "summary": "Pricing History",
+        "tags": [
+          "pricing"
+        ]
       }
     },
     "/api/pricing/overrides/{provider}/{model}": {
@@ -31339,7 +32034,10 @@
             "description": "Error"
           }
         },
-        "summary": "Remove Override"
+        "summary": "Remove Override",
+        "tags": [
+          "pricing"
+        ]
       },
       "put": {
         "description": "Store an individual price for one model; it wins over the reference price (history is kept).",
@@ -31396,7 +32094,10 @@
             "description": "Error"
           }
         },
-        "summary": "Set Override"
+        "summary": "Set Override",
+        "tags": [
+          "pricing"
+        ]
       }
     },
     "/api/pricing/reconciliation": {
@@ -31461,7 +32162,10 @@
             "description": "Error"
           }
         },
-        "summary": "Get Reconciliation"
+        "summary": "Get Reconciliation",
+        "tags": [
+          "pricing"
+        ]
       },
       "post": {
         "description": "Like ``GET``, with thresholds and, optionally, admin keys for this one request (never stored).",
@@ -31498,7 +32202,10 @@
             "description": "Error"
           }
         },
-        "summary": "Post Reconciliation"
+        "summary": "Post Reconciliation",
+        "tags": [
+          "pricing"
+        ]
       }
     },
     "/api/pricing/reviews": {
@@ -31530,7 +32237,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Reviews"
+        "summary": "List Reviews",
+        "tags": [
+          "pricing"
+        ]
       }
     },
     "/api/pricing/reviews/{version}/approve": {
@@ -31579,7 +32289,10 @@
             "description": "Error"
           }
         },
-        "summary": "Approve Review"
+        "summary": "Approve Review",
+        "tags": [
+          "pricing"
+        ]
       }
     },
     "/api/pricing/reviews/{version}/reject": {
@@ -31621,7 +32334,10 @@
             "description": "Error"
           }
         },
-        "summary": "Reject Review"
+        "summary": "Reject Review",
+        "tags": [
+          "pricing"
+        ]
       }
     },
     "/api/pricing/status": {
@@ -31649,7 +32365,10 @@
             "description": "Error"
           }
         },
-        "summary": "Pricing Status"
+        "summary": "Pricing Status",
+        "tags": [
+          "pricing"
+        ]
       }
     },
     "/api/pricing/sync": {
@@ -31678,7 +32397,10 @@
             "description": "Error"
           }
         },
-        "summary": "Sync Prices"
+        "summary": "Sync Prices",
+        "tags": [
+          "pricing"
+        ]
       }
     },
     "/api/publication-overview": {
@@ -31711,7 +32433,10 @@
             "description": "Error"
           }
         },
-        "summary": "Publication Overview"
+        "summary": "Publication Overview",
+        "tags": [
+          "publications"
+        ]
       }
     },
     "/api/publications": {
@@ -31743,7 +32468,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Publications"
+        "summary": "List Publications",
+        "tags": [
+          "publications"
+        ]
       }
     },
     "/api/publications/{publication_id}": {
@@ -31775,7 +32503,10 @@
             "description": "Error"
           }
         },
-        "summary": "Delete Publication"
+        "summary": "Delete Publication",
+        "tags": [
+          "publications"
+        ]
       },
       "patch": {
         "operationId": "update_publication_api_publications__publication_id__patch",
@@ -31822,7 +32553,10 @@
             "description": "Error"
           }
         },
-        "summary": "Update Publication"
+        "summary": "Update Publication",
+        "tags": [
+          "publications"
+        ]
       }
     },
     "/api/publications/{publication_id}/activate": {
@@ -31872,7 +32606,10 @@
             "description": "Error"
           }
         },
-        "summary": "Activate"
+        "summary": "Activate",
+        "tags": [
+          "publications"
+        ]
       }
     },
     "/api/publications/{publication_id}/docs": {
@@ -31927,7 +32664,10 @@
             "description": "Error"
           }
         },
-        "summary": "Api Docs"
+        "summary": "Api Docs",
+        "tags": [
+          "publications"
+        ]
       }
     },
     "/api/publications/{publication_id}/enabled": {
@@ -31976,7 +32716,10 @@
             "description": "Error"
           }
         },
-        "summary": "Set Enabled"
+        "summary": "Set Enabled",
+        "tags": [
+          "publications"
+        ]
       }
     },
     "/api/publications/{publication_id}/export-jobs": {
@@ -32019,7 +32762,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Export Jobs"
+        "summary": "List Export Jobs",
+        "tags": [
+          "publications"
+        ]
       },
       "post": {
         "description": "Build a portable package in the background (``options.kind`` must be ``portable``).\n\nOn a server this answers ``403 export.server_unsupported`` unless its operator enabled export jobs\n(``NODESTRO_SERVER_EXPORT_JOBS=1``); then one package is built at a time on the whole server\n(``export.busy`` otherwise) and a package larger than ``NODESTRO_SERVER_EXPORT_MAX_BYTES`` (default 2 GiB) is\nrefused (``403 export.server_too_large`` from the estimate, or the job fails with that code).",
@@ -32067,7 +32813,10 @@
             "description": "Error"
           }
         },
-        "summary": "Start Export Job"
+        "summary": "Start Export Job",
+        "tags": [
+          "publications"
+        ]
       }
     },
     "/api/publications/{publication_id}/export/check": {
@@ -32116,7 +32865,10 @@
             "description": "Error"
           }
         },
-        "summary": "Export Check"
+        "summary": "Export Check",
+        "tags": [
+          "publications"
+        ]
       }
     },
     "/api/publications/{publication_id}/exports": {
@@ -32159,7 +32911,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Exports"
+        "summary": "List Exports",
+        "tags": [
+          "publications"
+        ]
       },
       "post": {
         "operationId": "create_export_api_publications__publication_id__exports_post",
@@ -32206,7 +32961,10 @@
             "description": "Error"
           }
         },
-        "summary": "Create Export"
+        "summary": "Create Export",
+        "tags": [
+          "publications"
+        ]
       }
     },
     "/api/publications/{publication_id}/gate": {
@@ -32256,7 +33014,10 @@
             "description": "Error"
           }
         },
-        "summary": "Set Gate"
+        "summary": "Set Gate",
+        "tags": [
+          "publications"
+        ]
       }
     },
     "/api/publications/{publication_id}/guide": {
@@ -32306,7 +33067,10 @@
             "description": "Error"
           }
         },
-        "summary": "Create Guide"
+        "summary": "Create Guide",
+        "tags": [
+          "publications"
+        ]
       }
     },
     "/api/publications/{publication_id}/guides": {
@@ -32349,7 +33113,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Guides"
+        "summary": "List Guides",
+        "tags": [
+          "publications"
+        ]
       }
     },
     "/api/publications/{publication_id}/releases/{number}": {
@@ -32398,7 +33165,10 @@
             "description": "Error"
           }
         },
-        "summary": "Get Release"
+        "summary": "Get Release",
+        "tags": [
+          "publications"
+        ]
       }
     },
     "/api/publications/{publication_id}/runs": {
@@ -32452,7 +33222,10 @@
             "description": "Error"
           }
         },
-        "summary": "Publication Runs"
+        "summary": "Publication Runs",
+        "tags": [
+          "publications"
+        ]
       }
     },
     "/api/publications/{publication_id}/test": {
@@ -32502,7 +33275,10 @@
             "description": "Error"
           }
         },
-        "summary": "Test Api"
+        "summary": "Test Api",
+        "tags": [
+          "publications"
+        ]
       }
     },
     "/api/published/{slug}": {
@@ -32530,15 +33306,55 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "No API key, or an unknown, revoked or expired one (auth.*)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "The key may not do this (auth.scope), or the API answers only this computer (lan.not_enabled)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "Unknown API, version, run, approval or file (*.not_found)"
+          },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/PublishedError"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request does not fit the input form or the route's parameters (request.invalid)"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "A limit is reached (see error.code and Retry-After)"
           }
         },
         "summary": "What this API expects and returns",
@@ -32576,15 +33392,55 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "No API key, or an unknown, revoked or expired one (auth.*)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "The key may not do this (auth.scope), or the API answers only this computer (lan.not_enabled)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "Unknown API, version, run, approval or file (*.not_found)"
+          },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/PublishedError"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request does not fit the input form or the route's parameters (request.invalid)"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "A limit is reached (see error.code and Retry-After)"
           }
         },
         "summary": "The latest runs of this API",
@@ -32637,11 +33493,95 @@
             },
             "description": "Started"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "The body is not JSON or not a valid multipart form (see error.code)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "No API key, or an unknown, revoked or expired one (auth.*)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "The key may not do this (auth.scope), or the API answers only this computer (lan.not_enabled)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "Unknown API, version, run, approval or file (*.not_found)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "A conflict with the run's state or an earlier request (see error.code)"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "The request is too large (request.too_large)"
+          },
           "422": {
-            "description": "The request does not fit the input form"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "The request does not fit the input form or the route's parameters (request.invalid)"
           },
           "429": {
-            "description": "A limit is reached (see error.code)"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "A limit is reached (see error.code and Retry-After)"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "The API is switched off, or a model provider cannot be used now (Retry-After)"
           }
         },
         "summary": "Start a run of the active version",
@@ -32684,15 +33624,55 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "No API key, or an unknown, revoked or expired one (auth.*)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "The key may not do this (auth.scope), or the API answers only this computer (lan.not_enabled)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "Unknown API, version, run, approval or file (*.not_found)"
+          },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/PublishedError"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request does not fit the input form or the route's parameters (request.invalid)"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "A limit is reached (see error.code and Retry-After)"
           }
         },
         "summary": "Status of a run",
@@ -32739,15 +33719,55 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "No API key, or an unknown, revoked or expired one (auth.*)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "The key may not do this (auth.scope), or the API answers only this computer (lan.not_enabled)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "Unknown API, version, run, approval or file (*.not_found)"
+          },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/PublishedError"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request does not fit the input form or the route's parameters (request.invalid)"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "A limit is reached (see error.code and Retry-After)"
           }
         },
         "summary": "Approvals that wait for a decision, with what to review",
@@ -32801,15 +33821,75 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "No API key, or an unknown, revoked or expired one (auth.*)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "The key may not do this (auth.scope), or the API answers only this computer (lan.not_enabled)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "Unknown API, version, run, approval or file (*.not_found)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "A conflict with the run's state or an earlier request (see error.code)"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "The request is too large (request.too_large)"
+          },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/PublishedError"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request does not fit the input form or the route's parameters (request.invalid)"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "A limit is reached (see error.code and Retry-After)"
           }
         },
         "summary": "Approve or reject a waiting approval",
@@ -32852,15 +33932,65 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "No API key, or an unknown, revoked or expired one (auth.*)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "The key may not do this (auth.scope), or the API answers only this computer (lan.not_enabled)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "Unknown API, version, run, approval or file (*.not_found)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "A conflict with the run's state or an earlier request (see error.code)"
+          },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/PublishedError"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request does not fit the input form or the route's parameters (request.invalid)"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "A limit is reached (see error.code and Retry-After)"
           }
         },
         "summary": "Cancel a run",
@@ -32902,15 +34032,55 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "No API key, or an unknown, revoked or expired one (auth.*)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "The key may not do this (auth.scope), or the API answers only this computer (lan.not_enabled)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "Unknown API, version, run, approval or file (*.not_found)"
+          },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/PublishedError"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request does not fit the input form or the route's parameters (request.invalid)"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "A limit is reached (see error.code and Retry-After)"
           }
         },
         "summary": "Progress as Server-Sent Events",
@@ -32958,15 +34128,55 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "No API key, or an unknown, revoked or expired one (auth.*)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "The key may not do this (auth.scope), or the API answers only this computer (lan.not_enabled)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "Unknown API, version, run, approval or file (*.not_found)"
+          },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/PublishedError"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request does not fit the input form or the route's parameters (request.invalid)"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "A limit is reached (see error.code and Retry-After)"
           }
         },
         "summary": "Result files of a run",
@@ -33016,15 +34226,55 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "No API key, or an unknown, revoked or expired one (auth.*)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "The key may not do this (auth.scope), or the API answers only this computer (lan.not_enabled)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "Unknown API, version, run, approval or file (*.not_found)"
+          },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/PublishedError"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request does not fit the input form or the route's parameters (request.invalid)"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "A limit is reached (see error.code and Retry-After)"
           }
         },
         "summary": "Download a result file",
@@ -33067,18 +34317,65 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "No API key, or an unknown, revoked or expired one (auth.*)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "The key may not do this (auth.scope), or the API answers only this computer (lan.not_enabled)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "Unknown API, version, run, approval or file (*.not_found)"
+          },
           "409": {
-            "description": "Not finished yet"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "A conflict with the run's state or an earlier request (see error.code)"
           },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/PublishedError"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request does not fit the input form or the route's parameters (request.invalid)"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "A limit is reached (see error.code and Retry-After)"
           }
         },
         "summary": "Result of a finished run",
@@ -33129,15 +34426,85 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "No API key, or an unknown, revoked or expired one (auth.*)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "The key may not do this (auth.scope), or the API answers only this computer (lan.not_enabled)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "Unknown API, version, run, approval or file (*.not_found)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "A conflict with the run's state or an earlier request (see error.code)"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "The request is too large (request.too_large)"
+          },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/PublishedError"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request does not fit the input form or the route's parameters (request.invalid)"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "A limit is reached (see error.code and Retry-After)"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "The API is switched off, or a model provider cannot be used now (Retry-After)"
           }
         },
         "summary": "Continue a failed run; successful steps are reused",
@@ -33171,15 +34538,55 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "No API key, or an unknown, revoked or expired one (auth.*)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "The key may not do this (auth.scope), or the API answers only this computer (lan.not_enabled)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "Unknown API, version, run, approval or file (*.not_found)"
+          },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/PublishedError"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request does not fit the input form or the route's parameters (request.invalid)"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "A limit is reached (see error.code and Retry-After)"
           }
         },
         "summary": "Runs, tokens and cost of this API",
@@ -33232,15 +34639,95 @@
             },
             "description": "Started"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "The body is not JSON or not a valid multipart form (see error.code)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "No API key, or an unknown, revoked or expired one (auth.*)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "The key may not do this (auth.scope), or the API answers only this computer (lan.not_enabled)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "Unknown API, version, run, approval or file (*.not_found)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "A conflict with the run's state or an earlier request (see error.code)"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "The request is too large (request.too_large)"
+          },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/PublishedError"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request does not fit the input form or the route's parameters (request.invalid)"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "A limit is reached (see error.code and Retry-After)"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "The API is switched off, or a model provider cannot be used now (Retry-After)"
           }
         },
         "summary": "Start a run of a specific published version",
@@ -33275,7 +34762,10 @@
             "description": "Error"
           }
         },
-        "summary": "Python Status"
+        "summary": "Python Status",
+        "tags": [
+          "Python environments"
+        ]
       }
     },
     "/api/python/cleanup": {
@@ -33287,7 +34777,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/nodestro_api__api_python__CleanupResult"
+                  "$ref": "#/components/schemas/CleanupResult"
                 }
               }
             },
@@ -33304,7 +34794,10 @@
             "description": "Error"
           }
         },
-        "summary": "Cleanup"
+        "summary": "Cleanup",
+        "tags": [
+          "Python environments"
+        ]
       }
     },
     "/api/python/environments/{kind}/{ref}": {
@@ -33361,7 +34854,10 @@
             "description": "Error"
           }
         },
-        "summary": "Remove Environment"
+        "summary": "Remove Environment",
+        "tags": [
+          "Python environments"
+        ]
       },
       "get": {
         "operationId": "get_environment_api_python_environments__kind___ref__get",
@@ -33412,7 +34908,10 @@
             "description": "Error"
           }
         },
-        "summary": "Get Environment"
+        "summary": "Get Environment",
+        "tags": [
+          "Python environments"
+        ]
       }
     },
     "/api/python/environments/{kind}/{ref}/install": {
@@ -33466,7 +34965,10 @@
             "description": "Error"
           }
         },
-        "summary": "Reinstall Environment"
+        "summary": "Reinstall Environment",
+        "tags": [
+          "Python environments"
+        ]
       }
     },
     "/api/python/plans/{plan_id}/approve": {
@@ -33506,7 +35008,10 @@
             "description": "Error"
           }
         },
-        "summary": "Approve Plan"
+        "summary": "Approve Plan",
+        "tags": [
+          "Python environments"
+        ]
       }
     },
     "/api/python/tools/{name}/plan": {
@@ -33555,7 +35060,10 @@
             "description": "Error"
           }
         },
-        "summary": "Tool Plan"
+        "summary": "Tool Plan",
+        "tags": [
+          "Python environments"
+        ]
       }
     },
     "/api/python/tools/{name}/status": {
@@ -33604,7 +35112,10 @@
             "description": "Error"
           }
         },
-        "summary": "Tool Status"
+        "summary": "Tool Status",
+        "tags": [
+          "Python environments"
+        ]
       }
     },
     "/api/python/workflows/{workflow_id}/export": {
@@ -33652,7 +35163,10 @@
             "description": "Error"
           }
         },
-        "summary": "Workflow Export"
+        "summary": "Workflow Export",
+        "tags": [
+          "Python environments"
+        ]
       }
     },
     "/api/python/workflows/{workflow_id}/plan": {
@@ -33709,7 +35223,10 @@
             "description": "Error"
           }
         },
-        "summary": "Workflow Plan"
+        "summary": "Workflow Plan",
+        "tags": [
+          "Python environments"
+        ]
       }
     },
     "/api/python/workflows/{workflow_id}/status": {
@@ -33765,7 +35282,10 @@
             "description": "Error"
           }
         },
-        "summary": "Workflow Status"
+        "summary": "Workflow Status",
+        "tags": [
+          "Python environments"
+        ]
       }
     },
     "/api/runs": {
@@ -33891,7 +35411,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Runs"
+        "summary": "List Runs",
+        "tags": [
+          "runs"
+        ]
       }
     },
     "/api/runs/import": {
@@ -33920,7 +35443,10 @@
             "description": "Error"
           }
         },
-        "summary": "Import Run"
+        "summary": "Import Run",
+        "tags": [
+          "runs"
+        ]
       }
     },
     "/api/runs/{run_id}": {
@@ -33952,7 +35478,10 @@
             "description": "Error"
           }
         },
-        "summary": "Delete Run"
+        "summary": "Delete Run",
+        "tags": [
+          "runs"
+        ]
       },
       "get": {
         "operationId": "get_run_api_runs__run_id__get",
@@ -33989,7 +35518,10 @@
             "description": "Error"
           }
         },
-        "summary": "Get Run"
+        "summary": "Get Run",
+        "tags": [
+          "runs"
+        ]
       }
     },
     "/api/runs/{run_id}/approvals/{node_id}": {
@@ -34048,7 +35580,10 @@
             "description": "Error"
           }
         },
-        "summary": "Decide Approval"
+        "summary": "Decide Approval",
+        "tags": [
+          "runs"
+        ]
       }
     },
     "/api/runs/{run_id}/budget": {
@@ -34088,7 +35623,10 @@
             "description": "Error"
           }
         },
-        "summary": "Run Budget"
+        "summary": "Run Budget",
+        "tags": [
+          "runs"
+        ]
       }
     },
     "/api/runs/{run_id}/budget/decisions": {
@@ -34138,7 +35676,10 @@
             "description": "Error"
           }
         },
-        "summary": "Decide Run Budget"
+        "summary": "Decide Run Budget",
+        "tags": [
+          "runs"
+        ]
       }
     },
     "/api/runs/{run_id}/cancel": {
@@ -34182,7 +35723,10 @@
             "description": "Error"
           }
         },
-        "summary": "Cancel Run"
+        "summary": "Cancel Run",
+        "tags": [
+          "runs"
+        ]
       }
     },
     "/api/runs/{run_id}/chat": {
@@ -34222,7 +35766,10 @@
             "description": "Error"
           }
         },
-        "summary": "Run Chat View"
+        "summary": "Run Chat View",
+        "tags": [
+          "runs"
+        ]
       }
     },
     "/api/runs/{run_id}/chat/events": {
@@ -34260,7 +35807,10 @@
             "description": "Error"
           }
         },
-        "summary": "Run Chat Events"
+        "summary": "Run Chat Events",
+        "tags": [
+          "runs"
+        ]
       }
     },
     "/api/runs/{run_id}/chat/messages": {
@@ -34310,7 +35860,10 @@
             "description": "Error"
           }
         },
-        "summary": "Send Run Chat Message"
+        "summary": "Send Run Chat Message",
+        "tags": [
+          "runs"
+        ]
       }
     },
     "/api/runs/{run_id}/chat/messages/{message_id}": {
@@ -34358,7 +35911,10 @@
             "description": "Error"
           }
         },
-        "summary": "Run Chat Message"
+        "summary": "Run Chat Message",
+        "tags": [
+          "runs"
+        ]
       }
     },
     "/api/runs/{run_id}/events": {
@@ -34396,7 +35952,10 @@
             "description": "Error"
           }
         },
-        "summary": "Run Events"
+        "summary": "Run Events",
+        "tags": [
+          "runs"
+        ]
       }
     },
     "/api/runs/{run_id}/export": {
@@ -34465,7 +36024,10 @@
             "description": "Error"
           }
         },
-        "summary": "Export Run"
+        "summary": "Export Run",
+        "tags": [
+          "runs"
+        ]
       }
     },
     "/api/runs/{run_id}/files": {
@@ -34509,7 +36071,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Result Files"
+        "summary": "List Result Files",
+        "tags": [
+          "runs"
+        ]
       },
       "post": {
         "description": "Write the run's result (or one result node's) as a file; the run must have finished.",
@@ -34557,7 +36122,10 @@
             "description": "Error"
           }
         },
-        "summary": "Create Result File"
+        "summary": "Create Result File",
+        "tags": [
+          "runs"
+        ]
       }
     },
     "/api/runs/{run_id}/files/{file_id}": {
@@ -34598,7 +36166,10 @@
             "description": "Error"
           }
         },
-        "summary": "Delete Result File"
+        "summary": "Delete Result File",
+        "tags": [
+          "runs"
+        ]
       },
       "get": {
         "operationId": "download_result_file_api_runs__run_id__files__file_id__get",
@@ -34652,7 +36223,10 @@
             "description": "Error"
           }
         },
-        "summary": "Download Result File"
+        "summary": "Download Result File",
+        "tags": [
+          "runs"
+        ]
       }
     },
     "/api/runs/{run_id}/inputs": {
@@ -34696,7 +36270,10 @@
             "description": "Error"
           }
         },
-        "summary": "Run Inputs"
+        "summary": "Run Inputs",
+        "tags": [
+          "runs"
+        ]
       }
     },
     "/api/runs/{run_id}/resume": {
@@ -34736,7 +36313,10 @@
             "description": "Error"
           }
         },
-        "summary": "Resume Plan"
+        "summary": "Resume Plan",
+        "tags": [
+          "runs"
+        ]
       },
       "post": {
         "description": "A new run linked to the failed one, reusing its safe results (the failed run stays as it was).",
@@ -34784,7 +36364,10 @@
             "description": "Error"
           }
         },
-        "summary": "Resume Run"
+        "summary": "Resume Run",
+        "tags": [
+          "runs"
+        ]
       }
     },
     "/api/runs/{run_id}/test-case": {
@@ -34834,7 +36417,10 @@
             "description": "Error"
           }
         },
-        "summary": "Propose Test Case"
+        "summary": "Propose Test Case",
+        "tags": [
+          "runs"
+        ]
       }
     },
     "/api/runs/{run_id}/tool-approvals": {
@@ -34877,7 +36463,10 @@
             "description": "Error"
           }
         },
-        "summary": "Run Tool Approvals"
+        "summary": "Run Tool Approvals",
+        "tags": [
+          "runs"
+        ]
       }
     },
     "/api/runs/{run_id}/tool-approvals/{request_id}": {
@@ -34936,7 +36525,10 @@
             "description": "Error"
           }
         },
-        "summary": "Decide Tool Approval"
+        "summary": "Decide Tool Approval",
+        "tags": [
+          "runs"
+        ]
       }
     },
     "/api/sandbox/self-test": {
@@ -34979,7 +36571,10 @@
             "description": "Error"
           }
         },
-        "summary": "Post Sandbox Self Test"
+        "summary": "Post Sandbox Self Test",
+        "tags": [
+          "tools"
+        ]
       }
     },
     "/api/sandbox/status": {
@@ -35032,7 +36627,10 @@
             "description": "Error"
           }
         },
-        "summary": "Get Sandbox Status"
+        "summary": "Get Sandbox Status",
+        "tags": [
+          "tools"
+        ]
       }
     },
     "/api/schedules": {
@@ -35064,7 +36662,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Schedules"
+        "summary": "List Schedules",
+        "tags": [
+          "automation"
+        ]
       },
       "post": {
         "operationId": "create_schedule_api_schedules_post",
@@ -35100,7 +36701,10 @@
             "description": "Error"
           }
         },
-        "summary": "Create Schedule"
+        "summary": "Create Schedule",
+        "tags": [
+          "automation"
+        ]
       }
     },
     "/api/schedules/preview": {
@@ -35157,7 +36761,10 @@
             "description": "Error"
           }
         },
-        "summary": "Preview Schedule"
+        "summary": "Preview Schedule",
+        "tags": [
+          "automation"
+        ]
       }
     },
     "/api/schedules/time-zones": {
@@ -35189,7 +36796,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Time Zones"
+        "summary": "List Time Zones",
+        "tags": [
+          "automation"
+        ]
       }
     },
     "/api/schedules/{schedule_id}": {
@@ -35221,7 +36831,10 @@
             "description": "Error"
           }
         },
-        "summary": "Delete Schedule"
+        "summary": "Delete Schedule",
+        "tags": [
+          "automation"
+        ]
       },
       "get": {
         "operationId": "get_schedule_api_schedules__schedule_id__get",
@@ -35258,7 +36871,10 @@
             "description": "Error"
           }
         },
-        "summary": "Get Schedule"
+        "summary": "Get Schedule",
+        "tags": [
+          "automation"
+        ]
       },
       "put": {
         "operationId": "update_schedule_api_schedules__schedule_id__put",
@@ -35305,7 +36921,10 @@
             "description": "Error"
           }
         },
-        "summary": "Update Schedule"
+        "summary": "Update Schedule",
+        "tags": [
+          "automation"
+        ]
       }
     },
     "/api/schedules/{schedule_id}/disable": {
@@ -35344,7 +36963,10 @@
             "description": "Error"
           }
         },
-        "summary": "Disable Schedule"
+        "summary": "Disable Schedule",
+        "tags": [
+          "automation"
+        ]
       }
     },
     "/api/schedules/{schedule_id}/enable": {
@@ -35384,7 +37006,10 @@
             "description": "Error"
           }
         },
-        "summary": "Enable Schedule"
+        "summary": "Enable Schedule",
+        "tags": [
+          "automation"
+        ]
       }
     },
     "/api/search": {
@@ -35441,7 +37066,10 @@
             "description": "Error"
           }
         },
-        "summary": "Global Search"
+        "summary": "Global Search",
+        "tags": [
+          "workspace"
+        ]
       }
     },
     "/api/settings": {
@@ -35470,7 +37098,10 @@
             "description": "Error"
           }
         },
-        "summary": "Get Settings"
+        "summary": "Get Settings",
+        "tags": [
+          "settings"
+        ]
       },
       "put": {
         "operationId": "put_settings_api_settings_put",
@@ -35506,7 +37137,10 @@
             "description": "Error"
           }
         },
-        "summary": "Put Settings"
+        "summary": "Put Settings",
+        "tags": [
+          "settings"
+        ]
       }
     },
     "/api/settings/defaults": {
@@ -35535,7 +37169,10 @@
             "description": "Error"
           }
         },
-        "summary": "Get Settings Defaults"
+        "summary": "Get Settings Defaults",
+        "tags": [
+          "settings"
+        ]
       }
     },
     "/api/settings/providers/bedrock/verify": {
@@ -35584,7 +37221,10 @@
             "description": "Error"
           }
         },
-        "summary": "Verify Bedrock"
+        "summary": "Verify Bedrock",
+        "tags": [
+          "settings"
+        ]
       }
     },
     "/api/tool-approvals": {
@@ -35617,7 +37257,10 @@
             "description": "Error"
           }
         },
-        "summary": "Open Tool Approvals"
+        "summary": "Open Tool Approvals",
+        "tags": [
+          "tool approvals"
+        ]
       }
     },
     "/api/tool-approvals/audit": {
@@ -35662,7 +37305,10 @@
             "description": "Error"
           }
         },
-        "summary": "Tool Approval Audit"
+        "summary": "Tool Approval Audit",
+        "tags": [
+          "tool approvals"
+        ]
       }
     },
     "/api/tool-approvals/legacy": {
@@ -35690,7 +37336,10 @@
             "description": "Error"
           }
         },
-        "summary": "Tool Approvals State"
+        "summary": "Tool Approvals State",
+        "tags": [
+          "tool approvals"
+        ]
       },
       "post": {
         "description": "The activation step: stamp existing bindings of workflows, workflow versions and published releases as legacy\nexemptions (visible, bound to the tool version they run with). It runs once: a repeated call stamps nothing, so\nan assignment or release made after the first call never becomes an exemption. It does not switch approvals on;\nrun it, review the report, and only then set ``NODESTRO_TOOL_APPROVALS=1``.",
@@ -35717,7 +37366,10 @@
             "description": "Error"
           }
         },
-        "summary": "Stamp Legacy Bindings"
+        "summary": "Stamp Legacy Bindings",
+        "tags": [
+          "tool approvals"
+        ]
       }
     },
     "/api/tool-pre-grants": {
@@ -35750,7 +37402,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Pre Grants"
+        "summary": "List Pre Grants",
+        "tags": [
+          "tool approvals"
+        ]
       },
       "post": {
         "description": "Approve one tool version in advance for one schedule, batch or test series (never MCP or destructive tools).",
@@ -35787,7 +37442,10 @@
             "description": "Error"
           }
         },
-        "summary": "Create Pre Grant"
+        "summary": "Create Pre Grant",
+        "tags": [
+          "tool approvals"
+        ]
       }
     },
     "/api/tool-pre-grants/{scope}/{scope_id}/{grant_id}": {
@@ -35850,7 +37508,10 @@
             "description": "Error"
           }
         },
-        "summary": "Revoke Pre Grant"
+        "summary": "Revoke Pre Grant",
+        "tags": [
+          "tool approvals"
+        ]
       }
     },
     "/api/tools": {
@@ -35882,7 +37543,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Tools"
+        "summary": "List Tools",
+        "tags": [
+          "tools"
+        ]
       },
       "post": {
         "operationId": "save_tool_api_tools_post",
@@ -35918,7 +37582,10 @@
             "description": "Error"
           }
         },
-        "summary": "Save Tool"
+        "summary": "Save Tool",
+        "tags": [
+          "tools"
+        ]
       }
     },
     "/api/tools/check": {
@@ -35956,7 +37623,10 @@
             "description": "Error"
           }
         },
-        "summary": "Check Tool"
+        "summary": "Check Tool",
+        "tags": [
+          "tools"
+        ]
       }
     },
     "/api/tools/drafts": {
@@ -35989,7 +37659,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Tool Drafts"
+        "summary": "List Tool Drafts",
+        "tags": [
+          "tools"
+        ]
       }
     },
     "/api/tools/drafts/{draft_id}": {
@@ -36021,7 +37694,10 @@
             "description": "Error"
           }
         },
-        "summary": "Reject Tool Draft"
+        "summary": "Reject Tool Draft",
+        "tags": [
+          "tools"
+        ]
       },
       "get": {
         "operationId": "get_tool_draft_api_tools_drafts__draft_id__get",
@@ -36058,7 +37734,10 @@
             "description": "Error"
           }
         },
-        "summary": "Get Tool Draft"
+        "summary": "Get Tool Draft",
+        "tags": [
+          "tools"
+        ]
       }
     },
     "/api/tools/drafts/{draft_id}/approve": {
@@ -36098,7 +37777,10 @@
             "description": "Error"
           }
         },
-        "summary": "Approve Tool Draft"
+        "summary": "Approve Tool Draft",
+        "tags": [
+          "tools"
+        ]
       }
     },
     "/api/tools/drafts/{draft_id}/test": {
@@ -36138,7 +37820,10 @@
             "description": "Error"
           }
         },
-        "summary": "Test Tool Draft"
+        "summary": "Test Tool Draft",
+        "tags": [
+          "tools"
+        ]
       }
     },
     "/api/tools/jobs": {
@@ -36170,7 +37855,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Jobs"
+        "summary": "List Jobs",
+        "tags": [
+          "tools"
+        ]
       },
       "post": {
         "operationId": "start_job_api_tools_jobs_post",
@@ -36206,7 +37894,10 @@
             "description": "Error"
           }
         },
-        "summary": "Start Job"
+        "summary": "Start Job",
+        "tags": [
+          "tools"
+        ]
       }
     },
     "/api/tools/jobs/{job_id}": {
@@ -36245,7 +37936,10 @@
             "description": "Error"
           }
         },
-        "summary": "Get Job"
+        "summary": "Get Job",
+        "tags": [
+          "tools"
+        ]
       }
     },
     "/api/tools/jobs/{job_id}/decision": {
@@ -36294,7 +37988,10 @@
             "description": "Error"
           }
         },
-        "summary": "Decide Job"
+        "summary": "Decide Job",
+        "tags": [
+          "tools"
+        ]
       }
     },
     "/api/tools/jobs/{job_id}/dependencies": {
@@ -36343,7 +38040,10 @@
             "description": "Error"
           }
         },
-        "summary": "Decide Job Dependencies"
+        "summary": "Decide Job Dependencies",
+        "tags": [
+          "tools"
+        ]
       }
     },
     "/api/tools/template": {
@@ -36371,7 +38071,10 @@
             "description": "Error"
           }
         },
-        "summary": "Tool Template"
+        "summary": "Tool Template",
+        "tags": [
+          "tools"
+        ]
       }
     },
     "/api/tools/{name}": {
@@ -36403,7 +38106,10 @@
             "description": "Error"
           }
         },
-        "summary": "Delete Tool"
+        "summary": "Delete Tool",
+        "tags": [
+          "tools"
+        ]
       },
       "get": {
         "operationId": "get_tool_api_tools__name__get",
@@ -36440,7 +38146,10 @@
             "description": "Error"
           }
         },
-        "summary": "Get Tool"
+        "summary": "Get Tool",
+        "tags": [
+          "tools"
+        ]
       }
     },
     "/api/tools/{name}/adopt": {
@@ -36490,7 +38199,10 @@
             "description": "Error"
           }
         },
-        "summary": "Adopt Tool"
+        "summary": "Adopt Tool",
+        "tags": [
+          "tools"
+        ]
       }
     },
     "/api/tools/{name}/run": {
@@ -36540,7 +38252,57 @@
             "description": "Error"
           }
         },
-        "summary": "Run Tool"
+        "summary": "Run Tool",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/tools/{name}/versions": {
+      "get": {
+        "description": "Every stored version of a tool, newest first, with its code, tests and who wrote it (ST-036): ``editor``\n(the tool editor), ``adopted`` (an AI version adopted as one's own with exactly that content) or ``ai``. Empty for\nbuilt-in and MCP tools; 404 for an unknown name.",
+        "operationId": "get_tool_versions_api_tools__name__versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ToolVersion"
+                  },
+                  "title": "Response Get Tool Versions Api Tools  Name  Versions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Tool Versions",
+        "tags": [
+          "tools"
+        ]
       }
     },
     "/api/usage": {
@@ -36583,7 +38345,10 @@
             "description": "Error"
           }
         },
-        "summary": "Usage"
+        "summary": "Usage",
+        "tags": [
+          "pricing"
+        ]
       }
     },
     "/api/used-by": {
@@ -36648,7 +38413,10 @@
             "description": "Error"
           }
         },
-        "summary": "Used By"
+        "summary": "Used By",
+        "tags": [
+          "workspace"
+        ]
       }
     },
     "/api/workflows": {
@@ -36680,7 +38448,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Workflows"
+        "summary": "List Workflows",
+        "tags": [
+          "workflows"
+        ]
       },
       "post": {
         "description": "Create a workflow. A connection to a node that does not exist is refused (400 ``workflow.edge_dangling``),\nas are two nodes with one id (``workflow.node_duplicate``).",
@@ -36717,7 +38488,10 @@
             "description": "Error"
           }
         },
-        "summary": "Create Workflow"
+        "summary": "Create Workflow",
+        "tags": [
+          "workflows"
+        ]
       }
     },
     "/api/workflows/check": {
@@ -36774,7 +38548,10 @@
             "description": "Error"
           }
         },
-        "summary": "Check"
+        "summary": "Check",
+        "tags": [
+          "workflows"
+        ]
       }
     },
     "/api/workflows/import": {
@@ -36813,7 +38590,10 @@
             "description": "Error"
           }
         },
-        "summary": "Import Workflow"
+        "summary": "Import Workflow",
+        "tags": [
+          "workflows"
+        ]
       }
     },
     "/api/workflows/preview": {
@@ -36852,7 +38632,10 @@
             "description": "Error"
           }
         },
-        "summary": "Preview"
+        "summary": "Preview",
+        "tags": [
+          "workflows"
+        ]
       }
     },
     "/api/workflows/{workflow_id}": {
@@ -36885,7 +38668,10 @@
             "description": "Error"
           }
         },
-        "summary": "Delete Workflow"
+        "summary": "Delete Workflow",
+        "tags": [
+          "workflows"
+        ]
       },
       "get": {
         "operationId": "get_workflow_api_workflows__workflow_id__get",
@@ -36922,7 +38708,10 @@
             "description": "Error"
           }
         },
-        "summary": "Get Workflow"
+        "summary": "Get Workflow",
+        "tags": [
+          "workflows"
+        ]
       },
       "put": {
         "description": "Save a workflow; a changed workflow becomes the next version (``note`` describes it).\n\nThe revision of a workflow is its ``updated_at`` (AD-07). A client that sends it as ``If-Match`` saves only\nwhen nobody saved in between; otherwise the answer is 409 ``workflow.conflict`` with the current revision in\n``params.updated_at``.",
@@ -37002,7 +38791,10 @@
             "description": "Error"
           }
         },
-        "summary": "Update Workflow"
+        "summary": "Update Workflow",
+        "tags": [
+          "workflows"
+        ]
       }
     },
     "/api/workflows/{workflow_id}/api": {
@@ -37041,7 +38833,10 @@
             "description": "Error"
           }
         },
-        "summary": "Api Overview"
+        "summary": "Api Overview",
+        "tags": [
+          "workflows"
+        ]
       }
     },
     "/api/workflows/{workflow_id}/api/check": {
@@ -37090,7 +38885,10 @@
             "description": "Error"
           }
         },
-        "summary": "Api Check"
+        "summary": "Api Check",
+        "tags": [
+          "workflows"
+        ]
       }
     },
     "/api/workflows/{workflow_id}/api/gate": {
@@ -37140,7 +38938,10 @@
             "description": "Error"
           }
         },
-        "summary": "Gate Report"
+        "summary": "Gate Report",
+        "tags": [
+          "workflows"
+        ]
       }
     },
     "/api/workflows/{workflow_id}/api/publish": {
@@ -37189,7 +38990,10 @@
             "description": "Error"
           }
         },
-        "summary": "Publish"
+        "summary": "Publish",
+        "tags": [
+          "workflows"
+        ]
       }
     },
     "/api/workflows/{workflow_id}/duplicate": {
@@ -37228,7 +39032,10 @@
             "description": "Error"
           }
         },
-        "summary": "Duplicate Workflow"
+        "summary": "Duplicate Workflow",
+        "tags": [
+          "workflows"
+        ]
       }
     },
     "/api/workflows/{workflow_id}/runs": {
@@ -37246,7 +39053,7 @@
             }
           },
           {
-            "description": "Optional. A retry with the same key (same member, workflow and request, within 24 hours) returns the run that already started (200, ``Idempotent-Replayed: true``) instead of starting another; the same key with a different request is ``409 idempotency.conflict``.",
+            "description": "Optional. A retry with the same key (same member, workflow and request, within 24 hours) returns the run that already started (200, ``Idempotent-Replayed: true``) instead of starting another; the same key with a different request is ``409 idempotency.conflict``, and a retry while the first request is still starting its run is ``409 idempotency.in_progress`` (``Retry-After``).",
             "in": "header",
             "name": "idempotency-key",
             "required": false,
@@ -37260,7 +39067,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Optional. A retry with the same key (same member, workflow and request, within 24 hours) returns the run that already started (200, ``Idempotent-Replayed: true``) instead of starting another; the same key with a different request is ``409 idempotency.conflict``.",
+              "description": "Optional. A retry with the same key (same member, workflow and request, within 24 hours) returns the run that already started (200, ``Idempotent-Replayed: true``) instead of starting another; the same key with a different request is ``409 idempotency.conflict``, and a retry while the first request is still starting its run is ``409 idempotency.in_progress`` (``Retry-After``).",
               "title": "Idempotency-Key"
             }
           }
@@ -37307,7 +39114,10 @@
             "description": "Error"
           }
         },
-        "summary": "Start Run"
+        "summary": "Start Run",
+        "tags": [
+          "workflows"
+        ]
       }
     },
     "/api/workflows/{workflow_id}/versions": {
@@ -37350,7 +39160,10 @@
             "description": "Error"
           }
         },
-        "summary": "List Versions"
+        "summary": "List Versions",
+        "tags": [
+          "workflows"
+        ]
       }
     },
     "/api/workflows/{workflow_id}/versions/{number}": {
@@ -37398,7 +39211,10 @@
             "description": "Error"
           }
         },
-        "summary": "Get Version"
+        "summary": "Get Version",
+        "tags": [
+          "workflows"
+        ]
       },
       "patch": {
         "operationId": "describe_version_api_workflows__workflow_id__versions__number__patch",
@@ -37454,7 +39270,10 @@
             "description": "Error"
           }
         },
-        "summary": "Describe Version"
+        "summary": "Describe Version",
+        "tags": [
+          "workflows"
+        ]
       }
     },
     "/api/workflows/{workflow_id}/versions/{number}/restore": {
@@ -37503,7 +39322,10 @@
             "description": "Error"
           }
         },
-        "summary": "Restore Version"
+        "summary": "Restore Version",
+        "tags": [
+          "workflows"
+        ]
       }
     }
   }

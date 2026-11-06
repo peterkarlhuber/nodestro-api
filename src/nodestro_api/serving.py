@@ -34,6 +34,7 @@ import binascii
 from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Iterable, Sequence
 import contextlib
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 import hashlib
 import hmac
@@ -43,7 +44,7 @@ import re
 import secrets
 import threading
 import time
-from typing import Any, Literal, Protocol
+from typing import Any, Generic, Literal, Protocol, TypeVar
 
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -102,6 +103,9 @@ _PUBLIC_EVENTS: dict[str, tuple[str, ...]] = {
 _MAX_BODY_BYTES = 80 * 1024 * 1024
 _IDEMPOTENCY = "api_idempotency"
 _IDEMPOTENCY_HOURS = 24
+#: A reserved Idempotency-Key whose run has not been recorded after this long belongs to a start that died (a
+#: process that stopped between reserving the key and starting the run); a retry may then take it over.
+_IDEMPOTENCY_PENDING_SECONDS = 120
 
 
 # ---- errors -----------------------------------------------------------------------------
@@ -560,6 +564,43 @@ class ErrorOut(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
 
 
+class PublishedErrorDetail(BaseModel):
+    """The error of a published API's answer: HTTP status, a stable code, an English message and parameters."""
+
+    status: int
+    code: str
+    message: str
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class PublishedError(BaseModel):
+    """Every error answer of a published API (``{"error": {...}}``; see :class:`ApiError`)."""
+
+    error: PublishedErrorDetail
+
+
+def _errors(*statuses: int) -> dict[int | str, dict[str, Any]]:
+    """The documented error answers of a published route (API-016): every route can answer 401 (no or an unknown
+    key), 403 (the key may not do this, or the API is not reachable on this channel), 404 (unknown API, version or
+    run), 422 (an invalid parameter, in this format, not FastAPI's) and 429 (too many requests or failed
+    authentications); ``statuses`` adds the route's own."""
+    texts = {
+        400: "The body is not JSON or not a valid multipart form (see error.code)",
+        401: "No API key, or an unknown, revoked or expired one (auth.*)",
+        403: "The key may not do this (auth.scope), or the API answers only this computer (lan.not_enabled)",
+        404: "Unknown API, version, run, approval or file (*.not_found)",
+        409: "A conflict with the run's state or an earlier request (see error.code)",
+        413: "The request is too large (request.too_large)",
+        422: "The request does not fit the input form or the route's parameters (request.invalid)",
+        429: "A limit is reached (see error.code and Retry-After)",
+        503: "The API is switched off, or a model provider cannot be used now (Retry-After)",
+    }
+    return {
+        status: {"model": PublishedError, "description": texts[status]}
+        for status in sorted({401, 403, 404, 422, 429, *statuses})
+    }
+
+
 class UsageOut(BaseModel):
     requests: int = 0
     input_tokens: int = 0
@@ -719,11 +760,26 @@ def usage_out(usage: Usage) -> UsageOut:
 
 
 class _IdempotencyRecord(BaseModel):
-    """A stored Idempotency-Key: the run it started, the request's fingerprint and when."""
+    """A stored Idempotency-Key: the run it started, the request's fingerprint and when.
 
-    run_id: str
+    ``run_id`` is empty while the key is reserved and its run is starting (API-043)."""
+
+    run_id: str = ""
     request: str
     at: datetime
+
+
+RunT = TypeVar("RunT")
+
+
+@dataclass(frozen=True)
+class IdempotentStart(Generic[RunT]):
+    """The outcome of :meth:`ServingCore.reserve_idempotent_start`: the key is reserved for this request (``stamp``
+    is the reservation's time, so only its own reservation is released), or ``replay`` is the run it started."""
+
+    record_key: str
+    stamp: str
+    replay: RunT | None = None
 
 
 class _Window:
@@ -792,15 +848,70 @@ class ServingCore:
         self.studio_start_lock = asyncio.Lock()
         self._idempotency_pruned: float | None = None
 
-    def idempotent_run_id(self, record_key: str, fingerprint: str) -> str | None:
-        """The run an Idempotency-Key started within its 24 hours, if any; ``409 idempotency.conflict`` when the key
-        was used for a different request (``fingerprint``)."""
-        earlier = self.host.store.get_raw(_IDEMPOTENCY, record_key)
-        if earlier is None or datetime.fromisoformat(earlier["at"]) <= now() - timedelta(hours=_IDEMPOTENCY_HOURS):
-            return None
-        if earlier["request"] != fingerprint:
-            raise ApiError(409, "idempotency.conflict", "This Idempotency-Key was used for a different request")
-        return str(earlier["run_id"])
+    def reserve_idempotent_start(
+        self, record_key: str, fingerprint: str, find: Callable[[str], RunT | None]
+    ) -> IdempotentStart[RunT]:
+        """Reserve an Idempotency-Key before its run starts (API-043).
+
+        The reservation is one atomic insert-if-absent of the store (SQLite and PostgreSQL), so of two concurrent
+        requests with the same key, also on different API processes, exactly one starts the run. The other gets the
+        run the key started (``replay``; ``find`` looks it up), ``409 idempotency.conflict`` when the key was used
+        for a different request, or ``409 idempotency.in_progress`` while the first one is still starting it.
+
+        A key older than its 24 hours, a reservation whose start died (:data:`_IDEMPOTENCY_PENDING_SECONDS`) and a
+        key whose run no longer exists are taken over atomically (a conditional replace on the record's time). The
+        caller starts the run only for a :class:`IdempotentStart` without ``replay`` and then calls
+        :meth:`remember_idempotent_run`, or :meth:`release_idempotent_start` when the start failed.
+        """
+        store = self.host.store
+        for _attempt in range(3):
+            moment = now()
+            reservation = _IdempotencyRecord(request=fingerprint, at=moment)
+            document = reservation.model_dump(mode="json")
+            if store.put_raw_if_absent(_IDEMPOTENCY, record_key, document):
+                return IdempotentStart(record_key, document["at"])
+            earlier = store.get_raw(_IDEMPOTENCY, record_key)
+            if earlier is None:  # released or pruned in between: reserve again
+                continue
+            stamp = str(earlier.get("at") or "")
+            try:
+                at = datetime.fromisoformat(stamp)
+            except ValueError:
+                at = None
+            run_id = str(earlier.get("run_id") or "")
+            if at is not None and at > moment - timedelta(hours=_IDEMPOTENCY_HOURS):
+                if earlier.get("request") != fingerprint:
+                    raise ApiError(409, "idempotency.conflict", "This Idempotency-Key was used for a different request")
+                if run_id:
+                    run = find(run_id)
+                    if run is not None:
+                        return IdempotentStart(record_key, "", replay=run)
+                elif at > moment - timedelta(seconds=_IDEMPOTENCY_PENDING_SECONDS):
+                    raise ApiError(
+                        409,
+                        "idempotency.in_progress",
+                        "A request with this Idempotency-Key is still starting its run; retry in a moment",
+                        headers={"Retry-After": "1"},
+                    )
+            # Expired, abandoned or its run is gone: take the key over, unless another request was faster.
+            if store.replace_if(_IDEMPOTENCY, record_key, reservation, field="at", expected=stamp):
+                return IdempotentStart(record_key, document["at"])
+        raise ApiError(
+            409,
+            "idempotency.in_progress",
+            "A request with this Idempotency-Key is still starting its run; retry in a moment",
+            headers={"Retry-After": "1"},
+        )
+
+    def release_idempotent_start(self, claim: IdempotentStart[Any]) -> None:
+        """Give a reserved key free again after its run could not start (a limit, a missing provider, an error), so
+        a retry may start it. Never raises; a key another request has taken over in between stays."""
+        try:
+            current = self.host.store.get_raw(_IDEMPOTENCY, claim.record_key)
+            if current is not None and not current.get("run_id") and current.get("at") == claim.stamp:
+                self.host.store.delete(_IDEMPOTENCY, claim.record_key)
+        except Exception:
+            logger.exception("A reserved Idempotency-Key could not be released")
 
     def remember_idempotent_run(self, record_key: str, run_id: str, fingerprint: str) -> None:
         """Store which run an Idempotency-Key started (never raises: the run has started, a 500 would make the
@@ -1171,46 +1282,27 @@ class ServingCore:
         fingerprint = hashlib.sha256(
             json.dumps([release.release_id, payload], sort_keys=True, default=str).encode()
         ).hexdigest()
-        record_key = ""
+        claim: IdempotentStart[Run] | None = None
         async with self._start_lock:
             if idempotency:
                 record_key = (
                     f"{release.publication_id}:{identity.id}:{hashlib.sha256(idempotency.encode()).hexdigest()}"
                 )
-                earlier = self.idempotent_run_id(record_key, fingerprint)
-                if earlier is not None:
-                    run = self.host.runs.get(earlier)
-                    if run is not None:
-                        return JSONResponse(
-                            self.status(release.slug, run).model_dump(mode="json"),
-                            status_code=200,
-                            headers={"Idempotent-Replayed": "true"},
-                        )
-            # A replayed retry starts nothing, so only a run that really starts counts as a new run.
-            wait_time = self.host_runs_per_minute(identity, release)
-            if wait_time is not None:
-                raise ApiError(
-                    429,
-                    "limit.runs",
-                    "Too many new runs; slow down",
-                    headers={"Retry-After": str(int(wait_time))},
-                    limit=release.limits.runs_per_minute,
-                )
-            self.check_limits(release)
-            await self.host.prepare_start(release)
-            run_request = self.run_request(release, body)
-            run = self.host.runs.start(
-                self.workflow_for(release),
-                run_request,
-                trigger="api",
-                trigger_ref=release.publication_id,
-                version=release.workflow_version,
-                release_id=release.release_id,
-                release_number=release.number,
-                api_key_id=identity.id,
-            )
-            if record_key:
-                self.remember_idempotent_run(record_key, run.id, fingerprint)
+                claim = self.reserve_idempotent_start(record_key, fingerprint, self.host.runs.get)
+                if claim.replay is not None:
+                    return JSONResponse(
+                        self.status(release.slug, claim.replay).model_dump(mode="json"),
+                        status_code=200,
+                        headers={"Idempotent-Replayed": "true"},
+                    )
+            try:
+                run = await self._start(identity, release, body)
+            except BaseException:
+                if claim is not None:
+                    self.release_idempotent_start(claim)
+                raise
+            if claim is not None:
+                self.remember_idempotent_run(claim.record_key, run.id, fingerprint)
         status_code = 202
         if wait > 0:
             timeout = min(wait, release.limits.sync_timeout_seconds)
@@ -1226,6 +1318,32 @@ class ServingCore:
             self.status(release.slug, run).model_dump(mode="json"),
             status_code=status_code,
             headers={"Location": f"{PREFIX}/{release.slug}/runs/{run.id}"},
+        )
+
+    async def _start(self, identity: KeyIdentity, release: ServedRelease, body: BaseModel) -> Run:
+        """Check the limits and start the run (a replayed retry starts nothing, so only a run that really starts
+        counts as a new run)."""
+        wait_time = self.host_runs_per_minute(identity, release)
+        if wait_time is not None:
+            raise ApiError(
+                429,
+                "limit.runs",
+                "Too many new runs; slow down",
+                headers={"Retry-After": str(int(wait_time))},
+                limit=release.limits.runs_per_minute,
+            )
+        self.check_limits(release)
+        await self.host.prepare_start(release)
+        run_request = self.run_request(release, body)
+        return self.host.runs.start(
+            self.workflow_for(release),
+            run_request,
+            trigger="api",
+            trigger_ref=release.publication_id,
+            version=release.workflow_version,
+            release_id=release.release_id,
+            release_number=release.number,
+            api_key_id=identity.id,
         )
 
     def host_runs_per_minute(self, identity: KeyIdentity, release: ServedRelease) -> float | None:
@@ -1600,8 +1718,7 @@ def build_router(
         responses={
             202: {"model": RunStatusOut, "description": "Started"},
             200: {"model": RunStatusOut, "description": "Finished in time (wait) or replayed (Idempotency-Key)"},
-            422: {"description": "The request does not fit the input form"},
-            429: {"description": "A limit is reached (see error.code)"},
+            **_errors(400, 409, 413, 422, 503),
         },
         include_in_schema=doc,
     )
@@ -1612,7 +1729,7 @@ def build_router(
         status_code=202,
         summary="Start a run of a specific published version",
         openapi_extra=body_doc,
-        responses={202: {"model": RunStatusOut, "description": "Started"}},
+        responses={202: {"model": RunStatusOut, "description": "Started"}, **_errors(400, 409, 413, 422, 503)},
         include_in_schema=doc,
     )
 
@@ -1622,7 +1739,14 @@ def build_router(
         versions = getattr(core.host, "versions", lambda _slug: [served.number])(slug)
         return core.info(served, versions)
 
-    router.add_api_route("", info, methods=["GET"], summary="What this API expects and returns", include_in_schema=doc)
+    router.add_api_route(
+        "",
+        info,
+        methods=["GET"],
+        summary="What this API expects and returns",
+        responses=_errors(),
+        include_in_schema=doc,
+    )
 
     async def list_runs(request: Request, slug: str) -> list[RunStatusOut]:
         guard(request)
@@ -1641,7 +1765,12 @@ def build_router(
         return found
 
     router.add_api_route(
-        "/runs", list_runs, methods=["GET"], summary="The latest runs of this API", include_in_schema=doc
+        "/runs",
+        list_runs,
+        methods=["GET"],
+        summary="The latest runs of this API",
+        responses=_errors(422),
+        include_in_schema=doc,
     )
 
     async def get_run(request: Request, slug: str, run_id: str) -> RunStatusOut:
@@ -1649,7 +1778,14 @@ def build_router(
         _, served = core.access(request, slug, "read", channel=channel)
         return core.status(served.slug, core.own_run(served, run_id))
 
-    router.add_api_route("/runs/{run_id}", get_run, methods=["GET"], summary="Status of a run", include_in_schema=doc)
+    router.add_api_route(
+        "/runs/{run_id}",
+        get_run,
+        methods=["GET"],
+        summary="Status of a run",
+        responses=_errors(),
+        include_in_schema=doc,
+    )
 
     async def get_result(request: Request, slug: str, run_id: str) -> Response:
         guard(request)
@@ -1661,7 +1797,7 @@ def build_router(
         get_result,
         methods=["GET"],
         summary="Result of a finished run",
-        responses={200: {"model": RunResultOut}, 409: {"description": "Not finished yet"}},
+        responses={200: {"model": RunResultOut}, **_errors(409)},
         include_in_schema=doc,
     )
 
@@ -1679,6 +1815,7 @@ def build_router(
         summary="Progress as Server-Sent Events",
         description="A status event first, then progress events until 'end'. Reconnect with "
         "Last-Event-ID to receive what you missed. ?text=true adds the agents' text as it is written.",
+        responses=_errors(),
         include_in_schema=doc,
     )
 
@@ -1692,7 +1829,12 @@ def build_router(
         return core.status(served.slug, core.host.runs.get(run.id) or run)
 
     router.add_api_route(
-        "/runs/{run_id}/cancel", cancel, methods=["POST"], summary="Cancel a run", include_in_schema=doc
+        "/runs/{run_id}/cancel",
+        cancel,
+        methods=["POST"],
+        summary="Cancel a run",
+        responses=_errors(409),
+        include_in_schema=doc,
     )
 
     async def list_approvals(request: Request, slug: str, run_id: str) -> list[ApprovalOut]:
@@ -1708,6 +1850,7 @@ def build_router(
         list_approvals,
         methods=["GET"],
         summary="Approvals that wait for a decision, with what to review",
+        responses=_errors(),
         include_in_schema=doc,
     )
 
@@ -1724,6 +1867,7 @@ def build_router(
         summary="Approve or reject a waiting approval",
         description="The run continues on the chosen path. A decision is recorded with the key's id; "
         "a second decision on the same approval answers 409.",
+        responses=_errors(409, 413, 422),
         include_in_schema=doc,
     )
 
@@ -1739,6 +1883,7 @@ def build_router(
         methods=["POST"],
         status_code=202,
         summary="Continue a failed run; successful steps are reused",
+        responses=_errors(409, 413, 422, 503),
         include_in_schema=doc,
     )
 
@@ -1749,7 +1894,12 @@ def build_router(
         return [core._file_out(entry) for entry in core.host.files.list(run.id)]
 
     router.add_api_route(
-        "/runs/{run_id}/files", list_files, methods=["GET"], summary="Result files of a run", include_in_schema=doc
+        "/runs/{run_id}/files",
+        list_files,
+        methods=["GET"],
+        summary="Result files of a run",
+        responses=_errors(),
+        include_in_schema=doc,
     )
 
     async def get_file(request: Request, slug: str, run_id: str, file_id: str) -> Response:
@@ -1773,6 +1923,7 @@ def build_router(
         get_file,
         methods=["GET"],
         summary="Download a result file",
+        responses=_errors(),
         include_in_schema=doc,
     )
 
@@ -1783,7 +1934,12 @@ def build_router(
         return core.usage_summary(served, days)
 
     router.add_api_route(
-        "/usage", usage, methods=["GET"], summary="Runs, tokens and cost of this API", include_in_schema=doc
+        "/usage",
+        usage,
+        methods=["GET"],
+        summary="Runs, tokens and cost of this API",
+        responses=_errors(422),
+        include_in_schema=doc,
     )
 
     async def openapi(request: Request, slug: str) -> Response:

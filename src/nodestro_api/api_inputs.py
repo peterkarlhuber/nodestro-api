@@ -136,9 +136,19 @@ def input_storage(ctx: Ctx) -> StorageInfo:
     return ctx.inputs.storage()
 
 
+class InputCleanupResult(CleanupResult):
+    #: Files of assistant conversations removed because they were older than the retention period an
+    #: administrator set (``/api/assistant/files/retention``, API-056); 0 without one.
+    assistant_files_expired: int = 0
+
+
 @router.post("/inputs/cleanup", dependencies=EDIT)
-def cleanup_inputs(body: CleanupRequest, ctx: Ctx) -> CleanupResult:
-    return ctx.inputs.cleanup(older_than_days=body.older_than_days)
+def cleanup_inputs(body: CleanupRequest, ctx: Ctx) -> InputCleanupResult:
+    """Remove input files nobody uses, with ``older_than_days`` also those of older finished runs, and the
+    assistant conversation files past their retention period (when an administrator set one)."""
+    expired = ctx.assistant.expire_files()
+    result = ctx.inputs.cleanup(older_than_days=body.older_than_days)
+    return InputCleanupResult(**result.model_dump(), assistant_files_expired=expired)
 
 
 def visible(ctx: Ctx, request: Request, file_id: str) -> None:

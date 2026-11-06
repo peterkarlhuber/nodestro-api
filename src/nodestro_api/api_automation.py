@@ -34,6 +34,7 @@ from .benchmarks import (
     SuiteIn,
     compare,
 )
+from .missing import MissingReference, workflow_display
 from .model_choice import ModelChoice, ModelPolicy, Objective
 from .permissions import EDIT, READ, RUN
 from .schedules import Activation, Schedule, ScheduleIn, time_zones, upcoming
@@ -53,7 +54,7 @@ async def parse_batch_file(
     """Rows of a CSV, XLSX or JSON file and a suggested mapping to the workflow's form; nothing starts."""
     workflow = ctx.store.get("workflows", workflow_id, Workflow)
     if workflow is None:
-        raise KeyError(workflow_id)
+        raise MissingReference("workflow", workflow_id, workflow_display(ctx.store, workflow_id))
     data = await file.read()
     if len(data) > _MAX_TABLE_BYTES:
         raise BatchError("batch.file_too_large", "The file is larger than 10 MB", limit_mb=10)
