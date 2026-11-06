@@ -611,6 +611,29 @@ def test_oversized_login_parameters_are_refused(server: Server) -> None:
     assert code.status_code == 400 and code.json()["code"] == "identity.login_failed"
 
 
+def test_logins_switches_and_logouts_are_in_the_tenants_access_audit(server: Server) -> None:
+    """API-004: a tenant's trail records its logins, switches into and refused switches out of it, and logouts;
+    only admins read it."""
+    admin = server.member("acme", "alice", "admin")
+    server.member("beta", "alice", "viewer")  # alice is a member of beta too (her second login lands in beta)
+    viewer = server.member("acme", "bob", "viewer")
+    assert admin.post("/api/auth/switch", json={"tenant_id": "zeta"}).status_code == 404  # not hers
+    alice = server.identity.login(stub_oidc.ISSUER, "alice").id
+    bob = server.identity.login(stub_oidc.ISSUER, "bob").id
+    trail = admin.get("/api/access-audit").json()
+    kinds = [(event["kind"], event["actor"], event["outcome"]) for event in reversed(trail)]
+    assert kinds == [("login", alice, "success"), ("login", bob, "success"), ("tenant_switched", alice, "denied")]
+    assert trail[0]["details"] == {"code": "identity.not_a_member", "to": "zeta"}
+    assert viewer.get("/api/access-audit").status_code == 403
+    assert admin.post("/api/auth/switch", json={"tenant_id": "beta"}).status_code == 204
+    assert admin.post("/api/auth/logout").status_code == 204
+    beta = server.app.state.tenants.get("beta").store
+    from nodestro_api import access_audit
+
+    moved = [(event.kind, event.details) for event in reversed(access_audit.events(beta))]
+    assert moved[-2:] == [("tenant_switched", {"came_from": "acme"}), ("logout", {})]
+
+
 def test_setup_tokens_and_sign_in_codes_never_reach_the_access_log(server: Server) -> None:
     """D-02: the server's access log does not keep the bootstrap token, nor the provider's code and state."""
     import io

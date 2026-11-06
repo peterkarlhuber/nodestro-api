@@ -372,6 +372,31 @@ def test_keys_never_reach_other_publications_runs_or_files(make_app: Callable[..
     assert "secret_hash" not in listed and token_a.split("_", 2)[2] not in listed
 
 
+def test_key_changes_are_in_the_access_audit_without_the_key(make_app: Callable[..., TestClient]) -> None:
+    """API-004: creating, rotating, revoking and deleting a key is recorded (id, name, prefix), never the key."""
+    client, _publication, token = _published(make_app)
+    key_id = token.split("_")[1]
+    rotated = client.post(f"/api/api-keys/{key_id}/rotate").json()
+    new_id = rotated["key"]["id"]
+    assert client.post(f"/api/api-keys/{new_id}/revoke").status_code == 200
+    assert client.delete(f"/api/api-keys/{new_id}").status_code == 204
+    answer = client.get("/api/access-audit")
+    assert answer.status_code == 200
+    trail = answer.json()
+    assert [(event["kind"], event["target_id"]) for event in reversed(trail)] == [
+        ("api_key_created", key_id),
+        ("api_key_rotated", new_id),
+        ("api_key_revoked", new_id),
+        ("api_key_deleted", new_id),
+    ]
+    assert trail[-1]["actor"] == "local" and trail[-1]["details"]["prefix"] == f"ndk_{key_id}_"
+    assert trail[2]["details"]["replaces"] == key_id
+    for secret in (token, rotated["token"]):
+        assert secret.split("_", 2)[2] not in answer.text
+    only = client.get("/api/access-audit", params={"kind": "api_key_revoked", "limit": 5}).json()
+    assert [event["kind"] for event in only] == ["api_key_revoked"]
+
+
 # ---- network listener -------------------------------------------------------------------------
 
 

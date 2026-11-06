@@ -118,6 +118,11 @@ user login and does not lift the loopback-only rule. Without the variable (the `
 - Login with OpenID Connect at the operator's identity provider: authorization code flow with PKCE (`S256`),
   `state` (stored hashed, used once, expires after 10 minutes) and `nonce`. The ID token must be signed with an
   asymmetric key of the provider (never `none` or a shared secret) and match issuer, audience, expiry and nonce.
+- Every tenant has an access audit trail (`GET /api/access-audit`, permission `admin`, read only, newest first):
+  logins, tenant switches (refused ones too), logouts, API key changes and the operator's commands (`create-tenant`,
+  `set-role`, `remove-member`, `revoke-sessions`, `tenant suspend|resume`, actor `operator`). It holds ids and codes,
+  never a secret; with `NODESTRO_AXENTRA_AUDIT=1` each event is mirrored into Axentra's audit log in the same
+  transaction (`nodestro.access.<kind>`). The desktop records its API key changes the same way.
 - One address starts at most 60 logins a minute per API process (`NODESTRO_LOGIN_STARTS_PER_MINUTE`, `0` turns it
   off; then `429 identity.rate_limited`), and oversized setup tokens, states and codes are refused. Behind a proxy
   the address is the proxy's unless uvicorn trusts it (`FORWARDED_ALLOW_IPS`); a proxy rate limit stays advisable.

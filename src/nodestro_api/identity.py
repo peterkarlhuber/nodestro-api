@@ -696,7 +696,11 @@ def _client_ip(request: Request) -> str | None:
     return request.client.host if request.client is not None else None
 
 
-def auth_router(identity: IdentityStore, oidc: OidcClient | LoginFlow) -> APIRouter:
+#: Records one access audit event in a tenant's trail (``tenant id, event``; API-004); never raises.
+AuditSink = Callable[[str, Any], None]
+
+
+def auth_router(identity: IdentityStore, oidc: OidcClient | LoginFlow, audit: AuditSink | None = None) -> APIRouter:
     """``/api/auth``: start a login, the provider's callback, the current session, switching tenants, logout.
 
     ``oidc`` is the login flow (an :class:`OidcClient` is Nodestro's own flow, :class:`NodestroLoginFlow`)."""
@@ -705,6 +709,23 @@ def auth_router(identity: IdentityStore, oidc: OidcClient | LoginFlow) -> APIRou
     lifetime = int(identity.session_lifetime.total_seconds())
     login_lifetime = int(identity.login_lifetime.total_seconds())
     starts = LoginStartLimit(login_starts_per_minute())
+
+    def audited(tenant_id: str, kind: str, actor: str, *, outcome: str = "success", **details: Any) -> None:
+        if audit is None:
+            return
+        from .access_audit import AccessEvent
+
+        event = AccessEvent.model_validate(
+            {
+                "kind": kind,
+                "actor": actor,
+                "target_type": "session",
+                "target_id": actor,
+                "outcome": outcome,
+                "details": details,
+            }
+        )
+        audit(tenant_id, event)
 
     @router.get("/login", dependencies=PUBLIC, include_in_schema=False)
     def login(
@@ -781,6 +802,7 @@ def auth_router(identity: IdentityStore, oidc: OidcClient | LoginFlow) -> APIRou
         previous = request.cookies.get(SESSION_COOKIE)
         if previous:
             identity.end_session(previous)  # rotation: the session this browser held before ends with the login
+        audited(tenant_id, "login", user.id, setup_link=finished.bootstrap_hash is not None)
         answer = RedirectResponse(finished.return_to, status_code=303, headers={"Cache-Control": "no-store"})
         set_session_cookie(answer, token, lifetime)
         return answer
@@ -810,10 +832,14 @@ def auth_router(identity: IdentityStore, oidc: OidcClient | LoginFlow) -> APIRou
         try:
             token = identity.create_session(principal.id, body.tenant_id)
         except NodestroError as exc:
+            # Recorded in the tenant the user is in now; the tenant asked for only when it is a valid id.
+            asked = body.tenant_id if TENANT_ID.fullmatch(body.tenant_id) else None
+            audited(principal.tenant_id, "tenant_switched", principal.id, outcome="denied", code=exc.code, to=asked)
             if exc.code == "identity.tenant_suspended":  # only for a member (the membership is checked first)
                 return _login_error(exc.code, 403)
             # The same answer for unknown tenants and tenants of others: nothing about them is revealed.
             return _login_error("identity.not_a_member", 404)
+        audited(body.tenant_id, "tenant_switched", principal.id, came_from=principal.tenant_id)
         identity.end_session(request.cookies.get(SESSION_COOKIE, ""))
         answer = Response(status_code=204)
         set_session_cookie(answer, token, lifetime)
@@ -823,7 +849,13 @@ def auth_router(identity: IdentityStore, oidc: OidcClient | LoginFlow) -> APIRou
     def logout(request: Request) -> Response:
         token = request.cookies.get(SESSION_COOKIE)
         if token:
+            try:
+                session = identity.session(token)  # the logout is public: read whose session ends first
+            except NodestroError:
+                session = None
             identity.end_session(token)
+            if session is not None:
+                audited(session.tenant_id, "logout", session.user_id)
         answer = Response(status_code=204)
         clear_session_cookie(answer)
         return answer

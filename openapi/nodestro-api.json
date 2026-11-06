@@ -13,6 +13,78 @@
         "title": "AcceptRequest",
         "type": "object"
       },
+      "AccessEvent": {
+        "description": "One entry of a tenant's access audit trail.",
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "login",
+              "logout",
+              "tenant_switched",
+              "api_key_created",
+              "api_key_revoked",
+              "api_key_rotated",
+              "api_key_deleted",
+              "tenant_created",
+              "tenant_status_changed",
+              "role_changed",
+              "member_removed",
+              "sessions_revoked"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "outcome": {
+            "default": "success",
+            "enum": [
+              "success",
+              "denied"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_type": {
+            "enum": [
+              "user",
+              "api_key",
+              "tenant",
+              "session"
+            ],
+            "title": "Target Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "actor",
+          "target_type",
+          "target_id"
+        ],
+        "title": "AccessEvent",
+        "type": "object"
+      },
       "ActivateIn": {
         "properties": {
           "number": {
@@ -24655,6 +24727,83 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/access-audit": {
+      "get": {
+        "description": "The access audit trail of this workspace (on a server: of the tenant), newest first (API-004): logins and\nrefused logins, tenant switches and logouts, API key changes, and the operator's tenant and member commands.\nRead only; it never holds a secret.",
+        "operationId": "access_audit_events_api_access_audit_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "login",
+                    "logout",
+                    "tenant_switched",
+                    "api_key_created",
+                    "api_key_revoked",
+                    "api_key_rotated",
+                    "api_key_deleted",
+                    "tenant_created",
+                    "tenant_status_changed",
+                    "role_changed",
+                    "member_removed",
+                    "sessions_revoked"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AccessEvent"
+                  },
+                  "title": "Response Access Audit Events Api Access Audit Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Access Audit Events"
+      }
+    },
     "/api/agents/design": {
       "post": {
         "operationId": "design_agent_api_agents_design_post",

@@ -299,7 +299,16 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
     # API2-02; the studio's origin is https (http only on localhost for development): HSTS also behind a TLS proxy.
     app.add_middleware(SecurityHeadersMiddleware, hsts=composition.origin.startswith("https://"))
     install_error_handlers(app)
-    app.include_router(auth_router(composition.identity, composition.oidc))
+
+    def audit(tenant_id: str, event: Any) -> None:
+        from .access_audit import record_quietly
+
+        try:
+            record_quietly(tenants.get(tenant_id).store, event)
+        except Exception:  # an unknown or unusable tenant: the login itself is not refused for it
+            logger.exception("The access audit of tenant %s could not be written", tenant_id)
+
+    app.include_router(auth_router(composition.identity, composition.oidc, audit))
     app.include_router(publish_router)
     app.include_router(architect_router)
     app.include_router(python_router)

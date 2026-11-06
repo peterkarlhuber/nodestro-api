@@ -1229,6 +1229,15 @@ def setup_link(server: ServerEnvironment, tenant_id: str) -> str:
     return f"{server.settings.public_origin}/api/auth/login?{urlencode({'setup': token})}"
 
 
+def _operator_event(database: Any, tenant_id: str, kind: str, target_type: str, target_id: str, **details: Any) -> None:
+    """Record an operator command in the tenant's access audit trail (API-004; actor ``operator``)."""
+    from .access_audit import OPERATOR, AccessEvent, record
+
+    fields = {"kind": kind, "actor": OPERATOR, "target_type": target_type, "target_id": target_id, "details": details}
+    event = AccessEvent.model_validate(fields)
+    record(database.store(tenant_id), event)
+
+
 def create_tenant(server: ServerEnvironment, tenant_id: str, name: str) -> None:
     if tenant_id == PRICE_REFERENCE_TENANT:  # the server's reference prices live under this id
         raise NodestroError("identity.tenant_id", f"The tenant id {tenant_id!r} is reserved", tenant=tenant_id)
@@ -1237,6 +1246,7 @@ def create_tenant(server: ServerEnvironment, tenant_id: str, name: str) -> None:
         database.require_current_schema()
         with _identity(server, database) as identity:
             identity.create_tenant(tenant_id, name)
+        _operator_event(database, tenant_id, "tenant_created", "tenant", tenant_id, name=name)
     finally:
         database.close()
 
@@ -1366,6 +1376,7 @@ def set_role(server: ServerEnvironment, tenant_id: str, who: str, role: str, *, 
             user = find_user(server, database, who, confirm=confirm)
             before = identity.role(tenant_id, user.id)
             identity.set_role(tenant_id, user.id, role)
+        _operator_event(database, tenant_id, "role_changed", "user", user.id, before=before, role=role)
     finally:
         database.close()
     logger.info("Operator set the role of %s in tenant %s: %s -> %s", user.id, tenant_id, before or "-", role)
@@ -1381,6 +1392,7 @@ def set_tenant_status(server: ServerEnvironment, tenant_id: str, status: str) ->
         with _identity(server, database) as identity:
             _require_tenant(identity, tenant_id)
             identity.set_tenant_status(tenant_id, status)
+        _operator_event(database, tenant_id, "tenant_status_changed", "tenant", tenant_id, status=status)
     finally:
         database.close()
     logger.info("Operator set the status of tenant %s: %s", tenant_id, status)
@@ -1400,6 +1412,7 @@ def remove_member(server: ServerEnvironment, tenant_id: str, who: str, *, confir
                     "identity.not_a_member", f"{user.id} is not a member of {tenant_id}", tenant=tenant_id
                 )
             identity.remove_member(tenant_id, user.id)
+        _operator_event(database, tenant_id, "member_removed", "user", user.id)
     finally:
         database.close()
     logger.info("Operator removed %s from tenant %s", user.id, tenant_id)
@@ -1413,7 +1426,10 @@ def revoke_sessions(server: ServerEnvironment, who: str, *, confirm: Confirm | N
         database.require_current_schema()
         user = find_user(server, database, who, confirm=confirm)
         with _identity(server, database) as identity:
+            tenants = [item.tenant_id for item in identity.memberships(user.id)]
             ended = identity.end_sessions(user.id)
+        for tenant_id in tenants:  # the user's sessions end in all of them
+            _operator_event(database, tenant_id, "sessions_revoked", "user", user.id, ended=ended)
     finally:
         database.close()
     logger.info("Operator ended %d sessions of %s", ended, user.id)

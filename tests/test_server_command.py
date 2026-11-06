@@ -551,3 +551,39 @@ def test_conversations_from_before_owners_get_the_owner_their_files_name(
     assert unknown.value.code == "identity.tenant_unknown"
     parsed = command.parser().parse_args(["assistant", "backfill-owners", "--dry-run", "--tenant", "alpha"])
     assert (parsed.assistant_command, parsed.dry_run, parsed.tenant) == ("backfill-owners", True, "alpha")
+
+
+def test_operator_commands_are_in_the_tenants_access_audit(schema: str, tmp_path: Path) -> None:
+    """API-004: create-tenant, set-role, suspend/resume, remove-member and revoke-sessions are recorded in the
+    tenant's own trail with the actor ``operator``."""
+    from nodestro_runtime.identity_store import IdentityStore
+
+    from nodestro_api import access_audit
+
+    loaded = command.load(_environment(tmp_path))
+    command.migrate(loaded, backup_dir=None, backup_taken=False)
+    command.create_tenant(loaded, "acme", "Acme")
+    database = PostgresDatabase(DSN, schema=schema)
+    try:
+        user = IdentityStore(database).login("https://login.example", "alice", email="alice@example.com")
+        command.set_role(loaded, "acme", user.id, "editor")
+        command.set_role(loaded, "acme", user.id, "admin")
+        command.set_tenant_status(loaded, "acme", "suspended")
+        command.set_tenant_status(loaded, "acme", "active")
+        command.revoke_sessions(loaded, user.id)
+        command.remove_member(loaded, "acme", user.id)
+        found = access_audit.events(database.store("acme"))
+    finally:
+        database.close()
+    assert [event.kind for event in reversed(found)] == [
+        "tenant_created",
+        "role_changed",
+        "role_changed",
+        "tenant_status_changed",
+        "tenant_status_changed",
+        "sessions_revoked",
+        "member_removed",
+    ]
+    assert {event.actor for event in found} == {"operator"}
+    changed = next(event for event in found if event.kind == "role_changed")
+    assert (changed.target_id, changed.details) == (user.id, {"before": "editor", "role": "admin"})

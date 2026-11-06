@@ -23,7 +23,7 @@ from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.schemas import LANGUAGES, RunSummary, Workflow
 from pydantic import BaseModel, Field
 
-from . import api_guide, exporter, portable_build
+from . import access_audit, api_guide, exporter, portable_build
 from .api import Ctx, _quote
 from .api_examples import ApiExamples, examples
 from .api_guide import ApiGuide
@@ -524,26 +524,66 @@ def list_keys(ctx: Ctx) -> list[ApiKeyOut]:
     return ctx.api_keys.all()
 
 
+def _actor(request: Request) -> str:
+    principal = getattr(request.state, "principal", None)
+    return principal.id if principal is not None else "local"
+
+
+def _key_event(ctx: Ctx, request: Request, kind: access_audit.AccessKind, key: ApiKeyOut, **details: Any) -> None:
+    """API-004: who created, revoked, rotated or deleted which key (its id, name and prefix; never the key)."""
+    access_audit.record(
+        ctx.store,
+        access_audit.AccessEvent(
+            kind=kind,
+            actor=_actor(request),
+            target_type="api_key",
+            target_id=key.id,
+            details={"name": key.name, "prefix": key.prefix, "scopes": list(key.scopes), **details},
+        ),
+    )
+
+
 @router.post("/api-keys", status_code=201, dependencies=ADMIN)
-def create_key(body: KeyIn, ctx: Ctx) -> NewApiKey:
-    return ctx.api_keys.create(body.name, list(body.scopes), body.publications)
+def create_key(body: KeyIn, request: Request, ctx: Ctx) -> NewApiKey:
+    created = ctx.api_keys.create(body.name, list(body.scopes), body.publications)
+    _key_event(ctx, request, "api_key_created", created.key)
+    return created
 
 
 @router.post("/api-keys/{key_id}/revoke", dependencies=ADMIN)
-def revoke_key(key_id: str, ctx: Ctx) -> ApiKeyOut:
-    return ctx.api_keys.revoke(key_id)
+def revoke_key(key_id: str, request: Request, ctx: Ctx) -> ApiKeyOut:
+    revoked = ctx.api_keys.revoke(key_id)
+    _key_event(ctx, request, "api_key_revoked", revoked)
+    return revoked
 
 
 @router.post("/api-keys/{key_id}/rotate", dependencies=ADMIN)
-def rotate_key(key_id: str, ctx: Ctx) -> NewApiKey:
+def rotate_key(key_id: str, request: Request, ctx: Ctx) -> NewApiKey:
     """A new key with the same name, permissions and APIs; the old one is revoked at once."""
-    return ctx.api_keys.rotate(key_id)
+    rotated = ctx.api_keys.rotate(key_id)
+    _key_event(ctx, request, "api_key_rotated", rotated.key, replaces=key_id)
+    return rotated
 
 
 @router.delete("/api-keys/{key_id}", status_code=204, dependencies=ADMIN)
-def delete_key(key_id: str, ctx: Ctx) -> Response:
+def delete_key(key_id: str, request: Request, ctx: Ctx) -> Response:
+    found = next((key for key in ctx.api_keys.all() if key.id == key_id), None)
     ctx.api_keys.delete(key_id)
+    if found is not None:
+        _key_event(ctx, request, "api_key_deleted", found)
     return Response(status_code=204)
+
+
+@router.get("/access-audit", dependencies=ADMIN)
+def access_audit_events(
+    ctx: Ctx,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 200,
+    kind: access_audit.AccessKind | None = None,
+) -> list[access_audit.AccessEvent]:
+    """The access audit trail of this workspace (on a server: of the tenant), newest first (API-004): logins and
+    refused logins, tenant switches and logouts, API key changes, and the operator's tenant and member commands.
+    Read only; it never holds a secret."""
+    return access_audit.events(ctx.store, limit=limit, kind=kind)
 
 
 # ---- network -----------------------------------------------------------------------------
