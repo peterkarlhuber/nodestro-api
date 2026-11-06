@@ -113,7 +113,9 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     # + nodestro_api.body_limit and nodestro_runtime.traces (its trace limit): the exported application limits
     # request bodies like the studio (backend audit 3, API3-02).
     expected |= {"nodestro_api.body_limit", "nodestro_runtime.traces"}
-    assert len(modules) == 54 and expected | {"nodestro_runtime.local_models"} <= set(modules)
+    # + nodestro_runtime.reasoning (the live reasoning events the engine passes on for every provider).
+    expected.add("nodestro_runtime.reasoning")
+    assert len(modules) == 55 and expected | {"nodestro_runtime.local_models"} <= set(modules)
     assert "nodestro_runtime.local_service" not in modules
     # The audit/usage hook protocol is exported (tool approvals and the usage log import it); the Axentra
     # integration itself is server-only and never part of an export.

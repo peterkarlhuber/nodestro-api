@@ -49,6 +49,7 @@ from nodestro_runtime.problems import NodestroError, Problem, library_problem, p
 from nodestro_runtime.providers import MAX_RETRIES, Connection, model_id, qualify
 from nodestro_runtime.python_deps import analyze as analyze_dependencies
 from nodestro_runtime.python_deps import blocking as blocking_dependency_issues
+from nodestro_runtime.reasoning import ReasoningKind, ReasoningTrace, reasoning_hook
 from nodestro_runtime.schemas import (
     AgentConfig,
     AgentTemplate,
@@ -354,6 +355,18 @@ class ArchitectEvent(BaseModel):
     at: datetime = Field(default_factory=now)
 
 
+class ArchitectReasoning(ReasoningTrace):
+    """The reasoning of one request of a job: ``step`` is ``analysis``, ``plan``, ``agent_revision`` or ``repair``."""
+
+    step: str = "plan"
+
+
+#: Reasoning text kept per request of a job (the rest still streams live, but is not stored).
+_MAX_REASONING_CHARS = 60_000
+#: Events that are streamed but not kept in ``ArchitectJob.events`` (the job keeps their result in ``reasoning``).
+_LIVE_ONLY = frozenset({"thinking", "thinking_status"})
+
+
 class DraftAgentChange(BaseModel):
     node_id: str
     name: str
@@ -393,6 +406,10 @@ class ArchitectJob(BaseModel):
     budget_usd: float | None = None
     error: Problem | None = None
     events: list[ArchitectEvent] = Field(default_factory=list)
+    #: The reasoning the provider transmitted, one entry per model request that reasoned (text only where the
+    #: provider sends it; streamed live as ``thinking`` and ``thinking_status`` events, which are not kept in
+    #: ``events``).
+    reasoning: list[ArchitectReasoning] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=now)
     finished_at: datetime | None = None
     #: The workflow created from (or revised with) the draft after "accept".
@@ -588,7 +605,7 @@ class WorkflowArchitect:
             seq = self._seq.get(job.id, len(job.events)) + 1
             self._seq[job.id] = seq
             event = ArchitectEvent(seq=seq, job_id=job.id, type=kind, cost_usd=job.usage.estimated_cost_usd, **fields)
-            if len(job.events) < _MAX_EVENTS or kind != "log":
+            if kind not in _LIVE_ONLY and (len(job.events) < _MAX_EVENTS or kind != "log"):
                 job.events.append(event)
             queues = list(self._subscribers.get(job.id, []))
         loop = self._loop
@@ -609,6 +626,8 @@ class WorkflowArchitect:
             job.status = status
             job.error = error
             job.finished_at = now()
+            for entry in job.reasoning:
+                entry.active = False
         self.emit(
             job,
             "finished",
@@ -673,6 +692,9 @@ class _Session:
         self.connection: Connection | None = None
         self.marks: dict[str, str] = {}
         self.pending_tools: dict[str, ToolDraft] = {}
+        #: The step of the current request (``_DETAILS``) and its reasoning entry (``None`` until it reasons).
+        self._step = "plan"
+        self._reasoning: ArchitectReasoning | None = None
 
     # ---- helpers -----------------------------------------------------------------------
 
@@ -699,7 +721,40 @@ class _Session:
         def on_request(_args: dict[str, Any]) -> None:
             self.check()
 
-        return {"on_request": on_request}
+        return {"on_request": on_request, "on_event": reasoning_hook(self._on_thinking, self._on_thinking_status)}
+
+    # ---- live reasoning ----------------------------------------------------------
+
+    def _reasoning_entry(self) -> ArchitectReasoning:
+        """The reasoning entry of the current request (added to the job on its first reasoning event)."""
+        if self._reasoning is None:
+            self._reasoning = ArchitectReasoning(step=self._step)
+            self.job.reasoning.append(self._reasoning)
+        return self._reasoning
+
+    def _on_thinking(self, delta: str, kind: ReasoningKind) -> None:
+        self.check()
+        # Changed and published in one step under the service's (reentrant) lock, like every job change.
+        with self.service._lock:
+            entry = self._reasoning_entry()
+            # Beyond the stored limit the text still streams live, but is not kept.
+            added = delta if len(entry.text) >= _MAX_REASONING_CHARS else entry.delta(delta, kind)
+            data = {"reasoning_kind": kind, "step": entry.step, "index": len(self.job.reasoning) - 1}
+            self.service.emit(self.job, "thinking", message=added, data=data)
+
+    def _on_thinking_status(self, state: str, kind: ReasoningKind | None, redacted: bool) -> None:
+        self.check()
+        with self.service._lock:
+            entry = self._reasoning_entry()
+            entry.status(state, redacted)
+            data = {
+                "state": state,
+                "reasoning_kind": kind,
+                "redacted": redacted,
+                "step": entry.step,
+                "index": len(self.job.reasoning) - 1,
+            }
+            self.service.emit(self.job, "thinking_status", data=data)
 
     def _finish(self, job: ArchitectJob, status: JobStatus, error: Problem | None = None) -> bool:
         """End the job after its usage is in the ledger, so whoever sees it finished also sees all of its usage."""
@@ -743,6 +798,7 @@ class _Session:
         self, name: str, prompt: str, system: str, output: type[BaseModel], *, effort: Effort, max_tokens: int
     ) -> Any:
         self.check()
+        self._step, self._reasoning = _DETAILS.get(name, "plan"), None
         connection = self._connection()
         agent: Agent[Any] = Agent(
             name=name,

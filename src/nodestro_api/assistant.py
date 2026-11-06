@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from nodestro_runtime.engine import usage_of
 from nodestro_runtime.problems import NodestroError, Problem, library_problem, problem
 from nodestro_runtime.providers import MAX_RETRIES, model_id, provider_of
+from nodestro_runtime.reasoning import ReasoningKind, ReasoningTrace, reasoning_hook
 from nodestro_runtime.schemas import Language, Usage, WorkflowIn, new_id, now
 from orkexa import (
     Agent,
@@ -54,7 +55,7 @@ from orkexa import (
     ToolResultError,
     UsageRecord,
 )
-from orkexa.core.types import ReasoningDelta, TextDelta, TokenUsage, ToolCallDelta, ToolCallStarted
+from orkexa.core.types import ReasoningDelta, ReasoningStatus, TextDelta, TokenUsage, ToolCallDelta, ToolCallStarted
 from orkexa.usage import record_token_usage, summarize_usage
 from pydantic import BaseModel, Field
 
@@ -194,6 +195,9 @@ class ChatMessage(BaseModel):
     sources: list[DocSource] = Field(default_factory=list)
     handovers: list[Handover] = Field(default_factory=list)
     steps: list[Step] = Field(default_factory=list)
+    #: Assistant messages: the reasoning the provider transmitted while the answer was written (text only where the
+    #: provider sends it; never part of the conversation history sent to the model).
+    reasoning: ReasoningTrace | None = None
     usage: Usage | None = None
     #: Part of the usage is an estimate (the answer was cancelled before the API reported it).
     estimated: bool = False
@@ -215,7 +219,9 @@ class ConversationDetail(Conversation):
 class ReplyEvent(BaseModel):
     seq: int = 0
     message_id: str
-    #: ``step``, ``delta``, ``source``, ``handover``, ``usage`` or ``finished``.
+    #: ``step``, ``delta``, ``thinking`` (reasoning text in ``text``, ``data.reasoning_kind``), ``thinking_status``
+    #: (``data.state``: ``started``/``finished``, ``data.reasoning_kind``, ``data.redacted``), ``source``,
+    #: ``handover``, ``usage`` or ``finished``.
     type: str
     text: str = ""
     data: dict[str, Any] = Field(default_factory=dict)
@@ -817,6 +823,8 @@ class Assistant:
             message.status = status
             message.error = error
             message.finished_at = now()
+            if message.reasoning is not None:
+                message.reasoning.active = False
             snapshot = message.model_copy(deep=True)
             # Stored and no longer live in one step: whoever sees the finished answer can retry or
             # send the next message at once (no "assistant.busy").
@@ -892,6 +900,8 @@ class _Reply:
         self.text_in_round = False
         self.last_request: ModelRequest | None = None
         self.attachments: dict[str, ContextRef] = {item.attachment_id: item for item in user.context}
+        #: Passes the reasoning the provider transmits on to the message and its stream (:mod:`.reasoning`).
+        self.on_reasoning = reasoning_hook(self.on_thinking, self.on_thinking_status)
 
     # ---- steps -----------------------------------------------------------------------
 
@@ -1065,8 +1075,29 @@ class _Reply:
 
     def on_event(self, event: Any) -> None:
         # Content of the answer arrived: the request was accepted and costs input tokens.
-        if isinstance(event, (TextDelta, ReasoningDelta, ToolCallStarted, ToolCallDelta)):
+        if isinstance(event, (TextDelta, ReasoningDelta, ReasoningStatus, ToolCallStarted, ToolCallDelta)):
             self.streaming = True
+        self.on_reasoning(event)
+
+    def _trace(self) -> ReasoningTrace:
+        if self.message.reasoning is None:
+            self.message.reasoning = ReasoningTrace()
+        return self.message.reasoning
+
+    def on_thinking(self, delta: str, kind: ReasoningKind) -> None:
+        self.check()
+        # Changed and published in one step under the service's (reentrant) lock: a subscriber's snapshot never
+        # holds text whose event it receives again.
+        with self.service._lock:
+            added = self._trace().delta(delta, kind)
+            self.service._emit(self.message, "thinking", text=added, data={"reasoning_kind": kind})
+
+    def on_thinking_status(self, state: str, kind: ReasoningKind | None, redacted: bool) -> None:
+        self.check()
+        data = {"state": state, "reasoning_kind": kind, "redacted": redacted}
+        self.service._emit(
+            self.message, "thinking_status", apply=lambda: self._trace().status(state, redacted), data=data
+        )
 
     def history(self) -> list[dict[str, Any]]:
         """Earlier complete exchanges as plain text (their objects are named, not repeated)."""
