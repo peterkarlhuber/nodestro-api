@@ -18,7 +18,9 @@ or more worker processes (:class:`ServerWorker`). Every worker:
   idempotent, so a second worker or a retry never counts or notifies twice);
 - deletes what is no longer needed while it holds the scheduler lock (:meth:`ServerWorker.clean_up`): expired
   sessions and abandoned login starts, finished jobs after :attr:`WorkerSettings.job_retention` and run events after
-  :attr:`WorkerSettings.event_retention` (the runs themselves stay);
+  :attr:`WorkerSettings.event_retention` (the runs themselves stay); and, every
+  :attr:`WorkerSettings.chat_file_every` seconds, the assistant chat files past the retention an administrator of the
+  tenant set (:meth:`ServerWorker.expire_chat_files`, API-066);
 - keeps the Docker sandbox's proof warm (:class:`DockerWatch`): from its start it reads the process's Docker monitor
   (:mod:`nodestro_runtime.docker_status`) every :attr:`WorkerSettings.docker_every` seconds, well within the proof's
   ``PROOF_TTL``, so a job after an idle spell is not refused with ``docker-checking`` only because the proof expired.
@@ -102,6 +104,9 @@ class WorkerSettings:
     job_retention: timedelta = timedelta(days=7)
     #: Run events are kept this long: live streams and waits read them; a run's own record keeps its results.
     event_retention: timedelta = timedelta(days=2)
+    #: How often the scheduler leader removes assistant chat files past the retention an administrator of each
+    #: tenant set (``PUT /api/assistant/files/retention``, API-056/API-066; nothing without a retention period).
+    chat_file_every: float = 3600.0
     #: How often the scheduler leader settles run usage and sweeps notifications into Axentra (seconds).
     platform_every: float = 30.0
     #: How often the worker reads the Docker monitor's status to keep the sandbox's proof fresh (seconds; at most
@@ -293,6 +298,24 @@ class ServerWorker:
             logger.info("Cleanup removed %s", ", ".join(f"{count} {name}" for name, count in removed.items()))
         return removed
 
+    async def expire_chat_files(self) -> dict[str, int]:
+        """Remove assistant chat files past their tenant's retention period while this worker leads (API-066): the
+        same expiry as the desktop's hourly pass, for every active tenant (a suspended tenant's files stay until it is
+        resumed). Returns the files removed per tenant (only tenants where some went; empty: another worker leads).
+        A tenant whose pass fails is logged and skipped; the next pass tries again."""
+        if not await asyncio.to_thread(self.leader.acquire):
+            return {}
+        removed: dict[str, int] = {}
+        for tenant_id in await self._active_tenants():
+            try:
+                count = await asyncio.to_thread(self.scheduling.get(tenant_id).assistant.expire_files)
+            except Exception:
+                logger.exception("Removing the expired assistant chat files of tenant %s failed", tenant_id)
+                continue
+            if count:
+                removed[tenant_id] = count
+        return removed
+
     async def platform_duties(self) -> dict[str, Any]:
         """Settle finished runs' usage and send due inbox notifications while this worker leads (empty: off, or
         another worker leads). Both read what changed since their last pass and are idempotent per record."""
@@ -337,6 +360,11 @@ class ServerWorker:
         ]
         tasks.append(
             asyncio.create_task(self._every(stop, self.settings.cleanup_every, self.clean_up), name="worker-cleanup")
+        )
+        tasks.append(
+            asyncio.create_task(
+                self._every(stop, self.settings.chat_file_every, self.expire_chat_files), name="worker-chat-files"
+            )
         )
         if self.settlement is not None or self.notifications is not None:
             tasks.append(

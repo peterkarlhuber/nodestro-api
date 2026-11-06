@@ -499,6 +499,81 @@ def test_the_leader_deletes_expired_sessions_logins_old_jobs_and_events(
     assert database._query("SELECT seq FROM nodestro_run_events") == [(2,)]
 
 
+def _old_chat_file(browser: TestClient, background: Background, tenant: str, days: int) -> tuple[str, str]:
+    """A conversation with one chat file attached ``days`` ago (the worker's context backdates it)."""
+    conversation = browser.post("/api/assistant/conversations", json={"title": "Files"})
+    assert conversation.status_code == 201, conversation.text
+    conversation_id = conversation.json()["id"]
+    uploaded = browser.post(
+        f"/api/assistant/conversations/{conversation_id}/files", files=[("files", ("old.txt", b"old notes"))]
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    file_id = uploaded.json()[0]["file"]["id"]
+
+    async def backdate() -> None:
+        assistant = background.worker.scheduling.get(tenant).assistant
+        with assistant._lock:
+            found = assistant._conversation(conversation_id)
+            found.files[0].added_at = datetime.now(UTC) - timedelta(days=days)
+            assistant._save(found, touch=False)
+
+    background.call(backdate())
+    return conversation_id, file_id
+
+
+def test_the_leader_removes_chat_files_past_each_tenants_retention(
+    server: Server, make_worker: Callable[..., Background]
+) -> None:
+    """API-066: on a server the worker enforces the assistant file retention by itself, per tenant, without anyone
+    running the input clean-up; a tenant without a retention period, and a suspended tenant, keep their files."""
+    alice = server.member("acme", "alice", "owner")
+    bob = server.member("globex", "bob", "owner")
+    carol = server.member("initech", "carol", "owner")
+    leader, other = make_worker(), make_worker()
+    acme = _old_chat_file(alice, leader, "acme", 5)
+    globex = _old_chat_file(bob, leader, "globex", 5)
+    initech = _old_chat_file(carol, leader, "initech", 5)
+    for browser in (alice, carol):
+        assert browser.put("/api/assistant/files/retention", json={"retention_days": 2}).status_code == 200
+    server.identity.set_tenant_status("initech", "suspended")
+
+    assert leader.call(leader.worker.fire_schedules()) == []  # takes the scheduler lock
+    assert other.call(other.worker.expire_chat_files()) == {}  # only the leader removes them
+    assert leader.call(leader.worker.expire_chat_files()) == {"acme": 1}
+    assert leader.call(leader.worker.expire_chat_files()) == {}  # nothing left to remove
+
+    def files(browser: TestClient, conversation_id: str) -> list[str]:
+        found = browser.get(f"/api/assistant/conversations/{conversation_id}")
+        assert found.status_code == 200, found.text
+        return [item["id"] for item in found.json()["files"]]
+
+    assert files(alice, acme[0]) == []
+    assert alice.get(f"/api/inputs/{acme[1]}").status_code == 404  # the bytes went too
+    assert files(bob, globex[0]) == [globex[1]]  # no retention period: kept
+    server.identity.set_tenant_status("initech", "active")
+    assert files(carol, initech[0]) == [initech[1]]  # suspended while the pass ran: kept until the next pass
+    assert leader.call(leader.worker.expire_chat_files()) == {"initech": 1}
+
+
+def test_a_failing_tenant_does_not_stop_the_chat_file_retention_of_others(
+    server: Server, make_worker: Callable[..., Background], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    alice = server.member("acme", "alice", "owner")
+    bob = server.member("globex", "bob", "owner")
+    leader = make_worker()
+    _old_chat_file(alice, leader, "acme", 5)
+    _old_chat_file(bob, leader, "globex", 5)
+    for browser in (alice, bob):
+        assert browser.put("/api/assistant/files/retention", json={"retention_days": 1}).status_code == 200
+    broken = leader.worker.scheduling.get("acme").assistant
+
+    def fail(**_kwargs: Any) -> int:
+        raise RuntimeError("storage unavailable")
+
+    monkeypatch.setattr(broken, "expire_files", fail)
+    assert leader.call(leader.worker.expire_chat_files()) == {"globex": 1}
+
+
 # ---- suspended tenants ----------------------------------------------------------------------------------
 
 

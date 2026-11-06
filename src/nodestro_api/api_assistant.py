@@ -163,8 +163,8 @@ def file_retention(ctx: Ctx) -> FileRetention:
 @router.put("/files/retention", dependencies=ADMIN)
 def set_file_retention(body: FileRetention, ctx: Ctx) -> FileRetention:
     """Set how long conversation files are kept (administrators). The input file clean-up
-    (``POST /api/inputs/cleanup``) and, in the desktop app, an hourly pass remove the older ones; ``null`` keeps them
-    until the conversation is deleted."""
+    (``POST /api/inputs/cleanup``) and an hourly pass (the desktop app's, or on a server the worker's) remove the older
+    ones; ``null`` keeps them until the conversation is deleted."""
     return ctx.assistant.set_file_retention(body)
 
 
