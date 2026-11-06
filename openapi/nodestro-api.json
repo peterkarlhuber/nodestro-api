@@ -2011,7 +2011,7 @@
         "type": "object"
       },
       "ArchitectReasoning": {
-        "description": "The reasoning of one request of a job: ``step`` is ``analysis``, ``plan``, ``agent_revision`` or ``repair``.",
+        "description": "The reasoning of one request of a job: ``step`` is ``analysis``, ``plan``, ``agent_revision`` or ``repair``,\nor for the sub-requests ``agent`` (the Agent Architect designs an agent) and ``tool`` (the Coding Agent writes a\ntool), whose ``subject`` names the agent or tool (RT-063).",
         "properties": {
           "active": {
             "default": false,
@@ -2047,6 +2047,17 @@
             "default": "plan",
             "title": "Step",
             "type": "string"
+          },
+          "subject": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject"
           },
           "text": {
             "default": "",
