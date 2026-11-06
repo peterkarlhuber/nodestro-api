@@ -11,7 +11,7 @@
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 1 |
-| P2 Medium | 9 |
+| P2 Medium | 8 |
 | P3 Low | 15 |
 | P4 Optional | 7 |
 
@@ -379,14 +379,6 @@ removed by the change that completes its package here.
   check access in their handlers.
 - **Next step:** Call `check_routes` (with explicitly listed public routes) in every app factory; a test finds all
   `FastAPI(` constructions.
-
-### API-MUP-A11 · Tenant SQL check in CI with the pinned and the current runtime checker
-
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** MP-A11 (PS-10), [MUP-ONA][mup-ona]
-- **What:** The API is scanned only by the pinned runtime checker inside `pytest`; a rule change on runtime `master`
-  reaches the API only with a pin bump, and nothing fails the job when the check cannot run.
-- **Next step:** CI job `tenant-sql`: pinned checker and runtime `master` (public `git+https`, no secret), daily
-  schedule, `NODESTRO_REQUIRE_TENANT_SCAN=1`.
 
 ### API-MUP-B0 · Declare the orkexa dependency with the runtime's commit
 
