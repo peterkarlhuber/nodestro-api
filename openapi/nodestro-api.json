@@ -5365,6 +5365,22 @@
         "title": "CleanupRequest",
         "type": "object"
       },
+      "CleanupResult": {
+        "properties": {
+          "removed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Removed",
+            "type": "array"
+          }
+        },
+        "required": [
+          "removed"
+        ],
+        "title": "CleanupResult",
+        "type": "object"
+      },
       "CollectionInfo": {
         "properties": {
           "files": {
@@ -7504,6 +7520,26 @@
         "title": "FileRequest",
         "type": "object"
       },
+      "FileRetention": {
+        "description": "How long files attached in assistant conversations are kept (API-056), set by an administrator.\n\n``None`` (the default) keeps them until the user removes them or deletes the conversation, as before. With a\nnumber of days, the input file clean-up (``POST /api/inputs/cleanup``) removes every conversation file attached\nlonger ago than that; its conversation and messages stay, and a sent message keeps only the file's name.",
+        "properties": {
+          "retention_days": {
+            "anyOf": [
+              {
+                "maximum": 3650.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retention Days"
+          }
+        },
+        "title": "FileRetention",
+        "type": "object"
+      },
       "FileSupport": {
         "description": "What the assistant accepts, and what its current model reads natively.",
         "properties": {
@@ -8428,6 +8464,32 @@
           "limits"
         ],
         "title": "InfoOut",
+        "type": "object"
+      },
+      "InputCleanupResult": {
+        "properties": {
+          "assistant_files_expired": {
+            "default": 0,
+            "title": "Assistant Files Expired",
+            "type": "integer"
+          },
+          "freed_bytes": {
+            "default": 0,
+            "title": "Freed Bytes",
+            "type": "integer"
+          },
+          "kept_in_use": {
+            "default": 0,
+            "title": "Kept In Use",
+            "type": "integer"
+          },
+          "removed": {
+            "default": 0,
+            "title": "Removed",
+            "type": "integer"
+          }
+        },
+        "title": "InputCleanupResult",
         "type": "object"
       },
       "InputField": {
@@ -24761,22 +24823,6 @@
         "title": "WorkflowVersion",
         "type": "object"
       },
-      "nodestro_api__api_python__CleanupResult": {
-        "properties": {
-          "removed": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Removed",
-            "type": "array"
-          }
-        },
-        "required": [
-          "removed"
-        ],
-        "title": "CleanupResult",
-        "type": "object"
-      },
       "nodestro_api__benchmarks__CheckResult": {
         "properties": {
           "label": {
@@ -24828,27 +24874,6 @@
           "name"
         ],
         "title": "KnowledgeRef",
-        "type": "object"
-      },
-      "nodestro_runtime__input_files__CleanupResult": {
-        "properties": {
-          "freed_bytes": {
-            "default": 0,
-            "title": "Freed Bytes",
-            "type": "integer"
-          },
-          "kept_in_use": {
-            "default": 0,
-            "title": "Kept In Use",
-            "type": "integer"
-          },
-          "removed": {
-            "default": 0,
-            "title": "Removed",
-            "type": "integer"
-          }
-        },
-        "title": "CleanupResult",
         "type": "object"
       },
       "nodestro_runtime__release__KnowledgeRef": {
@@ -26763,6 +26788,72 @@
         "summary": "Search Docs"
       }
     },
+    "/api/assistant/files/retention": {
+      "get": {
+        "description": "How long conversation files are kept (API-056); ``retention_days: null`` keeps them with their conversation.",
+        "operationId": "file_retention_api_assistant_files_retention_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileRetention"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "File Retention"
+      },
+      "put": {
+        "description": "Set how long conversation files are kept (administrators). The input file clean-up\n(``POST /api/inputs/cleanup``) removes the older ones; ``null`` keeps them until the conversation is deleted.",
+        "operationId": "set_file_retention_api_assistant_files_retention_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileRetention"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileRetention"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Set File Retention"
+      }
+    },
     "/api/assistant/files/support": {
       "get": {
         "description": "The formats and limits of files, and whether the assistant's current model reads images and PDFs natively.",
@@ -28345,6 +28436,7 @@
     },
     "/api/inputs/cleanup": {
       "post": {
+        "description": "Remove input files nobody uses, with ``older_than_days`` also those of older finished runs, and the\nassistant conversation files past their retention period (when an administrator set one).",
         "operationId": "cleanup_inputs_api_inputs_cleanup_post",
         "requestBody": {
           "content": {
@@ -28361,7 +28453,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/nodestro_runtime__input_files__CleanupResult"
+                  "$ref": "#/components/schemas/InputCleanupResult"
                 }
               }
             },
@@ -33287,7 +33379,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/nodestro_api__api_python__CleanupResult"
+                  "$ref": "#/components/schemas/CleanupResult"
                 }
               }
             },

@@ -30,7 +30,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Mapping
 from contextlib import suppress
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import logging
 import re
@@ -94,6 +94,9 @@ logger = logging.getLogger(__name__)
 _CONVERSATIONS = "assistant_conversations"
 _MESSAGES = "assistant_messages"
 _SNAPSHOTS = "assistant_snapshots"
+#: The API's own settings (shared with :mod:`nodestro_api.network`); this key holds :class:`FileRetention`.
+_SETTINGS = "api_settings"
+_RETENTION_KEY = "assistant_files"
 
 MessageStatus = Literal["complete", "streaming", "failed", "cancelled"]
 AttachmentState = Literal["current", "changed", "missing", "draft"]
@@ -147,6 +150,16 @@ class Conversation(BaseModel):
     usage: Usage = Field(default_factory=Usage)
     messages: int = 0
     last_seq: int = 0
+
+
+class FileRetention(BaseModel):
+    """How long files attached in assistant conversations are kept (API-056), set by an administrator.
+
+    ``None`` (the default) keeps them until the user removes them or deletes the conversation, as before. With a
+    number of days, the input file clean-up (``POST /api/inputs/cleanup``) removes every conversation file attached
+    longer ago than that; its conversation and messages stay, and a sent message keeps only the file's name."""
+
+    retention_days: int | None = Field(default=None, ge=1, le=3650)
 
 
 class ConversationSummary(BaseModel):
@@ -660,6 +673,41 @@ class Assistant:
             self._save(conversation)
         self._release([file_id])
         return self.detail(conversation_id)
+
+    def file_retention(self) -> FileRetention:
+        stored = self.store.get(_SETTINGS, _RETENTION_KEY, FileRetention)
+        return stored if stored is not None else FileRetention()
+
+    def set_file_retention(self, retention: FileRetention) -> FileRetention:
+        self.store.put(_SETTINGS, _RETENTION_KEY, retention)
+        return retention
+
+    def expire_files(self, *, at: datetime | None = None) -> int:
+        """Remove conversation files attached before the retention period (API-056); returns how many went.
+
+        Nothing happens without a retention period. Like :meth:`remove_file`: the file leaves its conversation and is
+        deleted when nothing else uses it (a run that took it as an input keeps it)."""
+        days = self.file_retention().retention_days
+        if days is None:
+            return 0
+        cutoff = (at or now()) - timedelta(days=days)
+        expired: list[str] = []
+        for conversation_id in [item.id for item in self.store.list(_CONVERSATIONS, Conversation)]:
+            with self._lock:
+                conversation = self.store.get(_CONVERSATIONS, conversation_id, Conversation)
+                if conversation is None:
+                    continue
+                old = [item.id for item in conversation.files if item.added_at < cutoff]
+                if not old:
+                    continue
+                conversation.files = [item for item in conversation.files if item.id not in old]
+                # Not a change by the user: the conversation keeps its place in the list.
+                self._save(conversation, touch=False)
+            expired += old
+        self._release(expired)
+        if expired:
+            logger.info("Removed %s assistant conversation files past their %s days", len(expired), days)
+        return len(expired)
 
     def _release(self, file_ids: list[str]) -> None:
         """Delete files nothing references any more (a run that uses one keeps it)."""

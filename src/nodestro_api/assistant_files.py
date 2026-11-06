@@ -5,10 +5,12 @@ Three kinds of material reach the assistant, and they are kept apart:
 1. **Files for one message**: the user uploads files in the composer (file picker or drag and drop) and sends
    them with the next message. That message gets their content in full, as far as the model and the room allow.
 2. **Files of the conversation**: every file stays attached to its conversation until the user removes it or
-   deletes the conversation. Later messages see the list of these files and read the parts they need with the
-   read-only ``input_files`` tool; the user can also send a file again in full ("use again"). A chat file is
-   never a run input by its id (``input.assistant_file``; batches, schedules and form fields do not know it
-   either): a run takes a file only after it was uploaded for the run or saved to knowledge.
+   deletes the conversation, or until the input file clean-up removes it after the retention period an administrator
+   set (``/api/assistant/files/retention``, API-056; none by default). Later messages see the list of these files
+   and read the parts they need with the read-only ``input_files`` tool; the user can also send a file again in
+   full ("use again"). A chat file is never a run input by its id (``input.assistant_file``; batches, schedules
+   and form fields do not know it either): a run takes a file only after it was uploaded for the run or saved to
+   knowledge.
 3. **Permanent knowledge and Nodestro objects**: nothing becomes knowledge by itself. "Save to knowledge" is an
    explicit, confirmed step through the existing adoption (:mod:`nodestro_runtime.adoption`); objects such as
    workflows or runs are attached as snapshots (:mod:`nodestro_api.assistant_context`).
