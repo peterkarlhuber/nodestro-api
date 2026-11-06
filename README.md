@@ -18,7 +18,7 @@ is [PLATFORM.md](https://github.com/peterkarlhuber/nodestro-studio/blob/master/d
 | Area | Modules |
 | --- | --- |
 | Application | `app` (`create_app`), `context` (`AppConfig`; `Nodestro` extends the runtime `Workspace`), `cli` (`nodestro-api`), `local_access` (Host/Origin guard) |
-| Studio REST API `/api` | `api`, `api_data`, `api_inputs`, `api_examples`, `api_python`, `api_architect`, `api_assistant`, `api_automation`, `api_guide`, `api_publish`, `api_pricing` (model prices, reconciliation), `api_mcp` (connected MCP services), `api_local_models` (local models and the semantic knowledge index), `api_budget`, `api_run_chat`, `api_tool_approvals`, `api_notifications`, `api_reference` (the API reference page) |
+| Studio REST API `/api` | `api`, `api_data`, `api_inputs`, `api_examples`, `api_python`, `api_architect`, `api_assistant`, `api_automation`, `api_guide`, `api_publish`, `api_pricing` (model prices, reconciliation), `api_mcp` (connected MCP services), `api_local_models` (local models and the semantic knowledge index), `model_readiness` (missing local models: refusal and readiness), `api_budget`, `api_run_chat`, `api_tool_approvals`, `api_notifications`, `api_reference` (the API reference page) |
 | Published APIs `/api/published/{slug}` | `serving` (shared with exports), `publishing`, `release_gate` (opt-in release gate), `api_keys`, `network` (separate listener for the local network) |
 | Export | `exporter` (ZIP with runtime, lock file, tests; orkexa from Git or bundled), `standalone`, `export_models`; portable packages: `portable_build`, `portable` (the launcher), `portable_secrets`, `webui_server` (see [docs/portable-export.md](docs/portable-export.md)) |
 | Services | `pricing_setup` (price sync on desktop and server), `assistants`, `architect`, `assistant`, `assistant_context`, `docs_index`, `batches`, `benchmarks`, `schedules`, `backup`, `organize`, `search`, `diagnostics` |
@@ -242,6 +242,27 @@ code runs only in containers (ADR-0006), so a server without a container runtime
 keeps the Docker daemon's privileges away from the API and worker containers. Images and the development
 deployment are in the `nodestro-server` repository.
 
+## Missing local models
+
+An interactive action whose local model is not ready is refused with **409 `model.local_unavailable`** before
+anything is generated or stored; `params` carry `model`, `cause`, `problem` (the runtime's `ModelProblem`: cause,
+location, mode, allowed actions, sizes, running or stopped download) and `alternatives` (ready models that can do the
+step). `nodestro_api.model_readiness` applies this to the Workflow Architect (`POST /api/architect/jobs`, needs
+structured output), the assistant (send and retry; nothing is stored when refused), agent design and the tool jobs,
+the agent test (its tools), a studio run (every local model of the workflow), and the knowledge index rebuild (the
+embedding model). Install permission (`install`; never on the server profile, where `blocked` is `operator`) decides
+whether `download` and `setup_server` are offered.
+
+- `POST /api/local-models/readiness` (`run`): `{model, action, capabilities}` gives the same answer (`ready`,
+  `problem`, `alternatives`); the studio asks it again after a download or setup.
+- `POST /api/local-models/pull` takes `attach: true`: a running download of the same model is returned instead of
+  `local.job_running`.
+- The Workflow Architect (`ArchitectRequest.model`) and the assistant (`SendRequest.model`, `RetryRequest.model`)
+  take a model for this one request; it must be one of the alternatives (`409 model.choice_invalid`) and is never
+  saved in the settings.
+- Unattended starts (schedules, batches, published APIs) are not asked: their check reports
+  `check.local_model_missing` inside `workflow.blocked`, and nothing is downloaded.
+
 ## Model prices
 
 Orkexa resolves prices and calculates every cost; Nodestro keeps the prices, syncs and validates them and shows
@@ -357,6 +378,11 @@ configured as hashes in `API_KEYS`. The README of the project is written in the 
 package for one platform with its own Python, every library, start scripts and optionally the local models and Ollama;
 it is built as a background job (`POST /api/publications/{id}/export-jobs`, `GET /api/export-jobs/{id}`). See
 [docs/portable-export.md](docs/portable-export.md).
+
+`GET /api/publication-overview` (read permission, like the other publication reads) lists every publication of the
+installation (on a server: of the tenant) with its workflow's current name, the active release's workflow version and
+date, and its export records, newest first: the studio's *Publications* page reads it in one request. It only reads
+the stored publications, releases and export records.
 
 Amazon Bedrock in an export: the manifest keeps only the region and the data residency (`settings.bedrock`; an
 `eu_only` stays in force), never an AWS profile name, a role or a key. The exported API signs in with the AWS default

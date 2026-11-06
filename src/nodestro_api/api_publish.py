@@ -2,6 +2,7 @@
 
 ``/api/workflows/{id}/api``   overview, check and publishing of a saved version
 ``/api/publications/...``    settings, switching on/off, versions, docs, tests, runs, exports, guide
+``/api/publication-overview`` every publication with its workflow, active release and exports (read only)
 ``/api/api-keys``            API keys (hashed; the complete key is shown once)
 ``/api/api-network``         the optional network listener
 ``/api/exports/{id}``        downloading a generated project
@@ -11,6 +12,7 @@ The published endpoints themselves are :mod:`nodestro_api.serving` (``/api/publi
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Query, Request, Response
@@ -174,6 +176,51 @@ def list_publications(ctx: Ctx) -> list[PublicationListItem]:
         PublicationListItem(**item.model_dump(include=set(PublicationListItem.model_fields)))
         for item in sorted(ctx.publications.all(), key=lambda item: item.name.lower())
     ]
+
+
+class PublicationOverviewItem(PublicationListItem):
+    """One publication on the studio's *Publications* page: the stored publication, its workflow, the active
+    release and the export history. Read only; everything comes from the stored publications, releases and
+    export records (nothing is stored for the page)."""
+
+    #: The workflow's current name (``None``: the workflow no longer exists).
+    workflow_name: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    #: The saved workflow version of the active release.
+    active_version: int | None = None
+    #: When the active release was published.
+    published_at: datetime | None = None
+    #: The publication's exports, newest first (as ``GET /api/publications/{id}/exports``).
+    exports: list[exporter.ExportRecord] = Field(default_factory=list)
+
+
+@router.get("/publication-overview", dependencies=READ)
+def publication_overview(ctx: Ctx) -> list[PublicationOverviewItem]:
+    """All publications of this installation (on a server: of the tenant) with their workflow, active release and
+    exports, for the studio's *Publications* page (one request instead of one per publication)."""
+    exports = exporter.records_by_publication(ctx)
+    found = []
+    for publication in sorted(ctx.publications.all(), key=lambda item: item.name.lower()):
+        workflow = ctx.store.get("workflows", publication.workflow_id, Workflow)
+        release: Release | None = None
+        if publication.active_release is not None:
+            try:
+                release = ctx.publications.release(publication.id, publication.active_release)
+            except KeyError:
+                release = None
+        found.append(
+            PublicationOverviewItem(
+                **publication.model_dump(include=set(PublicationListItem.model_fields)),
+                workflow_name=workflow.name if workflow is not None else None,
+                created_at=publication.created_at,
+                updated_at=publication.updated_at,
+                active_version=release.workflow_version if release is not None else None,
+                published_at=release.created_at if release is not None else None,
+                exports=exports.get(publication.id, []),
+            )
+        )
+    return found
 
 
 class PublicationPatch(BaseModel):

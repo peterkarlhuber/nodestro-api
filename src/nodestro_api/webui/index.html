@@ -142,7 +142,10 @@
           <div id="providers"></div>
         </section>
         <section class="card" aria-labelledby="output-title">
-          <h2 id="output-title" data-i18n="setup.output">Result folder</h2>
+          <div class="card-head">
+            <h2 id="output-title" data-i18n="setup.output">Result folder</h2>
+            <span class="badge" id="output-source" hidden></span>
+          </div>
           <div id="output-dir"></div>
         </section>
         <section class="card" aria-labelledby="models-title">
@@ -162,6 +165,43 @@
     <img src="/ui/assets/brand/nodestro-mark-128.png" alt="" width="18" height="18">
     <span>Nodestro · Connecting Intelligence</span>
   </footer>
+  <dialog id="folder-dialog" class="dialog" aria-labelledby="folder-title" aria-describedby="folder-lead">
+    <form id="folder-form" novalidate>
+      <div class="dialog-head">
+        <h2 id="folder-title" data-i18n="folder.title">Choose the result folder</h2>
+        <button type="button" class="icon-button" id="folder-close" data-i18n-aria="folder.close" data-i18n-title="folder.close" aria-label="Close" title="Close">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19l5.6-5.6 5.6 5.6 1.4-1.4-5.6-5.6L19 6.4 17.6 5 12 10.6z"/></svg>
+        </button>
+      </div>
+      <p class="hint" id="folder-lead" data-i18n="folder.lead">Folders on the computer this application runs on. Only folder names are shown, never files.</p>
+      <div class="places" id="folder-places" role="group" data-i18n-aria="folder.places" aria-label="Places"></div>
+      <label for="folder-path" data-i18n="folder.path">Folder path</label>
+      <div class="path-row">
+        <input id="folder-path" type="text" autocomplete="off" spellcheck="false" autocapitalize="off" dir="ltr">
+        <button type="button" class="ghost" id="folder-go" data-i18n="folder.go">Go</button>
+      </div>
+      <div class="browse-head">
+        <button type="button" class="ghost small" id="folder-up" data-i18n="folder.up">Up one level</button>
+        <span class="muted" id="folder-count" aria-live="polite"></span>
+      </div>
+      <ul class="folder-list" id="folder-list" data-i18n-aria="folder.list" aria-label="Folders"></ul>
+      <p class="hint" id="folder-note" hidden></p>
+      <div class="new-folder" id="folder-new-row" hidden>
+        <label for="folder-new-name" data-i18n="folder.new_name">Name of the new folder</label>
+        <div class="path-row">
+          <input id="folder-new-name" type="text" autocomplete="off" spellcheck="false" maxlength="120">
+          <button type="button" class="ghost" id="folder-new-create" data-i18n="folder.create">Create</button>
+        </div>
+      </div>
+      <p class="error" id="folder-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" class="ghost" id="folder-new" data-i18n="folder.new">New folder</button>
+        <span class="spacer"></span>
+        <button type="button" class="ghost" id="folder-cancel" data-i18n="folder.cancel">Cancel</button>
+        <button type="submit" class="primary" id="folder-use" data-i18n="folder.use">Use this folder</button>
+      </div>
+    </form>
+  </dialog>
   <template id="tpl-step"><li class="step"><span class="dot" aria-hidden="true"></span><span class="label"></span><span class="state"></span></li></template>
 </body>
 </html>

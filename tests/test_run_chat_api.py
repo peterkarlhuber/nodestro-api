@@ -278,3 +278,55 @@ def test_conversations_of_another_tenant_are_not_found(server: Any) -> None:  # 
     viewer = server.member("acme", "victor", "viewer")
     assert viewer.get(f"/api/runs/{run_id}/chat").status_code == 200
     assert viewer.post(f"/api/runs/{run_id}/chat/messages", json=body).status_code == 403
+
+
+def test_an_answer_streams_its_reasoning_and_text_live(
+    make_app: Callable[..., TestClient], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reasoning the provider transmits while a question is answered reaches the event stream before the
+    answer's text (``answering``), and stays on the stored answer."""
+    from nodestro_runtime.testing import thinking
+
+    monkeypatch.setattr(api_run_chat, "POLL_SECONDS", 0.05)
+    monkeypatch.setattr(api_run_chat, "LIVE_POLL_SECONDS", 0.01)
+    client, run_id = setup(
+        make_app, {CHAT: [thinking("The team waits for an approval; nothing else runs.", "It waits for you.")]}
+    )
+    ctx = client.app.state.nodestro  # type: ignore[attr-defined]
+    original = ctx.runs.chat.update_live
+
+    def slowly(question_id: str, change: Any) -> None:
+        original(question_id, change)
+        time.sleep(0.04)  # a model that streams in real time
+
+    monkeypatch.setattr(ctx.runs.chat, "update_live", slowly)
+    failures: list[BaseException] = []
+
+    def ask_then_finish() -> None:
+        try:
+            time.sleep(0.2)  # the stream is open
+            sent = client.post(
+                f"/api/runs/{run_id}/chat/messages",
+                json={"kind": "question", "target_run_id": run_id, "node_id": "lead", "content": "Where are we?"},
+            )
+            assert sent.status_code == 201, sent.text
+            until(lambda: message(client, run_id, sent.json()["id"])["status"] == "answered")
+            (waiting,) = client.get("/api/approvals").json()
+            client.post(f"/api/runs/{waiting['run_id']}/approvals/{waiting['node_id']}", json={"decision": "approved"})
+        except BaseException as exc:  # reported by the test thread
+            failures.append(exc)
+
+    worker = threading.Thread(target=ask_then_finish, daemon=True)
+    worker.start()
+    with client.stream("GET", f"/api/runs/{run_id}/chat/events") as stream:
+        lines = [line for line in stream.iter_lines() if line]
+    worker.join(10)
+    assert not failures, failures
+    answering = [json.loads(lines[i + 1][6:])["answers"] for i, line in enumerate(lines) if line == "event: answering"]
+    live = [answers[0] for answers in answering if answers]
+    assert live, "no live answer was streamed"
+    assert any(item["reasoning"]["text"] and not item["text"] for item in live)  # reasoning before the answer
+    assert all(item["reasoning"]["kind"] in (None, "summary") for item in live)
+    assert answering[-1] == []  # the stored answer replaces the live one
+    stored = [json.loads(line[6:]) for line in lines if line.startswith("data:") and '"kind": "answer"' in line]
+    assert stored[-1]["reasoning"]["text"] == "The team waits for an approval; nothing else runs."

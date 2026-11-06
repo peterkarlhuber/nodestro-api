@@ -202,9 +202,12 @@ def _private_folder(folder: Path, root: Path) -> None:
         if not folder.exists():
             folder.mkdir(mode=0o700, parents=True)
             folder.chmod(0o700)
-        elif folder.is_dir() and folder.resolve().is_relative_to(root.resolve()):
-            if stat.S_IMODE(folder.stat().st_mode) & 0o077:
-                folder.chmod(0o700)
+        elif (
+            folder.is_dir()
+            and folder.resolve().is_relative_to(root.resolve())
+            and stat.S_IMODE(folder.stat().st_mode) & 0o077
+        ):
+            folder.chmod(0o700)
     except OSError:
         return
 
@@ -487,6 +490,8 @@ def start(args: argparse.Namespace, settings: Settings) -> int:
     if _network_problem(settings, host):
         console.say("network_needs_tls")
         return 2
+    # OUTPUT_DIR set outside the application wins over the folder chosen on the settings page.
+    output_fixed = bool(os.environ.get("OUTPUT_DIR"))
     for key, value in settings.environment().items():
         os.environ.setdefault(key, value)
     if not os.environ.get("API_KEYS"):
@@ -503,7 +508,7 @@ def start(args: argparse.Namespace, settings: Settings) -> int:
             url = models.start(data_dir)
             if url:
                 os.environ["OLLAMA_BASE_URL"] = url
-        return _serve(args, settings, console, host, port, secrets_store, models, log_dir)
+        return _serve(args, settings, console, host, port, secrets_store, models, log_dir, output_fixed)
     finally:
         models.stop()
         with suppress(OSError):
@@ -519,9 +524,11 @@ def _serve(
     secrets_store: Any,
     models: LocalModels,
     log_dir: Path,
+    output_fixed: bool = False,
 ) -> int:
     import uvicorn
 
+    from .output_folder import OutputFolder, file_manager
     from .standalone import StandaloneSettings, create_app
     from .webui_server import UiOptions, WebUi
 
@@ -543,6 +550,17 @@ def _serve(
             local_models=models.state,
             api_docs=str(settings.get("web", "api_docs") or "local") != "off",
         )
+        # The settings page may show the result folder in the file manager only when the application serves this
+        # computer alone (a browser elsewhere would open nothing it can see).
+        local_only = host in LOOPBACK and not settings.get("server", "behind_proxy")
+        output = OutputFolder(
+            host_object,
+            data_dir=settings.data_dir,
+            project_dir=settings.root,
+            fixed=output_fixed,
+            protected=[log_dir],
+            opener=file_manager() if local_only else None,
+        )
         ui = WebUi(
             host_object,
             options,
@@ -551,6 +569,7 @@ def _serve(
             set_provider=secrets_store.set,
             remove_provider=secrets_store.remove,
             auth_failed=core.auth_failed,
+            output=output,
         )
         ui.sessions.add_launch_token(launch)
         return ui

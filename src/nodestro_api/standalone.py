@@ -241,11 +241,20 @@ class StandaloneHost:
         self.runs.environments = lambda _run: self.environment
         self.files = ResultFiles(self.store)
         self.output_dir, self.output_warning = resolve_output_dir(project_dir, settings.output_dir)
+        #: Checks a folder the operator chose on the settings page again before each copy (it may have been replaced
+        #: by a link meanwhile); set by :class:`nodestro_api.output_folder.OutputFolder`, ``None`` for the default.
+        self.output_check: Callable[[Path], Any] | None = None
 
         def after_run(run: Run) -> None:
             self.files.write_outputs(run)
-            if self.output_dir is not None:
-                copy_result_files(self.files, run, self.output_dir)
+            folder, check = self.output_dir, self.output_check
+            if folder is None:
+                return
+            problem = check(folder) if check is not None else None
+            if problem is not None:
+                logger.warning("Result files of run %s stay in the database: %s (%s)", run.id, folder, problem)
+                return
+            copy_result_files(self.files, run, folder)
 
         self.runs.after_run = after_run
         self.limits = ApiLimits.model_validate({**self.manifest.limits.model_dump(), **settings.limits})

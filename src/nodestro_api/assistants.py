@@ -8,16 +8,22 @@ is applied automatically: the editor shows the proposal and the user decides.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from nodestro_runtime.catalog import SERVER_TOOLS
+from nodestro_runtime.model_profile import native_tool_support
+from nodestro_runtime.output_limits import effective as effective_limit
 from nodestro_runtime.problems import NodestroError, Problem, problem
 from nodestro_runtime.providers import MAX_RETRIES, Connection, model_id, provider_of, qualify
-from nodestro_runtime.schemas import AgentConfig, MemoryConfig, QualityConfig
+from nodestro_runtime.schemas import MAX_TOKENS_BOUND, AgentConfig, MemoryConfig, QualityConfig
 from nodestro_runtime.tool_library import ToolLibrary
 from orkexa import Agent, ModelCapabilities, UsageTracker
 from orkexa.dynamic import AgentArchitect, AgentSpec, DynamicPolicy
 from orkexa.dynamic.policy import clamp_effort
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from nodestro_runtime.agent_builder import AgentBuilder
 
 ARCHITECT_PROMPT = """\
 You are an expert multi-agent systems architect working inside Nodestro, a visual
@@ -111,11 +117,33 @@ def _cost(tracker: UsageTracker) -> float | None:
 
 
 class Assistants:
-    def __init__(self, tools: ToolLibrary, capabilities: Callable[[str], ModelCapabilities] | None = None) -> None:
+    def __init__(
+        self,
+        tools: ToolLibrary,
+        capabilities: Callable[[str], ModelCapabilities] | None = None,
+        builder: AgentBuilder | None = None,
+    ) -> None:
         self.tools = tools
         #: What a model supports (with the capabilities declared for compatible endpoints); used to check that the
         #: judge given to a designed agent can return the structured verdict of a quality check.
         self.capabilities = capabilities
+        #: The workspace's agent builder: model limits and the output limits of these operations (``None``: the
+        #: built-in defaults, nothing known about the models).
+        self.builder = builder
+
+    def _output_limit(self, operation: str, model: str, connection: Connection) -> int:
+        """The output limit of one of these operations: the workspace setting, else the default, capped by the model."""
+        if self.builder is not None:
+            return self.builder.output_limit(operation, model, connection).value
+        return effective_limit(operation, {}, connection.model_limits(model)).value
+
+    def _model_maximum(self, model: str) -> int | None:
+        """The documented or declared maximum output of ``model`` (``None``: unknown)."""
+        return self.builder.limits(model).max_output_tokens if self.builder is not None else None
+
+    def _agent_ceiling(self, model: str) -> int:
+        """The highest ``max_tokens`` a designed agent of ``model`` may get: its maximum, else the config bound."""
+        return self._model_maximum(model) or MAX_TOKENS_BOUND
 
     def design_agent(
         self,
@@ -138,6 +166,9 @@ class Assistants:
             raise NodestroError("assistant.description_missing", "Please describe the agent you need")
         tracker = tracker if tracker is not None else UsageTracker()
         allowed = tuple(dict.fromkeys(allowed_models)) or (qualify(default_model),)
+        # A designed agent gets at most 32,000 answer tokens: the draft's bound, not a model limit (the budget
+        # pre-check reserves an agent's max_tokens for every request, so drafts start moderate; the editor allows up
+        # to the model's maximum). _draft lowers it further to the chosen model's maximum and says so.
         policy = DynamicPolicy(allowed_models=allowed, max_effort="xhigh", max_tokens=32_000, max_tool_rounds=20)
         prompt = ARCHITECT_PROMPT + language_rule(
             language,
@@ -147,6 +178,7 @@ class Assistants:
             model=qualify(model),
             system_prompt=prompt,
             effort=connection.effort(model, "high"),
+            max_tokens=self._output_limit("agent_design", model, connection),
             credentials={connection.provider: connection.settings(model)},
             usage_tracker=tracker,
         )
@@ -183,17 +215,32 @@ class Assistants:
                     chosen=model,
                 )
             )
-        if server_tools and provider_of(model) != "anthropic":
-            # Server tools run at Anthropic; other providers refuse them (see agent_builder).
-            for name in server_tools:
-                notes.append(
-                    problem(
-                        "draft.server_tool_provider",
-                        f"Server tool {name!r} was left out: it is only available for Anthropic models",
-                        name=name,
+        if server_tools:
+            # Provider-native tools only where the chosen model's provider runs them (see model_profile); never
+            # replaced by another kind of tool.
+            caps = self.capabilities(model) if self.capabilities is not None else ModelCapabilities()
+            support = {item.key: item for item in native_tool_support(provider_of(model), caps)}
+            for name in list(server_tools):
+                if not support[name].available:
+                    notes.append(
+                        problem(
+                            "draft.server_tool_provider",
+                            f"Server tool {name!r} was left out: the model's provider does not run it here",
+                            name=name,
+                        )
                     )
+                    server_tools.remove(name)
+        requested_tokens = max(spec.max_tokens, 1024)
+        max_tokens = min(requested_tokens, policy.max_tokens, self._agent_ceiling(model))
+        if max_tokens < min(requested_tokens, policy.max_tokens):
+            notes.append(
+                problem(
+                    "draft.max_tokens_reduced",
+                    f"The answer limit was lowered to {max_tokens} tokens, the maximum output of {model}",
+                    max_tokens=max_tokens,
+                    model=model,
                 )
-            server_tools = []
+            )
         config = AgentConfig(
             name=spec.name.replace("_", " ").replace("-", " ").strip() or "Agent",
             description=spec.description,
@@ -202,7 +249,7 @@ class Assistants:
             effort=clamp_effort(spec.effort, policy.max_effort),
             tools=tools,
             server_tools=server_tools,
-            max_tokens=min(max(spec.max_tokens, 1024), policy.max_tokens),
+            max_tokens=max_tokens,
             max_tool_rounds=min(max(spec.max_tool_rounds, 0), policy.max_tool_rounds),
             memory=MemoryConfig(),
             quality=self.default_quality(default_model, notes),
@@ -250,7 +297,7 @@ class Assistants:
             system_prompt=MEMORY_PROMPT + language_rule(language, texts="the file contents and the explanation"),
             output_format=MemorySeed,
             effort=connection.effort(model, "medium"),
-            max_tokens=8000,
+            max_tokens=self._output_limit("memory_proposal", model, connection),
             max_tool_rounds=0,
             options=connection.options(),
             max_retries=MAX_RETRIES,

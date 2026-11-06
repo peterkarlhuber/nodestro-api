@@ -342,7 +342,9 @@ def test_without_api_key_nothing_is_sent_or_stored(tmp_path: Path, monkeypatch: 
         conversation_id = chat(client)
         response = client.post(f"/api/assistant/conversations/{conversation_id}/messages", json={"content": "Hallo"})
         # A new installation's assistant is local: without the local runtime nothing is sent either.
-        assert response.status_code == 400 and response.json()["code"] == "local.runtime_missing"
+        # The answer names the cause and what can be done (set up the server), before anything is stored.
+        assert response.status_code == 409 and response.json()["code"] == "model.local_unavailable"
+        assert response.json()["params"]["cause"] == "runtime_missing"
         client.put("/api/settings", json={"assistant_model": "anthropic:claude-sonnet-5-5"})
         response = client.post(f"/api/assistant/conversations/{conversation_id}/messages", json={"content": "Hallo"})
         assert response.status_code == 400 and response.json()["code"] == "api_key_missing"

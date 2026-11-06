@@ -210,3 +210,15 @@ def blocking(response: Any, release: threading.Event, entered: threading.Event |
         return response(request) if callable(response) else response
 
     return respond
+
+
+def thinking_first(response: Any, thought: str | None) -> Callable[[dict[str, Any]], Any]:
+    """``response`` (a structured answer) after a thinking block, as Claude streams it: ``thought`` arrives live as
+    summarized thinking before the answer (``None``: a redacted block, the model reasoned without text)."""
+    from nodestro_runtime.testing import Parsed, thinking
+
+    def respond(request: dict[str, Any]) -> Any:
+        result = response(request) if callable(response) else response
+        return Parsed(thinking(thought, "{}"), result.parsed_output)
+
+    return respond

@@ -24,6 +24,7 @@ Both carry `openapi.json` (the same document the running application serves) and
 | `portable.py` | The launcher in the package (`python -I -m nodestro_api.portable start|stop|status|open|configure|keys|check`). |
 | `portable_secrets.py` | The AI providers' keys on the target computer (`data/secrets/providers.json`, owner-only). |
 | `webui_server.py` + `webui/` | Sessions, sign-in, the interface's endpoints and the static app (vanilla JS, no build step, no CDN). |
+| `output_folder.py` | The result folder chosen on the settings page (portable only): precedence `OUTPUT_DIR` from outside > choice in `data/settings/output-folder.json` > `[data] output_dir`; path checks, the folder browser (names only), "Open folder". |
 
 ## How a package is built
 
@@ -80,6 +81,17 @@ retention. The standard export (`POST /publications/{id}/exports`) is not affect
   `0600`): created that way, and narrowed on start when they are inside the package (older packages). A data or log
   folder configured outside the package keeps the modes its owner gave it once it exists. Key files and the
   launcher's state are `0600`.
+- **Result folder.** The operator (only) may choose another result folder on the settings page:
+  `PUT/DELETE /ui/api/setup/output`, `GET /ui/api/setup/output/browse` (sub-folder names only, never files, hidden
+  folders left out, at most 500), `POST /ui/api/setup/output/folders` (a plain name), `POST
+  /ui/api/setup/output/open` — all with the usual CSRF header/Origin check. A path must be absolute; it is normalized
+  and its links resolved before the checks, which refuse the drive root, system folders (`/etc`, `/usr`, `/var`,
+  `/opt`, `C:\Windows`, `Program Files`, … except the user's home and `/var/home`, `/run/media`, temp folders), the
+  package's code, Python, config, data and log folders, and the interpreter's prefix. A missing folder is created
+  only with `create: true` (the page asks first); the folder must pass a write probe. Before each copy the chosen
+  folder is checked again (a folder swapped for a link is not written). "Open folder" exists only when the launcher
+  serves loopback without a proxy, a desktop is present, and the request comes from `127.0.0.1`/`::1`; it opens the
+  folder in effect, never a path from the request. Files already written are never moved.
 - **Integrity.** `lib.lock` (hashes), `SHA256SUMS`, model blobs by SHA-256, Ollama archives pinned by Orkexa.
 
 ## Platforms

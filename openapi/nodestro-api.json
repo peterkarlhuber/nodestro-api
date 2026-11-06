@@ -392,7 +392,7 @@
         "type": "object"
       },
       "AgentConfig": {
-        "description": "Everything about one agent node; mirrors the arguments of ``orkexa.Agent``.\n\n``model`` names the provider and the model (``provider:model``). ``thinking``,\n``thinking_display``, ``cache_control``, ``cache_ttl``, ``fallbacks`` and ``server_tools``\nare options of the Anthropic API (``orkexa.AnthropicOptions``); for other providers\nthey must keep their defaults (see :mod:`nodestro_runtime.agent_builder`).",
+        "description": "Everything about one agent node; mirrors the arguments of ``orkexa.Agent``.\n\n``model`` names the provider and the model (``provider:model``). ``thinking``,\n``thinking_display``, ``thinking_budget``, ``cache_control``, ``cache_ttl``, ``fallbacks`` and\n``server_tools`` depend on what the model supports (:mod:`nodestro_runtime.model_profile`); a model that\ncannot use one refuses a value other than its default (see :mod:`nodestro_runtime.agent_builder`).\n\n``max_tokens`` is the most output tokens per model response (reasoning counts against it); it may not exceed\nthe model's documented or declared maximum (``GET /api/models/profile``). The upper bound here only catches\ntypos: no model accepts more.",
         "properties": {
           "cache_control": {
             "default": true,
@@ -459,7 +459,7 @@
           },
           "max_tokens": {
             "default": 8000,
-            "maximum": 128000.0,
+            "maximum": 1000000.0,
             "minimum": 1.0,
             "title": "Max Tokens",
             "type": "integer"
@@ -548,6 +548,19 @@
               }
             ],
             "title": "Thinking"
+          },
+          "thinking_budget": {
+            "anyOf": [
+              {
+                "maximum": 1000000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thinking Budget"
           },
           "thinking_display": {
             "anyOf": [
@@ -886,6 +899,9 @@
           "prompt": {
             "title": "Prompt",
             "type": "string"
+          },
+          "reasoning": {
+            "$ref": "#/components/schemas/ReasoningTrace"
           },
           "reasoning_reduced": {
             "anyOf": [
@@ -1922,6 +1938,13 @@
             ],
             "title": "Question"
           },
+          "reasoning": {
+            "items": {
+              "$ref": "#/components/schemas/ArchitectReasoning"
+            },
+            "title": "Reasoning",
+            "type": "array"
+          },
           "repairs": {
             "default": 0,
             "title": "Repairs",
@@ -1987,6 +2010,53 @@
         "title": "ArchitectJob",
         "type": "object"
       },
+      "ArchitectReasoning": {
+        "description": "The reasoning of one request of a job: ``step`` is ``analysis``, ``plan``, ``agent_revision`` or ``repair``.",
+        "properties": {
+          "active": {
+            "default": false,
+            "title": "Active",
+            "type": "boolean"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "thinking",
+                  "summary"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "phases": {
+            "default": 0,
+            "title": "Phases",
+            "type": "integer"
+          },
+          "redacted": {
+            "default": false,
+            "title": "Redacted",
+            "type": "boolean"
+          },
+          "step": {
+            "default": "plan",
+            "title": "Step",
+            "type": "string"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "title": "ArchitectReasoning",
+        "type": "object"
+      },
       "ArchitectRequest": {
         "properties": {
           "budget_usd": {
@@ -2040,6 +2110,18 @@
             ],
             "title": "Mode",
             "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
           },
           "name": {
             "default": "",
@@ -3753,6 +3835,23 @@
         "title": "Body_parse_batch_file_api_batches_parse_post",
         "type": "object"
       },
+      "Body_upload_files_api_assistant_conversations__conversation_id__files_post": {
+        "properties": {
+          "files": {
+            "items": {
+              "contentMediaType": "application/octet-stream",
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "array"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "title": "Body_upload_files_api_assistant_conversations__conversation_id__files_post",
+        "type": "object"
+      },
       "Body_upload_inputs_api_inputs_post": {
         "properties": {
           "accept": {
@@ -4753,6 +4852,13 @@
             "title": "Estimated",
             "type": "boolean"
           },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/SentFile"
+            },
+            "title": "Files",
+            "type": "array"
+          },
           "finished_at": {
             "anyOf": [
               {
@@ -4797,6 +4903,16 @@
               }
             ],
             "title": "Model"
+          },
+          "reasoning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReasoningTrace"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "reply_to": {
             "anyOf": [
@@ -5594,6 +5710,20 @@
             "title": "Created At",
             "type": "string"
           },
+          "file_states": {
+            "items": {
+              "$ref": "#/components/schemas/FileView"
+            },
+            "title": "File States",
+            "type": "array"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationFile"
+            },
+            "title": "Files",
+            "type": "array"
+          },
           "history": {
             "items": {
               "$ref": "#/components/schemas/ChatMessage"
@@ -5614,6 +5744,17 @@
             "default": 0,
             "title": "Messages",
             "type": "integer"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
           },
           "streaming": {
             "anyOf": [
@@ -5643,6 +5784,84 @@
         "title": "ConversationDetail",
         "type": "object"
       },
+      "ConversationFile": {
+        "description": "A file attached to a conversation (an input file of origin ``assistant``).",
+        "properties": {
+          "added_at": {
+            "format": "date-time",
+            "title": "Added At",
+            "type": "string"
+          },
+          "chars": {
+            "default": 0,
+            "title": "Chars",
+            "type": "integer"
+          },
+          "format": {
+            "title": "Format",
+            "type": "string"
+          },
+          "group": {
+            "title": "Group",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "info": {
+            "additionalProperties": true,
+            "title": "Info",
+            "type": "object"
+          },
+          "media_type": {
+            "title": "Media Type",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "outline": {
+            "default": "",
+            "title": "Outline",
+            "type": "string"
+          },
+          "sent_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent At"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "format",
+          "group",
+          "media_type",
+          "size"
+        ],
+        "title": "ConversationFile",
+        "type": "object"
+      },
       "ConversationSummary": {
         "properties": {
           "attachments": {
@@ -5664,6 +5883,11 @@
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "files": {
+            "default": 0,
+            "title": "Files",
+            "type": "integer"
           },
           "id": {
             "title": "Id",
@@ -7057,6 +7281,54 @@
         "title": "FileRequest",
         "type": "object"
       },
+      "FileSupport": {
+        "description": "What the assistant accepts, and what its current model reads natively.",
+        "properties": {
+          "formats": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Formats",
+            "type": "array"
+          },
+          "images": {
+            "title": "Images",
+            "type": "boolean"
+          },
+          "max_file_mb": {
+            "default": 50,
+            "title": "Max File Mb",
+            "type": "integer"
+          },
+          "max_files_per_conversation": {
+            "default": 50,
+            "title": "Max Files Per Conversation",
+            "type": "integer"
+          },
+          "max_files_per_message": {
+            "default": 10,
+            "title": "Max Files Per Message",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "pdfs": {
+            "title": "Pdfs",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "model",
+          "images",
+          "pdfs",
+          "formats"
+        ],
+        "title": "FileSupport",
+        "type": "object"
+      },
       "FileText": {
         "properties": {
           "format": {
@@ -7097,6 +7369,145 @@
           "text"
         ],
         "title": "FileText",
+        "type": "object"
+      },
+      "FileUpload": {
+        "description": "One uploaded file: attached (``file``) or refused (``problem``, nothing is stored then).",
+        "properties": {
+          "file": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FileView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Problem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "FileUpload",
+        "type": "object"
+      },
+      "FileView": {
+        "description": "A conversation file with how the assistant's current model would receive it.",
+        "properties": {
+          "added_at": {
+            "format": "date-time",
+            "title": "Added At",
+            "type": "string"
+          },
+          "chars": {
+            "default": 0,
+            "title": "Chars",
+            "type": "integer"
+          },
+          "format": {
+            "title": "Format",
+            "type": "string"
+          },
+          "group": {
+            "title": "Group",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "info": {
+            "additionalProperties": true,
+            "title": "Info",
+            "type": "object"
+          },
+          "knowledge_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Knowledge Ids",
+            "type": "array"
+          },
+          "media_type": {
+            "title": "Media Type",
+            "type": "string"
+          },
+          "mode": {
+            "default": "text",
+            "enum": [
+              "text",
+              "document",
+              "image",
+              "ocr_text",
+              "overview",
+              "unavailable"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "mode_notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Mode Notes",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "outline": {
+            "default": "",
+            "title": "Outline",
+            "type": "string"
+          },
+          "sent_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent At"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "format",
+          "group",
+          "media_type",
+          "size"
+        ],
+        "title": "FileView",
         "type": "object"
       },
       "FormatsInfo": {
@@ -8148,6 +8559,36 @@
         "title": "InstalledModel",
         "type": "object"
       },
+      "JobLayer": {
+        "description": "One file (layer) of a model download, as Ollama reports it.",
+        "properties": {
+          "completed": {
+            "default": 0,
+            "title": "Completed",
+            "type": "integer"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "digest"
+        ],
+        "title": "JobLayer",
+        "type": "object"
+      },
       "JobRequest": {
         "properties": {
           "requirement": {
@@ -8160,6 +8601,78 @@
           "requirement"
         ],
         "title": "JobRequest",
+        "type": "object"
+      },
+      "JobStep": {
+        "description": "One step of a job, as the code runs it.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "state": {
+            "default": "pending",
+            "enum": [
+              "pending",
+              "running",
+              "done",
+              "skipped",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "JobStep",
         "type": "object"
       },
       "JudgeVerdict": {
@@ -8920,6 +9433,33 @@
         "title": "LibraryModelPlan",
         "type": "object"
       },
+      "LiveAnswer": {
+        "description": "An answer being written in this process: what has arrived so far (shown live, never stored as such).",
+        "properties": {
+          "question_id": {
+            "title": "Question Id",
+            "type": "string"
+          },
+          "reasoning": {
+            "$ref": "#/components/schemas/ReasoningTrace"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question_id",
+          "run_id"
+        ],
+        "title": "LiveAnswer",
+        "type": "object"
+      },
       "LocalAdvice": {
         "description": "A hint about the local models of this computer; the interface shows its own text for the ``code``.\n\n``value`` and ``recommended`` depend on the code: tokens for ``local.context_small``, tokens per second times ten\nfor ``local.model_slow``, bytes for ``local.memory_low``.",
         "properties": {
@@ -9029,6 +9569,32 @@
             ],
             "title": "Error Code"
           },
+          "eta_scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "job",
+                  "file"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta Scope"
+          },
+          "eta_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta Seconds"
+          },
           "finished_at": {
             "anyOf": [
               {
@@ -9049,6 +9615,7 @@
             "enum": [
               "pull",
               "build",
+              "setup",
               "install_runtime",
               "import_package",
               "import_gguf",
@@ -9058,10 +9625,78 @@
             "title": "Kind",
             "type": "string"
           },
+          "layers": {
+            "items": {
+              "$ref": "#/components/schemas/JobLayer"
+            },
+            "title": "Layers",
+            "type": "array"
+          },
+          "log": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Log",
+            "type": "array"
+          },
           "message": {
             "default": "",
             "title": "Message",
             "type": "string"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase"
+          },
+          "progress_step": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Step"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
+          "resumed_bytes": {
+            "default": 0,
+            "title": "Resumed Bytes",
+            "type": "integer"
+          },
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "stalled_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stalled Seconds"
           },
           "started_at": {
             "format": "date-time",
@@ -9079,6 +9714,13 @@
             "title": "State",
             "type": "string"
           },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/JobStep"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
           "target": {
             "title": "Target",
             "type": "string"
@@ -9093,6 +9735,23 @@
               }
             ],
             "title": "Total"
+          },
+          "total_final": {
+            "default": true,
+            "title": "Total Final",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
           }
         },
         "required": [
@@ -10662,6 +11321,57 @@
         "title": "Meta",
         "type": "object"
       },
+      "ModelAlternative": {
+        "description": "A model that is ready now and can do what the action needs.",
+        "properties": {
+          "context_window": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window"
+          },
+          "limited": {
+            "default": false,
+            "title": "Limited",
+            "type": "boolean"
+          },
+          "local": {
+            "title": "Local",
+            "type": "boolean"
+          },
+          "max_output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Output Tokens"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "provider",
+          "local"
+        ],
+        "title": "ModelAlternative",
+        "type": "object"
+      },
       "ModelCapabilities": {
         "description": "What a model supports according to Orkexa, for a model id typed in the editor (not only catalog entries).",
         "properties": {
@@ -10687,6 +11397,16 @@
           "model": {
             "title": "Model",
             "type": "string"
+          },
+          "reasoning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReasoningStreamInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -10961,6 +11681,79 @@
         "title": "ModelInfo",
         "type": "object"
       },
+      "ModelLimitsInfo": {
+        "description": ":class:`orkexa.ModelLimits` for the interface (``None``: unknown).",
+        "properties": {
+          "context_window": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window"
+          },
+          "efforts": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Efforts"
+          },
+          "max_output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Output Tokens"
+          },
+          "source": {
+            "default": "unknown",
+            "title": "Source",
+            "type": "string"
+          },
+          "thinking_budget": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thinking Budget"
+          },
+          "thinking_modes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thinking Modes"
+          }
+        },
+        "title": "ModelLimitsInfo",
+        "type": "object"
+      },
       "ModelPolicy": {
         "description": "How a model is chosen from measurements; nothing in it is a quality value of its own.",
         "properties": {
@@ -10994,6 +11787,279 @@
           }
         },
         "title": "ModelPolicy",
+        "type": "object"
+      },
+      "ModelProblem": {
+        "description": "Why a local model cannot be used for an action now, and what may be done about it.",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "actions": {
+            "items": {
+              "enum": [
+                "download",
+                "setup_server",
+                "retry",
+                "choose_model",
+                "ask_admin",
+                "open_settings"
+              ],
+              "type": "string"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "blocked": {
+            "anyOf": [
+              {
+                "enum": [
+                  "permission",
+                  "operator",
+                  "offline"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked"
+          },
+          "catalog": {
+            "default": false,
+            "title": "Catalog",
+            "type": "boolean"
+          },
+          "cause": {
+            "enum": [
+              "model_missing",
+              "runtime_missing",
+              "server_stopped",
+              "server_unreachable",
+              "server_missing",
+              "model_name_invalid",
+              "disk_full",
+              "capability_missing",
+              "hardware_insufficient"
+            ],
+            "title": "Cause",
+            "type": "string"
+          },
+          "download_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Bytes"
+          },
+          "fits": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fits"
+          },
+          "free_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Bytes"
+          },
+          "host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host"
+          },
+          "job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalJob"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "location": {
+            "enum": [
+              "this_computer",
+              "container",
+              "remote",
+              "server"
+            ],
+            "title": "Location",
+            "type": "string"
+          },
+          "memory_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Bytes"
+          },
+          "missing_capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Capabilities",
+            "type": "array"
+          },
+          "mode": {
+            "enum": [
+              "managed",
+              "container",
+              "external",
+              "unavailable"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "offline": {
+            "default": false,
+            "title": "Offline",
+            "type": "boolean"
+          },
+          "partial_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Partial Bytes"
+          },
+          "previous_job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalJob"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "cause",
+          "model",
+          "name",
+          "action",
+          "mode",
+          "location"
+        ],
+        "title": "ModelProblem",
+        "type": "object"
+      },
+      "ModelProfile": {
+        "description": "Capabilities, limits and agent options of one model as the workspace runs it.",
+        "properties": {
+          "capabilities": {
+            "additionalProperties": {
+              "enum": [
+                "supported",
+                "unsupported",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "object"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/ModelLimitsInfo"
+          },
+          "max_tokens_limit": {
+            "title": "Max Tokens Limit",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "native_tools": {
+            "items": {
+              "$ref": "#/components/schemas/NativeToolSupport"
+            },
+            "title": "Native Tools",
+            "type": "array"
+          },
+          "options": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/OptionSupport"
+            },
+            "title": "Options",
+            "type": "object"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "reasons": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "max_tokens_limit"
+        ],
+        "title": "ModelProfile",
         "type": "object"
       },
       "ModelSpeed": {
@@ -11097,6 +12163,36 @@
           "local"
         ],
         "title": "ModelUse",
+        "type": "object"
+      },
+      "NativeToolSupport": {
+        "description": "A provider-native tool (run by the provider, never by Nodestro) and whether this model can use it.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "key",
+          "available"
+        ],
+        "title": "NativeToolSupport",
         "type": "object"
       },
       "NeededRequirement": {
@@ -11698,6 +12794,31 @@
             "title": "Thinking",
             "type": "string"
           },
+          "thinking_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "thinking",
+                  "summary"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thinking Kind"
+          },
+          "thinking_phases": {
+            "default": 0,
+            "title": "Thinking Phases",
+            "type": "integer"
+          },
+          "thinking_redacted": {
+            "default": false,
+            "title": "Thinking Redacted",
+            "type": "boolean"
+          },
           "tool_calls": {
             "items": {
               "$ref": "#/components/schemas/ToolCallRecord"
@@ -11710,6 +12831,45 @@
           }
         },
         "title": "NodeRun",
+        "type": "object"
+      },
+      "OptionSupport": {
+        "description": "Whether an agent option can be used with a model; ``reason`` says why not (a code the editor translates).\n\nReasons: ``provider`` (the provider's API has no such setting), ``model`` (the model does not accept it),\n``automatic`` (the provider does it by itself, e.g. prompt caching at OpenAI and Gemini), ``not_mapped`` (the\nprovider has a similar feature that Nodestro does not offer as this option), ``unknown`` (not documented for this\nmodel).",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "values": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Values"
+          }
+        },
+        "required": [
+          "available"
+        ],
+        "title": "OptionSupport",
         "type": "object"
       },
       "OrchestratorConfig": {
@@ -13632,6 +14792,20 @@
             ],
             "title": "Data Residency"
           },
+          "limits": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limits"
+          },
           "profile_name": {
             "anyOf": [
               {
@@ -13788,6 +14962,13 @@
           "label": {
             "title": "Label",
             "type": "string"
+          },
+          "limits": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Limits",
+            "type": "object"
           },
           "local_server": {
             "default": false,
@@ -14085,6 +15266,110 @@
         "title": "PublicationListItem",
         "type": "object"
       },
+      "PublicationOverviewItem": {
+        "description": "One publication on the studio's *Publications* page: the stored publication, its workflow, the active\nrelease and the export history. Read only; everything comes from the stored publications, releases and\nexport records (nothing is stored for the page).",
+        "properties": {
+          "active_release": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Release"
+          },
+          "active_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Version"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "exports": {
+            "items": {
+              "$ref": "#/components/schemas/ExportRecord"
+            },
+            "title": "Exports",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "network": {
+            "title": "Network",
+            "type": "boolean"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "workflow_id": {
+            "title": "Workflow Id",
+            "type": "string"
+          },
+          "workflow_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Name"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "workflow_id",
+          "enabled",
+          "network",
+          "active_release",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PublicationOverviewItem",
+        "type": "object"
+      },
       "PublicationPatch": {
         "properties": {
           "description": {
@@ -14225,6 +15510,11 @@
       },
       "PullIn": {
         "properties": {
+          "attach": {
+            "default": false,
+            "title": "Attach",
+            "type": "boolean"
+          },
           "model": {
             "maxLength": 200,
             "minLength": 1,
@@ -14456,6 +15746,188 @@
           "description"
         ],
         "title": "QualityCriterion",
+        "type": "object"
+      },
+      "Readiness": {
+        "description": "The answer of a readiness check: ``problem`` is ``None`` when the model can be used now.",
+        "properties": {
+          "alternatives": {
+            "items": {
+              "$ref": "#/components/schemas/ModelAlternative"
+            },
+            "title": "Alternatives",
+            "type": "array"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelProblem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "model",
+          "ready"
+        ],
+        "title": "Readiness",
+        "type": "object"
+      },
+      "ReadinessIn": {
+        "properties": {
+          "action": {
+            "default": "check",
+            "enum": [
+              "architect",
+              "assistant",
+              "agent_design",
+              "agent_test",
+              "run",
+              "knowledge_index",
+              "check"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "capabilities": {
+            "items": {
+              "enum": [
+                "tools",
+                "forced_tool_choice",
+                "parallel_tool_calls",
+                "strict_tool_schemas",
+                "structured_output",
+                "streaming",
+                "image_input",
+                "document_input",
+                "reasoning",
+                "caching",
+                "server_tools",
+                "native_memory_tool",
+                "token_counting",
+                "batch",
+                "system_messages"
+              ],
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "model": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model"
+        ],
+        "title": "ReadinessIn",
+        "type": "object"
+      },
+      "ReasoningStreamInfo": {
+        "description": "What a model's stream transmits of its reasoning, for the interface (``orkexa.ReasoningStream``).",
+        "properties": {
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          },
+          "request_option": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Option"
+          },
+          "requested": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested"
+          },
+          "status": {
+            "default": false,
+            "title": "Status",
+            "type": "boolean"
+          },
+          "text": {
+            "default": "unknown",
+            "enum": [
+              "thinking",
+              "summary",
+              "none",
+              "unknown"
+            ],
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "title": "ReasoningStreamInfo",
+        "type": "object"
+      },
+      "ReasoningTrace": {
+        "description": "The reasoning of one model call sequence as it arrived (a run step, an agent test, a chat answer).",
+        "properties": {
+          "active": {
+            "default": false,
+            "title": "Active",
+            "type": "boolean"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "thinking",
+                  "summary"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "phases": {
+            "default": 0,
+            "title": "Phases",
+            "type": "integer"
+          },
+          "redacted": {
+            "default": false,
+            "title": "Redacted",
+            "type": "boolean"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "title": "ReasoningTrace",
         "type": "object"
       },
       "Recommendation": {
@@ -15751,6 +17223,18 @@
             ],
             "title": "Language",
             "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
           }
         },
         "title": "RetryRequest",
@@ -16356,6 +17840,13 @@
             "title": "Answer Model",
             "type": "string"
           },
+          "answering": {
+            "items": {
+              "$ref": "#/components/schemas/LiveAnswer"
+            },
+            "title": "Answering",
+            "type": "array"
+          },
           "limits": {
             "$ref": "#/components/schemas/ChatLimits"
           },
@@ -16580,6 +18071,16 @@
           "node_id": {
             "title": "Node Id",
             "type": "string"
+          },
+          "reasoning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReasoningTrace"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "reply_to": {
             "anyOf": [
@@ -18036,10 +19537,18 @@
       "SendRequest": {
         "properties": {
           "content": {
+            "default": "",
             "maxLength": 12000,
-            "minLength": 1,
             "title": "Content",
             "type": "string"
+          },
+          "file_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "File Ids",
+            "type": "array"
           },
           "language": {
             "default": "en",
@@ -18053,12 +19562,98 @@
             ],
             "title": "Language",
             "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          }
+        },
+        "title": "SendRequest",
+        "type": "object"
+      },
+      "SentFile": {
+        "description": "A file a message was sent with, and how the model received it.",
+        "properties": {
+          "chars": {
+            "default": 0,
+            "title": "Chars",
+            "type": "integer"
+          },
+          "file_id": {
+            "title": "File Id",
+            "type": "string"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Format"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "text",
+                  "document",
+                  "image",
+                  "ocr_text",
+                  "overview",
+                  "unavailable"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "size": {
+            "default": 0,
+            "title": "Size",
+            "type": "integer"
           }
         },
         "required": [
-          "content"
+          "file_id",
+          "name"
         ],
-        "title": "SendRequest",
+        "title": "SentFile",
         "type": "object"
       },
       "SentMessage": {
@@ -18104,6 +19699,20 @@
           "label": {
             "title": "Label",
             "type": "string"
+          },
+          "providers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Providers",
+            "type": "array"
+          },
+          "unpriced_providers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unpriced Providers",
+            "type": "array"
           }
         },
         "required": [
@@ -18133,6 +19742,16 @@
             "default": 2,
             "title": "Architect Max Repairs",
             "type": "integer"
+          },
+          "architect_retry_max_tokens": {
+            "default": 64000,
+            "title": "Architect Retry Max Tokens",
+            "type": "integer"
+          },
+          "architect_retry_truncated": {
+            "default": true,
+            "title": "Architect Retry Truncated",
+            "type": "boolean"
           },
           "assistant_model": {
             "default": "anthropic:claude-opus-5-5",
@@ -18264,6 +19883,20 @@
             ],
             "title": "Operator Max Run Budget Usd"
           },
+          "output_limit_defaults": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Output Limit Defaults",
+            "type": "object"
+          },
+          "output_limits": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Output Limits",
+            "type": "object"
+          },
           "prefer_european_models": {
             "default": false,
             "title": "Prefer European Models",
@@ -18284,6 +19917,11 @@
             },
             "title": "Providers",
             "type": "array"
+          },
+          "reasoning_summaries": {
+            "default": false,
+            "title": "Reasoning Summaries",
+            "type": "boolean"
           },
           "sandbox": {
             "default": "auto",
@@ -18352,6 +19990,30 @@
               }
             ],
             "title": "Architect Max Repairs"
+          },
+          "architect_retry_max_tokens": {
+            "anyOf": [
+              {
+                "maximum": 1000000.0,
+                "minimum": 1024.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Architect Retry Max Tokens"
+          },
+          "architect_retry_truncated": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Architect Retry Truncated"
           },
           "assistant_model": {
             "anyOf": [
@@ -18499,6 +20161,27 @@
             ],
             "title": "Ocr Enabled"
           },
+          "output_limits": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Limits"
+          },
           "prefer_european_models": {
             "anyOf": [
               {
@@ -18539,6 +20222,17 @@
             ],
             "title": "Providers"
           },
+          "reasoning_summaries": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Summaries"
+          },
           "sandbox": {
             "anyOf": [
               {
@@ -18569,6 +20263,29 @@
           }
         },
         "title": "SettingsIn",
+        "type": "object"
+      },
+      "SetupIn": {
+        "properties": {
+          "archive": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archive"
+          },
+          "download": {
+            "default": false,
+            "title": "Download",
+            "type": "boolean"
+          }
+        },
+        "title": "SetupIn",
         "type": "object"
       },
       "Snapshot": {
@@ -18830,6 +20547,7 @@
           "kind": {
             "enum": [
               "context",
+              "files",
               "docs_search",
               "docs_read",
               "generate",
@@ -23268,7 +24986,7 @@
     },
     "/api/architect/jobs": {
       "post": {
-        "description": "Start designing (``create``) or revising (``revise``) a workflow; returns at once.",
+        "description": "Start designing (``create``) or revising (``revise``) a workflow; returns at once.\n\nA local assistant model that is not ready (not downloaded, no server) is refused before anything starts or\ncosts (``409 model.local_unavailable`` with what can be done); ``model`` uses another ready model for this job\nonly (one of the check's alternatives, ``model.choice_invalid`` otherwise).",
         "operationId": "start_architect_api_architect_jobs_post",
         "requestBody": {
           "content": {
@@ -23581,6 +25299,7 @@
     },
     "/api/assistant/conversations/{conversation_id}": {
       "delete": {
+        "description": "Delete the conversation with its messages, snapshots and files.",
         "operationId": "delete_conversation_api_assistant_conversations__conversation_id__delete",
         "parameters": [
           {
@@ -23849,6 +25568,215 @@
           }
         },
         "summary": "Refresh Attachment"
+      }
+    },
+    "/api/assistant/conversations/{conversation_id}/files": {
+      "post": {
+        "description": "Check, read and attach files to the conversation (they wait for the next message); refused files are\nreported with the reason and never stored.",
+        "operationId": "upload_files_api_assistant_conversations__conversation_id__files_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_files_api_assistant_conversations__conversation_id__files_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FileUpload"
+                  },
+                  "title": "Response Upload Files Api Assistant Conversations  Conversation Id  Files Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Upload Files"
+      }
+    },
+    "/api/assistant/conversations/{conversation_id}/files/{file_id}": {
+      "delete": {
+        "description": "Remove a file from the conversation and delete it (sent messages keep only its name).",
+        "operationId": "remove_file_api_assistant_conversations__conversation_id__files__file_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Remove File"
+      }
+    },
+    "/api/assistant/conversations/{conversation_id}/files/{file_id}/content": {
+      "get": {
+        "description": "The file as uploaded: always a download (never shown inline in the studio's origin).",
+        "operationId": "file_content_api_assistant_conversations__conversation_id__files__file_id__content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "File Content"
+      }
+    },
+    "/api/assistant/conversations/{conversation_id}/files/{file_id}/text": {
+      "get": {
+        "description": "What Nodestro read from the file (the text a model without native support gets).",
+        "operationId": "file_text_api_assistant_conversations__conversation_id__files__file_id__text_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileText"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "File Text"
       }
     },
     "/api/assistant/conversations/{conversation_id}/messages": {
@@ -24163,6 +26091,35 @@
           }
         },
         "summary": "Search Docs"
+      }
+    },
+    "/api/assistant/files/support": {
+      "get": {
+        "description": "The formats and limits of files, and whether the assistant's current model reads images and PDFs natively.",
+        "operationId": "file_support_api_assistant_files_support_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileSupport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "File Support"
       }
     },
     "/api/backup": {
@@ -26197,6 +28154,7 @@
     },
     "/api/knowledge/index/rebuild": {
       "post": {
+        "description": "Build the semantic index; an embedding model the local model server does not have is refused first\n(``409 model.local_unavailable``, with what can be done), instead of a job that fails at its first chunk.",
         "operationId": "knowledge_reindex_api_knowledge_index_rebuild_post",
         "requestBody": {
           "content": {
@@ -27115,6 +29073,45 @@
         "summary": "Local Pull"
       }
     },
+    "/api/local-models/readiness": {
+      "post": {
+        "description": "Whether a local model can be used for an action now; if not, why (``problem.cause``: not installed, no\nruntime, server not started or unreachable, invalid name, too little space, missing capability, hardware) and\nwhat this person may do (``problem.actions``, from their permission, the operating mode and the strict offline\nmode), plus the ready models that can do the same (``alternatives``). Interactive actions refuse such a model\nwith ``409 model.local_unavailable`` carrying the same answer; the studio checks again here after a download.\nMay start the managed server of the desktop (as the action would); never downloads anything.",
+        "operationId": "local_readiness_api_local_models_readiness_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReadinessIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Readiness"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Local Readiness"
+      }
+    },
     "/api/local-models/recommend": {
       "get": {
         "operationId": "local_recommend_api_local_models_recommend_get",
@@ -27192,6 +29189,45 @@
         "summary": "Local Install Runtime"
       }
     },
+    "/api/local-models/setup": {
+      "post": {
+        "description": "Set up the local model server as one job with steps (see the module documentation); one at a time\n(``local.job_running``). For Local Docker and the user's own server it only checks the server and the hardware:\nsuch a server is never started, stopped or changed.",
+        "operationId": "local_setup_api_local_models_setup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalJob"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Local Setup"
+      }
+    },
     "/api/local-models/start": {
       "post": {
         "operationId": "local_start_api_local_models_start_post",
@@ -27222,6 +29258,7 @@
     },
     "/api/local-models/stop": {
       "post": {
+        "description": "Stop the server Nodestro started (desktop). Local Docker's container and a server the user runs are never\nstopped from here (``local.not_managed``).",
         "operationId": "local_stop_api_local_models_stop_post",
         "responses": {
           "200": {
@@ -28229,6 +30266,48 @@
         "summary": "Get Model Capabilities"
       }
     },
+    "/api/models/profile": {
+      "get": {
+        "description": "Capabilities, limits (context window, maximum output, efforts, thinking modes) and agent options of a model.",
+        "operationId": "get_model_profile_api_models_profile_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "model",
+            "required": true,
+            "schema": {
+              "maxLength": 2048,
+              "minLength": 1,
+              "title": "Model",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelProfile"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Model Profile"
+      }
+    },
     "/api/organize": {
       "get": {
         "operationId": "organize_state_api_organize_get",
@@ -28901,6 +30980,39 @@
           }
         },
         "summary": "Sync Prices"
+      }
+    },
+    "/api/publication-overview": {
+      "get": {
+        "description": "All publications of this installation (on a server: of the tenant) with their workflow, active release and\nexports, for the studio's *Publications* page (one request instead of one per publication).",
+        "operationId": "publication_overview_api_publication_overview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PublicationOverviewItem"
+                  },
+                  "title": "Response Publication Overview Api Publication Overview Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Publication Overview"
       }
     },
     "/api/publications": {

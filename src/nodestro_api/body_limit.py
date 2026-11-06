@@ -10,8 +10,8 @@ Limits per kind of route (:data:`ROUTE_LIMITS`), configurable through the enviro
 - ``json``, every route not listed below: ``NODESTRO_MAX_REQUEST_BYTES``, default 2 MiB;
 - ``large``, workflow import, batch plan and start, creating and changing a test series:
   ``NODESTRO_MAX_LARGE_REQUEST_BYTES``, default 16 MiB;
-- ``upload``, knowledge and input file uploads (one file has at most 50 MB, a request may carry several) and batch
-  files: ``NODESTRO_MAX_UPLOAD_BYTES``, default 256 MiB;
+- ``upload``, knowledge and input file uploads, files attached to an assistant conversation (one file has at most
+  50 MB, a request may carry several) and batch files: ``NODESTRO_MAX_UPLOAD_BYTES``, default 256 MiB;
 - ``backup``, an uploaded backup (desktop, ``install``): ``NODESTRO_MAX_BACKUP_BYTES``, default 2 GiB;
 - ``trace``, trace import: the trace limit (50 MB) plus 1 MiB, so the route's own ``trace.too_large`` still answers
   a declared size above 50 MB (fixed);
@@ -45,6 +45,7 @@ ROUTE_LIMITS: tuple[tuple[frozenset[str], re.Pattern[str], str], ...] = tuple(
     for methods, pattern, kind in (
         ({"POST"}, r"^/api/knowledge$", "upload"),
         ({"POST"}, r"^/api/inputs$", "upload"),
+        ({"POST"}, r"^/api/assistant/conversations/[^/]+/files$", "upload"),
         ({"POST"}, r"^/api/batches/parse$", "upload"),
         ({"POST"}, r"^/api/backup/inspect$", "backup"),
         ({"POST"}, r"^/api/runs/import$", "trace"),

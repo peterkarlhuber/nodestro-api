@@ -24,14 +24,16 @@ from nodestro_runtime.engine import check_workflow
 from nodestro_runtime.knowledge import KnowledgeFile
 from nodestro_runtime.launcher import launch
 from nodestro_runtime.memory_spaces import MemoryFile, MemorySpaceInfo, check_space_name
-from nodestro_runtime.preflight import WorkflowCheck, preflight
+from nodestro_runtime.model_profile import ModelProfile
+from nodestro_runtime.preflight import WorkflowCheck, preflight, workflow_models
 from nodestro_runtime.preview import ContextPreview, PreviewRequest, build_preview, latest_run
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.profile import ProfileKind
 from nodestro_runtime.providers import CAPABILITY_NAMES, PROVIDERS, ProviderInfo, ProviderStatus, check_model, qualify
 from nodestro_runtime.python_envs import ExportedDefinition, scope_of
 from nodestro_runtime.python_tools import check_with_dependencies, save_with_dependencies, tool_run_sandbox
-from nodestro_runtime.reports import FileRequest, ResultFile
+from nodestro_runtime.reasoning import ReasoningStreamInfo, model_reasoning
+from nodestro_runtime.reports import INLINE_FORMATS, FileRequest, ResultFile
 from nodestro_runtime.resume import ResumePlan
 from nodestro_runtime.resume import plan as plan_resume
 from nodestro_runtime.resume import resume as resume_from
@@ -73,7 +75,7 @@ from orkexa import __version__ as library_version
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import __version__, library_models, sandbox_status
+from . import __version__, library_models, model_readiness, sandbox_status
 from .assistants import AgentDraft, MemorySeed
 from .benchmarks import SuiteIn, TestCase
 from .context import Nodestro
@@ -329,14 +331,29 @@ class ModelCapabilities(BaseModel):
     #: ``/api/meta``), the same the catalog entries carry. ``None`` for the other providers, whose capabilities
     #: depend on the connection (an endpoint's declared values), and for invalid model names.
     capabilities: dict[str, Literal["supported", "unsupported", "unknown"]] | None = None
+    #: What the model's stream transmits of its reasoning in this workspace (every provider; ``None`` for an invalid
+    #: id): raw thinking text, a provider summary, nothing (with the reason) or unknown, and whether the workspace
+    #: asks for summaries where the provider sends them only on request.
+    reasoning: ReasoningStreamInfo | None = None
 
 
 # No existing response fits a single typed model id: /api/meta lists only the catalog, /agents/validate answers a
 # list of issues and /workflows/check a schema the Workflow Architect shares. Free, local, no request to AWS.
 @router.get("/models/capabilities", dependencies=READ)
-def get_model_capabilities(model: Annotated[str, Query(min_length=1, max_length=2048)]) -> ModelCapabilities:
+def get_model_capabilities(model: Annotated[str, Query(min_length=1, max_length=2048)], ctx: Ctx) -> ModelCapabilities:
     """Orkexa's capabilities of one qualified model id (``bedrock:eu.anthropic...-v1:0``, an ARN; colons kept)."""
-    return ModelCapabilities(model=model, capabilities=model_capabilities(model))
+    reasoning = model_reasoning(ctx.builder, model, summaries=ctx.settings().reasoning_summaries)
+    return ModelCapabilities(model=model, capabilities=model_capabilities(model), reasoning=reasoning)
+
+
+# What the editor needs to show an agent's options by the model's real capabilities (not by provider name): Orkexa's
+# capabilities with this workspace's declared values, the documented or declared token limits, which model-dependent
+# options apply (with a reason when not) and the provider-native tools. The capabilities route above stays for older
+# clients (Bedrock only). Free and local: no request to any provider.
+@router.get("/models/profile", dependencies=READ)
+def get_model_profile(model: Annotated[str, Query(min_length=1, max_length=2048)], ctx: Ctx) -> ModelProfile:
+    """Capabilities, limits (context window, maximum output, efforts, thinking modes) and agent options of a model."""
+    return ctx.builder.profile(model)
 
 
 def _is_admin(request: Request) -> bool:
@@ -1052,6 +1069,9 @@ async def start_run(
 ) -> Run:
     """Start a run (201). With ``Idempotency-Key`` a retried request never starts it twice (API2-08)."""
     workflow = _workflow(ctx, workflow_id)
+    # A person starts this run: a local model that is not ready is named with what can be done (download, set up),
+    # before anything starts. Unattended starts (schedules, batches, published APIs) only get the check's problem.
+    await model_readiness.require_all_local(ctx, request, workflow_models(workflow), "run")
     # Who started the run decides its budget requests (BUDGET-1), besides administrators.
     started_by = actor_id(request)
     key = (idempotency_key or "").strip()
@@ -1233,7 +1253,7 @@ async def create_result_file(run_id: str, body: FileRequest, ctx: Ctx) -> Result
 @router.get("/runs/{run_id}/files/{file_id}", dependencies=READ)
 def download_result_file(run_id: str, file_id: str, ctx: Ctx, inline: bool = False) -> Response:
     entry, data = ctx.files.content(run_id, file_id)
-    disposition = "inline" if inline and entry.format in ("html", "pdf", "md") else "attachment"
+    disposition = "inline" if inline and entry.format in INLINE_FORMATS else "attachment"
     headers = {"Content-Disposition": f"{disposition}; filename*=UTF-8''{_quote(entry.name)}", **_NOSNIFF}
     if entry.format == "html":
         # A generated page is shown without scripts or remote content.
@@ -1603,8 +1623,9 @@ class DesignRequest(BaseModel):
 
 
 @router.post("/agents/design", dependencies=RUN)
-def design_agent(body: DesignRequest, ctx: Ctx) -> AgentDraft:
+def design_agent(body: DesignRequest, ctx: Ctx, request: Request) -> AgentDraft:
     settings = ctx.settings()
+    model_readiness.require_local_now(ctx, request, settings.assistant_model, "agent_design")
     connection = ctx.connect_model(settings.assistant_model)
     tracker = ctx.tracker()
     try:
@@ -1654,6 +1675,11 @@ async def test_agent(body: AgentTestIn, ctx: Ctx, request: Request) -> AgentTest
             "Testing a changed agent configuration needs the permission 'edit'",
             permission=Permission.EDIT.value,
         )
+    # A local model that is not ready is named with what can be done (download, another model for the test).
+    tools = ["tools"] if body.agent.tools else []
+    await model_readiness.require_local(ctx, request, body.agent.model, "agent_test", tools)
+    if body.agent.quality.enabled:
+        await model_readiness.require_local(ctx, request, body.agent.quality.judge_model, "check")
     # The checks may ask a local model server (/api/show, /api/ps): never on the event loop (RT3-04 pattern).
     await asyncio.to_thread(_check_agent_test, ctx, body)
     result, tracker = await asyncio.to_thread(ctx.tester.run, body)
@@ -1767,8 +1793,9 @@ def list_jobs(ctx: Ctx) -> list[ToolJob]:
 
 
 @router.post("/tools/jobs", status_code=201, dependencies=RUN)
-def start_job(body: JobRequest, ctx: Ctx) -> ToolJob:
+def start_job(body: JobRequest, ctx: Ctx, request: Request) -> ToolJob:
     model = ctx.settings().assistant_model
+    model_readiness.require_local_now(ctx, request, model, "agent_design")
     connection = ctx.connect_model(model)  # fail fast without provider settings
 
     def record(job: ToolJob, tracker: UsageTracker) -> None:

@@ -22,6 +22,7 @@
     files: {},
     previews: [],
     view: "run",
+    output: null,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -885,10 +886,10 @@
     }
   }
 
-  async function copyText(text) {
+  async function copyText(text, done) {
     try {
       await navigator.clipboard.writeText(text);
-      notice(t("run.copied"));
+      notice(done || t("run.copied"));
     } catch (error) {
       notice(t("run.copy_failed"));
     }
@@ -1072,33 +1073,295 @@
     try { state.config = await api("GET", "/ui/api/config"); renderProviderBanner(); } catch (problem) { /* shown elsewhere */ }
   }
 
-  function renderOutputDir(output) {
-    const container = $("output-dir");
-    container.textContent = "";
-    const text = document.createElement("p");
-    if (!output.enabled) text.textContent = t("setup.output_off");
-    else {
-      text.textContent = t("setup.output_on");
-      const path = document.createElement("pre");
-      path.textContent = output.path || "";
-      container.append(text, path);
-      if (output.warning) {
-        const warning = document.createElement("div");
-        warning.className = "banner warning";
-        warning.textContent = t("setup.output_fallback", { problem: output.warning });
-        container.appendChild(warning);
+  // ---- result folder --------------------------------------------------------------------------------------------
+
+  const FOLDER_ICON = "M3 6.5A2.5 2.5 0 0 1 5.5 4h4.1l2 2h6.9A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z";
+
+  function icon(pathData, className) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    if (className) svg.setAttribute("class", className);
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", pathData);
+    svg.appendChild(path);
+    return svg;
+  }
+
+  function lastSegment(path) {
+    const parts = String(path || "").split(/[\\/]+/).filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : String(path || "");
+  }
+
+  // A path that may break after each separator (and anywhere in a very long name, see .path-text).
+  function fillPath(node, path) {
+    node.textContent = "";
+    let piece = "";
+    for (const char of String(path || "")) {
+      piece += char;
+      if (char === "/" || char === "\\") {
+        node.appendChild(document.createTextNode(piece));
+        node.appendChild(document.createElement("wbr"));
+        piece = "";
       }
-      const hint = document.createElement("p");
-      hint.className = "hint";
-      hint.textContent = t("setup.output_hint");
-      container.appendChild(hint);
-      return;
     }
-    container.appendChild(text);
+    if (piece) node.appendChild(document.createTextNode(piece));
+    node.title = path || "";
+    return node;
+  }
+
+  function button(className, text, onClick) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = className;
+    item.textContent = text;
+    if (onClick) item.addEventListener("click", onClick);
+    return item;
+  }
+
+  function hintLine(text) {
     const hint = document.createElement("p");
     hint.className = "hint";
-    hint.textContent = t("setup.output_hint");
-    container.appendChild(hint);
+    hint.textContent = text;
+    return hint;
+  }
+
+  function renderOutputDir(output) {
+    state.output = output;
+    const container = $("output-dir");
+    container.textContent = "";
+    const source = output.source || "settings";
+    const badge = $("output-source");
+    badge.hidden = !output.enabled && source !== "chosen";
+    badge.className = "badge " + (source === "chosen" ? "running" : source === "environment" ? "awaiting_approval" : "");
+    badge.textContent = t("setup.output_source_" + source);
+    if (output.enabled) {
+      const intro = document.createElement("p");
+      intro.className = "muted";
+      intro.textContent = t("setup.output_on");
+      const box = document.createElement("div");
+      box.className = "folder-box";
+      box.appendChild(icon(FOLDER_ICON, "folder-icon"));
+      const text = document.createElement("div");
+      text.className = "folder-text";
+      const name = document.createElement("strong");
+      name.className = "folder-name";
+      name.textContent = lastSegment(output.path);
+      name.title = output.path || "";
+      const full = document.createElement("code");
+      full.className = "folder-full";
+      full.id = "output-path";
+      full.dir = "ltr";
+      fillPath(full, output.path);
+      text.append(name, full);
+      box.appendChild(text);
+      container.append(intro, box);
+    } else {
+      const off = document.createElement("p");
+      off.textContent = t("setup.output_off");
+      container.appendChild(off);
+    }
+    if (source === "chosen" && output.default_path) {
+      const line = document.createElement("p");
+      line.className = "hint default-line";
+      const label = document.createElement("span");
+      label.textContent = t("setup.output_default_label") + " ";
+      const value = document.createElement("code");
+      value.className = "path-text";
+      value.dir = "ltr";
+      line.append(label, fillPath(value, output.default_path));
+      container.appendChild(line);
+    }
+    if (output.warning) {
+      const warning = document.createElement("div");
+      warning.className = "banner warning";
+      warning.textContent = t("setup.output_fallback", { problem: output.warning });
+      container.appendChild(warning);
+    }
+    const row = document.createElement("div");
+    row.className = "actions folder-actions";
+    if (output.can_change) {
+      row.appendChild(button("primary", t(output.enabled ? "setup.output_change" : "setup.output_choose"), () => openFolderDialog()));
+      row.lastChild.id = "output-change";
+    }
+    if (output.can_open) {
+      row.appendChild(button("ghost", t("setup.output_open"), async () => {
+        try { await api("POST", "/ui/api/setup/output/open"); notice(t("setup.output_opened")); } catch (problem) { notice(problemText(problem)); }
+      }));
+      row.lastChild.id = "output-open";
+    }
+    if (output.enabled && output.path) {
+      row.appendChild(button("ghost", t("setup.output_copy"), () => copyText(output.path, t("setup.output_copied"))));
+      row.lastChild.id = "output-copy";
+    }
+    if (output.can_change && source === "chosen") {
+      row.appendChild(button("ghost", t("setup.output_reset"), resetOutputDir));
+      row.lastChild.id = "output-reset";
+    }
+    if (row.childNodes.length) container.appendChild(row);
+    if (source === "environment") container.appendChild(hintLine(t("setup.output_hint_environment")));
+    else if (output.can_change) container.appendChild(hintLine(t("setup.output_hint")));
+    else container.appendChild(hintLine(t("setup.output_hint_file")));
+  }
+
+  async function resetOutputDir() {
+    const output = state.output || {};
+    if (!window.confirm(t("setup.output_reset_confirm", { path: output.default_path || "-" }))) return;
+    try {
+      renderOutputDir(await api("DELETE", "/ui/api/setup/output"));
+      notice(t("setup.output_reset_done"));
+    } catch (problem) { notice(problemText(problem)); }
+  }
+
+  const folder = { view: null, returnFocus: null };
+
+  function folderError(text) {
+    const box = $("folder-error");
+    box.textContent = text || "";
+    box.hidden = !text;
+  }
+
+  async function browseFolder(path) {
+    folderError("");
+    const list = $("folder-list");
+    list.setAttribute("aria-busy", "true");
+    try {
+      const query = path ? "?path=" + encodeURIComponent(path) : "";
+      folder.view = await api("GET", "/ui/api/setup/output/browse" + query);
+      renderFolderView();
+    } catch (problem) {
+      folderError(problemText(problem));
+    } finally {
+      list.removeAttribute("aria-busy");
+    }
+  }
+
+  function placeLabel(place) {
+    if (place.kind === "drive" || place.kind === "media") return place.path;
+    return t("folder.place_" + place.kind);
+  }
+
+  function renderFolderView() {
+    const view = folder.view;
+    $("folder-path").value = view.path;
+    $("folder-up").disabled = !view.parent;
+    const places = $("folder-places");
+    places.textContent = "";
+    for (const place of view.places || []) {
+      const chip = button("chip", placeLabel(place), () => browseFolder(place.path));
+      chip.title = place.path;
+      if (place.path === view.path) chip.setAttribute("aria-current", "true");
+      places.appendChild(chip);
+    }
+    const list = $("folder-list");
+    list.textContent = "";
+    for (const entry of view.folders) {
+      const item = document.createElement("li");
+      const open = document.createElement("button");
+      open.type = "button";
+      open.className = "folder-item";
+      open.title = entry.path;
+      open.appendChild(icon(FOLDER_ICON, "folder-icon"));
+      const label = document.createElement("span");
+      label.className = "folder-label";
+      label.textContent = entry.name;
+      open.appendChild(label);
+      if (!entry.usable) {
+        const tag = document.createElement("span");
+        tag.className = "tag";
+        tag.textContent = t("folder.protected");
+        open.appendChild(tag);
+      }
+      open.addEventListener("click", () => browseFolder(entry.path));
+      item.appendChild(open);
+      list.appendChild(item);
+    }
+    if (!view.folders.length) {
+      const empty = document.createElement("li");
+      empty.className = "folder-empty";
+      empty.textContent = t("folder.empty");
+      list.appendChild(empty);
+    }
+    $("folder-count").textContent = view.folders.length === 1 ? t("folder.count_one") : t("folder.count", { n: view.folders.length });
+    const note = $("folder-note");
+    note.hidden = true;
+    if (!view.usable) { note.textContent = t("folder.protected_here"); note.hidden = false; }
+    else if (!view.writable) { note.textContent = t("folder.not_writable_here"); note.hidden = false; }
+    else if (view.truncated) { note.textContent = t("folder.truncated", { n: view.folders.length }); note.hidden = false; }
+    $("folder-use").disabled = !view.usable;
+  }
+
+  function openFolderDialog() {
+    const dialog = $("folder-dialog");
+    folder.returnFocus = document.activeElement;
+    folderError("");
+    $("folder-new-row").hidden = true;
+    $("folder-list").textContent = "";
+    $("folder-use").disabled = false;
+    if (typeof dialog.showModal === "function") dialog.showModal(); else dialog.setAttribute("open", "");
+    browseFolder((state.output && state.output.path) || "").then(() => $("folder-path").focus());
+  }
+
+  function closeFolderDialog() {
+    const dialog = $("folder-dialog");
+    if (typeof dialog.close === "function") dialog.close(); else dialog.removeAttribute("open");
+  }
+
+  async function useFolder(event) {
+    event.preventDefault();
+    const typed = $("folder-path").value.trim();
+    if (!typed) { folderError(t("error.output.invalid")); return; }
+    const choose = (create) => api("PUT", "/ui/api/setup/output", { path: typed, create });
+    $("folder-use").disabled = true;
+    try {
+      let result;
+      try {
+        result = await choose(false);
+      } catch (problem) {
+        if (problem.code !== "output.missing") throw problem;
+        if (!window.confirm(t("folder.create_confirm", { path: problem.params.path || typed }))) return;
+        result = await choose(true);
+      }
+      closeFolderDialog();
+      renderOutputDir(result);
+      notice(t("setup.output_saved"));
+    } catch (problem) {
+      folderError(problemText(problem));
+    } finally {
+      $("folder-use").disabled = false;
+    }
+  }
+
+  async function createSubfolder() {
+    const name = $("folder-new-name").value.trim();
+    if (!name) { folderError(t("error.output.bad_name")); return; }
+    try {
+      folder.view = await api("POST", "/ui/api/setup/output/folders", { parent: folder.view ? folder.view.path : $("folder-path").value, name });
+      $("folder-new-name").value = "";
+      $("folder-new-row").hidden = true;
+      renderFolderView();
+      $("folder-path").focus();
+    } catch (problem) { folderError(problemText(problem)); }
+  }
+
+  function setupFolderDialog() {
+    const dialog = $("folder-dialog");
+    $("folder-form").addEventListener("submit", useFolder);
+    $("folder-close").addEventListener("click", closeFolderDialog);
+    $("folder-cancel").addEventListener("click", closeFolderDialog);
+    $("folder-go").addEventListener("click", () => browseFolder($("folder-path").value.trim()));
+    $("folder-up").addEventListener("click", () => { if (folder.view && folder.view.parent) browseFolder(folder.view.parent); });
+    $("folder-new").addEventListener("click", () => {
+      $("folder-new-row").hidden = false;
+      $("folder-new-name").focus();
+    });
+    $("folder-new-create").addEventListener("click", createSubfolder);
+    $("folder-new-name").addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); createSubfolder(); } });
+    $("folder-path").addEventListener("keydown", (event) => {
+      // Enter in the path field goes there; "Use this folder" stays a deliberate click.
+      if (event.key === "Enter") { event.preventDefault(); browseFolder($("folder-path").value.trim()); }
+    });
+    dialog.addEventListener("close", () => { if (folder.returnFocus && folder.returnFocus.focus) folder.returnFocus.focus(); });
   }
 
   function renderLocalModels(info) {
@@ -1172,6 +1435,7 @@
     $("sign-out").addEventListener("click", signOut);
     $("cancel").addEventListener("click", cancelRun);
     $("retry").addEventListener("click", retryRun);
+    setupFolderDialog();
     for (const button of document.querySelectorAll(".navlink")) button.addEventListener("click", () => show(button.dataset.view));
     start();
   });

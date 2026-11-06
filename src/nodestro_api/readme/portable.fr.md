@@ -52,8 +52,15 @@ Une clé modifiée s’applique à l’exécution suivante ; aucun nouvel export
 {output_section}
 
 Chaque exécution conserve aussi ses fichiers dans l’application (téléchargez-les dans le navigateur ou avec
-`GET /runs/{run_id}/files/{file_id}`). Le navigateur ne peut pas choisir de dossiers sur cet ordinateur : le dossier est défini par
-l’opérateur dans `config/settings.toml` (`[data] output_dir`, relatif à ce dossier ou absolu). Les noms de fichiers sont rendus
+`GET /runs/{run_id}/files/{file_id}`). Le dossier par défaut est `[data] output_dir` dans `config/settings.toml`
+(relatif à ce dossier ou absolu). L’opérateur peut choisir un autre dossier dans l’interface web sous **Paramètres →
+Dossier des résultats** : un sélecteur des dossiers de cet ordinateur (noms de dossiers uniquement), un nouveau
+dossier n’est créé qu’après confirmation, et **Rétablir le dossier par défaut** revient au dossier du fichier de
+paramètres. Le choix est conservé dans `data/settings/output-folder.json` et s’applique dès la prochaine exécution,
+sans redémarrage ; les fichiers déjà enregistrés restent où ils sont. Les dossiers du système et ceux de
+l’application (programme, Python, données, journaux) sont refusés. Une variable `OUTPUT_DIR` définie dans
+l’environnement l’emporte et ne peut pas être modifiée sur cette page. **Ouvrir le dossier** n’apparaît que dans un
+navigateur de cet ordinateur, lorsque l’application ne sert que cet ordinateur. Les noms de fichiers sont rendus
 compatibles avec tous les systèmes ; un nom qui existe déjà reçoit ` (2)`, ` (3)` …
 
 ## Paramètres

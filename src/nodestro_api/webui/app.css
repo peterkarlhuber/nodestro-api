@@ -227,6 +227,49 @@ th { color: var(--muted); font-weight: 600; }
 .footer { display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--subtle); font-size: .8rem; padding: 16px; border-top: 1px solid var(--border); background: var(--topbar); }
 .footer img { border-radius: 4px; }
 
+/* result folder (settings) and its folder browser */
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: .5em; }
+.card-head h2 { margin: 0; }
+.folder-box { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-md); min-width: 0; }
+.folder-box .folder-icon { width: 28px; height: 28px; flex: none; fill: var(--brand-soft); stroke: var(--brand); stroke-width: 1.5; margin-top: 2px; }
+.folder-text { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.folder-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-full { display: block; font: .82rem/1.5 var(--mono); color: var(--muted); overflow-wrap: anywhere; user-select: all; }
+.path-text { font-family: var(--mono); font-size: .95em; overflow-wrap: anywhere; }
+.default-line { overflow-wrap: anywhere; }
+.folder-actions { margin-top: 14px; }
+.dialog { width: min(640px, calc(100vw - 24px)); max-height: calc(100vh - 32px); padding: 0; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.dialog::backdrop { background: rgba(10, 16, 13, .45); }
+.dialog form { display: flex; flex-direction: column; gap: 8px; padding: 18px 20px 20px; max-height: calc(100vh - 34px); }
+.dialog label { font-weight: 600; margin-top: 4px; }
+.dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.dialog-head h2 { margin: 0; }
+.dialog-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.dialog-actions .spacer { flex: 1; }
+.places { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); border-radius: 999px; padding: 3px 12px; font-size: .85rem; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip:hover { background: var(--surface-hover); }
+.chip[aria-current="true"] { background: var(--brand-soft); border-color: var(--brand); font-weight: 600; }
+.path-row { display: flex; gap: 8px; }
+.path-row input { flex: 1; min-width: 0; font-family: var(--mono); font-size: .88rem; }
+.browse-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.browse-head .muted { font-size: .85rem; }
+.ghost.small { min-height: 32px; padding: 4px 12px; font-size: .9rem; }
+.ghost:disabled { opacity: .5; cursor: not-allowed; }
+.folder-list { list-style: none; margin: 0; padding: 4px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--panel); overflow-y: auto; min-height: 120px; max-height: 300px; flex: 1 1 auto; }
+.folder-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 10px; border: 0; border-radius: var(--r-sm); background: none; color: var(--text); text-align: left; cursor: pointer; min-width: 0; }
+.folder-item:hover { background: var(--surface-hover); }
+.folder-item .folder-icon { width: 18px; height: 18px; flex: none; fill: var(--brand-soft); stroke: var(--brand); stroke-width: 1.5; }
+.folder-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag { flex: none; font-size: .72rem; font-weight: 650; color: var(--warning); background: var(--warning-soft); border-radius: 999px; padding: 1px 8px; }
+.folder-empty { color: var(--muted); padding: 10px; }
+.new-folder { display: grid; gap: 4px; }
+@media (max-width: 560px) {
+  .dialog form { padding: 14px; }
+  .dialog-actions .spacer { display: none; }
+  .dialog-actions button { flex: 1 1 auto; }
+}
+
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes pulse { 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) {

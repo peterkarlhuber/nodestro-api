@@ -146,13 +146,18 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # read: + local models overview, recommendation, jobs, job; the semantic index's status
         # read: + the models per agent of a template copy (EX-011)
         # read: + a publication's portable export jobs and one job (portable export)
-        "read": 116,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
+        # read: + the assistant's file support, a conversation file's content and text (assistant files)
+        # read: + a model's profile: capabilities, limits and agent options (params)
+        # read: + every publication with its workflow, active release and exports (Publications page)
+        "read": 121,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
         # MCP status, servers, server, tools (WP-3); tool approval inbox, run questions, pre-grants, state (S-2b)
         # edit: + starting and cancelling a portable export job (like the synchronous export)
-        "edit": 53,  # + the tool panel's test run (review H-1, was run); + semantic index rebuild, cancel, remove
+        # edit: + uploading and removing a conversation's files (assistant files)
+        "edit": 55,  # + the tool panel's test run (review H-1, was run); + semantic index rebuild, cancel, remove
         # run: + sending a live run chat message (LRC-1)
         # run: + deciding a run's budget request (BUDGET-1; the route also checks starter or admin)
-        "run": 33,  # + deciding a tool call (S-2b); - the tool panel's test run (review H-1)
+        # run: + the readiness check of a local model before an action (missing local models)
+        "run": 34,  # + deciding a tool call (S-2b); - the tool panel's test run (review H-1)
         # admin: + the Docker sandbox's self-test (A1)
         # admin: + adopting an AI-generated tool as one's own (R-4, desktop only)
         "admin": 45,  # + price sync, reviews, overrides, billing keys and reconciliation (PRICING-1); gate (Q-3);
@@ -162,7 +167,8 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # install: + local model server start, stop, autostart; runtime install, model download, import, delete,
         # model folder move, job cancel (downloads and files on the computer, like package environments)
         # install: + measuring a local model's speed (RT-050; loads the model on the shared server)
-        "install": 20,
+        # install: + setting up the local model server step by step (setup)
+        "install": 21,
         "public": 1,
     }
     assert all(item.path.startswith("/api/") for item in found if item.access != "generated")
@@ -177,9 +183,11 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
 SENSITIVE = {
     ("PUT", "/api/settings"): "admin",
     ("POST", "/api/local-models/runtime"): "install",
+    ("POST", "/api/local-models/setup"): "install",
     ("PUT", "/api/local-models/storage"): "install",
     ("DELETE", "/api/local-models/models/{name:path}"): "install",
     ("POST", "/api/local-models/benchmark"): "install",
+    ("POST", "/api/local-models/readiness"): "run",
     ("POST", "/api/settings/providers/bedrock/verify"): "admin",
     ("GET", "/api/sandbox/status"): "read",
     ("POST", "/api/sandbox/self-test"): "admin",

@@ -5,8 +5,10 @@ The runtime does the work (:mod:`nodestro_runtime.local_service`, :mod:`nodestro
 
 - ``GET /api/local-models``: the server's state, the catalog with what is installed, this computer's hardware and a
   recommendation per task.
-- Jobs (``202`` with the job; progress at ``GET /api/local-models/jobs/{id}``, ``POST .../cancel``): install the
-  runtime (from a local archive or by download), download a model, import an offline model package or a GGUF file,
+- Jobs (``202`` with the job; progress at ``GET /api/local-models/jobs/{id}``, ``POST .../cancel``): set up the
+  server step by step (``/setup``: check, prerequisites, download, verify, install, configure, start, reachability,
+  hardware; steps that are not needed are skipped with the reason), install the runtime (the same job), download a
+  model (Ollama's steps with measured bytes, rate and remaining time), import an offline model package or a GGUF file,
   build a catalog model from local files, measure a model's speed, move the model folder.
 - ``/api/knowledge/index``: the semantic index (state, rebuild, cancel, remove).
 
@@ -23,12 +25,16 @@ from typing import Literal
 from fastapi import APIRouter, Request, Response
 from nodestro_runtime.knowledge import KnowledgeIndexStatus
 from nodestro_runtime.local_models import CATALOG, TASKS, Hardware, LocalModelInfo, Recommendation, fits, recommend_all
+from nodestro_runtime.local_readiness import Readiness
 from nodestro_runtime.local_service import BuildInput, LocalAdvice, LocalJob, LocalStatus, build_inputs
+from orkexa.core.capabilities import Capability as CapabilityName
 from orkexa.local import OllamaError
 from pydantic import BaseModel, Field
 
+from . import model_readiness
 from .api import Ctx
-from .permissions import EDIT, INSTALL, READ, Permission, Principal
+from .model_readiness import ReadinessAction
+from .permissions import EDIT, INSTALL, READ, RUN, Permission, Principal
 from .serving import ApiError
 
 router = APIRouter(prefix="/api")
@@ -62,8 +68,27 @@ class RuntimeInstallIn(BaseModel):
     download: bool = False
 
 
+class SetupIn(BaseModel):
+    #: Allow downloading the pinned runtime when it is missing (refused in the strict offline mode).
+    download: bool = False
+    #: A release archive on this computer to install the runtime from instead.
+    archive: str | None = Field(default=None, max_length=4096)
+
+
 class PullIn(BaseModel):
     model: str = Field(min_length=1, max_length=200)
+    #: Follow a download of the same model that runs already instead of refusing a second one
+    #: (``local.job_running``): a second click or another dialog never starts the download twice.
+    attach: bool = False
+
+
+class ReadinessIn(BaseModel):
+    #: The model the action uses (``ollama:<tag>``; any other model is ready as far as this check goes).
+    model: str = Field(min_length=1, max_length=200)
+    #: What the model is needed for: decides what it must be able to do and whether another model may be chosen.
+    action: ReadinessAction = "check"
+    #: Capabilities the action needs beyond its own (Orkexa names, e.g. ``tools`` for an agent with tools).
+    capabilities: list[CapabilityName] = Field(default_factory=list, max_length=20)
 
 
 class BenchmarkIn(BaseModel):
@@ -191,7 +216,11 @@ async def local_start(ctx: Ctx) -> LocalStatus:
 
 @router.post("/local-models/stop", dependencies=INSTALL)
 async def local_stop(ctx: Ctx) -> LocalStatus:
+    """Stop the server Nodestro started (desktop). Local Docker's container and a server the user runs are never
+    stopped from here (``local.not_managed``)."""
     _manageable(ctx)
+    if ctx.local_models.mode != "managed":
+        raise ApiError(409, "local.not_managed", "Nodestro does not manage this local model server")
     await asyncio.to_thread(ctx.local_models.stop)
     return await asyncio.to_thread(ctx.local_models.status)
 
@@ -203,6 +232,15 @@ def local_autostart(body: AutostartIn, ctx: Ctx) -> LocalStatus:
     return ctx.local_models.status()
 
 
+@router.post("/local-models/setup", status_code=202, dependencies=INSTALL)
+def local_setup(body: SetupIn, ctx: Ctx) -> LocalJob:
+    """Set up the local model server as one job with steps (see the module documentation); one at a time
+    (``local.job_running``). For Local Docker and the user's own server it only checks the server and the hardware:
+    such a server is never started, stopped or changed."""
+    _manageable(ctx)
+    return ctx.local_models.setup(archive=body.archive, download=body.download)
+
+
 @router.post("/local-models/runtime", status_code=202, dependencies=INSTALL)
 def local_install_runtime(body: RuntimeInstallIn, ctx: Ctx) -> LocalJob:
     _manageable(ctx)
@@ -212,7 +250,18 @@ def local_install_runtime(body: RuntimeInstallIn, ctx: Ctx) -> LocalJob:
 @router.post("/local-models/pull", status_code=202, dependencies=INSTALL)
 async def local_pull(body: PullIn, ctx: Ctx) -> LocalJob:
     _manageable(ctx)
-    return await asyncio.to_thread(ctx.local_models.pull, body.model)
+    return await asyncio.to_thread(ctx.local_models.pull, body.model, attach=body.attach)
+
+
+@router.post("/local-models/readiness", dependencies=RUN)
+async def local_readiness(body: ReadinessIn, ctx: Ctx, request: Request) -> Readiness:
+    """Whether a local model can be used for an action now; if not, why (``problem.cause``: not installed, no
+    runtime, server not started or unreachable, invalid name, too little space, missing capability, hardware) and
+    what this person may do (``problem.actions``, from their permission, the operating mode and the strict offline
+    mode), plus the ready models that can do the same (``alternatives``). Interactive actions refuse such a model
+    with ``409 model.local_unavailable`` carrying the same answer; the studio checks again here after a download.
+    May start the managed server of the desktop (as the action would); never downloads anything."""
+    return await asyncio.to_thread(model_readiness.check, ctx, request, body.model, body.action, body.capabilities)
 
 
 @router.post("/local-models/benchmark", status_code=202, dependencies=INSTALL)
@@ -288,7 +337,12 @@ async def knowledge_index(ctx: Ctx) -> KnowledgeIndexStatus:
 
 
 @router.post("/knowledge/index/rebuild", status_code=202, dependencies=EDIT)
-async def knowledge_reindex(body: ReindexIn, ctx: Ctx) -> KnowledgeIndexStatus:
+async def knowledge_reindex(body: ReindexIn, ctx: Ctx, request: Request) -> KnowledgeIndexStatus:
+    """Build the semantic index; an embedding model the local model server does not have is refused first
+    (``409 model.local_unavailable``, with what can be done), instead of a job that fails at its first chunk."""
+    name = body.model or ctx.knowledge.retrieval()[1]
+    if name:
+        await model_readiness.require_local(ctx, request, f"ollama:{name.removeprefix('ollama:')}", "knowledge_index")
     return await asyncio.to_thread(ctx.knowledge.start_reindex, body.model)
 
 
