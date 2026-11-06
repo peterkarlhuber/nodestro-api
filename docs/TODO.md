@@ -13,7 +13,7 @@
 | P1 High | 0 |
 | P2 Medium | 6 |
 | P3 Low | 26 |
-| P4 Optional | 13 |
+| P4 Optional | 14 |
 
 **Release blockers:** None for this repository; every entry below is not a release blocker. The next desktop
 preview is gated by nodestro-desktop DSK-001 (new candidate and Go/No-Go).
@@ -392,6 +392,12 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
 - **Priority:** P4 Optional · **Status:** Open · **Refs:** settings/providers round 2026-11-06 (publications stream)
 - **What:** `GET /api/publication-overview` lists finished exports only and loads the active release bundle per publication.
 - **Next step:** Optionally list running portable export jobs; read a release summary instead of the whole bundle.
+
+### API-065 · Assistant chat does not use `InvalidRequestError.reason`
+
+- **Priority:** P4 Optional · **Status:** Open · **Refs:** settings/providers round 2026-11-06 (Ollama 400 fix, O400-1)
+- **What:** Runs name a refused conversation and a too-large conversation; the assistant chat still reports a generic provider error.
+- **Next step:** Map `reason` to the same codes in the assistant chat.
 
 ## Tests and quality assurance
 
