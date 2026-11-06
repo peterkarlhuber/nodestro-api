@@ -70,6 +70,11 @@ SERVER_JOBS_ENV = "NODESTRO_SERVER_EXPORT_JOBS"
 #: The size limit of one package on a server (bytes, the estimate before the build and the finished ZIP).
 SERVER_MAX_BYTES_ENV = "NODESTRO_SERVER_EXPORT_MAX_BYTES"
 SERVER_MAX_BYTES = 2 * 1024**3
+#: The bytes of stored packages one tenant may keep on a server (API-048): the sum of its export records (portable
+#: packages and source projects in ``<tenant data>/exports``). A build is refused when the estimate would exceed it,
+#: and a finished package that would is deleted. The default holds four packages of the default size limit.
+SERVER_TENANT_QUOTA_ENV = "NODESTRO_SERVER_EXPORT_TENANT_QUOTA_BYTES"
+SERVER_TENANT_QUOTA = 8 * 1024**3
 #: One build at a time on a server, across all tenants (each tenant has its own :class:`JobRunner`).
 _SERVER_SLOT = threading.Lock()
 
@@ -87,9 +92,57 @@ def server_max_bytes(environ: dict[str, str] | None = None) -> int:
     return value if value > 0 else SERVER_MAX_BYTES
 
 
+def server_tenant_quota(environ: dict[str, str] | None = None) -> int:
+    """The bytes of stored packages one tenant may keep (:data:`SERVER_TENANT_QUOTA_ENV`; an invalid or non-positive
+    value falls back to the default, never to "unlimited")."""
+    raw = (os.environ if environ is None else environ).get(SERVER_TENANT_QUOTA_ENV, "").strip()
+    try:
+        value = int(raw) if raw else SERVER_TENANT_QUOTA
+    except ValueError:
+        value = SERVER_TENANT_QUOTA
+    return value if value > 0 else SERVER_TENANT_QUOTA
+
+
+def stored_export_bytes(ctx: Nodestro) -> int:
+    """The bytes of the packages this tenant keeps now (every export record; a deleted export is no longer counted)."""
+    from .exporter import EXPORTS, ExportRecord
+
+    return sum(max(0, item.size) for item in ctx.store.list(EXPORTS, ExportRecord))
+
+
+def quota_problem(ctx: Nodestro, size: int) -> dict[str, int] | None:
+    """The parameters of ``export.server_quota`` when a package of ``size`` bytes would take the tenant's stored
+    packages above its quota (``size``, ``used``, ``limit``); ``None`` when it fits."""
+    used, limit = stored_export_bytes(ctx), server_tenant_quota()
+    return {"size": size, "used": used, "limit": limit} if used + size > limit else None
+
+
+def keep_within_server_limits(ctx: Nodestro, package: Path, size: int) -> None:
+    """After the archive was written on a server: delete it and fail the build when it is above the size limit
+    (``export.server_too_large``) or would take the tenant's stored packages above their quota
+    (``export.server_quota``: other packages were kept meanwhile, or the estimate was low). Nothing elsewhere."""
+    if ctx.profile.kind != "server":
+        return
+    limit = server_max_bytes()
+    if size > limit:
+        package.unlink(missing_ok=True)
+        raise NodestroError(
+            "export.server_too_large", "This package is larger than this server allows", size=size, limit=limit
+        )
+    over = quota_problem(ctx, size)
+    if over is not None:
+        package.unlink(missing_ok=True)
+        raise NodestroError(
+            "export.server_quota",
+            "The packages of this workspace would use more space than this server allows; delete older exports",
+            **over,
+        )
+
+
 def server_admission(ctx: Nodestro, estimated_bytes: int) -> None:
-    """Refuses an export job on a server (``403``) unless the operator enabled them and the estimated package fits
-    the size limit. Other profiles (desktop, Nodestro Local Docker) are not limited here."""
+    """Refuses an export job on a server (``403``) unless the operator enabled them, the estimated package fits the
+    size limit and the tenant's stored packages stay within their quota with it (``export.server_quota``). Other
+    profiles (desktop, Nodestro Local Docker) are not limited here."""
     if ctx.profile.kind != "server":
         return
     from .serving import ApiError
@@ -108,6 +161,14 @@ def server_admission(ctx: Nodestro, estimated_bytes: int) -> None:
             "This package is larger than this server allows",
             size=estimated_bytes,
             limit=limit,
+        )
+    over = quota_problem(ctx, estimated_bytes)
+    if over is not None:
+        raise ApiError(
+            403,
+            "export.server_quota",
+            "The packages of this workspace would use more space than this server allows; delete older exports",
+            **over,
         )
 
 
@@ -1095,14 +1156,7 @@ def _assemble(
     root = f"{exporter.project_name(publication)}-v{release.number}-{platform.id}"
     target = target_dir / f"{record_id}.zip"
     size = write_zip(stage, root, target, progress, posix=not platform.windows)
-    if ctx.profile.kind == "server" and size > server_max_bytes():
-        target.unlink(missing_ok=True)
-        raise NodestroError(
-            "export.server_too_large",
-            "This package is larger than this server allows",
-            size=size,
-            limit=server_max_bytes(),
-        )
+    keep_within_server_limits(ctx, target, size)
     record = exporter.ExportRecord(
         id=record_id,
         publication_id=publication.id,

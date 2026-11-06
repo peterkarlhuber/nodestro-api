@@ -398,6 +398,7 @@
   "export.runtime_differs": {"params": ["current", "published"], "source": "api"},
   "export.sandbox_process": {"params": [], "source": "api"},
   "export.server_limit": {"params": ["limit"], "source": "api"},
+  "export.server_quota": {"params": [], "source": "api"},
   "export.server_too_large": {"params": ["limit", "size"], "source": "api"},
   "export.server_tools": {"params": ["tools"], "source": "api"},
   "export.server_unsupported": {"params": [], "source": "api"},
