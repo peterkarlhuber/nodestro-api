@@ -54,7 +54,9 @@ from nodestro_runtime.schemas import (
     Usage,
     Workflow,
     WorkflowIn,
+    WorkflowOrigin,
     WorkflowSummary,
+    keep_origin,
     now,
 )
 from nodestro_runtime.tool_adoption import adopt_tool as run_adoption
@@ -701,7 +703,7 @@ def _replace_workflow(
             raise KeyError(workflow.id)
         if expected is not None and expected != previous.updated_at:
             raise _conflict(previous)
-        saved = keep_only_inherited(workflow, previous)
+        saved = keep_origin(keep_only_inherited(workflow, previous), previous)
         # Conditional as a second guard: a writer that skips the lock still cannot bring back a deleted workflow.
         if not ctx.store.replace_if("workflows", saved.id, saved, field="id", expected=saved.id):
             raise KeyError(saved.id)
@@ -997,7 +999,16 @@ def copy_library_template(template_id: str, body: LibraryCopy, request: Request,
     host = _LibraryHost(ctx)
     try:
         made = library.instantiate(template_id, language, host, models=models, connections=connections)
-        copy = ctx.save_workflow(_checked(made.workflow))
+        # The copy remembers its origin (runtime RT-055), read-only: example, version, language and which
+        # integrations run on sample data.
+        origin = WorkflowOrigin(
+            example_id=template_id,
+            version=library.__version__,
+            language=language,
+            offline=[item.id for item in spec.integrations if item.id not in connections],
+            connected=[item.id for item in spec.integrations if item.id in connections],
+        )
+        copy = ctx.save_workflow(Workflow(**_checked(made.workflow).model_dump(), origin=origin))
         host.workflows.append(copy.id)
         if body.tests and spec.tests:
             text = library.texts(template_id, language)

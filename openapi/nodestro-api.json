@@ -24010,6 +24010,16 @@
             "title": "Nodes",
             "type": "array"
           },
+          "origin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowOrigin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -24237,6 +24247,55 @@
           }
         },
         "title": "WorkflowLimits",
+        "type": "object"
+      },
+      "WorkflowOrigin": {
+        "description": "Where a workflow came from when it was made as a copy (RT-055): today a copy of an example.\n\nSet once by the code that makes the copy and kept by every later save (:func:`keep_origin`): it is history, not\nsomething an editor or a client sends (``WorkflowIn`` has no such field). An interface uses it to mark a copy\nwhose integrations run on sample data, or to offer the example's newer version.",
+        "properties": {
+          "connected": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Connected",
+            "type": "array"
+          },
+          "copied_at": {
+            "format": "date-time",
+            "title": "Copied At",
+            "type": "string"
+          },
+          "example_id": {
+            "title": "Example Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "example",
+            "default": "example",
+            "title": "Kind",
+            "type": "string"
+          },
+          "language": {
+            "title": "Language",
+            "type": "string"
+          },
+          "offline": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Offline",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "example_id",
+          "version",
+          "language"
+        ],
+        "title": "WorkflowOrigin",
         "type": "object"
       },
       "WorkflowSummary": {
