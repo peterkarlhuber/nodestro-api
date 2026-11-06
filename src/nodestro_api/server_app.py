@@ -19,6 +19,10 @@ Unlike the desktop, the API reference (``/api/docs``, ``/api/openapi.json``) nee
 ``/api/notifications`` (the member's in-app inbox, :mod:`nodestro_api.api_notifications`) exists only with
 ``NODESTRO_AXENTRA_NOTIFY=1``.
 
+Resource cleanup (API-001, :mod:`nodestro_api.tenant_contexts`): each request holds its tenant's context until its
+answer was sent, a streamed one included, and a context nobody held for :attr:`TenantComposition.idle_close` seconds
+that drives no background work here (:func:`tenant_busy`) is closed; the next request opens it again.
+
 A suspended tenant's requests are refused at once (every request checks the tenant). Work its context started in the
 background before (batches, benchmarks with their judge, assistant answers, architect drafts, tool generation jobs,
 live run chat answers, Python environment installations) is stopped within :attr:`TenantComposition.suspension_check`
@@ -87,8 +91,23 @@ from .permissions import PUBLIC, READ, check_routes
 from .pricing_setup import PRICE_REFERENCE_TENANT
 from .security_headers import SecurityHeadersMiddleware
 from .serving import PREFIX as PUBLISHED_PREFIX
+from .tenant_contexts import TenantContexts, TenantLeases
 
 logger = logging.getLogger(__name__)
+
+#: How long an unused tenant context stays open in an API process by default (API-001;
+#: ``NODESTRO_TENANT_IDLE_MINUTES``).
+DEFAULT_TENANT_IDLE_SECONDS = 30 * 60.0
+
+
+def tenant_busy(context: Any) -> bool:
+    """Whether a tenant's context drives background work in this process (``Nodestro.background_work``: runs, batches,
+    benchmarks, exports, assistant answers, architect drafts, tool jobs, run chat answers, installations, local model
+    jobs, a reindex). A context that cannot say counts as busy: it is never closed for being idle."""
+    work = getattr(context, "background_work", None)
+    if work is None:
+        return True
+    return bool(work())
 
 
 @dataclass
@@ -131,6 +150,11 @@ class TenantComposition:
     files: Any | None = None
     #: The size limits of request bodies (``None``: from the environment, :class:`~nodestro_api.body_limit.BodyLimits`).
     body_limits: BodyLimits | None = None
+    #: Resource cleanup (API-001): a tenant's context that no request held for this long and that drives no
+    #: background work in this process is closed (seconds; ``0``: never). The next request opens it again.
+    idle_close: float = DEFAULT_TENANT_IDLE_SECONDS
+    #: How often the opened contexts are looked at for :attr:`idle_close` (seconds).
+    idle_check: float = 60.0
 
 
 @dataclass
@@ -262,7 +286,7 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
             QueuedReindex(queue, tenant_id, context.knowledge).attach()
         return context
 
-    tenants = TenantWorkspaces(open_tenant, close_tenant)
+    tenants = TenantContexts(open_tenant, close_tenant, busy=tenant_busy)
 
     async def watch_suspensions() -> None:
         while True:
@@ -272,17 +296,30 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
             except Exception:
                 logger.exception("The suspension check failed")
 
+    async def close_idle_tenants() -> None:
+        while True:
+            await asyncio.sleep(composition.idle_check)
+            try:
+                await tenants.close_idle(composition.idle_close)
+            except Exception:
+                logger.exception("Closing idle tenant contexts failed")
+
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        watcher = asyncio.get_running_loop().create_task(watch_suspensions(), name="nodestro-suspensions")
+        loop = asyncio.get_running_loop()
+        watchers = [loop.create_task(watch_suspensions(), name="nodestro-suspensions")]
+        if composition.idle_close > 0:
+            watchers.append(loop.create_task(close_idle_tenants(), name="nodestro-idle-tenants"))
         app.state.accepting = True
         try:
             yield
         finally:
             app.state.accepting = False  # /api/ready answers 503 while the process stops (API-011)
-            watcher.cancel()
-            with suppress(asyncio.CancelledError):
-                await watcher
+            for watcher in watchers:
+                watcher.cancel()
+            for watcher in watchers:
+                with suppress(asyncio.CancelledError):
+                    await watcher
             await tenants.aclose()
 
     # The API reference needs a login on a server (A-09): FastAPI's own public routes are off, and
@@ -306,6 +343,8 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
     app.add_middleware(SameOriginMiddleware, origin=composition.origin, exempt=[PUBLISHED_PREFIX])
     # API2-02; the studio's origin is https (http only on localhost for development): HSTS also behind a TLS proxy.
     app.add_middleware(SecurityHeadersMiddleware, hsts=composition.origin.startswith("https://"))
+    # The tenant contexts a request held are released once its whole answer was sent (API-001).
+    app.add_middleware(TenantLeases, tenants=tenants)
     # Outermost: every answer, a refused one too, carries the request id, and every log line of the request (API-011).
     app.add_middleware(RequestIdMiddleware)
     app.state.accepting = False
@@ -315,7 +354,8 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
         from .access_audit import record_quietly
 
         try:
-            record_quietly(tenants.get(tenant_id).store, event)
+            with tenants.using(tenant_id) as context:
+                record_quietly(context.store, event)
         except Exception:  # an unknown or unusable tenant: the login itself is not refused for it
             logger.exception("The access audit of tenant %s could not be written", tenant_id)
 
@@ -446,6 +486,7 @@ def _secure_origin(origin: str) -> bool:
 
 
 __all__ = [
+    "DEFAULT_TENANT_IDLE_SECONDS",
     "TENANT_SUSPENDED",
     "DatabaseHealth",
     "TenantComposition",
@@ -455,4 +496,5 @@ __all__ = [
     "mount_frontend",
     "stop_suspended_tenants",
     "stop_tenant_work",
+    "tenant_busy",
 ]

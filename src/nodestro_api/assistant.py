@@ -962,6 +962,11 @@ class Assistant:
         self._finish(live, "cancelled")
         return live
 
+    def active(self) -> list[str]:
+        """The answers this process is writing now."""
+        with self._lock:
+            return list(self._live)
+
     def cancel_all(self) -> list[str]:
         """Stop every answer being written (a suspended tenant, security review SR-03); returns their ids."""
         with self._lock:

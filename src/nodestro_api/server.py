@@ -16,9 +16,12 @@ sentence listing every problem (``profile.invalid``); nothing has a default that
     row-level security applies to both roles. See :func:`nodestro_runtime.storage_postgres.grant_runtime_role`.
 ``nodestro-server api [--host HOST] [--port PORT]``
     The studio API with logins (OpenID Connect), one context per tenant and the built studio interface
-    (``NODESTRO_STATIC_DIR``). Runs are queued for workers. Behind a TLS-terminating reverse proxy in production.
+    (``NODESTRO_STATIC_DIR``). Runs and semantic reindexes are queued for workers. A tenant's context that nobody used
+    for ``NODESTRO_TENANT_IDLE_MINUTES`` (default 30, ``0``: never) and that drives no background work is closed
+    (resource cleanup). Behind a TLS-terminating reverse proxy in production.
 ``nodestro-server worker``
-    Executes queued runs, reaps runs of dead workers and fires schedules (:class:`nodestro_api.worker.ServerWorker`).
+    Executes queued runs and reindexes, reaps jobs of dead workers and fires schedules
+    (:class:`nodestro_api.worker.ServerWorker`).
 ``nodestro-server create-tenant ID NAME`` / ``nodestro-server setup-link TENANT``
     Create a tenant, and print a one-time setup link that makes the person who opens it the tenant's first owner.
 ``nodestro-server secrets reencrypt [--dry-run] [--tenant TENANT]``
@@ -127,6 +130,9 @@ class ServerEnvironment:
     bedrock: BedrockOperatorConfig | None = None
     #: ``NODESTRO_METRICS_TOKEN`` (``GET /api/metrics``; unset: no endpoint).
     metrics: Any = None
+    #: ``NODESTRO_TENANT_IDLE_MINUTES``: an API process closes a tenant's context nobody used for this long and that
+    #: drives no background work there (API-001, resource cleanup; seconds, default 30 minutes, ``0``: never).
+    tenant_idle: float = 30 * 60.0
 
 
 def _capacity(environ: Mapping[str, str], problems: list[dict[str, str]]) -> dict[str, int]:
@@ -221,6 +227,7 @@ def load(environ: Mapping[str, str] | None = None) -> ServerEnvironment:
                 }
             )
     capacity = _capacity(environ, problems)
+    tenant_idle = _tenant_idle(environ, problems)
     from nodestro_runtime.axentra_metrics import MetricsConfig
 
     metrics = MetricsConfig.from_env(environ, problems)
@@ -257,7 +264,29 @@ def load(environ: Mapping[str, str] | None = None) -> ServerEnvironment:
         capacity=capacity,
         bedrock=bedrock,
         metrics=metrics,
+        tenant_idle=tenant_idle,
     )
+
+
+def _tenant_idle(environ: Mapping[str, str], problems: list[dict[str, str]]) -> float:
+    """``NODESTRO_TENANT_IDLE_MINUTES`` in seconds (default 30 minutes; ``0``: idle contexts stay open)."""
+    text = environ.get("NODESTRO_TENANT_IDLE_MINUTES", "").strip()
+    if not text:
+        return 30 * 60.0
+    try:
+        minutes = float(text)
+        if minutes < 0 or minutes != minutes or minutes == float("inf"):
+            raise ValueError
+    except ValueError:
+        problems.append(
+            {
+                "field": "NODESTRO_TENANT_IDLE_MINUTES",
+                "value": text,
+                "reason": "NODESTRO_TENANT_IDLE_MINUTES must be a number of minutes, 0 or more",
+            }
+        )
+        return 30 * 60.0
+    return minutes * 60.0
 
 
 def _schema() -> str | None:
@@ -535,6 +564,7 @@ def create_server_app() -> Any:
             metrics_authorized=server.metrics.authorized if metrics is not None else None,
             notifications=notifications,
             files=_input_files(server, database, services),
+            idle_close=server.tenant_idle,
         )
     )
 

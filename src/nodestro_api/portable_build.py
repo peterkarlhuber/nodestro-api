@@ -359,6 +359,11 @@ class JobRunner:
             event.set()
         return job
 
+    def busy(self) -> bool:
+        """Whether this process builds a package now."""
+        thread = self._thread
+        return thread is not None and thread.is_alive()
+
     def wait(self, timeout: float | None = None) -> None:
         thread = self._thread
         if thread is not None:
