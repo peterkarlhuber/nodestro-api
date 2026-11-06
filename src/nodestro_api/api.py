@@ -33,7 +33,7 @@ from nodestro_runtime.providers import CAPABILITY_NAMES, PROVIDERS, ProviderInfo
 from nodestro_runtime.python_envs import ExportedDefinition, scope_of
 from nodestro_runtime.python_tools import check_with_dependencies, save_with_dependencies, tool_run_sandbox
 from nodestro_runtime.reasoning import ReasoningStreamInfo, model_reasoning
-from nodestro_runtime.reports import FileRequest, ResultFile
+from nodestro_runtime.reports import INLINE_FORMATS, FileRequest, ResultFile
 from nodestro_runtime.resume import ResumePlan
 from nodestro_runtime.resume import plan as plan_resume
 from nodestro_runtime.resume import resume as resume_from
@@ -1250,7 +1250,7 @@ async def create_result_file(run_id: str, body: FileRequest, ctx: Ctx) -> Result
 @router.get("/runs/{run_id}/files/{file_id}", dependencies=READ)
 def download_result_file(run_id: str, file_id: str, ctx: Ctx, inline: bool = False) -> Response:
     entry, data = ctx.files.content(run_id, file_id)
-    disposition = "inline" if inline and entry.format in ("html", "pdf", "md") else "attachment"
+    disposition = "inline" if inline and entry.format in INLINE_FORMATS else "attachment"
     headers = {"Content-Disposition": f"{disposition}; filename*=UTF-8''{_quote(entry.name)}", **_NOSNIFF}
     if entry.format == "html":
         # A generated page is shown without scripts or remote content.
