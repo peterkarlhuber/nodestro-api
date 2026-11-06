@@ -72,6 +72,14 @@ the desktop profile the only principal is the local owner, who holds every permi
 studio; without a principal a route answers `401 access.login_required`, without the permission `403
 access.forbidden`. The application refuses to start when a route declares no permission.
 
+Every FastAPI application of this package checks this when it is built (`nodestro_api.permissions.check_routes`,
+deny by default): the desktop studio, the server's studio, the network listener of published APIs and an exported
+project. Deliberately public routes (`/health`, an export's API reference) declare `PUBLIC`; published endpoints are
+authenticated by their keys (`KEY_AUTHENTICATED_ROUTES`); the routes of an export's web interface check their session
+or token in the handler and are listed one by one with how they do it (`WEB_UI_ROUTES` in
+`nodestro_api.webui_server`). A new route that fits none of these stops the application from being built, and
+`tests/test_route_factories.py` finds every `FastAPI(...)` construction, so a new application needs the check too.
+
 Because there is no login, the studio API cannot be exposed to a network: `--host 0.0.0.0`, `::`, any address
 other than a loopback address, and `NODESTRO_ALLOWED_HOSTS` with names other than loopback names (or `*`) are
 refused at start with `access.network_needs_login`, on the command line, through the environment and in

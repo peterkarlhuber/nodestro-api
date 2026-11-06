@@ -11,7 +11,7 @@
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 1 |
-| P2 Medium | 7 |
+| P2 Medium | 6 |
 | P3 Low | 15 |
 | P4 Optional | 7 |
 
@@ -355,14 +355,6 @@ removed by the change that completes its package here.
   its upload and knowledge paths on the runtime's limited path.
 - **Next step:** After the runtime and orkexa parts merge: map the code, test the routes, bump the runtime pin through
   the pin cascade.
-
-### API-MUP-A5 · Route access check in every FastAPI app factory
-
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** MP-A5 (PS-5), [MUP-ONA][mup-ona]
-- **What:** `check_routes` runs for the studio and the server app only; the network listener and the standalone export
-  check access in their handlers.
-- **Next step:** Call `check_routes` (with explicitly listed public routes) in every app factory; a test finds all
-  `FastAPI(` constructions.
 
 ### API-MUP-A11 · Tenant SQL check in CI with the pinned and the current runtime checker
 

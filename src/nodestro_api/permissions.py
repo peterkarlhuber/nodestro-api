@@ -38,7 +38,7 @@ permission: the studio API behaves as before. On a server, principals come from 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 import time
@@ -217,7 +217,7 @@ class RouteAccess:
 
     path: str
     method: str
-    access: str  # "read", "edit", "run", "admin", "install", "public", "api_key" or "generated"
+    access: str  # "read", "edit", "run", "admin", "install", "public", "api_key", "own" or "generated"
     reason: str = ""
 
 
@@ -256,8 +256,15 @@ def _routes(app: FastAPI) -> Iterator[tuple[BaseRoute, str, list[str], Sequence[
         yield cast(BaseRoute, route), str(path), methods, cast(Sequence[params.Depends], dependencies)
 
 
-def classify(app: FastAPI) -> tuple[list[RouteAccess], list[str]]:
-    """Every method of every route with its protection, and the problems (routes that declare none)."""
+def classify(
+    app: FastAPI, own_authentication: Mapping[tuple[str, str], str] | None = None
+) -> tuple[list[RouteAccess], list[str]]:
+    """Every method of every route with its protection, and the problems (routes that declare none).
+
+    ``own_authentication`` maps ``(method, path)`` of routes that check access in their handler (the web interface
+    of an export: its session cookie, launch and control tokens) to the reason; only the listed methods and paths
+    are accepted without a declared requirement (MUP-ONA A5)."""
+    own = own_authentication or {}
     found: list[RouteAccess] = []
     problems: list[str] = []
     generated = _generated_paths(app)
@@ -279,6 +286,8 @@ def classify(app: FastAPI) -> tuple[list[RouteAccess], list[str]]:
                 ]
             elif len(declared) == 1:
                 found += [RouteAccess(path, method, declared[0].label) for method in methods]
+            elif not declared and methods and all((method, path) in own for method in methods):
+                found += [RouteAccess(path, method, "own", own[(method, path)]) for method in methods]
             else:
                 what = "no access requirement" if not declared else f"{len(declared)} access requirements"
                 problems.append(f"{'/'.join(methods)} {path}: {what}")
@@ -300,9 +309,12 @@ def _under(path: str, prefix: str) -> bool:
     return path == prefix or path.startswith(prefix.rstrip("/") + "/")
 
 
-def check_routes(app: FastAPI) -> list[RouteAccess]:
-    """Every route's protection; raises :class:`RouteAccessError` if a route declares none (fail closed)."""
-    found, problems = classify(app)
+def check_routes(app: FastAPI, *, own_authentication: Mapping[tuple[str, str], str] | None = None) -> list[RouteAccess]:
+    """Every route's protection; raises :class:`RouteAccessError` if a route declares none (fail closed).
+
+    Every application factory of this package calls it before it returns its application (MUP-ONA A5, PS-5;
+    ``tests/test_route_factories.py`` finds them all); ``own_authentication``: see :func:`classify`."""
+    found, problems = classify(app, own_authentication)
     if problems:
         raise RouteAccessError("Routes without an access requirement: " + "; ".join(problems))
     return found

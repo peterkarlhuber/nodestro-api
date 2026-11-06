@@ -14,6 +14,10 @@
     `NODESTRO_BEHIND_PROXY=1` is set without `FORWARDED_ALLOW_IPS`; `NODESTRO_REQUIRE_CLIENT_ADDRESS=1` makes both
     refuse. Failed published API keys are counted per key id prefix (8 characters, never the secret), with a ten
     times higher limit per address, so one client's wrong key does not throttle other keys behind the same proxy.
+  - Security (A5, PS-5): the network listener and exported projects check every route's protection when they are
+    built, like the studio and the server (`check_routes`; deny by default): `/health` and an export's API reference
+    are declared `PUBLIC`, the export's web interface routes are listed in `WEB_UI_ROUTES`. Exports now contain
+    `nodestro_api.permissions`.
 - MUP-ONA A0 (security and test baseline, no code change):
   - CI compares the skipped tests of every pytest job with an expectation file (`tests/ci/skipped-<job>.txt`, each
     entry with its reason; `scripts/check_skips.py`): a test that starts to skip, or an expected skip that runs, fails

@@ -53,6 +53,7 @@ from orkexa.dynamic import DockerSandbox, Sandbox, SubprocessSandbox
 from pydantic import BaseModel, Field
 
 from .body_limit import BodyLimitMiddleware, BodyLimits
+from .permissions import PUBLIC, check_routes
 from .serving import (
     ApiError,
     ApiLimits,
@@ -633,11 +634,11 @@ def _install_docs(app: FastAPI) -> None:
         "Referrer-Policy": "no-referrer",
     }
 
-    @app.get("/docs", include_in_schema=False)
+    @app.get("/docs", include_in_schema=False, dependencies=PUBLIC)
     def docs() -> HTMLResponse:
         return HTMLResponse(page, headers=headers)
 
-    @app.get("/docs/assets/{name}", include_in_schema=False)
+    @app.get("/docs/assets/{name}", include_in_schema=False, dependencies=PUBLIC)
     def docs_asset(name: str) -> Any:
         media_type = _DOCS_ASSETS.get(name)
         if media_type is None or not (_DOCS_DIR / name).is_file():
@@ -712,7 +713,7 @@ def create_app(
     if settings.api_docs != "off" and (_DOCS_DIR / "swagger-ui-bundle.js").is_file():
         _install_docs(app)
 
-    @app.get("/health", include_in_schema=False)
+    @app.get("/health", include_in_schema=False, dependencies=PUBLIC)
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
@@ -728,6 +729,11 @@ def create_app(
         return app.openapi_schema
 
     app.openapi = openapi  # type: ignore[method-assign]
+    # Every route declares its protection; the web interface's routes check their session or token themselves
+    # (MUP-ONA A5).
+    from .webui_server import WEB_UI_ROUTES
+
+    check_routes(app, own_authentication=WEB_UI_ROUTES)
 
     if settings.api_docs == "local":
 
