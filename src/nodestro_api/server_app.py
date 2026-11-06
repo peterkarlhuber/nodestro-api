@@ -7,7 +7,9 @@ session (:mod:`nodestro_api.identity`) and works on the context of the session's
 
 With a job queue (:attr:`TenantComposition.queue`, ADR-0004) the API processes execute no runs themselves: they
 store and queue them, and worker processes (:mod:`nodestro_api.worker`) execute them; event streams and waits read
-the worker's events from the database. Without a queue, runs execute in the API process (tests).
+the worker's events from the database. A semantic reindex (``POST /api/knowledge/index/rebuild``) is queued the same
+way (API-044): a worker builds it, every API process reads its job. Without a queue, runs and reindexes execute in
+the API process (tests).
 
 Unlike the desktop, the API reference (``/api/docs``, ``/api/openapi.json``) needs a login (``read``), and
 ``/api/health`` also reports whether the process reaches its database (``503`` when not).
@@ -16,6 +18,10 @@ Unlike the desktop, the API reference (``/api/docs``, ``/api/openapi.json``) nee
 ``NODESTRO_METRICS_TOKEN``; it checks no login but that bearer token, and its output holds no tenant data.
 ``/api/notifications`` (the member's in-app inbox, :mod:`nodestro_api.api_notifications`) exists only with
 ``NODESTRO_AXENTRA_NOTIFY=1``.
+
+Resource cleanup (API-001, :mod:`nodestro_api.tenant_contexts`): each request holds its tenant's context until its
+answer was sent, a streamed one included, and a context nobody held for :attr:`TenantComposition.idle_close` seconds
+that drives no background work here (:func:`tenant_busy`) is closed; the next request opens it again.
 
 A suspended tenant's requests are refused at once (every request checks the tenant). Work its context started in the
 background before (batches, benchmarks with their judge, assistant answers, architect drafts, tool generation jobs,
@@ -45,7 +51,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from nodestro_runtime.bedrock import BedrockOperatorConfig
 from nodestro_runtime.extensions import Integration
 from nodestro_runtime.identity_store import IdentityStore
-from nodestro_runtime.jobs import JobQueue, QueuedRuns
+from nodestro_runtime.jobs import JobQueue, QueuedReindex, QueuedRuns
 from nodestro_runtime.postgres_tables import tenant_storage
 from nodestro_runtime.server_settings import TenantSecrets
 from nodestro_runtime.storage_postgres import PostgresDatabase
@@ -60,6 +66,7 @@ from .api_data import router as data_router
 from .api_inputs import router as inputs_router
 from .api_local_models import router as local_models_router
 from .api_mcp import router as mcp_router
+from .api_members import members_router
 from .api_pricing import router as pricing_router
 from .api_publish import router as publish_router
 from .api_python import router as python_router
@@ -85,8 +92,23 @@ from .permissions import PUBLIC, READ, check_routes
 from .pricing_setup import PRICE_REFERENCE_TENANT
 from .security_headers import SecurityHeadersMiddleware
 from .serving import PREFIX as PUBLISHED_PREFIX
+from .tenant_contexts import TenantContexts, TenantLeases
 
 logger = logging.getLogger(__name__)
+
+#: How long an unused tenant context stays open in an API process by default (API-001;
+#: ``NODESTRO_TENANT_IDLE_MINUTES``).
+DEFAULT_TENANT_IDLE_SECONDS = 30 * 60.0
+
+
+def tenant_busy(context: Any) -> bool:
+    """Whether a tenant's context drives background work in this process (``Nodestro.background_work``: runs, batches,
+    benchmarks, exports, assistant answers, architect drafts, tool jobs, run chat answers, installations, local model
+    jobs, a reindex). A context that cannot say counts as busy: it is never closed for being idle."""
+    work = getattr(context, "background_work", None)
+    if work is None:
+        return True
+    return bool(work())
 
 
 @dataclass
@@ -129,6 +151,11 @@ class TenantComposition:
     files: Any | None = None
     #: The size limits of request bodies (``None``: from the environment, :class:`~nodestro_api.body_limit.BodyLimits`).
     body_limits: BodyLimits | None = None
+    #: Resource cleanup (API-001): a tenant's context that no request held for this long and that drives no
+    #: background work in this process is closed (seconds; ``0``: never). The next request opens it again.
+    idle_close: float = DEFAULT_TENANT_IDLE_SECONDS
+    #: How often the opened contexts are looked at for :attr:`idle_close` (seconds).
+    idle_check: float = 60.0
 
 
 @dataclass
@@ -256,9 +283,11 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
         context = files.open(tenant_id)
         if queue is not None:
             QueuedRuns(queue, tenant_id, context.runs).attach()
+            # A semantic reindex is queued for a worker too (RT-046/API-044): never built in an API process.
+            QueuedReindex(queue, tenant_id, context.knowledge).attach()
         return context
 
-    tenants = TenantWorkspaces(open_tenant, close_tenant)
+    tenants = TenantContexts(open_tenant, close_tenant, busy=tenant_busy)
 
     async def watch_suspensions() -> None:
         while True:
@@ -268,17 +297,30 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
             except Exception:
                 logger.exception("The suspension check failed")
 
+    async def close_idle_tenants() -> None:
+        while True:
+            await asyncio.sleep(composition.idle_check)
+            try:
+                await tenants.close_idle(composition.idle_close)
+            except Exception:
+                logger.exception("Closing idle tenant contexts failed")
+
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        watcher = asyncio.get_running_loop().create_task(watch_suspensions(), name="nodestro-suspensions")
+        loop = asyncio.get_running_loop()
+        watchers = [loop.create_task(watch_suspensions(), name="nodestro-suspensions")]
+        if composition.idle_close > 0:
+            watchers.append(loop.create_task(close_idle_tenants(), name="nodestro-idle-tenants"))
         app.state.accepting = True
         try:
             yield
         finally:
             app.state.accepting = False  # /api/ready answers 503 while the process stops (API-011)
-            watcher.cancel()
-            with suppress(asyncio.CancelledError):
-                await watcher
+            for watcher in watchers:
+                watcher.cancel()
+            for watcher in watchers:
+                with suppress(asyncio.CancelledError):
+                    await watcher
             await tenants.aclose()
 
     # The API reference needs a login on a server (A-09): FastAPI's own public routes are off, and
@@ -302,6 +344,8 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
     app.add_middleware(SameOriginMiddleware, origin=composition.origin, exempt=[PUBLISHED_PREFIX])
     # API2-02; the studio's origin is https (http only on localhost for development): HSTS also behind a TLS proxy.
     app.add_middleware(SecurityHeadersMiddleware, hsts=composition.origin.startswith("https://"))
+    # The tenant contexts a request held are released once its whole answer was sent (API-001).
+    app.add_middleware(TenantLeases, tenants=tenants)
     # Outermost: every answer, a refused one too, carries the request id, and every log line of the request (API-011).
     app.add_middleware(RequestIdMiddleware)
     app.state.accepting = False
@@ -311,11 +355,14 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
         from .access_audit import record_quietly
 
         try:
-            record_quietly(tenants.get(tenant_id).store, event)
+            with tenants.using(tenant_id) as context:
+                record_quietly(context.store, event)
         except Exception:  # an unknown or unusable tenant: the login itself is not refused for it
             logger.exception("The access audit of tenant %s could not be written", tenant_id)
 
     app.include_router(auth_router(composition.identity, composition.oidc, audit))
+    # Members and roles for the tenant's administrators (API-019); the server only.
+    app.include_router(members_router(composition.identity))
     app.include_router(publish_router)
     app.include_router(architect_router)
     app.include_router(python_router)
@@ -442,6 +489,7 @@ def _secure_origin(origin: str) -> bool:
 
 
 __all__ = [
+    "DEFAULT_TENANT_IDLE_SECONDS",
     "TENANT_SUSPENDED",
     "DatabaseHealth",
     "TenantComposition",
@@ -451,4 +499,5 @@ __all__ = [
     "mount_frontend",
     "stop_suspended_tenants",
     "stop_tenant_work",
+    "tenant_busy",
 ]

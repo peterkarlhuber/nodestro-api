@@ -593,6 +593,10 @@ class Batches:
             self._finish(batch)
         return batch
 
+    def active(self) -> builtins.list[str]:
+        """The batches this process drives now (their task has not ended)."""
+        return [batch_id for batch_id, task in list(self._tasks.items()) if not task.done()]
+
     async def cancel_all(self, *, stop_code: str) -> builtins.list[str]:
         """Cancel every batch this process drives (a suspended tenant, security review SR-03); returns their ids."""
         cancelled = []

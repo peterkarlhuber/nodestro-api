@@ -229,6 +229,19 @@ class Nodestro(Workspace):
         #: Syncs the reference prices; ``None`` on a server, whose worker syncs them (see :mod:`.pricing_setup`).
         self.price_sync = self.config.price_sync.service(self.pricing) if self.pricing.reference_writable else None
 
+    def background_work(self) -> list[str]:
+        """The runtime's background work plus the API's own: batches, benchmarks, assistant answers, architect drafts
+        and a portable export build that this process drives (see :func:`nodestro_api.server_app.tenant_busy`)."""
+        found = super().background_work()
+        found += [f"batch:{item}" for item in self.batches.active()]
+        found += [f"benchmark:{item}" for item in self.benchmarks.active()]
+        found += [f"assistant:{item}" for item in self.assistant.active()]
+        found += [f"architect:{item}" for item in self.architect.active()]
+        exports = getattr(self, "_portable_jobs", None)
+        if exports is not None and exports.busy():
+            found.append("export:portable")
+        return found
+
     def _mcp_catalog(self) -> list[ServedRelease]:
         """The active releases of the publications an administrator offered as MCP tools."""
         found = []

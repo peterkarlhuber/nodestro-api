@@ -157,7 +157,8 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # MCP status, servers, server, tools (WP-3); tool approval inbox, run questions, pre-grants, state (S-2b)
         # edit: + starting and cancelling a portable export job (like the synchronous export)
         # edit: + uploading and removing a conversation's files (assistant files)
-        "edit": 55,  # + the tool panel's test run (review H-1, was run); + semantic index rebuild, cancel, remove
+        # edit: + deleting an export and its ZIP (API-048, like creating one)
+        "edit": 56,  # + the tool panel's test run (review H-1, was run); + semantic index rebuild, cancel, remove
         # run: + sending a live run chat message (LRC-1)
         # run: + deciding a run's budget request (BUDGET-1; the route also checks starter or admin)
         # run: + the readiness check of a local model before an action (missing local models)

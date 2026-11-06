@@ -55,10 +55,12 @@ it on, for every tenant at once:
 |---|---|
 | `NODESTRO_SERVER_EXPORT_JOBS=1` | export jobs are allowed (any other value: refused) |
 | `NODESTRO_SERVER_EXPORT_MAX_BYTES` | size limit of one package in bytes (default 2 GiB): a larger estimate answers `403 export.server_too_large`, a finished ZIP above it is deleted and the job fails with that code |
+| `NODESTRO_SERVER_EXPORT_TENANT_QUOTA_BYTES` | bytes of stored exports one tenant may keep (default 8 GiB; the sum of its export records, packages and source projects): a build whose estimate would exceed it answers `403 export.server_quota` (the export check says so first), a finished ZIP that would exceed it is deleted and the job fails with that code. An invalid or non-positive value is the default, never unlimited |
 
 With the opt-in, one package is built at a time on the whole server, across all tenants (`400 export.busy`
-otherwise). Packages stay in the tenant's `exports` folder until the tenant deletes them; there is no automatic
-retention. The standard export (`POST /publications/{id}/exports`) is not affected.
+otherwise). Packages stay in the tenant's `exports` folder until a member deletes them (`DELETE /api/exports/{id}`,
+permission `edit`, which frees quota); there is no automatic retention yet (it waits for the retention policy,
+API-009). The standard export (`POST /publications/{id}/exports`) is not affected.
 
 ## Security model
 
