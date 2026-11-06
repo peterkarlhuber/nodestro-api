@@ -107,6 +107,7 @@ from .references import Reference, ReferenceKind, references
 from .search import readable_documents, stored_workflows
 from .serving import PREFIX as PUBLISHED_PREFIX
 from .serving import ApiError
+from .tool_versions import ToolVersion, tool_versions
 
 router = APIRouter(prefix="/api")
 
@@ -2068,6 +2069,14 @@ def decide_job_dependencies(job_id: str, body: DependencyDecision, ctx: Ctx) -> 
 @router.get("/tools/{name}", dependencies=READ)
 def get_tool(name: str, ctx: Ctx) -> ToolInfo:
     return ctx.tools.get(name)
+
+
+@router.get("/tools/{name}/versions", dependencies=READ)
+def get_tool_versions(name: str, ctx: Ctx) -> list[ToolVersion]:
+    """Every stored version of a tool, newest first, with its code, tests and who wrote it (ST-036): ``editor``
+    (the tool editor), ``adopted`` (an AI version adopted as one's own with exactly that content) or ``ai``. Empty for
+    built-in and MCP tools; 404 for an unknown name."""
+    return tool_versions(ctx.tools, ctx.store, name)
 
 
 @router.delete("/tools/{name}", status_code=204, dependencies=EDIT)

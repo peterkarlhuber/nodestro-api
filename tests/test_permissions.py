@@ -152,7 +152,8 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # read: + the default of every setting (API-061)
         # read: + the list of every problem code (API-016)
         # read: + the retention of assistant conversation files (API-056)
-        "read": 124,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
+        # read: + a tool's version history (ST-036)
+        "read": 125,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
         # MCP status, servers, server, tools (WP-3); tool approval inbox, run questions, pre-grants, state (S-2b)
         # edit: + starting and cancelling a portable export job (like the synchronous export)
         # edit: + uploading and removing a conversation's files (assistant files)

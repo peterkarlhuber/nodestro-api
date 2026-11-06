@@ -23243,6 +23243,100 @@
         "title": "ToolSource",
         "type": "object"
       },
+      "ToolVersion": {
+        "properties": {
+          "author": {
+            "enum": [
+              "editor",
+              "adopted",
+              "ai"
+            ],
+            "title": "Author",
+            "type": "string"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "content_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Hash"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "function_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Function Name"
+          },
+          "own": {
+            "title": "Own",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tests": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tests"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "status",
+          "author",
+          "own"
+        ],
+        "title": "ToolVersion",
+        "type": "object"
+      },
       "TraceImport": {
         "properties": {
           "duplicate": {
@@ -35492,6 +35586,50 @@
           }
         },
         "summary": "Run Tool"
+      }
+    },
+    "/api/tools/{name}/versions": {
+      "get": {
+        "description": "Every stored version of a tool, newest first, with its code, tests and who wrote it (ST-036): ``editor``\n(the tool editor), ``adopted`` (an AI version adopted as one's own with exactly that content) or ``ai``. Empty for\nbuilt-in and MCP tools; 404 for an unknown name.",
+        "operationId": "get_tool_versions_api_tools__name__versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ToolVersion"
+                  },
+                  "title": "Response Get Tool Versions Api Tools  Name  Versions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Tool Versions"
       }
     },
     "/api/usage": {
