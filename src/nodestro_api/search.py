@@ -1,10 +1,12 @@
-"""The global search: workflows, the agents in them, agent templates, tools, knowledge and examples.
+"""The global search: workflows, the agents in them, agent templates, tools, knowledge, examples and runs.
 
 Every word of the query must appear (ignoring case and accents) in one of an item's
 fields; matches in names count more than matches in descriptions or prompts. Knowledge
 files reuse the existing searches: by name and description (``KnowledgeBase.files``)
 and by content (the full-text index). Examples from the library are searched in the
-interface language and open in the gallery. The documentation is searched in the browser,
+interface language and open in the gallery. Runs are matched on the workflow name, the input
+text and the run id, among the newest :data:`RUN_SEARCH_WINDOW` top-level runs (their stored
+summaries only, never whole runs), newest first. The documentation is searched in the browser,
 because it lives there in the interface language.
 """
 
@@ -16,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Literal, TypeVar
 import unicodedata
 
 import nodestro_examples as library
-from nodestro_runtime.schemas import AgentTemplate, Workflow
+from nodestro_runtime.schemas import AgentTemplate, RunSummary, Workflow
 from nodestro_runtime.storage import DocumentStore
 from pydantic import BaseModel, ValidationError
 
@@ -65,7 +67,13 @@ def stored_workflows(store: DocumentStore) -> list[Workflow]:
     return readable_documents(store, "workflows", Workflow, newest_first=lambda item: (item.updated_at, item.id))
 
 
-ResultKind = Literal["workflow", "agent", "template", "tool", "knowledge", "example"]
+ResultKind = Literal["workflow", "agent", "template", "tool", "knowledge", "example", "run"]
+
+#: How many of the newest top-level runs the search looks at (read as summaries, a page at a time).
+RUN_SEARCH_WINDOW = 2000
+#: The most runs one search returns, so runs never push every other kind out of the results.
+RUN_SEARCH_HITS = 20
+_RUN_PAGE = 500
 
 
 class SearchResult(BaseModel):
@@ -253,5 +261,43 @@ def search(nodestro: Nodestro, query: str, *, language: str = "en", limit: int =
                     score=score * 0.9,
                 )
             )
+    results.extend(_runs(nodestro, words))
+    # A stable sort: runs with the same score stay newest first.
     results.sort(key=lambda item: item.score, reverse=True)
     return results[:limit]
+
+
+def _runs(nodestro: Nodestro, words: list[str]) -> list[SearchResult]:
+    """Runs whose workflow name, input or id contain every word (API-052), newest first; ``id`` is the run id."""
+    found: list[SearchResult] = []
+    cursor = None
+    seen = 0
+    while seen < RUN_SEARCH_WINDOW and len(found) < RUN_SEARCH_HITS:
+        page, more = nodestro.store.list_page(
+            "runs",
+            RunSummary,
+            limit=min(_RUN_PAGE, RUN_SEARCH_WINDOW - seen),
+            before=cursor,
+            top_level=True,
+            summary=True,
+        )
+        for run in page:
+            score, snippet = _score(words, [(run.workflow_name, 3), (run.id, 3), (run.input, 1)])
+            if score and len(found) < RUN_SEARCH_HITS:
+                found.append(
+                    SearchResult(
+                        kind="run",
+                        id=run.id,
+                        title=run.workflow_name,
+                        subtitle=run.status,
+                        snippet=snippet or " ".join(run.input.split())[:90],
+                        workflow_id=run.workflow_id,
+                        # Below workflows and agents with the same match.
+                        score=score * 0.8,
+                    )
+                )
+        seen += len(page)
+        if not more or not page:
+            break
+        cursor = (page[-1].created_at, page[-1].id)
+    return found

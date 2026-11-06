@@ -19471,7 +19471,8 @@
               "template",
               "tool",
               "knowledge",
-              "example"
+              "example",
+              "run"
             ],
             "title": "Kind",
             "type": "string"
