@@ -1,0 +1,3 @@
+# Tests the CI job "test" (Python 3.13) skips, one per line: <classname>::<name>  # <reason>
+# Checked by scripts/check_skips.py (MUP-ONA A0, T-SKIP-1). A change needs a reason in its PR.
+tests.test_portable_smoke::test_a_portable_package_runs_on_this_computer  # builds a real portable package; runs in the "Portable packages" workflow (NODESTRO_PORTABLE_SMOKE=1)

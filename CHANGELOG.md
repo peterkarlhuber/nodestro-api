@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- MUP-ONA A0 (security and test baseline, no code change):
+  - CI compares the skipped tests of every pytest job with an expectation file (`tests/ci/skipped-<job>.txt`, each
+    entry with its reason; `scripts/check_skips.py`): a test that starts to skip, or an expected skip that runs, fails
+    the job. The dependency audit (`pip-audit`, blocking, `PIP_AUDIT_IGNORE` with reasons) stays as it was.
+  - `docs/TODO.md` lists the open MUP-ONA packages of this repository (`API-MUP-*`).
 - TODO abatement round 2 (2026-11-06):
   - Idempotency-Keys of studio and published-API run starts are reserved with one atomic insert in the store
     (runtime `put_raw_if_absent`) before the run starts, so concurrent retries on several API processes start one
