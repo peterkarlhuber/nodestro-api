@@ -52,9 +52,15 @@ Uma chave alterada vale para a próxima execução; não é necessária uma nova
 {output_section}
 
 Cada execução também mantém seus arquivos na aplicação (baixe-os no navegador ou com
-`GET /runs/{run_id}/files/{file_id}`). O navegador não pode escolher pastas neste computador: a pasta é definida pelo
-operador em `config/settings.toml` (`[data] output_dir`, relativa a esta pasta ou absoluta). Os nomes de arquivo são ajustados
-para serem válidos em qualquer sistema; um nome que já existe recebe ` (2)`, ` (3)` …
+`GET /runs/{run_id}/files/{file_id}`). A pasta padrão é `[data] output_dir` em `config/settings.toml` (relativa a
+esta pasta ou absoluta). O operador pode escolher outra pasta na interface web em **Configurações → Pasta de
+resultados**: um navegador de pastas deste computador (só nomes de pastas), uma pasta nova só é criada após
+confirmação e **Restaurar padrão** volta à pasta do arquivo de configurações. A escolha fica salva em
+`data/settings/output-folder.json` e vale a partir da próxima execução, sem reiniciar; arquivos já salvos ficam onde
+estão. Pastas do sistema e as pastas da própria aplicação (programa, Python, dados, logs) são recusadas. Uma variável
+`OUTPUT_DIR` definida no ambiente tem prioridade e não pode ser alterada nessa página. **Abrir pasta** só aparece em
+um navegador deste computador quando a aplicação atende apenas este computador. Os nomes de arquivo são ajustados para
+serem válidos em qualquer sistema; um nome que já existe recebe ` (2)`, ` (3)` …
 
 ## Configurações
 

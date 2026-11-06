@@ -55,9 +55,16 @@ nicht nötig.
 {output_section}
 
 Jeder Lauf behält seine Dateien außerdem in der Anwendung (Download im Browser oder über
-`GET /runs/{run_id}/files/{file_id}`). Der Browser kann keine Ordner auf diesem Computer wählen: Den Ordner legt der
-Betreiber in `config/settings.toml` fest (`[data] output_dir`, relativ zu diesem Ordner oder absolut). Dateinamen
-werden für jedes Betriebssystem sicher gemacht; ein bereits vorhandener Name bekommt ` (2)`, ` (3)` …
+`GET /runs/{run_id}/files/{file_id}`). Der Standardordner ist `[data] output_dir` in `config/settings.toml` (relativ
+zu diesem Ordner oder absolut). Der Betreiber kann in der Weboberfläche unter **Einstellungen → Ergebnisordner**
+einen anderen Ordner wählen: mit einer Ordnerauswahl dieses Computers (nur Ordnernamen), ein neuer Ordner wird erst
+nach Bestätigung angelegt, und **Standard wiederherstellen** kehrt zum Ordner der Einstellungsdatei zurück. Die Wahl
+wird in `data/settings/output-folder.json` gespeichert und gilt ab dem nächsten Lauf ohne Neustart; bereits
+gespeicherte Dateien bleiben, wo sie sind. Systemordner und die eigenen Ordner der Anwendung (Programm, Python, Daten,
+Protokolle) werden abgelehnt. Ein in der Umgebung gesetztes `OUTPUT_DIR` hat Vorrang und lässt sich dort nicht
+ändern. **Ordner öffnen** erscheint nur in einem Browser auf diesem Computer, wenn die Anwendung nur diesem Computer
+dient. Dateinamen werden für jedes Betriebssystem sicher gemacht; ein bereits vorhandener Name bekommt ` (2)`,
+` (3)` …
 
 ## Einstellungen
 

@@ -11,8 +11,8 @@ Signing in never puts a key into the page:
 - **The operator** (the person who started the application on this computer) opens the app through a one-time
   launch link the launcher creates (``/ui/launch?token=...``). The answer sets a session cookie and moves on to
   ``/``; a second use of the link is refused. The operator's session may run, read and approve, sees where files
-  are stored and may enter the AI providers' keys (:mod:`nodestro_api.portable_secrets`), which are written to the
-  computer and never sent back to a browser.
+  are stored, may choose another result folder (:mod:`nodestro_api.output_folder`) and may enter the AI providers'
+  keys (:mod:`nodestro_api.portable_secrets`), which are written to the computer and never sent back to a browser.
 - **Other users** sign in with one of the project's API keys (``POST /ui/api/session``). The key is checked once and
   exchanged for a session with that key's permissions; the browser keeps only the cookie.
 
@@ -48,6 +48,7 @@ from pydantic import BaseModel, Field
 from .serving import ApiError, KeyAuthenticatedRoute, KeyIdentity, parse_token, read_body
 
 if TYPE_CHECKING:
+    from .output_folder import OutputFolder
     from .standalone import StandaloneHost
 
 WEBUI_DIR = Path(__file__).resolve().parent / "webui"
@@ -180,7 +181,9 @@ class WebUi:
         set_provider: Callable[[str, dict[str, Any]], dict[str, Any]] | None = None,
         remove_provider: Callable[[str], dict[str, Any]] | None = None,
         auth_failed: Callable[[str], None] | None = None,
+        output: OutputFolder | None = None,
     ) -> None:
+        """``output``: the operator may choose the result folder on the settings page (a portable package)."""
         self.host = host
         self.options = options or UiOptions()
         self.sessions = UiSessions()
@@ -189,6 +192,7 @@ class WebUi:
         self.set_provider = set_provider
         self.remove_provider = remove_provider
         self.auth_failed = auth_failed
+        self.output = output
 
     # ---- identities -------------------------------------------------------------------------------------------
 
@@ -279,16 +283,26 @@ class WebUi:
                 {key: value for key, value in item.items() if key in ("id", "label", "configured", "required")}
                 for item in self.provider_status()
             ],
-            "output_dir": {"enabled": bool(self.options.output_dir)},
+            "output_dir": {"enabled": bool(self.output_state()["enabled"])},
         }
         if session.operator:
-            found["output_dir"] = {
-                "enabled": bool(self.options.output_dir),
-                "path": self.options.output_dir,
-                "warning": self.options.output_dir_warning,
-            }
+            found["output_dir"] = self.output_state()
             found["local_models"] = self.options.local_models
         return found
+
+    def output_state(self) -> dict[str, Any]:
+        """The result folder in effect, as the operator's settings page shows it."""
+        if self.output is not None:
+            return self.output.state()
+        return {
+            "enabled": bool(self.options.output_dir),
+            "path": self.options.output_dir,
+            "warning": self.options.output_dir_warning,
+            "source": "settings",
+            "default_path": self.options.output_dir,
+            "can_change": False,
+            "can_open": False,
+        }
 
 
 def check_same_origin(request: Request) -> None:
@@ -401,11 +415,7 @@ def build_router(ui: WebUi) -> APIRouter:
             {
                 "providers": ui.provider_status(),
                 "local_models": ui.options.local_models,
-                "output_dir": {
-                    "enabled": bool(ui.options.output_dir),
-                    "path": ui.options.output_dir,
-                    "warning": ui.options.output_dir_warning,
-                },
+                "output_dir": seen_from(request, ui.output_state()),
                 "api_docs": ui.options.api_docs,
             }
         )
@@ -429,6 +439,62 @@ def build_router(ui: WebUi) -> APIRouter:
         if ui.remove_provider is None:
             raise ApiError(404, "ui.setup_unavailable", "Provider keys are configured outside this application")
         return json_answer(ui.remove_provider(provider))
+
+    # The result folder (operator only; folder names, never files or their contents).
+
+    def on_this_computer(request: Request) -> bool:
+        return bool(request.client) and request.client.host in ("127.0.0.1", "::1")  # type: ignore[union-attr]
+
+    def seen_from(request: Request, state: dict[str, Any]) -> dict[str, Any]:
+        """``can_open`` only for a browser on the computer the application runs on."""
+        return {**state, "can_open": bool(state.get("can_open")) and on_this_computer(request)}
+
+    def output_folder(request: Request) -> OutputFolder:
+        ui.require(request, operator=True)
+        if ui.output is None:
+            raise ApiError(404, "ui.setup_unavailable", "The result folder is configured outside this application")
+        return ui.output
+
+    async def json_object(request: Request) -> dict[str, Any]:
+        try:
+            body = json.loads(await read_body(request, _SETUP_BYTES) or b"{}")
+        except ValueError:
+            raise ApiError(422, "request.invalid", "Send a JSON object") from None
+        if not isinstance(body, dict):
+            raise ApiError(422, "request.invalid", "Send a JSON object")
+        return body
+
+    @router.put("/ui/api/setup/output")
+    async def put_output(request: Request) -> JSONResponse:
+        folder = output_folder(request)
+        body = await json_object(request)
+        return json_answer(
+            seen_from(request, folder.choose(str(body.get("path") or ""), create=body.get("create") is True))
+        )
+
+    @router.delete("/ui/api/setup/output")
+    def delete_output(request: Request) -> JSONResponse:
+        return json_answer(seen_from(request, output_folder(request).reset()))
+
+    @router.get("/ui/api/setup/output/browse")
+    def browse_output(request: Request) -> JSONResponse:
+        folder = output_folder(request)
+        return json_answer(folder.browse(request.query_params.get("path") or None))
+
+    @router.post("/ui/api/setup/output/folders")
+    async def new_output_folder(request: Request) -> JSONResponse:
+        folder = output_folder(request)
+        body = await json_object(request)
+        return json_answer(folder.make_folder(str(body.get("parent") or ""), str(body.get("name") or "")), 201)
+
+    @router.post("/ui/api/setup/output/open")
+    def open_output(request: Request) -> JSONResponse:
+        folder = output_folder(request)
+        # Only a browser on this computer: the file manager opens where the application runs.
+        if not on_this_computer(request):
+            raise ApiError(404, "output.open_unavailable", "The folder cannot be opened from here")
+        folder.open()
+        return json_answer({"opened": True})
 
     def control(request: Request) -> None:
         expected = ui.options.control_token

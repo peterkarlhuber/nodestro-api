@@ -52,9 +52,16 @@ Una clave modificada se aplica a la siguiente ejecución; no hace falta una nuev
 {output_section}
 
 Cada ejecución también conserva sus archivos en la aplicación (descárgalos en el navegador o con
-`GET /runs/{run_id}/files/{file_id}`). El navegador no puede elegir carpetas de este equipo: la carpeta la define el
-operador en `config/settings.toml` (`[data] output_dir`, relativa a esta carpeta o absoluta). Los nombres de archivo se adaptan
-para que sean válidos en cualquier sistema; un nombre que ya existe recibe ` (2)`, ` (3)` …
+`GET /runs/{run_id}/files/{file_id}`). La carpeta predeterminada es `[data] output_dir` en `config/settings.toml`
+(relativa a esta carpeta o absoluta). El operador puede elegir otra carpeta en la interfaz web en **Ajustes → Carpeta
+de resultados**: un explorador de carpetas de este equipo (solo nombres de carpetas), una carpeta nueva solo se crea
+tras confirmarlo y **Restablecer predeterminada** vuelve a la carpeta del archivo de ajustes. La elección se guarda en
+`data/settings/output-folder.json` y se aplica desde la próxima ejecución, sin reiniciar; los archivos ya guardados se
+quedan donde están. Se rechazan las carpetas del sistema y las propias de la aplicación (programa, Python, datos,
+registros). Una variable `OUTPUT_DIR` definida en el entorno tiene prioridad y no se puede cambiar en esa página.
+**Abrir carpeta** solo aparece en un navegador de este equipo cuando la aplicación sirve solo a este equipo. Los
+nombres de archivo se adaptan para que sean válidos en cualquier sistema; un nombre que ya existe recibe ` (2)`,
+` (3)` …
 
 ## Configuración
 

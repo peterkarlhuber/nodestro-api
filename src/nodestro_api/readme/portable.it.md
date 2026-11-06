@@ -52,9 +52,16 @@ Una chiave modificata vale dall'esecuzione successiva; non serve una nuova espor
 {output_section}
 
 Ogni esecuzione conserva anche i propri file nell'applicazione (scaricali nel browser o con
-`GET /runs/{run_id}/files/{file_id}`). Il browser non può scegliere cartelle su questo computer: la cartella viene impostata
-dall'operatore in `config/settings.toml` (`[data] output_dir`, relativa a questa cartella o assoluta). I nomi dei file vengono resi
-validi per ogni sistema; un nome già esistente riceve ` (2)`, ` (3)` …
+`GET /runs/{run_id}/files/{file_id}`). La cartella predefinita è `[data] output_dir` in `config/settings.toml`
+(relativa a questa cartella o assoluta). L'operatore può scegliere un'altra cartella nell'interfaccia web in
+**Impostazioni → Cartella dei risultati**: un selettore delle cartelle di questo computer (solo nomi di cartelle), una
+nuova cartella viene creata solo dopo conferma e **Ripristina predefinita** torna alla cartella del file delle
+impostazioni. La scelta viene salvata in `data/settings/output-folder.json` e vale dalla prossima esecuzione, senza
+riavvio; i file già salvati restano dove sono. Le cartelle di sistema e quelle dell'applicazione (programma, Python,
+dati, log) vengono rifiutate. Una variabile `OUTPUT_DIR` impostata nell'ambiente ha la precedenza e non si può
+modificare in quella pagina. **Apri cartella** compare solo in un browser di questo computer quando l'applicazione
+serve solo questo computer. I nomi dei file vengono resi validi per ogni sistema; un nome già esistente riceve ` (2)`,
+` (3)` …
 
 ## Impostazioni
 
