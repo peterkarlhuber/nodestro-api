@@ -32,7 +32,7 @@ import asyncio
 import base64
 import binascii
 from collections import deque
-from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Iterable, Sequence
 import contextlib
 from datetime import date, datetime, timedelta
 import hashlib
@@ -138,6 +138,23 @@ def safe_text(text: str | None) -> str:
     return cleaned[:1000]
 
 
+#: The codes of a local model that is not installed where the workflow runs (refused before the start, or a step
+#: whose model call found no model).
+_LOCAL_MODEL_MISSING = frozenset({"check.local_model_missing", "run.local_model_missing"})
+#: What an API caller can tell the operator (API-058); no model name, path or address of the installation.
+LOCAL_MODEL_HINT = (
+    "A local model this workflow needs is not installed where it runs. An operator of this installation can install "
+    "it (in Nodestro: Settings, Local models); retry afterwards."
+)
+
+
+def _with_local_model_hint(params: dict[str, Any], codes: Iterable[str | None]) -> dict[str, Any]:
+    """``params`` with ``hint`` (:data:`LOCAL_MODEL_HINT`) when one of ``codes`` names a missing local model."""
+    if any(code in _LOCAL_MODEL_MISSING for code in codes):
+        return {**params, "hint": LOCAL_MODEL_HINT}
+    return params
+
+
 def _error_of(exc: BaseException) -> ApiError:
     """Turn what the engine or a check raised into an API error (never leaking internals)."""
     if isinstance(exc, ApiError):
@@ -150,7 +167,9 @@ def _error_of(exc: BaseException) -> ApiError:
     if isinstance(exc, WorkflowError):
         return ApiError(409, "release.invalid", "The published workflow cannot run; publish it again", detail=exc.code)
     if isinstance(exc, NodestroError):
-        return ApiError(400, exc.code, safe_text(str(exc)), **exc.params)
+        problems = exc.params.get("problems")
+        codes = [exc.code, *(item.get("code") for item in problems or [] if isinstance(item, dict))]
+        return ApiError(400, exc.code, safe_text(str(exc)), **_with_local_model_hint(dict(exc.params), codes))
     logger.exception("Published API request failed")
     return ApiError(500, "internal", "An internal error occurred; the details are in the server log")
 
@@ -917,8 +936,13 @@ class ServingCore:
         if run.started_at is not None:
             end = run.finished_at or now()
             duration = round((end - run.started_at).total_seconds(), 3)
+        failed_codes = [run.error_code, *(state.error_code for state in run.nodes.values())]
         error = (
-            ErrorOut(code=run.error_code or "run.failed", message=safe_text(run.error), params=run.error_params)
+            ErrorOut(
+                code=run.error_code or "run.failed",
+                message=safe_text(run.error),
+                params=_with_local_model_hint(dict(run.error_params), failed_codes),
+            )
             if run.error_code or run.error
             else None
         )

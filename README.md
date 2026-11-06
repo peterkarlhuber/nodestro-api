@@ -330,7 +330,9 @@ memory is shared with the studio; the publish check says so.
 | `GET .../usage`, `GET .../openapi.json` | runs, tokens and cost; the OpenAPI description of this API |
 
 - **Errors** have the form `{"error": {"status", "code", "message", "params"}}` with a stable `code`
-  (the studio API uses `{"detail", "code", "params"}`). Messages never contain keys or credentials.
+  (the studio API uses `{"detail", "code", "params"}`). Messages never contain keys or credentials. A run or start
+  that failed because a local model is not installed (`run.local_model_missing`, `check.local_model_missing`)
+  carries `params.hint`, a short sentence for the operator (no model name or address of the installation).
 - **Limits** per publication: parallel runs, waiting runs, runs and requests per minute and key, a daily cost limit
   over the runs of the last 24 hours, a cost limit per run, the upload size per file (default 10 MB) and 80 MB per
   request. Exceeded limits answer `429` with `Retry-After`; a request that is too large answers `413`, also when it

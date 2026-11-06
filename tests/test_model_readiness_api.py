@@ -173,3 +173,49 @@ def test_unattended_runs_never_download_and_report_the_prerequisite(local: TestC
     assert refused.value.code == "workflow.blocked"
     assert [item["code"] for item in refused.value.params["problems"]] == ["check.local_model_missing"]
     assert [job for job in ctx.local_models.jobs() if job.kind == "pull"] == []
+
+
+def test_a_published_run_without_its_local_model_tells_the_caller_to_ask_an_operator(
+    local: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """API-058: the error of a published run whose local model is missing carries a short operator hint, without
+    the model's name or anything else about the installation."""
+    from test_published_api import PUBLISHED, auth, finish, new_key, publish
+
+    from nodestro_api.serving import LOCAL_MODEL_HINT, _error_of
+
+    from test_flow import edge, save
+    from test_runs import agent_node
+
+    service = _ctx(local).local_models
+    service.start()
+    deadline = time.monotonic() + 15
+    while service.ollama_url() is None:
+        assert time.monotonic() < deadline
+        time.sleep(0.1)
+    nodes = [
+        {"id": "start", "type": "start"},
+        agent_node("writer", "WRITER", model=INSTALLED),
+        {"id": "out", "type": "output"},
+    ]
+    workflow_id = save(local, nodes, [edge("start", "writer"), edge("writer", "out")], name="Local")
+    publication = publish(local, workflow_id)["publication"]
+    token = new_key(local, publication["id"])
+    # The model is gone after publishing (the fake server answers 404 to every chat request).
+    started = local.post(f"{PUBLISHED}/{publication['slug']}/runs", json={"input": "x"}, headers=auth(token))
+    assert started.status_code == 202, started.text
+    status = finish(local, publication["slug"], token, started.json()["run_id"])
+    assert status["status"] == "failed"
+    assert [step["error_code"] for step in status["steps"] if step["node_id"] == "writer"] == [
+        "run.local_model_missing"
+    ]
+    assert status["error"]["params"]["hint"] == LOCAL_MODEL_HINT
+    assert "qwen" not in LOCAL_MODEL_HINT and "127.0.0.1" not in LOCAL_MODEL_HINT
+    result = local.get(f"{PUBLISHED}/{publication['slug']}/runs/{started.json()['run_id']}/result", headers=auth(token))
+    assert result.json()["error"]["params"]["hint"] == LOCAL_MODEL_HINT
+    # A start refused by the workflow check carries it too; other refusals do not.
+    refused = NodestroError(
+        "workflow.blocked", "x", problems=[{"code": "check.local_model_missing", "params": {"model": MISSING}}]
+    )
+    assert _error_of(refused).params["hint"] == LOCAL_MODEL_HINT
+    assert "hint" not in _error_of(NodestroError("workflow.blocked", "x", problems=[{"code": "check.other"}])).params
