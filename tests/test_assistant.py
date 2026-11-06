@@ -244,6 +244,16 @@ def _api_error(kind: str) -> Callable[[dict[str, Any]], Any]:
                 response=httpx.Response(400, request=request),
                 body=None,
             )
+        if kind == "input":
+            raise anthropic.BadRequestError(
+                "Input is too long for requested model.", response=httpx.Response(400, request=request), body=None
+            )
+        if kind == "messages":
+            raise anthropic.BadRequestError(
+                "messages.3.content.0: unexpected `tool_use_id` found in `tool_result` blocks",
+                response=httpx.Response(400, request=request),
+                body=None,
+            )
         raise anthropic.NotFoundError("model not found", response=httpx.Response(404, request=request), body=None)
 
     return fail
@@ -255,6 +265,9 @@ def _api_error(kind: str) -> Callable[[dict[str, Any]], Any]:
         ("connection", "assistant.connection_failed"),
         ("auth", "assistant.auth_failed"),
         ("long", "assistant.context_too_large"),
+        # API-065: Orkexa's InvalidRequestError.reason, as runs use it.
+        ("input", "assistant.context_too_large"),
+        ("messages", "assistant.provider_rejected_messages"),
         ("model", "assistant.model_unavailable"),
     ],
 )

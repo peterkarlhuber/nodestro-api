@@ -331,10 +331,24 @@ def api_problem(exc: BaseException, model: str) -> Problem:
         return problem("assistant.rate_limited", message)
     if isinstance(exc, ProviderConnectionError):
         return problem("assistant.connection_failed", message)
-    if isinstance(exc, InvalidRequestError) and re.search(
-        r"prompt is too long|too many tokens|context (length|window)|context_length_exceeded", message, re.IGNORECASE
+    if isinstance(exc, InvalidRequestError) and (
+        exc.reason == "context_length"
+        or re.search(
+            r"prompt is too long|too many tokens|context (length|window)|context_length_exceeded",
+            message,
+            re.IGNORECASE,
+        )
     ):
         return problem("assistant.context_too_large", message)
+    if isinstance(exc, InvalidRequestError) and exc.reason == "messages":
+        # The provider refused the conversation itself (a message's content, role or tool call pairing; Orkexa's
+        # reason, as runs report it with ``run.provider_rejected_messages``): retrying the same chat cannot help.
+        return problem(
+            "assistant.provider_rejected_messages",
+            message,
+            provider=exc.provider or "",
+            status=exc.status_code or "",
+        )
     if isinstance(exc, ProviderServerError):
         return problem("assistant.overloaded", message, status=exc.status_code or "")
     if isinstance(exc, ProviderError):
