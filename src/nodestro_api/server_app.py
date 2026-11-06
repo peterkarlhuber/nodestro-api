@@ -66,6 +66,7 @@ from .api_data import router as data_router
 from .api_inputs import router as inputs_router
 from .api_local_models import router as local_models_router
 from .api_mcp import router as mcp_router
+from .api_members import members_router
 from .api_pricing import router as pricing_router
 from .api_publish import router as publish_router
 from .api_python import router as python_router
@@ -360,6 +361,8 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
             logger.exception("The access audit of tenant %s could not be written", tenant_id)
 
     app.include_router(auth_router(composition.identity, composition.oidc, audit))
+    # Members and roles for the tenant's administrators (API-019); the server only.
+    app.include_router(members_router(composition.identity))
     app.include_router(publish_router)
     app.include_router(architect_router)
     app.include_router(python_router)

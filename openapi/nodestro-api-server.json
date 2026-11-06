@@ -11151,6 +11151,58 @@
         "title": "Measurement",
         "type": "object"
       },
+      "Member": {
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "role": {
+            "enum": [
+              "owner",
+              "admin",
+              "editor",
+              "operator",
+              "viewer"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          },
+          "you": {
+            "default": false,
+            "title": "You",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "user_id",
+          "role"
+        ],
+        "title": "Member",
+        "type": "object"
+      },
       "MemoryConfig": {
         "description": "``run`` keeps memory for one workflow run, ``persistent`` in a named space.",
         "properties": {
@@ -17478,6 +17530,26 @@
           "issues"
         ],
         "title": "ReviewOut",
+        "type": "object"
+      },
+      "RoleIn": {
+        "properties": {
+          "role": {
+            "enum": [
+              "owner",
+              "admin",
+              "editor",
+              "operator",
+              "viewer"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "title": "RoleIn",
         "type": "object"
       },
       "Run": {
@@ -26550,7 +26622,7 @@
         ]
       },
       "put": {
-        "description": "Set how long conversation files are kept (administrators). The input file clean-up\n(``POST /api/inputs/cleanup``) and, in the desktop app, an hourly pass remove the older ones; ``null`` keeps them\nuntil the conversation is deleted.",
+        "description": "Set how long conversation files are kept (administrators). The input file clean-up\n(``POST /api/inputs/cleanup``) and an hourly pass (the desktop app's, or on a server the worker's) remove the older\nones; ``null`` keeps them until the conversation is deleted.",
         "operationId": "set_file_retention_api_assistant_files_retention_put",
         "requestBody": {
           "content": {
@@ -28239,6 +28311,42 @@
         ]
       }
     },
+    "/api/exports/{export_id}": {
+      "delete": {
+        "description": "Delete an export and its ZIP file (``404`` for an unknown id). On a server this frees space of the\nworkspace's quota for stored packages (``NODESTRO_SERVER_EXPORT_TENANT_QUOTA_BYTES``, API-048).",
+        "operationId": "delete_export_api_exports__export_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "export_id",
+            "required": true,
+            "schema": {
+              "title": "Export Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Delete Export",
+        "tags": [
+          "publications"
+        ]
+      }
+    },
     "/api/exports/{export_id}/download": {
       "get": {
         "operationId": "download_export_api_exports__export_id__download_get",
@@ -28942,7 +29050,7 @@
     },
     "/api/knowledge/index/rebuild": {
       "post": {
-        "description": "Build the semantic index; an embedding model the local model server does not have is refused first\n(``409 model.local_unavailable``, with what can be done), instead of a job that fails at its first chunk.",
+        "description": "Build the semantic index; an embedding model the local model server does not have is refused first\n(``409 model.local_unavailable``, with what can be done), instead of a job that fails at its first chunk.\n\nThe desktop builds it in a thread of its process; a server queues it for a worker process (API-044), so the\nanswer's ``job`` is ``running`` while it waits for one (``knowledge.reindex_running`` for a second start).",
         "operationId": "knowledge_reindex_api_knowledge_index_rebuild_post",
         "requestBody": {
           "content": {
@@ -30830,6 +30938,131 @@
         "summary": "Mcp Status",
         "tags": [
           "MCP"
+        ]
+      }
+    },
+    "/api/members": {
+      "get": {
+        "description": "The members of this workspace with their roles, by user id.",
+        "operationId": "list_members_api_members_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Member"
+                  },
+                  "title": "Response List Members Api Members Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Members",
+        "tags": [
+          "members"
+        ]
+      }
+    },
+    "/api/members/{user_id}": {
+      "delete": {
+        "description": "Remove a member from this workspace; their sessions here end at once.",
+        "operationId": "remove_member_api_members__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Remove Member",
+        "tags": [
+          "members"
+        ]
+      }
+    },
+    "/api/members/{user_id}/role": {
+      "put": {
+        "description": "Change a member's role (``403 identity.owner_required`` when the owner role is involved and the asking\nperson is no owner; ``409 identity.last_owner`` for the last owner).",
+        "operationId": "set_member_role_api_members__user_id__role_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Member"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Set Member Role",
+        "tags": [
+          "members"
         ]
       }
     },
