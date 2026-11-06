@@ -125,3 +125,14 @@ def test_every_template_has_a_plan(make_app: MakeApp, monkeypatch: pytest.Monkey
         assert plan["local"] and plan["agents"], template["id"]
         assert all(agent["model"] == "ollama:qwen3.5:4b" for agent in plan["agents"]), template["id"]
     assert client.get("/api/library/nope/models").status_code == 404
+
+
+@pytest.mark.parametrize("local", [False, True])
+def test_agents_of_a_part_name_the_part(make_app: MakeApp, monkeypatch: pytest.MonkeyPatch, local: bool) -> None:
+    """API-053: the plan names the part (team or sub-workflow) of an agent, not only its id."""
+    client = _local(make_app, monkeypatch, ["qwen3:8b"], CPU16) if local else make_app()
+    for language, name in (("en", "Quality assurance"), ("de", "Qualit")):
+        agents = client.get("/api/library/production-downtime/models", params={"language": language}).json()["agents"]
+        parts = [agent for agent in agents if agent["part"] == "quality-check"]
+        assert parts and all(agent["part_name"].startswith(name) for agent in parts)
+        assert all(agent["part_name"] is None for agent in agents if agent["part"] is None)

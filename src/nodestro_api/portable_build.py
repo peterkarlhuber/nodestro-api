@@ -222,6 +222,8 @@ class ExportJob(BaseModel):
     bytes_total: int = 0
     error_code: str | None = None
     error: str | None = None
+    #: The parameters of ``error_code`` (e.g. ``size`` and ``limit`` of ``export.server_too_large``), for its text.
+    error_params: dict[str, Any] = Field(default_factory=dict)
     export_id: str | None = None
     created_at: datetime = Field(default_factory=now)
     finished_at: datetime | None = None
@@ -308,6 +310,8 @@ class JobRunner:
         cancel: threading.Event,
         server: bool = False,
     ) -> None:
+        from .serving import ApiError
+
         progress = Progress(self.ctx, job, cancel)
         try:
             record = build(self.ctx, publication, release, options, progress)
@@ -317,6 +321,10 @@ class JobRunner:
             job.state, job.error_code, job.error = "cancelled", "export.cancelled", "The export was cancelled"
         except NodestroError as exc:
             job.state, job.error_code, job.error = "failed", exc.code, str(exc)
+            job.error_params = dict(exc.params)
+        except ApiError as exc:
+            job.state, job.error_code, job.error = "failed", exc.code, exc.message
+            job.error_params = dict(exc.params)
         except Exception as exc:  # reported on the job, with the details in the log
             logger.exception("Building a portable export failed")
             job.state, job.error_code, job.error = "failed", "export.failed", f"{type(exc).__name__}: {exc}"[:2000]

@@ -123,3 +123,45 @@ def test_enabled_server_builds_one_package_at_a_time(
         threading.Event().wait(0.05)
     large = alice.post(f"/api/publications/{first}/export-jobs", json={"options": OPTIONS})
     assert large.status_code == 403 and large.json()["code"] == "export.server_too_large", large.text
+
+
+def test_the_export_check_reports_the_server_refusal_and_limit_up_front(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """API-053: the check names ``export.server_unsupported`` (or the size limit) before "Build package"; a failed
+    job carries the parameters of its code."""
+    studio: Server = request.getfixturevalue("server")
+    monkeypatch.delenv(portable_build.SERVER_JOBS_ENV, raising=False)
+    monkeypatch.delenv(portable_build.SERVER_MAX_BYTES_ENV, raising=False)
+    owner = studio.member("acme", "alice", "owner")
+    publication = _published(owner)
+
+    def codes() -> dict[str, dict[str, Any]]:
+        answer = owner.post(f"/api/publications/{publication}/export/check", json={"options": OPTIONS})
+        assert answer.status_code == 200, answer.text
+        return {item["code"]: item for item in answer.json()["problems"]}
+
+    refused = codes()
+    assert refused["export.server_unsupported"]["level"] == "error"
+    monkeypatch.setenv(portable_build.SERVER_JOBS_ENV, "1")
+    limit = codes()["export.server_limit"]
+    assert limit["level"] == "info" and limit["params"]["limit"] == portable_build.SERVER_MAX_BYTES
+    monkeypatch.setenv(portable_build.SERVER_MAX_BYTES_ENV, "1")
+    large = codes()["export.server_too_large"]
+    assert large["level"] == "error" and large["params"]["limit"] == 1 and large["params"]["size"] > 1
+    # A job that fails keeps the parameters of its code (the built package was too large).
+    monkeypatch.delenv(portable_build.SERVER_MAX_BYTES_ENV)
+
+    def build(*_args: Any) -> Any:
+        raise portable_build.NodestroError("export.server_too_large", "Too large", size=5, limit=4)
+
+    monkeypatch.setattr(portable_build, "build", build)
+    started = owner.post(f"/api/publications/{publication}/export-jobs", json={"options": OPTIONS})
+    assert started.status_code == 202, started.text
+    for _ in range(100):
+        job = owner.get(f"/api/export-jobs/{started.json()['id']}").json()
+        if job["state"] != "running":
+            break
+        threading.Event().wait(0.05)
+    assert job["state"] == "failed" and job["error_code"] == "export.server_too_large"
+    assert job["error_params"] == {"size": 5, "limit": 4}

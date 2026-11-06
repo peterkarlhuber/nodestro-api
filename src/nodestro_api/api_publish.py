@@ -23,14 +23,14 @@ from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.schemas import LANGUAGES, RunSummary, Workflow
 from pydantic import BaseModel, Field
 
-from . import api_guide, exporter, portable_build
+from . import access_audit, api_guide, exporter, portable_build
 from .api import Ctx, _quote
 from .api_examples import ApiExamples, examples
 from .api_guide import ApiGuide
 from .api_keys import ApiKeyOut, NewApiKey
 from .network import NetworkConfig, NetworkStatus
 from .permissions import ADMIN, EDIT, INSTALL, READ, RUN
-from .publishing import ApiCheck, Publication, Release, ReleaseSummary, api_runs
+from .publishing import RELEASES, ApiCheck, Publication, Release, ReleaseSummary, api_runs
 from .release_gate import GateOverride, GateReport, ReleaseGate
 from .serving import SCOPES, ApiLimits, KeyIdentity, ServedRelease, openapi_document
 
@@ -193,6 +193,15 @@ class PublicationOverviewItem(PublicationListItem):
     published_at: datetime | None = None
     #: The publication's exports, newest first (as ``GET /api/publications/{id}/exports``).
     exports: list[exporter.ExportRecord] = Field(default_factory=list)
+    #: Portable export jobs still being built, newest first (as ``GET /api/publications/{id}/export-jobs``).
+    export_jobs: list[portable_build.ExportJob] = Field(default_factory=list)
+
+
+class _ReleaseHead(BaseModel):
+    """The two fields of a stored release the overview shows; its bundle is not validated (API-063)."""
+
+    workflow_version: int | None = None
+    created_at: datetime
 
 
 @router.get("/publication-overview", dependencies=READ)
@@ -200,15 +209,16 @@ def publication_overview(ctx: Ctx) -> list[PublicationOverviewItem]:
     """All publications of this installation (on a server: of the tenant) with their workflow, active release and
     exports, for the studio's *Publications* page (one request instead of one per publication)."""
     exports = exporter.records_by_publication(ctx)
+    jobs: dict[str, list[portable_build.ExportJob]] = {}
+    for job in sorted(ctx.store.list(portable_build.JOBS, portable_build.ExportJob), key=lambda job: job.created_at):
+        if job.state == "running":
+            jobs.setdefault(job.publication_id, []).insert(0, job)
     found = []
     for publication in sorted(ctx.publications.all(), key=lambda item: item.name.lower()):
         workflow = ctx.store.get("workflows", publication.workflow_id, Workflow)
-        release: Release | None = None
+        release: _ReleaseHead | None = None
         if publication.active_release is not None:
-            try:
-                release = ctx.publications.release(publication.id, publication.active_release)
-            except KeyError:
-                release = None
+            release = ctx.store.get(RELEASES, f"{publication.id}:{publication.active_release:06d}", _ReleaseHead)
         found.append(
             PublicationOverviewItem(
                 **publication.model_dump(include=set(PublicationListItem.model_fields)),
@@ -218,6 +228,7 @@ def publication_overview(ctx: Ctx) -> list[PublicationOverviewItem]:
                 active_version=release.workflow_version if release is not None else None,
                 published_at=release.created_at if release is not None else None,
                 exports=exports.get(publication.id, []),
+                export_jobs=jobs.get(publication.id, []),
             )
         )
     return found
@@ -441,11 +452,12 @@ def start_export_job(publication_id: str, body: ExportIn, ctx: Ctx) -> portable_
     if options.kind != "portable":
         raise NodestroError("export.not_portable", "Only portable packages are built as jobs")
     found = exporter.check(ctx, publication, release, options)
+    # On a server only with the operator's opt-in, one build at a time and a size limit (API3-07); its refusal
+    # answers 403 before the check's own copy of it (API-053) would answer 400.
+    portable_build.server_admission(ctx, found.portable.estimated_bytes if found.portable else 0)
     if not found.ok:
         first = next(item for item in found.problems if item.level == "error")
         raise NodestroError(first.code, first.message, **first.params)
-    # On a server only with the operator's opt-in, one build at a time and a size limit (API3-07).
-    portable_build.server_admission(ctx, found.portable.estimated_bytes if found.portable else 0)
     return portable_build.runner(ctx).start(publication, release, options)
 
 
@@ -512,26 +524,66 @@ def list_keys(ctx: Ctx) -> list[ApiKeyOut]:
     return ctx.api_keys.all()
 
 
+def _actor(request: Request) -> str:
+    principal = getattr(request.state, "principal", None)
+    return principal.id if principal is not None else "local"
+
+
+def _key_event(ctx: Ctx, request: Request, kind: access_audit.AccessKind, key: ApiKeyOut, **details: Any) -> None:
+    """API-004: who created, revoked, rotated or deleted which key (its id, name and prefix; never the key)."""
+    access_audit.record(
+        ctx.store,
+        access_audit.AccessEvent(
+            kind=kind,
+            actor=_actor(request),
+            target_type="api_key",
+            target_id=key.id,
+            details={"name": key.name, "prefix": key.prefix, "scopes": list(key.scopes), **details},
+        ),
+    )
+
+
 @router.post("/api-keys", status_code=201, dependencies=ADMIN)
-def create_key(body: KeyIn, ctx: Ctx) -> NewApiKey:
-    return ctx.api_keys.create(body.name, list(body.scopes), body.publications)
+def create_key(body: KeyIn, request: Request, ctx: Ctx) -> NewApiKey:
+    created = ctx.api_keys.create(body.name, list(body.scopes), body.publications)
+    _key_event(ctx, request, "api_key_created", created.key)
+    return created
 
 
 @router.post("/api-keys/{key_id}/revoke", dependencies=ADMIN)
-def revoke_key(key_id: str, ctx: Ctx) -> ApiKeyOut:
-    return ctx.api_keys.revoke(key_id)
+def revoke_key(key_id: str, request: Request, ctx: Ctx) -> ApiKeyOut:
+    revoked = ctx.api_keys.revoke(key_id)
+    _key_event(ctx, request, "api_key_revoked", revoked)
+    return revoked
 
 
 @router.post("/api-keys/{key_id}/rotate", dependencies=ADMIN)
-def rotate_key(key_id: str, ctx: Ctx) -> NewApiKey:
+def rotate_key(key_id: str, request: Request, ctx: Ctx) -> NewApiKey:
     """A new key with the same name, permissions and APIs; the old one is revoked at once."""
-    return ctx.api_keys.rotate(key_id)
+    rotated = ctx.api_keys.rotate(key_id)
+    _key_event(ctx, request, "api_key_rotated", rotated.key, replaces=key_id)
+    return rotated
 
 
 @router.delete("/api-keys/{key_id}", status_code=204, dependencies=ADMIN)
-def delete_key(key_id: str, ctx: Ctx) -> Response:
+def delete_key(key_id: str, request: Request, ctx: Ctx) -> Response:
+    found = next((key for key in ctx.api_keys.all() if key.id == key_id), None)
     ctx.api_keys.delete(key_id)
+    if found is not None:
+        _key_event(ctx, request, "api_key_deleted", found)
     return Response(status_code=204)
+
+
+@router.get("/access-audit", dependencies=ADMIN)
+def access_audit_events(
+    ctx: Ctx,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 200,
+    kind: access_audit.AccessKind | None = None,
+) -> list[access_audit.AccessEvent]:
+    """The access audit trail of this workspace (on a server: of the tenant), newest first (API-004): logins and
+    refused logins, tenant switches and logouts, API key changes, and the operator's tenant and member commands.
+    Read only; it never holds a secret."""
+    return access_audit.events(ctx.store, limit=limit, kind=kind)
 
 
 # ---- network -----------------------------------------------------------------------------

@@ -378,8 +378,6 @@ def _reconcile(ctx: Nodestro, body: ReconciliationIn) -> ReconciliationReport:
             end=body.end.isoformat(),
         )
     adapters = _adapters(ctx, body.keys)
-    if not adapters:
-        raise NodestroError("pricing.billing_key_missing", "No admin key of a provider's billing API is configured")
     service = CostReconciliationService(
         adapters,
         lambda start, end: nodestro_estimates(ctx, start, end),
@@ -388,7 +386,12 @@ def _reconcile(ctx: Nodestro, body: ReconciliationIn) -> ReconciliationReport:
             absolute_threshold_usd=body.absolute_threshold_usd,
         ),
     )
-    return service.reconcile(body.start, body.end)
+    report = service.reconcile(body.start, body.end)
+    # Without any billing key, a period with estimates still answers with what was not compared (a Bedrock-only
+    # workspace learns that its provider cannot be reconciled); only a period without estimates is refused.
+    if not adapters and not report.not_reconciled:
+        raise NodestroError("pricing.billing_key_missing", "No admin key of a provider's billing API is configured")
+    return report
 
 
 def _default_period() -> tuple[date, date]:

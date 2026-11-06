@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable, Iterator
 from datetime import timedelta
 import io
@@ -30,6 +31,7 @@ from nodestro_api.batches import COLLECTION as BATCHES
 from nodestro_api.batches import Batch, estimate_cost
 from nodestro_api.benchmarks import RUNS as BENCHMARK_RUNS
 from nodestro_api.benchmarks import BenchmarkRun, Benchmarks
+from nodestro_api.leases import PROCESS_OWNER, LeaseLost, lease_until
 from nodestro_api.schedules import COLLECTION as SCHEDULES
 from nodestro_api.schedules import Schedule
 
@@ -218,8 +220,9 @@ def test_opening_a_server_tenant_leaves_running_batches_of_other_processes_alone
     try:
         api_process = TenantFiles(database=databases[0], data_root=tmp_path, integrations=[])
         ctx = api_process.open("acme")
-        batch = Batch(workflow_id="wf_x", workflow_name="X", status="running")
-        bench = BenchmarkRun(suite_id="s", suite_name="S", workflow_id="wf_x")
+        # Driven by another API process that is alive: it holds the lease (API-006).
+        batch = Batch(workflow_id="wf_x", workflow_name="X", status="running", owner="api-2", lease_until=lease_until())
+        bench = BenchmarkRun(suite_id="s", suite_name="S", workflow_id="wf_x", owner="api-2", lease_until=lease_until())
         bench.status = "running"
         ctx.store.put(BATCHES, batch.id, batch)
         ctx.store.put(BENCHMARK_RUNS, bench.id, bench)
@@ -234,6 +237,91 @@ def test_opening_a_server_tenant_leaves_running_batches_of_other_processes_alone
     finally:
         for database in databases:
             database.close()
+
+
+@pytest.fixture
+def server_ctx(pg_schema: str, tmp_path: Path) -> Iterator[Any]:
+    from nodestro_runtime.storage_postgres import PostgresDatabase
+
+    from nodestro_api.server_app import TenantFiles
+
+    database = PostgresDatabase(DSN, schema=pg_schema)
+    ctx = TenantFiles(database=database, data_root=tmp_path, integrations=[]).open("acme")
+    try:
+        yield ctx
+    finally:
+        ctx.close()
+        database.close()
+
+
+def test_a_batch_and_test_run_of_a_stopped_process_are_interrupted_after_their_lease(server_ctx: Any) -> None:
+    """API-006: on a server nobody renews the lease of a stopped process's work; the next read marks it interrupted,
+    as the desktop does at its next start, so a person can continue it."""
+    ctx = server_ctx
+    gone = Batch(
+        workflow_id="wf", workflow_name="W", status="running", owner="api-2", lease_until=now() - timedelta(seconds=1)
+    )
+    legacy = Batch(workflow_id="wf", workflow_name="W", status="running")  # from before leases
+    alive = Batch(workflow_id="wf", workflow_name="W", status="running", owner="api-3", lease_until=lease_until())
+    paused = Batch(workflow_id="wf", workflow_name="W", status="paused", owner="api-2")
+    for batch in (gone, legacy, alive, paused):
+        ctx.store.put(BATCHES, batch.id, batch)
+    listed = {item.id: item.status for item in ctx.batches.list()}
+    assert listed == {gone.id: "interrupted", legacy.id: "interrupted", alive.id: "running", paused.id: "paused"}
+    stored = ctx.store.get(BATCHES, gone.id, Batch)
+    assert (stored.status, stored.stop_code, stored.owner, stored.lease_until) == (
+        "interrupted",
+        "batch.interrupted",
+        None,
+        None,
+    )
+    bench = BenchmarkRun(suite_id="s", suite_name="S", workflow_id="wf", owner="api-2", lease_until=now())
+    bench.status = "evaluating"
+    ctx.store.put(BENCHMARK_RUNS, bench.id, bench)
+    found = ctx.benchmarks.run(bench.id)
+    assert (found.status, found.stop_code) == ("interrupted", "benchmark.interrupted")
+    assert ctx.store.get(BENCHMARK_RUNS, bench.id, BenchmarkRun).status == "interrupted"
+
+
+def test_the_driving_process_renews_its_lease_and_stops_when_another_took_over(server_ctx: Any) -> None:
+    """API-006: every save of the driving process renews the lease; a process whose batch was taken over (reaped
+    and continued elsewhere) stops without overwriting it (409 ``lease.lost`` for a request)."""
+    ctx = server_ctx
+    batch = Batch(workflow_id="wf", workflow_name="W", status="running")
+    ctx.batches._claim(batch)
+    ctx.store.put(BATCHES, batch.id, batch)
+    ctx.batches._live[batch.id] = batch
+    first = batch.lease_until
+    ctx.batches._save(batch)
+    stored = ctx.store.get(BATCHES, batch.id, Batch)
+    assert stored.owner == PROCESS_OWNER and stored.lease_until is not None and stored.lease_until >= first
+    taken = stored.model_copy(update={"owner": "api-2"})
+    ctx.store.put(BATCHES, batch.id, taken)
+    with pytest.raises(LeaseLost) as lost:
+        ctx.batches._save(batch)
+    assert lost.value.code == "lease.lost"
+    assert ctx.store.get(BATCHES, batch.id, Batch).owner == "api-2"
+    ctx.batches._live.pop(batch.id)
+
+
+def test_test_runs_followed_here_keep_their_lease(server_ctx: Any) -> None:
+    ctx = server_ctx
+    loop = asyncio.new_event_loop()
+    try:
+        mine = BenchmarkRun(suite_id="s", suite_name="S", workflow_id="wf", owner=PROCESS_OWNER, lease_until=now())
+        theirs = BenchmarkRun(suite_id="s", suite_name="S", workflow_id="wf", owner="api-2", lease_until=now())
+        tasks = {}
+        for bench in (mine, theirs):
+            ctx.store.put(BENCHMARK_RUNS, bench.id, bench)
+            tasks[bench.id] = loop.create_future()
+            ctx.benchmarks._tasks[bench.id] = tasks[bench.id]
+        assert ctx.benchmarks.renew_leases() == [mine.id]
+        assert ctx.store.get(BENCHMARK_RUNS, mine.id, BenchmarkRun).lease_until > now() + timedelta(seconds=30)
+        assert tasks[theirs.id].cancelled() and theirs.id not in ctx.benchmarks._tasks
+        assert ctx.store.get(BENCHMARK_RUNS, theirs.id, BenchmarkRun).owner == "api-2"
+        ctx.benchmarks._tasks.clear()
+    finally:
+        loop.close()
 
 
 # ---- C-09: the scheduler and concurrent edits ------------------------------------------------------------
@@ -461,3 +549,50 @@ def test_workflow_delete_is_one_transaction(make_app: Any, monkeypatch: pytest.M
     assert ctx.store.get_raw("workflows", workflow_id) is not None
     assert len(ctx.versions.all(workflow_id)) == 2
     assert ctx.store.get_raw(SCHEDULES, schedule["id"]) is not None
+
+
+def test_a_live_answer_is_relayed_to_streams_of_other_api_processes(pg_schema: str, tmp_path: Path) -> None:
+    """API-059: the process that writes an answer stores its progress; another process's view shows it while the
+    question is pending, and the relayed document goes when the answer ends (or once the question is settled)."""
+    import threading
+
+    from nodestro_runtime.run_chat import RunMessage
+    from nodestro_runtime.storage_postgres import PostgresDatabase
+
+    from nodestro_api import api_run_chat
+    from nodestro_api.server_app import TenantFiles
+
+    databases = [PostgresDatabase(DSN, schema=pg_schema) for _ in range(2)]
+    writer = TenantFiles(database=databases[0], data_root=tmp_path, integrations=[]).open("acme")
+    reader = TenantFiles(database=databases[1], data_root=tmp_path, integrations=[]).open("acme")
+    try:
+        question = RunMessage(
+            run_id="run_1", target_run_id="run_1", node_id="lead", kind="question", content="Why?", status="pending"
+        )
+        live = writer.runs.chat.begin_answer(question)
+        writer.runs.chat.update_live(question.id, lambda item: setattr(item, "text", "Because"))
+        assert live.question_id == question.id
+        done = threading.Event()
+        relay = threading.Thread(target=api_run_chat.relay_answer, args=(writer, question, done, 0.02))
+        relay.start()
+        deadline = time.monotonic() + 5
+        seen: list[Any] = []
+        while time.monotonic() < deadline and not seen:
+            seen = api_run_chat._answering(reader, "run_1", [question])
+            time.sleep(0.02)
+        assert [(item.question_id, item.text) for item in seen] == [(question.id, "Because")]
+        assert reader.runs.chat.live_answers("run_1") == []  # not this process's own answer
+        done.set()
+        relay.join(5)
+        writer.runs.chat.end_answer(question.id)
+        assert api_run_chat._answering(reader, "run_1", [question]) == []
+        # A document a stopped process left behind goes once its question is no longer pending.
+        reader.store.put(api_run_chat.LIVE_COLLECTION, question.id, live)
+        settled = question.model_copy(update={"status": "failed"})
+        assert api_run_chat._answering(reader, "run_1", [settled]) == []
+        assert reader.store.get(api_run_chat.LIVE_COLLECTION, question.id, type(live)) is None
+    finally:
+        reader.close()
+        writer.close()
+        for database in databases:
+            database.close()

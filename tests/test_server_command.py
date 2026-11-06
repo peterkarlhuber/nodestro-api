@@ -69,6 +69,21 @@ def test_an_incomplete_or_desktop_environment_is_refused_with_every_problem(tmp_
     assert "client-secret" not in repr(loaded)
 
 
+def test_the_command_prints_one_problem_per_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    """API-053: ``nodestro-server check`` with several profile problems prints each on its own line."""
+    for name in list(os.environ):
+        if name.startswith("NODESTRO_"):
+            monkeypatch.delenv(name)
+    monkeypatch.setenv("NODESTRO_PROFILE", "server")
+    with pytest.raises(SystemExit) as stopped:
+        command.main(["check"])
+    lines = str(stopped.value.code).splitlines()
+    assert lines[0].startswith("profile.invalid: The server cannot start: ") and len(lines) >= 3
+    assert all(line.startswith("- ") for line in lines[1:])
+    assert any("NODESTRO_DATABASE_URL" in line for line in lines[1:])
+    assert command._error_lines(NodestroError("storage.x", "Broken")) == "storage.x: Broken"
+
+
 def test_model_endpoints_and_worker_timing_come_from_the_environment(tmp_path: Path) -> None:
     loaded = command.load(
         _environment(
@@ -407,6 +422,29 @@ def test_check_warns_about_a_superuser_runtime_role(
     assert len(warnings) == 1 and warnings[0].startswith("storage.role_unsafe") and "is a superuser" in warnings[0]
 
 
+def test_check_warns_about_bedrock_roles_for_unknown_tenants(
+    schema: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """API-008: a typo in NODESTRO_BEDROCK_TENANT_ROLES is a warning that names the tenant id, never the role."""
+    import json
+
+    monkeypatch.setattr(command, "_require_containers", lambda _server: None)
+    monkeypatch.setattr(command, "_superuser_role", lambda _server, _database: None)
+    role = {"role_arn": "arn:aws:iam::123456789012:role/nodestro-alpha", "external_id": "external-alpha-0001"}
+    roles = json.dumps({"alpha": role, "aplha": role})
+    loaded = command.load(_environment(tmp_path, NODESTRO_BEDROCK_TENANT_ROLES=roles))
+    command.migrate(loaded, backup_dir=None, backup_taken=False)
+    command.create_tenant(loaded, "alpha", "Alpha")
+    warnings: list[str] = []
+    assert command.check(loaded, warnings=warnings) == []
+    assert len(warnings) == 1 and warnings[0].startswith("bedrock.tenant_unknown"), warnings
+    assert "aplha" in warnings[0] and "alpha," not in warnings[0]
+    assert "arn:aws" not in warnings[0] and "external-alpha" not in warnings[0]
+    command.create_tenant(loaded, "aplha", "Typo")
+    warnings.clear()
+    assert command.check(loaded, warnings=warnings) == [] and warnings == []
+
+
 @pytest.mark.real_identity_check
 def test_check_reads_the_identity_provider(tmp_path: Path) -> None:
     """DX-31: check verifies the issuer's discovery document (reachable, same issuer, https endpoints)."""
@@ -455,3 +493,97 @@ def test_check_can_skip_the_identity_provider(schema: str, tmp_path: Path, monke
     found = command.check(loaded, http=client)
     assert len(found) == 1 and found[0].startswith("identity.provider:") and len(calls) == 1
     assert command.parser().parse_args(["check", "--skip-identity-provider"]).skip_identity_provider
+
+
+def test_conversations_from_before_owners_get_the_owner_their_files_name(
+    schema: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """API-057: ``assistant backfill-owners`` sets the owner where every file of a conversation was uploaded by one
+    person; without files or with files of several people a conversation stays visible to the tenant."""
+    from nodestro_runtime.input_files import COLLECTION, InputFile
+    from nodestro_runtime.schemas import now
+
+    from nodestro_api.assistant import Conversation
+    from nodestro_api.assistant_files import ConversationFile
+
+    loaded = command.load(_environment(tmp_path))
+    command.migrate(loaded, backup_dir=None, backup_taken=False)
+    command.create_tenant(loaded, "alpha", "Alpha")
+    database = command._database(loaded)
+    store = database.store("alpha")
+
+    def chat(conversation_id: str, uploaders: list[str], owner: str | None = None) -> None:
+        files = []
+        for index, who in enumerate(uploaders):
+            file_id = f"in_{conversation_id[-4:]}{index:08d}"
+            info = {"name": f"f{index}.txt", "format": "txt", "group": "text", "media_type": "text/plain", "size": 1}
+            store.put(
+                COLLECTION,
+                file_id,
+                InputFile(
+                    id=file_id, blob="b", sha256="0" * 64, created_at=now(), origin="assistant", uploaded_by=who, **info
+                ),
+            )
+            files.append(ConversationFile(id=file_id, **info))
+        store.put(
+            "assistant_conversations", conversation_id, Conversation(id=conversation_id, files=files, owner=owner)
+        )
+
+    chat("chat_one1", ["alice", "alice"])
+    chat("chat_two2", ["alice", "bob"])
+    chat("chat_none", [])
+    chat("chat_mine", ["carol"], owner="dave")
+    database.close()
+    dry = command.backfill_conversation_owners(loaded, dry_run=True, tenant=None)
+    assert dry["tenants"]["alpha"] == {"without_owner": 3, "assigned": 1, "ambiguous": 1, "unknown": 1}
+    report = command.backfill_conversation_owners(loaded, dry_run=False, tenant="alpha")
+    assert report["tenants"]["alpha"]["assigned"] == 1
+    database = command._database(loaded)
+    try:
+        owners = {item.id: item.owner for item in database.store("alpha").list("assistant_conversations", Conversation)}
+    finally:
+        database.close()
+    assert owners == {"chat_one1": "alice", "chat_two2": None, "chat_none": None, "chat_mine": "dave"}
+    again = command.backfill_conversation_owners(loaded, dry_run=False, tenant=None)
+    assert again["tenants"]["alpha"] == {"without_owner": 2, "assigned": 0, "ambiguous": 1, "unknown": 1}
+    with pytest.raises(NodestroError) as unknown:
+        command.backfill_conversation_owners(loaded, dry_run=True, tenant="nobody")
+    assert unknown.value.code == "identity.tenant_unknown"
+    parsed = command.parser().parse_args(["assistant", "backfill-owners", "--dry-run", "--tenant", "alpha"])
+    assert (parsed.assistant_command, parsed.dry_run, parsed.tenant) == ("backfill-owners", True, "alpha")
+
+
+def test_operator_commands_are_in_the_tenants_access_audit(schema: str, tmp_path: Path) -> None:
+    """API-004: create-tenant, set-role, suspend/resume, remove-member and revoke-sessions are recorded in the
+    tenant's own trail with the actor ``operator``."""
+    from nodestro_runtime.identity_store import IdentityStore
+
+    from nodestro_api import access_audit
+
+    loaded = command.load(_environment(tmp_path))
+    command.migrate(loaded, backup_dir=None, backup_taken=False)
+    command.create_tenant(loaded, "acme", "Acme")
+    database = PostgresDatabase(DSN, schema=schema)
+    try:
+        user = IdentityStore(database).login("https://login.example", "alice", email="alice@example.com")
+        command.set_role(loaded, "acme", user.id, "editor")
+        command.set_role(loaded, "acme", user.id, "admin")
+        command.set_tenant_status(loaded, "acme", "suspended")
+        command.set_tenant_status(loaded, "acme", "active")
+        command.revoke_sessions(loaded, user.id)
+        command.remove_member(loaded, "acme", user.id)
+        found = access_audit.events(database.store("acme"))
+    finally:
+        database.close()
+    assert [event.kind for event in reversed(found)] == [
+        "tenant_created",
+        "role_changed",
+        "role_changed",
+        "tenant_status_changed",
+        "tenant_status_changed",
+        "sessions_revoked",
+        "member_removed",
+    ]
+    assert {event.actor for event in found} == {"operator"}
+    changed = next(event for event in found if event.kind == "role_changed")
+    assert (changed.target_id, changed.details) == (user.id, {"before": "editor", "role": "admin"})

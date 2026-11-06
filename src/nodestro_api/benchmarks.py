@@ -54,6 +54,7 @@ from orkexa.usage import summarize_usage
 from pydantic import BaseModel, Field
 
 from .batches import BatchIn, BatchRow, estimate_cost, tool_warnings, with_models
+from .leases import LEASE_SECONDS, PROCESS_OWNER, LeaseLost, expired, lease_until
 from .model_choice import ModelChoice, ModelPolicy, agent_models, recommend, suite_basis, workflow_basis
 
 if TYPE_CHECKING:
@@ -227,6 +228,9 @@ class BenchmarkRun(BaseModel):
     results: list[CaseResult] = Field(default_factory=list)
     summary: BenchmarkSummary = Field(default_factory=BenchmarkSummary)
     judge_usage: Usage = Field(default_factory=Usage)
+    #: On a server: the API process that follows the test run, and until when its lease holds (API-006).
+    owner: str | None = None
+    lease_until: datetime | None = None
 
 
 class BenchmarkPlan(BaseModel):
@@ -323,6 +327,9 @@ class Benchmarks:
     def __init__(self, ctx: Nodestro) -> None:
         self.ctx = ctx
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        #: How long the lease of a test run this process follows holds (on a server; tests shorten it).
+        self.lease_s = LEASE_SECONDS
+        self._heartbeat: asyncio.Task[None] | None = None
         # Test series that were running when Nodestro stopped can never finish. Only where this process owns the
         # data (desktop): on a server another process may be running them right now (C-07).
         if not ctx.shared_storage:
@@ -420,8 +427,64 @@ class Benchmarks:
     # ---- runs ------------------------------------------------------------------
 
     def runs(self, suite_id: str) -> list[BenchmarkRun]:
-        found = self.ctx.store.find(RUNS, "suite_id", [suite_id], BenchmarkRun)
+        found = [self._reaped(item) for item in self.ctx.store.find(RUNS, "suite_id", [suite_id], BenchmarkRun)]
         return sorted(found, key=lambda item: item.created_at, reverse=True)
+
+    def _reaped(self, bench: BenchmarkRun) -> BenchmarkRun:
+        """On a server: a test run whose following process stopped renewing its lease is ``interrupted``
+        (API-006), as the desktop marks it at its next start."""
+        if (
+            not self.ctx.shared_storage
+            or bench.status not in ("running", "evaluating")
+            or bench.id in self._tasks
+            or not expired(bench.lease_until)
+        ):
+            return bench
+        logger.warning("Test run %s lost its process (%s); it is interrupted", bench.id, bench.owner)
+        bench.status, bench.stop_code, bench.finished_at = "interrupted", "benchmark.interrupted", now()
+        bench.owner, bench.lease_until = None, None
+        self.ctx.store.put(RUNS, bench.id, bench)
+        if bench.batch_id:
+            with contextlib.suppress(KeyError):
+                self.ctx.batches.get(bench.batch_id)  # its batch is reaped the same way
+        return bench
+
+    def _put(self, bench: BenchmarkRun) -> None:
+        """Store a test run this process follows; on a server it renews the lease, unless another process took
+        the test run over (``LeaseLost``)."""
+        if self.ctx.shared_storage:
+            stored = self.ctx.store.get(RUNS, bench.id, BenchmarkRun)
+            if stored is not None and stored.owner != PROCESS_OWNER:
+                raise LeaseLost(bench.id)
+            bench.owner, bench.lease_until = PROCESS_OWNER, lease_until(self.lease_s)
+        self.ctx.store.put(RUNS, bench.id, bench)
+
+    def renew_leases(self) -> list[str]:
+        """Renew the lease of every test run this process follows (while it waits for its batch or judges, it
+        stores nothing for a long time); a test run another process took over is no longer followed here."""
+        renewed = []
+        for bench_id, task in list(self._tasks.items()):
+            if task.done():
+                continue
+            stored = self.ctx.store.get(RUNS, bench_id, BenchmarkRun)
+            if stored is None or stored.status not in ("running", "evaluating"):
+                continue
+            if stored.owner != PROCESS_OWNER:
+                logger.warning("Test run %s is followed by another process now; this one stops", bench_id)
+                self._tasks.pop(bench_id, None)
+                task.cancel()
+                continue
+            stored.lease_until = lease_until(self.lease_s)
+            self.ctx.store.put(RUNS, bench_id, stored)
+            renewed.append(bench_id)
+        return renewed
+
+    async def _beat(self) -> None:
+        while any(not task.done() for task in self._tasks.values()):
+            await asyncio.sleep(self.lease_s / 4)
+            with contextlib.suppress(Exception):
+                self.renew_leases()
+        self._heartbeat = None
 
     def model_choice(self, suite_id: str, node_id: str, policy: ModelPolicy) -> ModelChoice:
         """The model to use for one agent by the policy and the series' measured runs (AO M6); changes nothing."""
@@ -432,7 +495,7 @@ class Benchmarks:
         found = self.ctx.store.get(RUNS, run_id, BenchmarkRun)
         if found is None:
             raise KeyError(run_id)
-        return found
+        return self._reaped(found)
 
     def delete_run(self, run_id: str) -> None:
         if run_id in self._tasks and not self._tasks[run_id].done():
@@ -534,8 +597,10 @@ class Benchmarks:
         )
         bench.batch_id = batch.id
         bench.workflow_version = batch.workflow_version
-        self.ctx.store.put(RUNS, bench.id, bench)
+        self._put(bench)
         self._tasks[bench.id] = asyncio.get_running_loop().create_task(self._follow(bench, suite))
+        if self.ctx.shared_storage and self._heartbeat is None:
+            self._heartbeat = asyncio.get_running_loop().create_task(self._beat())
         return bench
 
     async def cancel(self, run_id: str) -> BenchmarkRun:
@@ -569,10 +634,16 @@ class Benchmarks:
         return self.run(run_id)
 
     async def _follow(self, bench: BenchmarkRun, suite: Suite) -> None:
+        try:
+            await self._evaluate(bench, suite)
+        except LeaseLost:
+            logger.warning("Test run %s is followed by another process now; this one stops", bench.id)
+
+    async def _evaluate(self, bench: BenchmarkRun, suite: Suite) -> None:
         assert bench.batch_id is not None
         batch = await self.ctx.batches.wait(bench.batch_id)
         bench.status = "evaluating"
-        self.ctx.store.put(RUNS, bench.id, bench)
+        self._put(bench)
         cases = {case.id: case for case in suite.cases}
         budget = self.ctx.settings().default_budget_usd
         judge_tracker = self.ctx.tracker(budget)
@@ -621,7 +692,7 @@ class Benchmarks:
         bench.status = ended.get(batch.status, "finished")
         bench.stop_code = batch.stop_code if bench.status != "finished" else None
         bench.finished_at = now()
-        self.ctx.store.put(RUNS, bench.id, bench)
+        self._put(bench)
 
     async def _judge(
         self, bench: BenchmarkRun, suite: Suite, case: TestCase, output: Any, tracker: BudgetTracker

@@ -37,6 +37,7 @@ import stub_oidc
 from nodestro_api.identity import (
     LOGIN_COOKIE,
     SESSION_COOKIE,
+    LoginStartLimit,
     OidcClient,
     OidcSettings,
     axentra_login_flow,
@@ -568,6 +569,71 @@ def test_the_login_cookie_must_match_and_is_cleared_after_the_callback(server: S
     assert browser.get("/api/auth/me").status_code == 200
 
 
+def test_login_starts_are_limited_per_address(
+    database: PostgresDatabase, identity: IdentityStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """API-002: one address starts at most NODESTRO_LOGIN_STARTS_PER_MINUTE logins a minute in a process."""
+    monkeypatch.setenv("NODESTRO_LOGIN_STARTS_PER_MINUTE", "3")
+    provider = stub_oidc.StubProvider()
+    limited = Server(
+        tenant_app(identity, database, provider, tmp_path / "limited"),
+        identity,
+        provider,
+        [],
+    )
+    try:
+        browser = limited.browser()
+        assert [browser.get("/api/auth/login").status_code for _ in range(3)] == [303] * 3
+        refused = browser.get("/api/auth/login")
+        assert refused.status_code == 429 and refused.json()["code"] == "identity.rate_limited"
+    finally:
+        for client in limited.clients:
+            client.__exit__(None, None, None)
+
+
+def test_the_login_start_limit_slides_and_can_be_switched_off() -> None:
+    clock = [0.0]
+    limit = LoginStartLimit(2, clock=lambda: clock[0])
+    assert [limit.allow("a"), limit.allow("a"), limit.allow("a"), limit.allow("b")] == [True, True, False, True]
+    clock[0] = 61.0
+    assert limit.allow("a")
+    assert all(LoginStartLimit(0).allow("a") for _ in range(100))
+
+
+def test_oversized_login_parameters_are_refused(server: Server) -> None:
+    """API-002: a setup token, login state or code longer than any real one is refused before it is looked up."""
+    browser = server.browser()
+    setup = browser.get("/api/auth/login", params={"setup": "x" * 257})
+    assert setup.status_code == 400 and setup.json()["code"] == "identity.bootstrap_invalid"
+    state = browser.get("/api/auth/callback", params={"state": "s" * 513, "code": "c"})
+    assert state.status_code == 400 and state.json()["code"] == "identity.login_expired"
+    code = browser.get("/api/auth/callback", params={"state": "s", "code": "c" * 4097})
+    assert code.status_code == 400 and code.json()["code"] == "identity.login_failed"
+
+
+def test_logins_switches_and_logouts_are_in_the_tenants_access_audit(server: Server) -> None:
+    """API-004: a tenant's trail records its logins, switches into and refused switches out of it, and logouts;
+    only admins read it."""
+    admin = server.member("acme", "alice", "admin")
+    server.member("beta", "alice", "viewer")  # alice is a member of beta too (her second login lands in beta)
+    viewer = server.member("acme", "bob", "viewer")
+    assert admin.post("/api/auth/switch", json={"tenant_id": "zeta"}).status_code == 404  # not hers
+    alice = server.identity.login(stub_oidc.ISSUER, "alice").id
+    bob = server.identity.login(stub_oidc.ISSUER, "bob").id
+    trail = admin.get("/api/access-audit").json()
+    kinds = [(event["kind"], event["actor"], event["outcome"]) for event in reversed(trail)]
+    assert kinds == [("login", alice, "success"), ("login", bob, "success"), ("tenant_switched", alice, "denied")]
+    assert trail[0]["details"] == {"code": "identity.not_a_member", "to": "zeta"}
+    assert viewer.get("/api/access-audit").status_code == 403
+    assert admin.post("/api/auth/switch", json={"tenant_id": "beta"}).status_code == 204
+    assert admin.post("/api/auth/logout").status_code == 204
+    beta = server.app.state.tenants.get("beta").store
+    from nodestro_api import access_audit
+
+    moved = [(event.kind, event.details) for event in reversed(access_audit.events(beta))]
+    assert moved[-2:] == [("tenant_switched", {"came_from": "acme"}), ("logout", {})]
+
+
 def test_setup_tokens_and_sign_in_codes_never_reach_the_access_log(server: Server) -> None:
     """D-02: the server's access log does not keep the bootstrap token, nor the provider's code and state."""
     import io
@@ -628,6 +694,25 @@ def test_the_server_health_check_reports_the_database(server: Server, monkeypatc
     monkeypatch.undo()
     time.sleep(2.1)
     assert browser.get("/api/health").status_code == 200
+
+
+def test_the_server_reports_readiness_and_request_ids(server: Server, monkeypatch: pytest.MonkeyPatch) -> None:
+    """API-011: ``/api/ready`` (no login) is 200 only while the process serves and reaches its database; every
+    answer carries ``X-Request-ID``."""
+    browser = server.browser()
+    answer = browser.get("/api/ready")
+    assert answer.status_code == 200 and answer.json() == {"status": "ready", "database": "ok"}
+    assert len(answer.headers["X-Request-ID"]) == 16
+    refused = browser.get("/api/workflows", headers={"X-Request-ID": "proxy-7"})
+    assert refused.status_code == 401 and refused.headers["X-Request-ID"] == "proxy-7"
+    check = server.app.state.health_check
+    monkeypatch.setattr(check.database, "ping", lambda **_kwargs: False)
+    assert browser.get("/api/ready").status_code == 503
+    monkeypatch.undo()
+    server.app.state.accepting = False  # the process is stopping
+    stopping = browser.get("/api/ready")
+    assert stopping.status_code == 503 and stopping.json()["reason"] == "stopping"
+    server.app.state.accepting = True
 
 
 def test_meta_names_the_server_profile(server: Server) -> None:
@@ -725,6 +810,16 @@ def test_automatic_language_clears_the_stored_one_on_a_server(server: Server) ->
     assert admin.put("/api/settings", json={"default_budget_usd": 2}).json()["language"] == "it"
     assert admin.put("/api/settings", json={"language": None}).json()["language"] is None
     assert admin.get("/api/settings").json()["language"] is None
+
+
+def test_settings_defaults_on_a_server(server: Server) -> None:
+    """API-061: a server's tenants start with the cloud models and run tool code in containers only."""
+    reader = server.member("acme", "rita", "viewer")
+    defaults = reader.get("/api/settings/defaults")
+    assert defaults.status_code == 200, defaults.text
+    assert defaults.json()["sandbox"] == "docker" and defaults.json()["default_model"].startswith("anthropic:")
+    settings = reader.get("/api/settings").json()
+    assert {name: settings[name] for name in defaults.json()} == defaults.json()
 
 
 # ---- suspended tenants, session rotation, one person per identity -------------------------------------------

@@ -68,6 +68,7 @@ from .api_run_chat import router as run_chat_router
 from .api_tool_approvals import router as tool_approvals_router
 from .body_limit import BodyLimitMiddleware, BodyLimits
 from .context import AppConfig, Nodestro
+from .error_codes import router as error_codes_router
 from .frontend import mount_frontend
 from .identity import (
     LoginFlow,
@@ -79,6 +80,7 @@ from .identity import (
     redact_auth_logs,
     secure_url,
 )
+from .observability import RequestIdMiddleware
 from .permissions import PUBLIC, READ, check_routes
 from .pricing_setup import PRICE_REFERENCE_TENANT
 from .security_headers import SecurityHeadersMiddleware
@@ -269,9 +271,11 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         watcher = asyncio.get_running_loop().create_task(watch_suspensions(), name="nodestro-suspensions")
+        app.state.accepting = True
         try:
             yield
         finally:
+            app.state.accepting = False  # /api/ready answers 503 while the process stops (API-011)
             watcher.cancel()
             with suppress(asyncio.CancelledError):
                 await watcher
@@ -298,8 +302,20 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
     app.add_middleware(SameOriginMiddleware, origin=composition.origin, exempt=[PUBLISHED_PREFIX])
     # API2-02; the studio's origin is https (http only on localhost for development): HSTS also behind a TLS proxy.
     app.add_middleware(SecurityHeadersMiddleware, hsts=composition.origin.startswith("https://"))
+    # Outermost: every answer, a refused one too, carries the request id, and every log line of the request (API-011).
+    app.add_middleware(RequestIdMiddleware)
+    app.state.accepting = False
     install_error_handlers(app)
-    app.include_router(auth_router(composition.identity, composition.oidc))
+
+    def audit(tenant_id: str, event: Any) -> None:
+        from .access_audit import record_quietly
+
+        try:
+            record_quietly(tenants.get(tenant_id).store, event)
+        except Exception:  # an unknown or unusable tenant: the login itself is not refused for it
+            logger.exception("The access audit of tenant %s could not be written", tenant_id)
+
+    app.include_router(auth_router(composition.identity, composition.oidc, audit))
     app.include_router(publish_router)
     app.include_router(architect_router)
     app.include_router(python_router)
@@ -312,6 +328,7 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
     app.include_router(budget_router)
     app.include_router(tool_approvals_router)
     app.include_router(run_chat_router)
+    app.include_router(error_codes_router)
     app.include_router(router)
     app.include_router(data_router)
     if composition.notifications is not None:
@@ -320,11 +337,27 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
         app.include_router(notifications_router(composition.notifications))
     if composition.metrics is not None and composition.metrics_authorized is not None:
         _metrics(app, composition.metrics, composition.metrics_authorized)
+    _readiness(app)
     _api_reference(app)
     check_routes(app)
     if composition.static_dir is not None and (composition.static_dir / "index.html").is_file():
         mount_frontend(app, composition.static_dir)
     return app
+
+
+def _readiness(app: FastAPI) -> None:
+    """``GET /api/ready`` (no login; API-011): whether a load balancer should send this process requests: it has
+    started, is not stopping and reaches its database (``503`` otherwise). ``/api/health`` stays the liveness check
+    with the database."""
+
+    @app.get("/api/ready", dependencies=PUBLIC, include_in_schema=False)
+    async def ready(request: Request) -> JSONResponse:
+        headers = {"Cache-Control": "no-store"}
+        if not getattr(request.app.state, "accepting", False):
+            return JSONResponse({"status": "unavailable", "reason": "stopping"}, status_code=503, headers=headers)
+        if not await request.app.state.health_check():
+            return JSONResponse({"status": "unavailable", "database": "unreachable"}, status_code=503, headers=headers)
+        return JSONResponse({"status": "ready", "database": "ok"}, headers=headers)
 
 
 class DatabaseHealth:

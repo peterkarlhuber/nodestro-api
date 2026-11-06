@@ -8,7 +8,7 @@ organisation and search, publishing with its keys and the network listener.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 import logging
 import os
@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 from nodestro_runtime.extensions import Integration
+from nodestro_runtime.forms import FileRef
+from nodestro_runtime.input_files import FileCatalog, is_input_id
 from nodestro_runtime.mcp.vault import VAULT_KEY_ENV, TokenVault, vault_box_from_env
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.profile import ProfileKind, RuntimeProfile
@@ -136,6 +138,31 @@ class AppConfig:
         )
 
 
+class RunFileCatalog(FileCatalog):
+    """The files a run, batch, schedule or test case may reference: the runtime's catalog without the files of
+    assistant conversations (API-055). A chat file stays in its conversation; a run takes it only after it was
+    uploaded as an input file (or saved to knowledge) on purpose."""
+
+    def _chat_file(self, file_id: str) -> bool:
+        if not is_input_id(file_id) or self.inputs is None:
+            return False
+        item = self.inputs.find(file_id)
+        return item is not None and item.origin == "assistant"
+
+    def __getitem__(self, file_id: str) -> FileRef:
+        if self._chat_file(file_id):
+            raise KeyError(file_id)
+        return super().__getitem__(file_id)
+
+    def __contains__(self, file_id: object) -> bool:
+        return isinstance(file_id, str) and not self._chat_file(file_id) and super().__contains__(file_id)
+
+    def __iter__(self) -> Iterator[str]:
+        yield from (entry.id for entry in self.knowledge.list())
+        if self.inputs is not None:
+            yield from (item.id for item in self.inputs.all() if item.origin != "assistant")
+
+
 class Nodestro(Workspace):
     """Owns every service; one instance per running app."""
 
@@ -165,6 +192,10 @@ class Nodestro(Workspace):
             integrations=integrations,
             storage=storage,
         )
+
+    def file_catalog(self) -> FileCatalog:
+        """Every file a run can reference, without assistant chat files (:class:`RunFileCatalog`)."""
+        return RunFileCatalog(self.inputs, self.knowledge.store)
 
     def compose(self) -> None:
         if self.config.vault_key is not None and not self.shared_storage:

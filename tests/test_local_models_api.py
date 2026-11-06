@@ -69,7 +69,10 @@ def test_the_overview_works_without_a_runtime(make_app: MakeApp, monkeypatch: py
     assert overview["hardware"]["cpus"] >= 1
     recommended = client.get("/api/local-models/recommend", params={"task": "classify"}).json()
     assert recommended["model"] == "ollama:qwen3.5:4b"
-    assert client.get("/api/local-models/recommend", params={"task": "dance"}).status_code == 400
+    unknown = client.get("/api/local-models/recommend", params={"task": "dance"})
+    assert unknown.status_code == 400 and unknown.json()["code"] == "local.task_unknown"
+    # API-053: the answer lists the tasks that exist.
+    assert "classify" in unknown.json()["params"]["allowed"] and "embedding" in unknown.json()["params"]["allowed"]
     refused = client.post("/api/local-models/runtime", json={})
     assert refused.status_code == 400 and refused.json()["code"] == "local.archive_or_download"
     missing = client.post("/api/local-models/runtime", json={"archive": "/no/such/ollama.tgz"})
@@ -247,7 +250,7 @@ def test_the_setup_reports_its_steps_and_one_runs_at_a_time(managed: TestClient)
     if again.status_code == 202:  # the first one was already done
         _finished(managed, again.json())
     else:
-        assert again.status_code == 400 and again.json()["code"] == "local.job_running"
+        assert again.status_code == 409 and again.json()["code"] == "local.job_running"
     state = _finished(managed, job)
     assert state["state"] == "done", state
     steps = {step["id"]: step for step in state["steps"]}
@@ -273,3 +276,27 @@ def test_a_users_own_server_is_checked_but_never_stopped(make_app: MakeApp) -> N
     assert state["state"] == "failed" and state["error_code"] == "local.unreachable" and state["retryable"] is True
     assert steps["start"]["state"] == "skipped" and steps["start"]["note"] == "not_managed"
     assert steps["reachable"]["state"] == "failed"
+
+
+def test_a_job_that_runs_already_is_a_conflict(make_app: MakeApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    """API-062: ``local.job_running`` answers 409 like ``/stop`` does for the same conflict; the code stays."""
+    from nodestro_runtime.problems import NodestroError
+
+    monkeypatch.delenv("NODESTRO_OLLAMA_BINARY", raising=False)
+    client = make_app(local_defaults=True)
+    # Every other runtime error stays a 400.
+    missing = client.post("/api/local-models/runtime", json={"archive": "/no/such/ollama.tgz"})
+    assert missing.status_code == 400, missing.text
+    assert missing.json()["code"] == "local.file_missing"
+
+    def busy(*_: Any, **__: Any) -> None:
+        raise NodestroError("local.job_running", "qwen3.5:4b is already being processed", job="job-1")
+
+    monkeypatch.setattr(_ctx(client).local_models, "pull", busy)
+    monkeypatch.setattr(_ctx(client).local_models, "setup", busy)
+    for answer in (
+        client.post("/api/local-models/pull", json={"model": "qwen3.5:4b"}),
+        client.post("/api/local-models/setup", json={}),
+    ):
+        assert answer.status_code == 409, answer.text
+        assert answer.json()["code"] == "local.job_running" and answer.json()["params"] == {"job": "job-1"}

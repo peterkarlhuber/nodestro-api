@@ -507,6 +507,36 @@ def _issue(code: str, message: str, level: Literal["error", "warning", "info"] =
     return CheckIssue(code=code, message=message, level=level, params=params)
 
 
+def _server_package_issues(estimated_bytes: int) -> list[CheckIssue]:
+    """What a server says about a portable package before "Build package" (API-053): refused unless its operator
+    enabled export jobs (``export.server_unsupported``), and its size limit (``export.server_too_large`` when the
+    estimate is above it, else ``export.server_limit`` as information)."""
+    from .portable_build import server_jobs_enabled, server_max_bytes
+
+    if not server_jobs_enabled():
+        return [
+            _issue(
+                "export.server_unsupported",
+                "Portable packages are not built on this server; its operator can enable them",
+                level="error",
+            )
+        ]
+    limit = server_max_bytes()
+    if estimated_bytes > limit:
+        return [
+            _issue(
+                "export.server_too_large",
+                "This package is larger than this server allows",
+                level="error",
+                size=estimated_bytes,
+                limit=limit,
+            )
+        ]
+    return [
+        _issue("export.server_limit", "This server builds packages up to its size limit", level="info", limit=limit)
+    ]
+
+
 def check(ctx: Nodestro, publication: Publication, release: Release, options: ExportOptions) -> ExportCheck:
     """What the export would contain and what to know before downloading it; nothing is written."""
     options = normalized(options)
@@ -703,6 +733,8 @@ def check(ctx: Nodestro, publication: Publication, release: Release, options: Ex
                 _issue("export.guide_not_accepted", "The AI guide must be reviewed and accepted first", level="error")
             )
     portable = _portable_check(ctx, release, options, problems) if options.kind == "portable" else None
+    if portable is not None and ctx.profile.kind == "server":
+        problems += _server_package_issues(portable.estimated_bytes)
     if options.web_ui:
         problems.append(
             _issue(
@@ -1238,6 +1270,7 @@ import time
 from typing import Any
 
 from conftest import PROJECT_DIR, headers
+import pytest
 
 MANIFEST = json.loads((PROJECT_DIR / "workflow" / "manifest.json").read_text(encoding="utf-8"))
 RELEASE = json.loads((PROJECT_DIR / "workflow" / "release.json").read_text(encoding="utf-8"))
@@ -1354,7 +1387,7 @@ def test_cost_limit_refuses_new_runs(api):
 
 def test_pending_approvals_survive_a_restart(api, tmp_path: Path):
     if not MANIFEST.get("approvals"):
-        return  # this workflow has no approval steps
+        pytest.skip("this workflow has no approval steps")
     data_dir = tmp_path / "restart"
     client, tokens = api(data_dir=data_dir)
     token = tokens["run+read+approve"]
@@ -1455,6 +1488,26 @@ def _approval_steps(count: int, strings: dict[str, str]) -> str:
     return strings["approval_one" if count == 1 else "approval_many"].replace("{count}", str(count))
 
 
+def _without_approvals(text: str) -> str:
+    """The README template without its approval part, for a workflow without approval steps (API-053): the
+    ``## `` section that names ``{approvals}`` (standard export), or the sentence that names it together with the
+    approval example after it (portable package). Language-neutral: only the placeholders and the Markdown are read."""
+    at = text.find("{approvals}")
+    if at < 0:
+        return text
+    heading = text.rfind("\n## ", 0, at)
+    following = text.find("\n## ", at)
+    section = text[heading : following if following >= 0 else len(text)]
+    if heading >= 0 and set(re.findall(r"\{curl_\w+\}", section)) <= {"{curl_approve}"}:
+        return text[: heading + 1] + (text[following + 1 :] if following >= 0 else "")
+    sentence = max(text.rfind(". ", 0, at), text.rfind(".\n", 0, at))
+    example = text.find("{curl_approve}", at)
+    fence = text.find("```", example)
+    if sentence < 0 or example < 0 or fence < 0:
+        return text
+    return text[: sentence + 1] + text[fence + 3 :]
+
+
 def _readme(
     publication: Publication,
     release: Release,
@@ -1474,7 +1527,10 @@ def _readme(
     bundle = release.bundle
     agent_git = options.orkexa == "git"
     text = readme_template("portable" if portable else "standard", options.language)
+    if not bundle.approvals():
+        text = _without_approvals(text)
     providers = release_providers(bundle)
+    none = strings["none"]
     replacements = {
         "{title}": publication.name,
         "{name}": name,
@@ -1499,12 +1555,12 @@ def _readme(
             f"| `LIMIT_{key.upper()}` | `{value}` |" for key, value in publication.limits.model_dump().items()
         ),
         "{agent_install}": strings["agent_git" if agent_git else "agent_bundle"],
-        "{tools}": ", ".join(f"`{item}`" for item in tools) or "-",
-        "{knowledge_in}": ", ".join(included) or "-",
-        "{knowledge_out}": ", ".join(excluded) or "-",
-        "{memory}": ", ".join(memory) or "-",
+        "{tools}": ", ".join(f"`{item}`" for item in tools) or none,
+        "{knowledge_in}": ", ".join(included) or none,
+        "{knowledge_out}": ", ".join(excluded) or none,
+        "{memory}": ", ".join(memory) or none,
         "{guide}": ("\n- [docs/AI_GUIDE.md](docs/AI_GUIDE.md)" if options.guide_id else ""),
-        "{providers}": ", ".join(PROVIDERS[item].label for item in providers if item in PROVIDERS) or "-",
+        "{providers}": ", ".join(PROVIDERS[item].label for item in providers if item in PROVIDERS) or none,
         "{provider_rows}": _provider_rows(providers, strings, base_urls, provider_settings),
         "{port}": str(PORTABLE_PORT),
     }

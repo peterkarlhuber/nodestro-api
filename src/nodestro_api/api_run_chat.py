@@ -7,9 +7,15 @@
   ``client_id`` makes sending idempotent: 201 for a new message, 200 for the one that already exists.
 - ``GET /api/runs/{run_id}/chat/messages/{message_id}`` (``read``): one message.
 - ``GET /api/runs/{run_id}/chat/events`` (``read``): Server-Sent Events: ``snapshot`` (the whole view) on every
-  connect, then ``message`` (a new or changed message), ``answering`` (the reasoning and text of answers this process
-  is writing, as they arrive) and ``targets`` (what the orchestrators do now); ``end``
+  connect, then ``message`` (a new or changed message), ``answering`` (the reasoning and text of answers being
+  written, as they arrive) and ``targets`` (what the orchestrators do now); ``end``
   when the run ended and no answer is pending, or when access ended. A reconnecting client gets a new snapshot.
+
+On a server (several API processes on one database) the process that writes an answer relays its progress through
+the store (collection ``run_chat_live``, one small document per pending question, at most every
+:data:`RELAY_SECONDS`, cut to :data:`MAX_RELAY_CHARS`), so a stream served by another process shows it live too
+(API-059). The document is removed when the answer ends; one left behind by a stopped process is removed by the next
+view once its question is no longer pending.
 
 ``run_id`` may be the top-level run or any run below it (a team's run): the conversation belongs to the top-level
 run. Every route works on the request's tenant only; ids of other tenants are not found (404). The sender is the
@@ -57,8 +63,13 @@ MAX_ANSWERS_AT_ONCE = 4
 _answers = threading.BoundedSemaphore(MAX_ANSWERS_AT_ONCE)
 #: How often an open event stream looks at the stored conversation (seconds).
 POLL_SECONDS = 1.0
-#: How often it looks while this process writes an answer to the conversation (its live reasoning and text).
+#: How often it looks while an answer to the conversation is being written (its live reasoning and text).
 LIVE_POLL_SECONDS = 0.25
+#: Where a server's API process relays the progress of the answers it writes (API-059), how often at most, and
+#: how much of the text and of the reasoning (the stored answer has everything).
+LIVE_COLLECTION = "run_chat_live"
+RELAY_SECONDS = 0.5
+MAX_RELAY_CHARS = 32_000
 
 _NOT_FOUND = frozenset({"run_chat.unknown_target"})
 _CONFLICT = frozenset(
@@ -98,8 +109,8 @@ class RunChatView(BaseModel):
     questions_left: int
     #: The model that answers questions (the workspace's assistant model).
     answer_model: str
-    #: Answers being written in this API process: their reasoning and text so far (shown live; an answer written by
-    #: another process shows as a pending question until it is stored).
+    #: Answers being written: their reasoning and text so far (shown live; on a server also those another API process
+    #: writes, relayed through the store).
     answering: list[LiveAnswer] = Field(default_factory=list)
 
 
@@ -147,8 +158,56 @@ def _view(ctx: Ctx, root: Run) -> RunChatView:
         remaining_budget_usd=chat.remaining_budget(root.id, limits),
         questions_left=max(limits.max_questions - questions, 0),
         answer_model=ctx.settings().assistant_model,
-        answering=chat.live_answers(root.id),
+        answering=_answering(ctx, root.id, messages),
     )
+
+
+def _answering(ctx: Ctx, run_id: str, messages: list[RunMessage]) -> list[LiveAnswer]:
+    """The answers being written to the run's questions: this process's own, and on a server those other processes
+    relay (API-059). Relayed documents of questions that are no longer pending are removed."""
+    found = ctx.runs.chat.live_answers(run_id)
+    if not ctx.shared_storage:
+        return found
+    pending = {item.id for item in messages if item.kind == "question" and item.status == "pending"}
+    mine = {item.question_id for item in found}
+    for key, relayed in ctx.store.items(LIVE_COLLECTION, LiveAnswer):
+        if relayed.run_id != run_id:
+            continue
+        if relayed.question_id not in pending:
+            ctx.store.delete(LIVE_COLLECTION, key)
+        elif relayed.question_id not in mine:
+            found.append(relayed)
+    return sorted(found, key=lambda item: item.question_id)
+
+
+def _relayed(live: LiveAnswer) -> LiveAnswer:
+    reasoning = live.reasoning.model_copy(update={"text": live.reasoning.text[:MAX_RELAY_CHARS]})
+    return live.model_copy(update={"text": live.text[:MAX_RELAY_CHARS], "reasoning": reasoning})
+
+
+def relay_answer(ctx: Ctx, question: RunMessage, done: threading.Event, every: float = RELAY_SECONDS) -> None:
+    """Store the progress of the answer to ``question`` while it is written here, until ``done`` is set; then
+    remove it (API-059). A changed answer is stored at most every ``every`` seconds; an unchanged one is not."""
+    shown: dict[str, Any] | None = None
+    try:
+        while not done.wait(every):
+            current = next(
+                (item for item in ctx.runs.chat.live_answers(question.run_id) if item.question_id == question.id), None
+            )
+            if current is None:
+                continue
+            relayed = _relayed(current)
+            data = relayed.model_dump(mode="json")
+            if data != shown:
+                ctx.store.put(LIVE_COLLECTION, question.id, relayed)
+                shown = data
+    except Exception:  # the relay is a display aid: the answer itself goes on
+        logger.exception("Relaying the live answer to %s failed", question.id)
+    finally:
+        try:
+            ctx.store.delete(LIVE_COLLECTION, question.id)
+        except Exception:
+            logger.exception("Removing the relayed answer to %s failed", question.id)
 
 
 def _public(message: RunMessage) -> RunMessage:
@@ -234,12 +293,22 @@ def _display_name(request: Request, principal: Principal) -> str:
 
 
 def _answer(ctx: Ctx, question: RunMessage, model: str) -> None:
+    done = threading.Event()
+    relay = None
+    if ctx.shared_storage:
+        relay = threading.Thread(
+            target=relay_answer, args=(ctx, question, done), name=f"run-chat-relay-{question.id}", daemon=True
+        )
+        relay.start()
     try:
         answer_question(ctx.runs, ctx.runs.chat, ctx.usage_log, question, model=model)
     except Exception:  # the question fails visibly instead of waiting forever
         logger.exception("Answering a live chat question of run %s failed", question.run_id)
         ctx.runs.chat.fail_question(question, "run_chat.answer_failed")
     finally:
+        done.set()
+        if relay is not None:
+            relay.join(timeout=5)
         _answers.release()
 
 

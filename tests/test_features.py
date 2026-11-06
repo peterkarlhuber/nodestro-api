@@ -238,6 +238,39 @@ def test_global_search_finds_every_kind(make_app: Callable[..., TestClient]) -> 
     assert client.get("/api/search", params={"q": "x"}).json() == []
 
 
+def test_global_search_finds_runs_by_workflow_input_and_id(
+    make_app: Callable[..., TestClient], monkeypatch: Any
+) -> None:
+    """API-052: runs are found by workflow name, input text and run id, newest first, also beyond the newest page
+    the studio lists; only top-level runs among the newest ``RUN_SEARCH_WINDOW``."""
+    from nodestro_api import search
+
+    client = make_app({"A": [text("ok")] * 5})
+    workflow_id = create(client, [agent_node("a", "A")], [], name="Rechnungsprüfung")
+    other_id = create(client, [agent_node("a", "A")], [], name="Anderes")
+    first = start(client, workflow_id, "Lieferant Müller, Rechnung 4711")
+    second = start(client, workflow_id, "Lieferant Schmidt")
+    third = start(client, other_id, "Rechnung 4712 von Müller")
+    # A small window and page show that older pages are read and the window bounds the scan.
+    monkeypatch.setattr(search, "_RUN_PAGE", 1)
+    found = [item for item in client.get("/api/search", params={"q": "muller"}).json() if item["kind"] == "run"]
+    assert [item["id"] for item in found] == [third["id"], first["id"]]
+    hit = found[1]
+    assert hit["title"] == "Rechnungsprüfung" and hit["subtitle"] == "succeeded" and hit["workflow_id"] == workflow_id
+    assert "Müller" in hit["snippet"]
+    by_name = [item["id"] for item in client.get("/api/search", params={"q": "rechnungsprufung"}).json()]
+    assert by_name.index(workflow_id) < by_name.index(second["id"]) and first["id"] in by_name
+    by_id = client.get("/api/search", params={"q": second["id"]}).json()
+    assert [item["id"] for item in by_id if item["kind"] == "run"] == [second["id"]]
+    assert by_id[0]["snippet"] == "Lieferant Schmidt"
+    monkeypatch.setattr(search, "RUN_SEARCH_WINDOW", 1)
+    newest = [item["id"] for item in client.get("/api/search", params={"q": "muller"}).json() if item["kind"] == "run"]
+    assert newest == [third["id"]]
+    monkeypatch.setattr(search, "RUN_SEARCH_WINDOW", 100)
+    monkeypatch.setattr(search, "RUN_SEARCH_HITS", 1)
+    assert [i["kind"] for i in client.get("/api/search", params={"q": "lieferant"}).json()].count("run") == 1
+
+
 # ---- 13. usage of the AI assistants -----------------------------------------------------
 
 

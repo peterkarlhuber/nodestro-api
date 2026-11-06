@@ -118,6 +118,14 @@ user login and does not lift the loopback-only rule. Without the variable (the `
 - Login with OpenID Connect at the operator's identity provider: authorization code flow with PKCE (`S256`),
   `state` (stored hashed, used once, expires after 10 minutes) and `nonce`. The ID token must be signed with an
   asymmetric key of the provider (never `none` or a shared secret) and match issuer, audience, expiry and nonce.
+- Every tenant has an access audit trail (`GET /api/access-audit`, permission `admin`, read only, newest first):
+  logins, tenant switches (refused ones too), logouts, API key changes and the operator's commands (`create-tenant`,
+  `set-role`, `remove-member`, `revoke-sessions`, `tenant suspend|resume`, actor `operator`). It holds ids and codes,
+  never a secret; with `NODESTRO_AXENTRA_AUDIT=1` each event is mirrored into Axentra's audit log in the same
+  transaction (`nodestro.access.<kind>`). The desktop records its API key changes the same way.
+- One address starts at most 60 logins a minute per API process (`NODESTRO_LOGIN_STARTS_PER_MINUTE`, `0` turns it
+  off; then `429 identity.rate_limited`), and oversized setup tokens, states and codes are refused. Behind a proxy
+  the address is the proxy's unless uvicorn trusts it (`FORWARDED_ALLOW_IPS`); a proxy rate limit stays advisable.
 - A login alone grants nothing: a user needs a role in a tenant (`owner`, `admin`, `editor`, `operator`,
   `viewer`). The first owner of a tenant logs in with a one-time setup link (`/api/auth/login?setup=<token>`) that
   an operator creates; there is no default administrator and no password.
@@ -139,9 +147,10 @@ user login and does not lift the loopback-only rule. Without the variable (the `
 - Not part of it yet: published workflow APIs with tenant-bound keys, the network listener and backups in the studio
   (operators use `pg_dump`). Batches, test series, assistant drafts and Python environment installations still run
   in the API process; a batch or test series reads its runs, which workers execute, from the database every two
-  seconds to learn that they ended. Opening a tenant never marks its running batches or test series as interrupted, since another
-  API process may be running them; one whose API process died therefore stays `running` until someone cancels
-  it (they have no owner or lease yet).
+  seconds to learn that they ended. The API process that drives a batch or test series holds a lease of 60 seconds
+  and renews it every few seconds; when that process stops, the next read by any API process (after the lease ran
+  out) marks it `interrupted` (`batch.interrupted`, `benchmark.interrupted`), and a person continues it there. A
+  process that finds another owner on its batch stops driving it (`409 lease.lost` for a request).
 
 Uploaded files are served with `X-Content-Type-Options: nosniff`; HTML, SVG and XML files are always downloaded, and
 everything except PDF carries a restrictive `Content-Security-Policy`, so an uploaded page cannot run scripts in the
@@ -209,6 +218,8 @@ unsafe value is listed at once (`profile.invalid`), and nothing has a default th
 | `NODESTRO_MAX_RUN_BUDGET_USD` | The highest limit a budget decision may set for one run (BUDGET-1), on top of the tenant setting `max_run_budget_usd`; the lower one applies. Empty: no operator maximum |
 | `NODESTRO_TOOL_APPROVALS` | `1` asks a person before tool calls that change or reach out. Off by default. Order: first `POST /api/tool-approvals/legacy` (once; stamps existing bindings of workflows, versions and published releases, whose digest changes once), review the report, then set this and restart, only after the security acceptance |
 | `NODESTRO_PRICE_SYNC`, `NODESTRO_PRICE_LITELLM`, `NODESTRO_PRICE_SNAPSHOT_FILE` | reference price sync of the workers (`on`/`off`, default `on`; LiteLLM's cost map `on`/`off`; a reviewed Orkexa snapshot file), see "Model prices" |
+| `NODESTRO_LOG_FORMAT` | `json` writes one JSON object per log line (`time`, `level`, `logger`, `message`, `request_id`, `exception`) for `api` and `worker`; default plain text. Every API answer carries `X-Request-ID` (a proxy's short id is kept), and its log lines name it. `GET /api/ready` (no login) answers 503 while the process starts, stops or cannot reach its database, for a load balancer; `/api/health` stays the liveness check |
+| `NODESTRO_LOGIN_STARTS_PER_MINUTE` | login starts per address and minute in one API process (default 60, `0` off) |
 
 Commands:
 
@@ -216,7 +227,8 @@ Commands:
   provider (its discovery document at `NODESTRO_OIDC_ISSUER` answers, names that issuer and https endpoints, else
   `identity.provider`); exit code 0 when ready. A superuser or `BYPASSRLS` runtime role is refused
   (`storage.role_unsafe`) with Axentra or a separate migration role and printed as `warning:` otherwise (row-level
-  security does not protect the tenants then).
+  security does not protect the tenants then). Entries of `NODESTRO_BEDROCK_TENANT_ROLES` for tenants that do not
+  exist are printed as `warning: bedrock.tenant_unknown` with their tenant ids (a typo leaves a tenant without Bedrock).
 - `nodestro-server migrate`: applies the database migrations under an advisory lock. A database that already has
   tables needs a backup first: `--backup-dir DIR` runs `pg_dump` (custom format; the password is passed in the
   environment, never on the command line), `--backup-taken` states that the operator made one.
@@ -232,8 +244,10 @@ Commands:
 - `nodestro-server pricing status|sync|approve VERSION|reject VERSION [--note …]`: the reference prices: their state
   and open reviews, a sync now, and the decision on a review.
 - Members and tenants (`members`, `set-role`, `remove-member`, `revoke-sessions`, `suspend-tenant`, `resume-tenant`),
-  tenant secrets (`secrets reencrypt`), Axentra platform services (`axentra`), input file storage (`files`) and
-  database roles (`db`): `nodestro-server <command> --help` shows the arguments, and the runbook in the
+  tenant secrets (`secrets reencrypt`), Axentra platform services (`axentra`), input file storage (`files`),
+  owners of assistant conversations from before the owner field (`assistant backfill-owners [--dry-run]`: the owner
+  their files name; conversations without files or with files of several people stay visible to the whole tenant)
+  and database roles (`db`): `nodestro-server <command> --help` shows the arguments, and the runbook in the
   `nodestro-server` repository (`docs/RUNBOOK.md`) describes when to use them.
 
 API and worker processes start only when the database schema is current and Docker is reachable: on a server tool
@@ -329,7 +343,9 @@ memory is shared with the studio; the publish check says so.
 | `GET .../usage`, `GET .../openapi.json` | runs, tokens and cost; the OpenAPI description of this API |
 
 - **Errors** have the form `{"error": {"status", "code", "message", "params"}}` with a stable `code`
-  (the studio API uses `{"detail", "code", "params"}`). Messages never contain keys or credentials.
+  (the studio API uses `{"detail", "code", "params"}`). Messages never contain keys or credentials. A run or start
+  that failed because a local model is not installed (`run.local_model_missing`, `check.local_model_missing`)
+  carries `params.hint`, a short sentence for the operator (no model name or address of the installation).
 - **Limits** per publication: parallel runs, waiting runs, runs and requests per minute and key, a daily cost limit
   over the runs of the last 24 hours, a cost limit per run, the upload size per file (default 10 MB) and 80 MB per
   request. Exceeded limits answer `429` with `Retry-After`; a request that is too large answers `413`, also when it
@@ -405,7 +421,9 @@ one transaction and only then swaps the directories. One restore runs at a time,
 `openapi/nodestro-api.json` is the OpenAPI document of exactly this API. A test fails while the file does not match
 the code; after changing routes or schemas, `python -m nodestro_api.openapi openapi/nodestro-api.json` writes it
 again. The SDKs in [nodestro-sdk](https://github.com/peterkarlhuber/nodestro-sdk) are generated from it and tested
-against a running server.
+against a running server. `openapi/nodestro-api-server.json` is the document of the server profile (logins and
+tenant switching added, no published APIs yet); `python -m nodestro_api.openapi --server
+openapi/nodestro-api-server.json` writes it, and a test checks it the same way.
 
 ## Development
 

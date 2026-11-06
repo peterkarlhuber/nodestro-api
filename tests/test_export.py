@@ -9,6 +9,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import time
@@ -199,6 +200,28 @@ def test_export_contains_no_secrets_and_is_reproducible(exported: Callable[..., 
     assert [item["id"] for item in history] == [second["id"], first["id"]]
 
 
+@pytest.mark.parametrize("language", ["en", "de", "es", "fr", "it", "pt-BR"])
+@pytest.mark.parametrize("kind", ["standard", "portable"])
+def test_a_readme_without_approval_steps_has_no_approval_part(kind: str, language: str) -> None:
+    """API-053: the approval section (standard) or sentence and example (portable) is left out in every language;
+    the rest of the template stays."""
+    template = exporter.readme_template(kind, language)
+    shortened = exporter._without_approvals(template)
+    assert "{approvals}" in template and "{approvals}" not in shortened and "{curl_approve}" not in shortened
+    assert shortened.count("```") % 2 == 0
+    kept = set(re.findall(r"\{\w+\}", template)) - {"{approvals}", "{curl_approve}"}
+    assert kept <= set(re.findall(r"\{\w+\}", shortened))
+    assert len(template) - len(shortened) < 1200
+
+
+def test_an_export_without_approvals_says_none(exported: Callable[..., Any], tmp_path: Path) -> None:
+    client, publication = exported()
+    project = _extract(_download(client, _export(client, publication["id"])["id"]), tmp_path)
+    readme = (project / "README.md").read_text()
+    assert "## Approvals" not in readme and "/approve" not in readme and "approval step" not in readme
+    assert "Starting memory: none" in readme and "Tools: none" in readme and ": -" not in readme
+
+
 def test_runtime_is_copied_unchanged(exported: Callable[..., Any], tmp_path: Path) -> None:
     client, publication = exported()
     project = _extract(_download(client, _export(client, publication["id"])["id"]), tmp_path)
@@ -272,7 +295,9 @@ def test_generated_project_passes_its_own_tests(exported: Callable[..., Any], tm
         timeout=300,
     )
     assert result.returncode == 0, result.stdout[-4000:] + result.stderr[-4000:]
-    assert "13 passed" in result.stdout, result.stdout[-2000:]
+    # Without approval steps the approval test is skipped, not passed (API-053).
+    expected = "13 passed" if approval else "12 passed, 1 skipped"
+    assert expected in result.stdout, result.stdout[-2000:]
 
 
 def test_key_tool_of_the_export(exported: Callable[..., Any], tmp_path: Path) -> None:

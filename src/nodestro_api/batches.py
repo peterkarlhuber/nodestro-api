@@ -15,7 +15,9 @@ history, with its own trace, budget and usage; the batch only collects them.
 - An item that waits for an approval does not block a slot; it finishes when a person
   decides.
 - After a restart, a batch that was running is ``interrupted``; continuing it starts the
-  items that did not finish (failed runs of the interruption are run again).
+  items that did not finish (failed runs of the interruption are run again). On a server the
+  process that drives a batch holds a lease (:mod:`nodestro_api.leases`); when that process
+  stops, another one marks the batch ``interrupted`` once the lease ran out (API-006).
 - Results can be exported as CSV or JSON.
 """
 
@@ -40,6 +42,8 @@ from nodestro_runtime.problems import NodestroError, Problem, problem
 from nodestro_runtime.schemas import Run, RunIn, RunStatus, RunSummary, RunTrigger, Workflow, new_id, now, total_cost
 from nodestro_runtime.tool_preflight import UnattendedTrigger, unattended_tool_issues
 from pydantic import BaseModel, Field
+
+from .leases import LEASE_SECONDS, PROCESS_OWNER, LeaseLost, expired, lease_until
 
 if TYPE_CHECKING:
     from .context import Nodestro
@@ -167,6 +171,9 @@ class Batch(BaseModel):
     cost_usd: float | None = 0.0
     tokens: int = 0
     counts: BatchCounts = Field(default_factory=BatchCounts)
+    #: On a server: the API process that drives the batch, and until when its lease holds (API-006).
+    owner: str | None = None
+    lease_until: datetime | None = None
 
 
 class BatchSummary(BaseModel):
@@ -333,6 +340,8 @@ class Batches:
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._wake: dict[str, asyncio.Event] = {}
         self._done: dict[str, asyncio.Event] = {}
+        #: How long the lease of a batch this process drives holds (on a server; tests shorten it).
+        self.lease_s = LEASE_SECONDS
         ctx.runs.listeners.append(self._run_changed)
         if not ctx.shared_storage:
             self._recover()
@@ -343,6 +352,25 @@ class Batches:
         batch = self._live.get(batch_id) or self.ctx.store.get(COLLECTION, batch_id, Batch)
         if batch is None:
             raise KeyError(batch_id)
+        return self._reaped(batch)
+
+    def _reaped(self, batch: Batch) -> Batch:
+        """On a server: a running batch whose driving process stopped renewing its lease is ``interrupted``
+        (API-006), as the desktop marks it at its next start."""
+        if (
+            not self.ctx.shared_storage
+            or batch.status != "running"
+            or batch.id in self._live
+            or not expired(batch.lease_until)
+        ):
+            return batch
+        logger.warning("Batch %s lost its process (%s); it is interrupted", batch.id, batch.owner)
+        batch.status, batch.stop_code, batch.stop_params = "interrupted", "batch.interrupted", {}
+        batch.owner, batch.lease_until = None, None
+        for item in batch.items:
+            self._sync_item(item)
+        self._count(batch)
+        self.ctx.store.put(COLLECTION, batch.id, batch)
         return batch
 
     def list(self, *, kind: str | None = "batch", ref: str | None = None) -> list[BatchSummary]:
@@ -358,6 +386,9 @@ class Batches:
         found = []
         for summary in stored:
             live = self._live.get(summary.id)
+            if live is None and self.ctx.shared_storage and summary.status == "running":
+                with contextlib.suppress(KeyError):  # reads the lease; an expired one is interrupted (API-006)
+                    summary = _summary(self.get(summary.id))
             current = _summary(live) if live is not None else summary
             if (kind is None or current.kind == kind) and (ref is None or current.ref == ref):
                 found.append(current)
@@ -365,7 +396,19 @@ class Batches:
 
     def _save(self, batch: Batch) -> None:
         self._count(batch)
+        if self.ctx.shared_storage and batch.id in self._live:
+            # The driving process renews its lease with every save (at least every STORED_RUNS_POLL_S while running),
+            # unless another process took the batch over in the meantime (API-006).
+            stored = self.ctx.store.get(COLLECTION, batch.id, Batch)
+            if stored is not None and stored.owner != PROCESS_OWNER:
+                raise LeaseLost(batch.id)
+            batch.owner, batch.lease_until = PROCESS_OWNER, lease_until(self.lease_s)
         self.ctx.store.put(COLLECTION, batch.id, batch)
+
+    def _claim(self, batch: Batch) -> None:
+        """This process drives the batch from now on (a start or a continue)."""
+        if self.ctx.shared_storage:
+            batch.owner, batch.lease_until = PROCESS_OWNER, lease_until(self.lease_s)
 
     def delete(self, batch_id: str) -> None:
         batch = self.get(batch_id)
@@ -488,6 +531,7 @@ class Batches:
             max_failures=request.max_failures,
             model_overrides=dict(models or {}),
         )
+        self._claim(batch)
         self._save(batch)
         self._start(batch)
         return batch
@@ -495,6 +539,9 @@ class Batches:
     def _start(self, batch: Batch) -> None:
         batch.status = "running"
         batch.stop_code, batch.stop_params, batch.finished_at = None, {}, None
+        self._claim(batch)
+        self._count(batch)
+        self.ctx.store.put(COLLECTION, batch.id, batch)
         self._live[batch.id] = batch
         self._wake[batch.id] = asyncio.Event()
         self._done.setdefault(batch.id, asyncio.Event()).clear()
@@ -619,15 +666,25 @@ class Batches:
                     await self._follow_stored(batch, wake)
                 else:
                     await wake.wait()
+        except LeaseLost:
+            logger.warning("Batch %s is driven by another process now; this one stops following it", batch.id)
+            self._live.pop(batch.id, None)
+            self._done.setdefault(batch.id, asyncio.Event()).set()
+            return
         except asyncio.CancelledError:
             batch.status = "interrupted"
             batch.stop_code = "batch.interrupted"
-            self._save(batch)
+            with contextlib.suppress(LeaseLost):
+                self._save(batch)
             raise
         except Exception as error:  # pragma: no cover - defensive: the batch must not hang
             logger.exception("Batch %s failed", batch.id)
             batch.status, batch.stop_code, batch.stop_params = "stopped", "batch.error", {"error": str(error)}
-        self._finish(batch)
+        try:
+            self._finish(batch)
+        except LeaseLost:
+            self._live.pop(batch.id, None)
+            self._done.setdefault(batch.id, asyncio.Event()).set()
 
     def _finish(self, batch: Batch) -> None:
         if batch.status == "running":

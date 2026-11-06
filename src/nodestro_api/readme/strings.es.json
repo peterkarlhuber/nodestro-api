@@ -38,5 +38,6 @@
   "portable.role.judge": "juez de calidad",
   "portable.role.orchestrator": "orquestador",
   "portable.role.embedding": "búsqueda de conocimiento",
-  "portable.unknown": "desconocido"
+  "portable.unknown": "desconocido",
+  "none": "ninguno"
 }

@@ -2,6 +2,59 @@
 
 ## Unreleased
 
+- TODO abatement round (2026-11-06):
+  - `GET /api/error-codes` (read): every problem code of the API and the runtime with its parameters and where it
+    is raised (`ErrorCodeCatalog`), kept in `error_codes.json`; a test fails while it is out of date
+    (`python -m nodestro_api.error_codes --write`) (API-016).
+  - Runs and run summaries carry `cause` (`RunCause`: the step that failed first, its code and params); the approval
+    decision answers the run as it goes on (`queued`) (API-018).
+  - `GET /api/usage` has `budgets`: every publication's daily limit with the cost of the last 24 hours, its run
+    limit and whether the limit is reached, and the runs of the period a budget stopped or holds (API-017).
+  - Copies of examples carry `origin` (example id, library version, language, offline and connected connections,
+    copy time); it is read-only and kept when the workflow is saved (runtime RT-055).
+  - The Workflow Architect streams the reasoning of its sub-requests too: the Agent Architect (one per agent) and
+    the Coding Agent each get a reasoning entry named by `step` and `subject` (`ArchitectReasoning.subject`), and
+    their `thinking` events carry `step`, `subject` and `index` (runtime RT-063).
+  - Pins nodestro-runtime 3d69702 (runtime #120) and nodestro-examples 82d894b (examples #77).
+  - `local.job_running` answers 409, like `/stop` does for the same conflict (API-062).
+  - A reconciliation without a billing key returns a report naming the unreconciled providers instead of
+    `pricing.billing_key_missing`; the code stays for workspaces with nothing to reconcile (API-007).
+  - `nodestro-server check` warns (`bedrock.tenant_unknown`) about Bedrock role entries for tenants that do not
+    exist (API-008).
+  - `GET /api/settings/defaults` (read) names the default of every setting (API-061).
+  - The assistant chat maps Orkexa's `InvalidRequestError.reason`: `assistant.context_too_large`, and the new
+    `assistant.provider_rejected_messages` (params `provider`, `status`) (API-065).
+  - Published API errors of a missing local model carry `params.hint` for the operator (API-058).
+  - `GET /api/search` finds runs (kind `run`) by workflow name, input text and run id, newest first (API-052).
+  - Assistant chat files are refused as run inputs by id (`400 input.assistant_file`; another user's file is 404)
+    (API-055).
+  - `nodestro-server assistant backfill-owners [--dry-run] [--tenant]` gives older conversations the owner of
+    their files (API-057).
+  - Developer messages (API-053): the export check reports `export.server_unsupported`, `export.server_too_large`
+    and the limit (`export.server_limit`, info) up front, and export jobs carry `error_params`; an export README
+    without approval steps has no approval part and says "none" instead of "-" (all six languages), and its own
+    approval test is skipped; the exported Python client reads `NODESTRO_BASE_URL` and prints HTTP errors as one
+    line; `local.task_unknown` has `params.allowed`; `nodestro-server` prints `profile.invalid` with one problem
+    per line; `GET /api/workflows` adds `contract_fields` (name, type, description, required); the library model
+    plan adds `part_name`.
+  - `GET /api/publication-overview` adds `export_jobs` (running portable builds) and no longer validates the
+    active release's bundle (API-063).
+  - `openapi/nodestro-api-server.json`: the contract of the server profile, written with
+    `python -m nodestro_api.openapi --server` and checked by a test (API-012).
+  - Server logins: one address starts at most `NODESTRO_LOGIN_STARTS_PER_MINUTE` logins a minute per API process
+    (default 60, `0` off; `429 identity.rate_limited`), and oversized login parameters are refused (API-002).
+  - Server batches and test series have an owner and a 60-second lease, renewed by the API process that drives
+    them; after a stopped process's lease ran out, the next read marks them `interrupted` (`batch.interrupted`,
+    `benchmark.interrupted`) so a person continues them. Running batches from before this change are interrupted
+    at their next read. A process whose batch was taken over stops (`409 lease.lost`) (API-006).
+  - Access audit trail per tenant: logins, tenant switches (refused ones too), logouts, API key changes and the
+    operator's tenant and member commands, read by admins at `GET /api/access-audit`; mirrored into Axentra's audit
+    log with `NODESTRO_AXENTRA_AUDIT=1` (API-004).
+  - Live run chat answers written by one server API process show live in streams of the others, relayed through
+    the store (`run_chat_live`) (API-059).
+  - Server observability: `X-Request-ID` on every answer and in every log line, `NODESTRO_LOG_FORMAT=json`, and
+    `GET /api/ready` (API-011, in part).
+
 - Settings, attachments and providers (2026-11-06; contract additions only):
   - Assistant files: `/api/assistant/files/support` and `/api/assistant/conversations/{id}/files[/{file_id}]`
     (upload, remove, download as attachment, text), `SendRequest.file_ids`; in server mode a conversation belongs

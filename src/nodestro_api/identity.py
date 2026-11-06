@@ -35,9 +35,11 @@ from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
 import hashlib
 import logging
+import os
 import re
 import secrets
 import threading
+import time
 from typing import Any
 from urllib.parse import urlencode, urlsplit
 
@@ -647,11 +649,58 @@ def _login_error(code: str, status: int = 400) -> JSONResponse:
     return JSONResponse({"detail": messages.get(code, code), "code": code, "params": {}}, status_code=status)
 
 
+#: Logins one address may start per minute in one API process (``NODESTRO_LOGIN_STARTS_PER_MINUTE``, ``0``: off);
+#: the same budget as Axentra's own login flow (API-002). Behind a proxy the address is the proxy's unless the
+#: operator sets uvicorn's ``FORWARDED_ALLOW_IPS``; the RUNBOOK's proxy rate limit stays the first line.
+LOGIN_STARTS_PER_MINUTE = 60
+#: The longest setup token, login state and authorization code a login request may carry (API-002).
+MAX_SETUP_TOKEN = 256
+MAX_LOGIN_STATE = 512
+MAX_AUTH_CODE = 4096
+
+
+def login_starts_per_minute() -> int:
+    raw = os.environ.get("NODESTRO_LOGIN_STARTS_PER_MINUTE", "").strip()
+    try:
+        return max(0, int(raw)) if raw else LOGIN_STARTS_PER_MINUTE
+    except ValueError:
+        return LOGIN_STARTS_PER_MINUTE
+
+
+class LoginStartLimit:
+    """At most ``limit`` login starts per address in a sliding minute, in this process (``0``: no limit)."""
+
+    def __init__(self, limit: int, *, clock: Callable[[], float] = time.monotonic) -> None:
+        self.limit = limit
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._starts: dict[str, list[float]] = {}
+
+    def allow(self, address: str | None) -> bool:
+        if self.limit <= 0:
+            return True
+        now = self._clock()
+        with self._lock:
+            if len(self._starts) > 10_000:  # forget quiet addresses so the table stays small
+                self._starts = {key: hits for key, hits in self._starts.items() if hits and now - hits[-1] < 60}
+            hits = [hit for hit in self._starts.get(address or "", []) if now - hit < 60]
+            if len(hits) >= self.limit:
+                self._starts[address or ""] = hits
+                return False
+            hits.append(now)
+            self._starts[address or ""] = hits
+            return True
+
+
 def _client_ip(request: Request) -> str | None:
     return request.client.host if request.client is not None else None
 
 
-def auth_router(identity: IdentityStore, oidc: OidcClient | LoginFlow) -> APIRouter:
+#: Records one access audit event in a tenant's trail (``tenant id, event``; API-004); never raises.
+AuditSink = Callable[[str, Any], None]
+
+
+def auth_router(identity: IdentityStore, oidc: OidcClient | LoginFlow, audit: AuditSink | None = None) -> APIRouter:
     """``/api/auth``: start a login, the provider's callback, the current session, switching tenants, logout.
 
     ``oidc`` is the login flow (an :class:`OidcClient` is Nodestro's own flow, :class:`NodestroLoginFlow`)."""
@@ -659,6 +708,24 @@ def auth_router(identity: IdentityStore, oidc: OidcClient | LoginFlow) -> APIRou
     router = APIRouter(prefix="/api/auth")
     lifetime = int(identity.session_lifetime.total_seconds())
     login_lifetime = int(identity.login_lifetime.total_seconds())
+    starts = LoginStartLimit(login_starts_per_minute())
+
+    def audited(tenant_id: str, kind: str, actor: str, *, outcome: str = "success", **details: Any) -> None:
+        if audit is None:
+            return
+        from .access_audit import AccessEvent
+
+        event = AccessEvent.model_validate(
+            {
+                "kind": kind,
+                "actor": actor,
+                "target_type": "session",
+                "target_id": actor,
+                "outcome": outcome,
+                "details": details,
+            }
+        )
+        audit(tenant_id, event)
 
     @router.get("/login", dependencies=PUBLIC, include_in_schema=False)
     def login(
@@ -666,6 +733,10 @@ def auth_router(identity: IdentityStore, oidc: OidcClient | LoginFlow) -> APIRou
     ) -> Response:
         if tenant is not None and not TENANT_ID.fullmatch(tenant):
             tenant = None
+        if setup is not None and len(setup) > MAX_SETUP_TOKEN:
+            return _login_error("identity.bootstrap_invalid")
+        if not starts.allow(_client_ip(request)):
+            return _login_error("identity.rate_limited", 429)
         try:
             started = flow.start(
                 return_to=safe_return_path(return_to),
@@ -687,6 +758,10 @@ def auth_router(identity: IdentityStore, oidc: OidcClient | LoginFlow) -> APIRou
         return answer
 
     def _callback(request: Request, state: str, code: str, error: str | None) -> Response:
+        if len(state) > MAX_LOGIN_STATE:
+            return _login_error("identity.login_expired")
+        if len(code) > MAX_AUTH_CODE or (error is not None and len(error) > 200):
+            return _login_error("identity.login_failed")
         try:
             finished = flow.finish(
                 state=state,
@@ -727,6 +802,7 @@ def auth_router(identity: IdentityStore, oidc: OidcClient | LoginFlow) -> APIRou
         previous = request.cookies.get(SESSION_COOKIE)
         if previous:
             identity.end_session(previous)  # rotation: the session this browser held before ends with the login
+        audited(tenant_id, "login", user.id, setup_link=finished.bootstrap_hash is not None)
         answer = RedirectResponse(finished.return_to, status_code=303, headers={"Cache-Control": "no-store"})
         set_session_cookie(answer, token, lifetime)
         return answer
@@ -756,10 +832,14 @@ def auth_router(identity: IdentityStore, oidc: OidcClient | LoginFlow) -> APIRou
         try:
             token = identity.create_session(principal.id, body.tenant_id)
         except NodestroError as exc:
+            # Recorded in the tenant the user is in now; the tenant asked for only when it is a valid id.
+            asked = body.tenant_id if TENANT_ID.fullmatch(body.tenant_id) else None
+            audited(principal.tenant_id, "tenant_switched", principal.id, outcome="denied", code=exc.code, to=asked)
             if exc.code == "identity.tenant_suspended":  # only for a member (the membership is checked first)
                 return _login_error(exc.code, 403)
             # The same answer for unknown tenants and tenants of others: nothing about them is revealed.
             return _login_error("identity.not_a_member", 404)
+        audited(body.tenant_id, "tenant_switched", principal.id, came_from=principal.tenant_id)
         identity.end_session(request.cookies.get(SESSION_COOKIE, ""))
         answer = Response(status_code=204)
         set_session_cookie(answer, token, lifetime)
@@ -769,7 +849,13 @@ def auth_router(identity: IdentityStore, oidc: OidcClient | LoginFlow) -> APIRou
     def logout(request: Request) -> Response:
         token = request.cookies.get(SESSION_COOKIE)
         if token:
+            try:
+                session = identity.session(token)  # the logout is public: read whose session ends first
+            except NodestroError:
+                session = None
             identity.end_session(token)
+            if session is not None:
+                audited(session.tenant_id, "logout", session.user_id)
         answer = Response(status_code=204)
         clear_session_cookie(answer)
         return answer

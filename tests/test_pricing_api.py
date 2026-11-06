@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+import dataclasses
 from datetime import date, timedelta
 import json
 from pathlib import Path
@@ -249,6 +250,28 @@ def test_reconciliation_compares_estimates_with_a_providers_bill(
     assert model_row["status"] == "warning" and float(model_row["billed_usd"]) == pytest.approx(12)
     assert report["warnings"] == 2
     assert ctx.store.get_raw("pricing_billing", "anthropic") is None  # the one-off key was not stored
+
+
+def test_reconciliation_without_a_key_names_the_unreconciled_providers(make_app: MakeApp) -> None:
+    """API-007: a Bedrock-only workspace gets a report with ``not_reconciled``, not ``pricing.billing_key_missing``."""
+    client = make_app()
+    ctx = _ctx(client)
+    bedrock = dataclasses.replace(_record("anthropic.claude-sonnet-5-5", cost="2.5"), provider="bedrock")
+    ctx.usage_log.record("assistant", [bedrock])
+    answer = client.get("/api/pricing/reconciliation")
+    assert answer.status_code == 200, answer.text
+    report = answer.json()
+    assert report["providers"] == [] and report["rows"] == [] and report["warnings"] == 0
+    [item] = report["not_reconciled"]
+    assert item["provider"] == "bedrock" and item["code"] == "pricing.reconciliation_not_supported"
+    assert float(item["estimated_usd"]) == pytest.approx(2.5) and item["requests"] == 1
+    # A provider with a billing API but no key is named as not configured.
+    ctx.usage_log.record("assistant", [_record("claude-sonnet-5-5", cost="1")])
+    codes = {i["provider"]: i["code"] for i in client.get("/api/pricing/reconciliation").json()["not_reconciled"]}
+    assert codes == {
+        "anthropic": "pricing.reconciliation_not_configured",
+        "bedrock": "pricing.reconciliation_not_supported",
+    }
 
 
 def test_reconciliation_needs_a_key_and_a_sensible_period(make_app: MakeApp) -> None:

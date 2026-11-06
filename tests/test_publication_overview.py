@@ -97,3 +97,21 @@ def test_reading_the_overview_needs_the_read_permission(make_app: Callable[..., 
     assert client.get("/api/publications").status_code == 403  # the same rule as the existing list
     app.state.principal_resolver = nobody
     assert client.get(OVERVIEW).status_code == 401
+
+
+def test_running_portable_export_jobs_are_listed(make_app: Callable[..., TestClient]) -> None:
+    """API-063: jobs still being built appear next to the finished exports; finished jobs do not."""
+    from nodestro_api import portable_build
+
+    client = make_app({"WRITER": [text("Angebot")] * 5})
+    publication = publish(client, form_workflow(client))["publication"]
+    store = client.app.state.nodestro.store  # type: ignore[attr-defined]
+    running = portable_build.ExportJob(publication_id=publication["id"], release_number=1, step="python")
+    done = portable_build.ExportJob(publication_id=publication["id"], release_number=1, state="done")
+    other = portable_build.ExportJob(publication_id="pub_other", release_number=1)
+    for job in (running, done, other):
+        store.put(portable_build.JOBS, job.id, job)
+    [item] = client.get(OVERVIEW).json()
+    assert [job["id"] for job in item["export_jobs"]] == [running.id]
+    assert item["export_jobs"][0]["step"] == "python" and item["exports"] == []
+    assert item["active_version"] is not None and item["published_at"] is not None

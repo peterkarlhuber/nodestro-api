@@ -26,6 +26,9 @@ sentence listing every problem (``profile.invalid``); nothing has a default that
     keyring (``NODESTRO_AXENTRA=on``, ``NODESTRO_SECRETS_FORMAT=axs1``), or back to v1 with
     ``NODESTRO_SECRETS_FORMAT=v1`` (the rollback, before Axentra is switched off). Resumable and idempotent; a value
     that cannot be decrypted is left unchanged and reported (exit code 2).
+``nodestro-server assistant backfill-owners [--dry-run] [--tenant TENANT]``
+    Give assistant conversations from before the owner field the owner their files name (every file uploaded by the
+    same person); the others stay visible to their whole tenant. Idempotent.
 ``nodestro-server axentra status``
     The embedding state: switches, package version, schema state of both runners, keyring key ids (never keys),
     stored secrets by format, identity backend and its readiness, and the reconciliation backlog (counts only).
@@ -636,6 +639,20 @@ def _superuser_role(server: ServerEnvironment, database: Any) -> str | None:
     )
 
 
+def _unknown_bedrock_tenants(server: ServerEnvironment) -> list[str]:
+    """Tenant ids of ``NODESTRO_BEDROCK_TENANT_ROLES`` without a tenant (a typo leaves the meant tenant without
+    Bedrock); only ids, never a role ARN or external id."""
+    if server.bedrock is None or not server.bedrock.roles:
+        return []
+    database = _database(server)
+    try:
+        with _identity(server, database) as identity:
+            known = {tenant.id for tenant in identity.tenants()}
+    finally:
+        database.close()
+    return sorted(set(server.bedrock.roles) - known)
+
+
 def check(
     server: ServerEnvironment,
     *,
@@ -644,7 +661,8 @@ def check(
     identity_provider: bool = True,
 ) -> list[str]:
     """What keeps this server from starting (empty: ready). ``warnings`` receives what does not keep it from starting
-    but is unsafe (a superuser or ``BYPASSRLS`` runtime role in Nodestro's own mode). ``http``: the client for the
+    but is unsafe (a superuser or ``BYPASSRLS`` runtime role in Nodestro's own mode) or likely a mistake (Bedrock
+    roles for tenants that do not exist). ``http``: the client for the
     identity provider's discovery document. ``identity_provider=False`` skips that request: a worker's periodic health
     check must not depend on (or poll) the identity provider, which only the API process uses."""
     problems: list[str] = []
@@ -687,6 +705,13 @@ def check(
             problems.append(f"{error.code}: {error}")
         finally:
             database.close()
+    if not problems and warnings is not None:
+        unknown = _unknown_bedrock_tenants(server)
+        if unknown:
+            warnings.append(
+                f"bedrock.tenant_unknown: NODESTRO_BEDROCK_TENANT_ROLES names tenants that do not exist: "
+                f"{', '.join(unknown)}; correct the ids, or those tenants stay without Bedrock"
+            )
     if not problems and server.settings.axentra.files_backend == "axentra":
         try:
             with _files_tools(server):
@@ -811,6 +836,35 @@ def reencrypt_secrets(server: ServerEnvironment, *, dry_run: bool, tenant: str |
         if axentra["failed"]:
             result["failed"] = [*result["failed"], f"axentra: {axentra['failed']} values"]
     return result
+
+
+def backfill_conversation_owners(server: ServerEnvironment, *, dry_run: bool, tenant: str | None) -> dict[str, Any]:
+    """``nodestro-server assistant backfill-owners``: give assistant conversations from before the owner field an
+    owner where their files name exactly one person (:func:`nodestro_api.assistant.backfill_owners`, API-057); the
+    others stay visible to their whole tenant."""
+    from .assistant import backfill_owners
+
+    database = _database(server)
+    report: dict[str, Any] = {"dry_run": dry_run, "tenants": {}}
+    try:
+        database.require_current_schema()
+        with _identity(server, database) as identity:
+            if tenant is not None:
+                _require_tenant(identity, tenant)
+            tenants = [tenant] if tenant is not None else [item.id for item in identity.tenants()]
+        for tenant_id in tenants:
+            found = backfill_owners(database.store(tenant_id), dry_run=dry_run)
+            report["tenants"][tenant_id] = {
+                "without_owner": found.without_owner,
+                "assigned": len(found.assigned),
+                "ambiguous": len(found.ambiguous),
+                "unknown": found.unknown,
+            }
+    finally:
+        database.close()
+    assigned = sum(item["assigned"] for item in report["tenants"].values())
+    logger.info("Conversation owners%s: %d assigned", " (dry run)" if dry_run else "", assigned)
+    return report
 
 
 def reconcile_mirrors(server: ServerEnvironment, *, dry_run: bool, tenant: str | None) -> dict[str, Any]:
@@ -1175,6 +1229,15 @@ def setup_link(server: ServerEnvironment, tenant_id: str) -> str:
     return f"{server.settings.public_origin}/api/auth/login?{urlencode({'setup': token})}"
 
 
+def _operator_event(database: Any, tenant_id: str, kind: str, target_type: str, target_id: str, **details: Any) -> None:
+    """Record an operator command in the tenant's access audit trail (API-004; actor ``operator``)."""
+    from .access_audit import OPERATOR, AccessEvent, record
+
+    fields = {"kind": kind, "actor": OPERATOR, "target_type": target_type, "target_id": target_id, "details": details}
+    event = AccessEvent.model_validate(fields)
+    record(database.store(tenant_id), event)
+
+
 def create_tenant(server: ServerEnvironment, tenant_id: str, name: str) -> None:
     if tenant_id == PRICE_REFERENCE_TENANT:  # the server's reference prices live under this id
         raise NodestroError("identity.tenant_id", f"The tenant id {tenant_id!r} is reserved", tenant=tenant_id)
@@ -1183,6 +1246,7 @@ def create_tenant(server: ServerEnvironment, tenant_id: str, name: str) -> None:
         database.require_current_schema()
         with _identity(server, database) as identity:
             identity.create_tenant(tenant_id, name)
+        _operator_event(database, tenant_id, "tenant_created", "tenant", tenant_id, name=name)
     finally:
         database.close()
 
@@ -1312,6 +1376,7 @@ def set_role(server: ServerEnvironment, tenant_id: str, who: str, role: str, *, 
             user = find_user(server, database, who, confirm=confirm)
             before = identity.role(tenant_id, user.id)
             identity.set_role(tenant_id, user.id, role)
+        _operator_event(database, tenant_id, "role_changed", "user", user.id, before=before, role=role)
     finally:
         database.close()
     logger.info("Operator set the role of %s in tenant %s: %s -> %s", user.id, tenant_id, before or "-", role)
@@ -1327,6 +1392,7 @@ def set_tenant_status(server: ServerEnvironment, tenant_id: str, status: str) ->
         with _identity(server, database) as identity:
             _require_tenant(identity, tenant_id)
             identity.set_tenant_status(tenant_id, status)
+        _operator_event(database, tenant_id, "tenant_status_changed", "tenant", tenant_id, status=status)
     finally:
         database.close()
     logger.info("Operator set the status of tenant %s: %s", tenant_id, status)
@@ -1346,6 +1412,7 @@ def remove_member(server: ServerEnvironment, tenant_id: str, who: str, *, confir
                     "identity.not_a_member", f"{user.id} is not a member of {tenant_id}", tenant=tenant_id
                 )
             identity.remove_member(tenant_id, user.id)
+        _operator_event(database, tenant_id, "member_removed", "user", user.id)
     finally:
         database.close()
     logger.info("Operator removed %s from tenant %s", user.id, tenant_id)
@@ -1359,7 +1426,10 @@ def revoke_sessions(server: ServerEnvironment, who: str, *, confirm: Confirm | N
         database.require_current_schema()
         user = find_user(server, database, who, confirm=confirm)
         with _identity(server, database) as identity:
+            tenants = [item.tenant_id for item in identity.memberships(user.id)]
             ended = identity.end_sessions(user.id)
+        for tenant_id in tenants:  # the user's sessions end in all of them
+            _operator_event(database, tenant_id, "sessions_revoked", "user", user.id, ended=ended)
     finally:
         database.close()
     logger.info("Operator ended %d sessions of %s", ended, user.id)
@@ -1457,6 +1527,14 @@ def parser() -> argparse.ArgumentParser:
     reencrypting = secrets_commands.add_parser("reencrypt", help="Re-encrypt stored tenant secrets (resumable)")
     reencrypting.add_argument("--dry-run", action="store_true", help="Only count what would be re-encrypted")
     reencrypting.add_argument("--tenant", help="Only this tenant")
+    assistant = commands.add_parser("assistant", help="Assistant conversations")
+    assistant_commands = assistant.add_subparsers(dest="assistant_command", required=True)
+    owners = assistant_commands.add_parser(
+        "backfill-owners",
+        help="Give conversations from before the owner field the owner their files name (others stay shared)",
+    )
+    owners.add_argument("--dry-run", action="store_true", help="Only report what would change")
+    owners.add_argument("--tenant", help="Only this tenant")
     platform = commands.add_parser("axentra", help="Axentra platform services")
     platform_commands = platform.add_subparsers(dest="axentra_command", required=True)
     platform_commands.add_parser(
@@ -1507,7 +1585,9 @@ def parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> None:
     args = parser().parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    from .observability import configure_logging
+
+    configure_logging()  # request ids; NODESTRO_LOG_FORMAT=json for one JSON object per line (API-011)
     try:
         server = load()
         if args.command == "check":
@@ -1533,6 +1613,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 host=args.host,
                 port=args.port,
                 log_level="info",
+                log_config=None,  # uvicorn's own loggers write through the handler above (request ids, JSON)
                 proxy_headers=True,
                 server_header=False,
             )
@@ -1575,6 +1656,10 @@ def main(argv: Sequence[str] | None = None) -> None:
             print(json.dumps(report, indent=2))
             if report["failed"]:
                 raise SystemExit(2)
+        elif args.command == "assistant":
+            import json
+
+            print(json.dumps(backfill_conversation_owners(server, dry_run=args.dry_run, tenant=args.tenant), indent=2))
         elif args.command == "axentra" and args.axentra_command == "reconcile":
             import json
 
@@ -1609,7 +1694,17 @@ def main(argv: Sequence[str] | None = None) -> None:
         elif args.command == "pricing":
             print(pricing(server, args.pricing_command, getattr(args, "version", None), getattr(args, "note", None)))
     except NodestroError as error:
-        raise SystemExit(f"{error.code}: {error}") from None
+        raise SystemExit(_error_lines(error)) from None
+
+
+def _error_lines(error: NodestroError) -> str:
+    """What the command prints for a refused start: ``profile.invalid`` with one problem per line (API-053), any
+    other error as ``code: message``."""
+    problems = error.params.get("problems") if error.code == "profile.invalid" else None
+    reasons = [str(item.get("reason", "")) for item in problems or [] if isinstance(item, dict) and item.get("reason")]
+    if not reasons:
+        return f"{error.code}: {error}"
+    return "\n".join([f"{error.code}: The server cannot start: {len(reasons)} problems", *(f"- {r}" for r in reasons)])
 
 
 if __name__ == "__main__":  # pragma: no cover

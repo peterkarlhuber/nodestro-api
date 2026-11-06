@@ -13,6 +13,78 @@
         "title": "AcceptRequest",
         "type": "object"
       },
+      "AccessEvent": {
+        "description": "One entry of a tenant's access audit trail.",
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "login",
+              "logout",
+              "tenant_switched",
+              "api_key_created",
+              "api_key_revoked",
+              "api_key_rotated",
+              "api_key_deleted",
+              "tenant_created",
+              "tenant_status_changed",
+              "role_changed",
+              "member_removed",
+              "sessions_revoked"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "outcome": {
+            "default": "success",
+            "enum": [
+              "success",
+              "denied"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_type": {
+            "enum": [
+              "user",
+              "api_key",
+              "tenant",
+              "session"
+            ],
+            "title": "Target Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "actor",
+          "target_type",
+          "target_id"
+        ],
+        "title": "AccessEvent",
+        "type": "object"
+      },
       "ActivateIn": {
         "properties": {
           "number": {
@@ -696,6 +768,17 @@
               }
             ],
             "title": "Part"
+          },
+          "part_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Part Name"
           },
           "reasons": {
             "items": {
@@ -2011,7 +2094,7 @@
         "type": "object"
       },
       "ArchitectReasoning": {
-        "description": "The reasoning of one request of a job: ``step`` is ``analysis``, ``plan``, ``agent_revision`` or ``repair``.",
+        "description": "The reasoning of one request of a job: ``step`` is ``analysis``, ``plan``, ``agent_revision`` or ``repair``,\nor for the sub-requests ``agent`` (the Agent Architect designs an agent) and ``tool`` (the Coding Agent writes a\ntool), whose ``subject`` names the agent or tool (RT-063).",
         "properties": {
           "active": {
             "default": false,
@@ -2047,6 +2130,17 @@
             "default": "plan",
             "title": "Step",
             "type": "string"
+          },
+          "subject": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject"
           },
           "text": {
             "default": "",
@@ -2708,6 +2802,18 @@
             "title": "Kind",
             "type": "string"
           },
+          "lease_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lease Until"
+          },
           "max_cost_usd": {
             "anyOf": [
               {
@@ -2741,6 +2847,17 @@
             "default": "",
             "title": "Name",
             "type": "string"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
           },
           "ref": {
             "anyOf": [
@@ -3411,12 +3528,35 @@
           "judge_usage": {
             "$ref": "#/components/schemas/Usage"
           },
+          "lease_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lease Until"
+          },
           "models": {
             "additionalProperties": {
               "type": "string"
             },
             "title": "Models",
             "type": "object"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
           },
           "results": {
             "items": {
@@ -5684,6 +5824,35 @@
         "title": "ContractField",
         "type": "object"
       },
+      "ContractFieldSummary": {
+        "description": "One field of a workflow's output contract, as the workflow list shows it.",
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "default": true,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ],
+        "title": "ContractFieldSummary",
+        "type": "object"
+      },
       "ConversationDetail": {
         "properties": {
           "attachment_states": {
@@ -6633,6 +6802,55 @@
         "title": "EnvironmentInfo",
         "type": "object"
       },
+      "ErrorCode": {
+        "properties": {
+          "params": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Params",
+            "type": "array"
+          },
+          "source": {
+            "enum": [
+              "runtime",
+              "api",
+              "both"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "ErrorCode",
+        "type": "object"
+      },
+      "ErrorCodeCatalog": {
+        "description": "Every problem code of the studio API and the runtime, sorted, with its parameters.",
+        "properties": {
+          "codes": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ErrorCode"
+            },
+            "title": "Codes",
+            "type": "object"
+          },
+          "patterns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Patterns",
+            "type": "array"
+          }
+        },
+        "required": [
+          "codes"
+        ],
+        "title": "ErrorCodeCatalog",
+        "type": "object"
+      },
       "ErrorOut": {
         "properties": {
           "code": {
@@ -6858,6 +7076,11 @@
               }
             ],
             "title": "Error Code"
+          },
+          "error_params": {
+            "additionalProperties": true,
+            "title": "Error Params",
+            "type": "object"
           },
           "export_id": {
             "anyOf": [
@@ -15175,6 +15398,62 @@
         "title": "Publication",
         "type": "object"
       },
+      "PublicationBudget": {
+        "description": "The daily cost limit of one published API and how much of it the last 24 hours used (AD-20).",
+        "properties": {
+          "daily_budget_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Budget Usd"
+          },
+          "exhausted": {
+            "default": false,
+            "title": "Exhausted",
+            "type": "boolean"
+          },
+          "last_24h_usd": {
+            "default": 0.0,
+            "title": "Last 24H Usd",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "publication_id": {
+            "title": "Publication Id",
+            "type": "string"
+          },
+          "run_budget_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Budget Usd"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "publication_id",
+          "slug",
+          "name"
+        ],
+        "title": "PublicationBudget",
+        "type": "object"
+      },
       "PublicationEvent": {
         "properties": {
           "at": {
@@ -15299,6 +15578,13 @@
           "enabled": {
             "title": "Enabled",
             "type": "boolean"
+          },
+          "export_jobs": {
+            "items": {
+              "$ref": "#/components/schemas/ExportJob"
+            },
+            "title": "Export Jobs",
+            "type": "array"
           },
           "exports": {
             "items": {
@@ -17372,6 +17658,16 @@
             ],
             "title": "Budget Usd"
           },
+          "cause": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunCause"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -17828,6 +18124,35 @@
           "policy"
         ],
         "title": "RunBudgetOut",
+        "type": "object"
+      },
+      "RunCause": {
+        "description": "Why a failed run failed (AD-02): the step that failed first and its problem, so that a run list or a banner\ncan say \"<step>: <reason>\" without reading every step. Set together with ``error_code`` ``run.nodes_failed``;\n``code``/``params`` are the step's own (``run.budget_exceeded``, ``provider.rate_limited`` ...).",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          }
+        },
+        "required": [
+          "node_id",
+          "label",
+          "code"
+        ],
+        "title": "RunCause",
         "type": "object"
       },
       "RunChatView": {
@@ -18365,6 +18690,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/RunBudget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cause": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunCause"
               },
               {
                 "type": "null"
@@ -19471,7 +19806,8 @@
               "template",
               "tool",
               "knowledge",
-              "example"
+              "example",
+              "run"
             ],
             "title": "Kind",
             "type": "string"
@@ -19951,6 +20287,169 @@
           }
         },
         "title": "Settings",
+        "type": "object"
+      },
+      "SettingsDefaults": {
+        "description": "The value each setting of ``GET /api/settings`` has while nobody changed it (API-061), so an interface can mark\na field as \"default\" or \"changed\". The defaults of the output limits are ``output_limit_defaults`` of the\nsettings; provider settings have no default.",
+        "properties": {
+          "architect_budget_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 2.0,
+            "title": "Architect Budget Usd"
+          },
+          "architect_max_repairs": {
+            "default": 2,
+            "title": "Architect Max Repairs",
+            "type": "integer"
+          },
+          "architect_retry_max_tokens": {
+            "default": 64000,
+            "title": "Architect Retry Max Tokens",
+            "type": "integer"
+          },
+          "architect_retry_truncated": {
+            "default": true,
+            "title": "Architect Retry Truncated",
+            "type": "boolean"
+          },
+          "assistant_model": {
+            "title": "Assistant Model",
+            "type": "string"
+          },
+          "budget_decision_hours": {
+            "default": 24,
+            "title": "Budget Decision Hours",
+            "type": "integer"
+          },
+          "default_budget_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 2.0,
+            "title": "Default Budget Usd"
+          },
+          "default_model": {
+            "title": "Default Model",
+            "type": "string"
+          },
+          "embedding_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Model"
+          },
+          "knowledge_retrieval": {
+            "default": "fts",
+            "enum": [
+              "fts",
+              "vector",
+              "hybrid"
+            ],
+            "title": "Knowledge Retrieval",
+            "type": "string"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "enum": [
+                  "de",
+                  "en",
+                  "es",
+                  "fr",
+                  "pt-BR",
+                  "it"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "local_reasoning": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "full"
+            ],
+            "title": "Local Reasoning",
+            "type": "string"
+          },
+          "max_run_budget_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Run Budget Usd"
+          },
+          "ocr_enabled": {
+            "default": false,
+            "title": "Ocr Enabled",
+            "type": "boolean"
+          },
+          "prefer_european_models": {
+            "default": false,
+            "title": "Prefer European Models",
+            "type": "boolean"
+          },
+          "price_mode": {
+            "default": "standard",
+            "enum": [
+              "standard",
+              "strict"
+            ],
+            "title": "Price Mode",
+            "type": "string"
+          },
+          "reasoning_summaries": {
+            "default": false,
+            "title": "Reasoning Summaries",
+            "type": "boolean"
+          },
+          "sandbox": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "subprocess",
+              "linux",
+              "docker"
+            ],
+            "title": "Sandbox",
+            "type": "string"
+          },
+          "strict_offline": {
+            "default": false,
+            "title": "Strict Offline",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "default_model",
+          "assistant_model"
+        ],
+        "title": "SettingsDefaults",
         "type": "object"
       },
       "SettingsIn": {
@@ -23418,6 +23917,30 @@
         "title": "UsageBucket",
         "type": "object"
       },
+      "UsageBudgets": {
+        "description": "Budgets in the usage report (AD-20): the daily limits of published APIs and the runs budgets stopped.",
+        "properties": {
+          "publications": {
+            "items": {
+              "$ref": "#/components/schemas/PublicationBudget"
+            },
+            "title": "Publications",
+            "type": "array"
+          },
+          "stopped_runs": {
+            "default": 0,
+            "title": "Stopped Runs",
+            "type": "integer"
+          },
+          "waiting_runs": {
+            "default": 0,
+            "title": "Waiting Runs",
+            "type": "integer"
+          }
+        },
+        "title": "UsageBudgets",
+        "type": "object"
+      },
       "UsageEntry": {
         "properties": {
           "at": {
@@ -23543,6 +24066,9 @@
       },
       "UsageReport": {
         "properties": {
+          "budgets": {
+            "$ref": "#/components/schemas/UsageBudgets"
+          },
           "by_day": {
             "items": {
               "$ref": "#/components/schemas/UsageBucket"
@@ -23829,6 +24355,16 @@
             "title": "Nodes",
             "type": "array"
           },
+          "origin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowOrigin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -24058,7 +24594,57 @@
         "title": "WorkflowLimits",
         "type": "object"
       },
+      "WorkflowOrigin": {
+        "description": "Where a workflow came from when it was made as a copy (RT-055): today a copy of an example.\n\nSet once by the code that makes the copy and kept by every later save (:func:`keep_origin`): it is history, not\nsomething an editor or a client sends (``WorkflowIn`` has no such field). An interface uses it to mark a copy\nwhose integrations run on sample data, or to offer the example's newer version.",
+        "properties": {
+          "connected": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Connected",
+            "type": "array"
+          },
+          "copied_at": {
+            "format": "date-time",
+            "title": "Copied At",
+            "type": "string"
+          },
+          "example_id": {
+            "title": "Example Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "example",
+            "default": "example",
+            "title": "Kind",
+            "type": "string"
+          },
+          "language": {
+            "title": "Language",
+            "type": "string"
+          },
+          "offline": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Offline",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "example_id",
+          "version",
+          "language"
+        ],
+        "title": "WorkflowOrigin",
+        "type": "object"
+      },
       "WorkflowSummary": {
+        "description": "A workflow in the list; ``contract`` keeps the field names, ``contract_fields`` describes them (API-053).",
         "properties": {
           "agents": {
             "title": "Agents",
@@ -24076,6 +24662,13 @@
               "type": "string"
             },
             "title": "Contract",
+            "type": "array"
+          },
+          "contract_fields": {
+            "items": {
+              "$ref": "#/components/schemas/ContractFieldSummary"
+            },
+            "title": "Contract Fields",
             "type": "array"
           },
           "description": {
@@ -24385,6 +24978,83 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/access-audit": {
+      "get": {
+        "description": "The access audit trail of this workspace (on a server: of the tenant), newest first (API-004): logins and\nrefused logins, tenant switches and logouts, API key changes, and the operator's tenant and member commands.\nRead only; it never holds a secret.",
+        "operationId": "access_audit_events_api_access_audit_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "login",
+                    "logout",
+                    "tenant_switched",
+                    "api_key_created",
+                    "api_key_revoked",
+                    "api_key_rotated",
+                    "api_key_deleted",
+                    "tenant_created",
+                    "tenant_status_changed",
+                    "role_changed",
+                    "member_removed",
+                    "sessions_revoked"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AccessEvent"
+                  },
+                  "title": "Response Access Audit Events Api Access Audit Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Access Audit Events"
+      }
+    },
     "/api/agents/design": {
       "post": {
         "operationId": "design_agent_api_agents_design_post",
@@ -27426,6 +28096,35 @@
           }
         },
         "summary": "Diagnostics Connection"
+      }
+    },
+    "/api/error-codes": {
+      "get": {
+        "description": "Every problem code the API and the runtime answer with (``code`` of an error, an issue or a status), with the\nnames of its parameters and where it is raised. A client can check that it has a text for each of them.",
+        "operationId": "error_codes_api_error_codes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorCodeCatalog"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Error Codes"
       }
     },
     "/api/export-jobs/{job_id}": {
@@ -33295,7 +33994,7 @@
     },
     "/api/runs/{run_id}/approvals/{node_id}": {
       "post": {
-        "description": "Approve or reject at an approval node; the run (its top-level run) continues right away.",
+        "description": "Approve or reject at an approval node; the run (its top-level run) continues right away.\n\nAnswers the top-level run as it goes on: ``queued`` (or already ``running``/finished), never the ``paused`` state\nthe decision ended (X-01).",
         "operationId": "decide_approval_api_runs__run_id__approvals__node_id__post",
         "parameters": [
           {
@@ -34808,6 +35507,35 @@
           }
         },
         "summary": "Put Settings"
+      }
+    },
+    "/api/settings/defaults": {
+      "get": {
+        "description": "The default of every setting that ``PUT /api/settings`` changes (see :class:`SettingsDefaults`).",
+        "operationId": "get_settings_defaults_api_settings_defaults_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsDefaults"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Settings Defaults"
       }
     },
     "/api/settings/providers/bedrock/verify": {
