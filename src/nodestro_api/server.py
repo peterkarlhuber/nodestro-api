@@ -1675,7 +1675,19 @@ def main(argv: Sequence[str] | None = None) -> None:
         elif args.command == "pricing":
             print(pricing(server, args.pricing_command, getattr(args, "version", None), getattr(args, "note", None)))
     except NodestroError as error:
-        raise SystemExit(f"{error.code}: {error}") from None
+        raise SystemExit(_error_lines(error)) from None
+
+
+def _error_lines(error: NodestroError) -> str:
+    """What the command prints for a refused start: ``profile.invalid`` with one problem per line (API-053), any
+    other error as ``code: message``."""
+    problems = error.params.get("problems") if error.code == "profile.invalid" else None
+    reasons = [str(item.get("reason", "")) for item in problems or [] if isinstance(item, dict) and item.get("reason")]
+    if not reasons:
+        return f"{error.code}: {error}"
+    return "\n".join(
+        [f"{error.code}: The server cannot start: {len(reasons)} problems", *(f"- {r}" for r in reasons)]
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover

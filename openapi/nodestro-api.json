@@ -6859,6 +6859,11 @@
             ],
             "title": "Error Code"
           },
+          "error_params": {
+            "additionalProperties": true,
+            "title": "Error Params",
+            "type": "object"
+          },
           "export_id": {
             "anyOf": [
               {

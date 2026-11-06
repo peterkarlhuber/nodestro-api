@@ -69,7 +69,10 @@ def test_the_overview_works_without_a_runtime(make_app: MakeApp, monkeypatch: py
     assert overview["hardware"]["cpus"] >= 1
     recommended = client.get("/api/local-models/recommend", params={"task": "classify"}).json()
     assert recommended["model"] == "ollama:qwen3.5:4b"
-    assert client.get("/api/local-models/recommend", params={"task": "dance"}).status_code == 400
+    unknown = client.get("/api/local-models/recommend", params={"task": "dance"})
+    assert unknown.status_code == 400 and unknown.json()["code"] == "local.task_unknown"
+    # API-053: the answer lists the tasks that exist.
+    assert "classify" in unknown.json()["params"]["allowed"] and "embedding" in unknown.json()["params"]["allowed"]
     refused = client.post("/api/local-models/runtime", json={})
     assert refused.status_code == 400 and refused.json()["code"] == "local.archive_or_download"
     missing = client.post("/api/local-models/runtime", json={"archive": "/no/such/ollama.tgz"})

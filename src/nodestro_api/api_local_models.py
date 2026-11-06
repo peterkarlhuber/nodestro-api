@@ -202,7 +202,14 @@ async def local_overview(ctx: Ctx, request: Request) -> LocalOverview:
 @router.get("/local-models/recommend", dependencies=READ)
 async def local_recommend(ctx: Ctx, request: Request, task: str) -> Recommendation:
     if task not in TASKS:
-        raise ApiError(400, "local.task_unknown", f"Unknown task {task!r}", task=task)
+        allowed = list(TASKS)
+        raise ApiError(
+            400,
+            "local.task_unknown",
+            f"Unknown task {task!r}; use one of {', '.join(allowed)}",
+            task=task,
+            allowed=allowed,
+        )
     found = await asyncio.to_thread(ctx.local_models.recommend, task)
     return found if _operator_view(ctx, request) else _without_machine_reasons(found)
 

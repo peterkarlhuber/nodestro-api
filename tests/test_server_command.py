@@ -69,6 +69,21 @@ def test_an_incomplete_or_desktop_environment_is_refused_with_every_problem(tmp_
     assert "client-secret" not in repr(loaded)
 
 
+def test_the_command_prints_one_problem_per_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    """API-053: ``nodestro-server check`` with several profile problems prints each on its own line."""
+    for name in list(os.environ):
+        if name.startswith("NODESTRO_"):
+            monkeypatch.delenv(name)
+    monkeypatch.setenv("NODESTRO_PROFILE", "server")
+    with pytest.raises(SystemExit) as stopped:
+        command.main(["check"])
+    lines = str(stopped.value.code).splitlines()
+    assert lines[0].startswith("profile.invalid: The server cannot start: ") and len(lines) >= 3
+    assert all(line.startswith("- ") for line in lines[1:])
+    assert any("NODESTRO_DATABASE_URL" in line for line in lines[1:])
+    assert command._error_lines(NodestroError("storage.x", "Broken")) == "storage.x: Broken"
+
+
 def test_model_endpoints_and_worker_timing_come_from_the_environment(tmp_path: Path) -> None:
     loaded = command.load(
         _environment(

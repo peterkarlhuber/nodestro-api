@@ -441,11 +441,12 @@ def start_export_job(publication_id: str, body: ExportIn, ctx: Ctx) -> portable_
     if options.kind != "portable":
         raise NodestroError("export.not_portable", "Only portable packages are built as jobs")
     found = exporter.check(ctx, publication, release, options)
+    # On a server only with the operator's opt-in, one build at a time and a size limit (API3-07); its refusal
+    # answers 403 before the check's own copy of it (API-053) would answer 400.
+    portable_build.server_admission(ctx, found.portable.estimated_bytes if found.portable else 0)
     if not found.ok:
         first = next(item for item in found.problems if item.level == "error")
         raise NodestroError(first.code, first.message, **first.params)
-    # On a server only with the operator's opt-in, one build at a time and a size limit (API3-07).
-    portable_build.server_admission(ctx, found.portable.estimated_bytes if found.portable else 0)
     return portable_build.runner(ctx).start(publication, release, options)
 
 

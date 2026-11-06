@@ -61,15 +61,21 @@ def python_literal(value: Any) -> str:
 
 def python_client(base_url: str, slug: str, request: dict[str, Any]) -> str:
     body = python_literal(request).replace("\n", "\n    ")
-    base = repr(f"{base_url}{PREFIX}/{slug}")
-    return f'''"""Start a run, wait for it (deciding approvals if asked) and print the result."""
+    default = repr(base_url)
+    path = repr(f"{PREFIX}/{slug}")
+    return f'''"""Start a run, wait for it (deciding approvals if asked) and print the result.
+
+NODESTRO_BASE_URL names the server (default: BASE below), {KEY_VARIABLE} the API key.
+"""
 
 import json
 import os
+import sys
 import time
+import urllib.error
 import urllib.request
 
-BASE = {base}
+BASE = os.environ.get("NODESTRO_BASE_URL", {default}).rstrip("/") + {path}
 KEY = os.environ["{KEY_VARIABLE}"]
 
 
@@ -80,8 +86,19 @@ def call(method, path, body=None):
         data=None if body is None else json.dumps(body).encode(),
         headers={{"Authorization": f"Bearer {{KEY}}", "Content-Type": "application/json"}},
     )
-    with urllib.request.urlopen(request, timeout=60) as response:
-        return json.load(response)
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        # The API answers {{"error": {{"status", "code", "message", "params"}}}}; the code is stable.
+        try:
+            problem = json.load(error).get("error") or {{}}
+        except ValueError:
+            problem = {{}}
+        code, message = problem.get("code", ""), problem.get("message", error.reason)
+        sys.exit(f"{{method}} {{path}}: HTTP {{error.code}} {{code}}: {{message}}")
+    except urllib.error.URLError as error:
+        sys.exit(f"{{BASE}} cannot be reached: {{error.reason}} (set NODESTRO_BASE_URL)")
 
 
 run = call(

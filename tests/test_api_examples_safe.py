@@ -80,7 +80,54 @@ def test_a_hostile_base_url_is_quoted_too(make_app: Callable[..., TestClient], t
     base = "http://h$(touch PWNED-4)'\""
     found = examples(served, base)
     ast.parse(found.python)
-    assert f"BASE = {(base + '/api/published/' + publication['slug'])!r}" in found.python
+    path = "/api/published/" + publication["slug"]
+    assert f'BASE = os.environ.get("NODESTRO_BASE_URL", {base!r}).rstrip("/") + {path!r}' in found.python
     arguments = _arguments_of(found.curl["status"], tmp_path)
     assert arguments[1] == f"{base}/api/published/{publication['slug']}/runs/RUN_ID"
     assert not list(tmp_path.glob("PWNED*"))
+
+
+def test_the_python_client_reads_its_base_url_and_reports_the_error_code(
+    make_app: Callable[..., TestClient], tmp_path: Path
+) -> None:
+    """API-053: ``NODESTRO_BASE_URL`` replaces the base URL (default: the one shown), and an HTTP error ends the
+    script with the error code of the JSON body instead of a traceback."""
+    import http.server
+    import sys
+    import threading
+
+    client = make_app({"WRITER": ["ok"] * 3})
+    publication = publish(client, _workflow(client))["publication"]
+    script = client.get(f"/api/publications/{publication['id']}/docs").json()["examples"]["python"]
+    assert 'os.environ.get("NODESTRO_BASE_URL", ' in script
+    seen: list[str] = []
+
+    class Refusing(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *_args: object) -> None:
+            pass
+
+        def do_POST(self) -> None:
+            seen.append(self.path)
+            body = json.dumps({"error": {"status": 401, "code": "auth.invalid", "message": "Wrong key"}}).encode()
+            self.send_response(401)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Refusing)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        path = tmp_path / "client.py"
+        path.write_text(script)
+        environment = {
+            "PATH": os.environ["PATH"],
+            "NODESTRO_API_KEY": "wrong",
+            "NODESTRO_BASE_URL": f"http://127.0.0.1:{server.server_address[1]}/",
+        }
+        done = subprocess.run([sys.executable, str(path)], capture_output=True, text=True, env=environment, timeout=60)
+    finally:
+        server.shutdown()
+    assert done.returncode == 1, done
+    assert "HTTP 401 auth.invalid: Wrong key" in done.stderr and "Traceback" not in done.stderr
+    assert seen == [f"/api/published/{publication['slug']}/runs"]
