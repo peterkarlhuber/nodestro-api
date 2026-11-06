@@ -12,8 +12,8 @@
 | P0 Critical | 0 |
 | P1 High | 0 |
 | P2 Medium | 6 |
-| P3 Low | 21 |
-| P4 Optional | 8 |
+| P3 Low | 26 |
+| P4 Optional | 13 |
 
 **Release blockers:** None for this repository; every entry below is not a release blocker. The next desktop
 preview is gated by nodestro-desktop DSK-001 (new candidate and Go/No-Go).
@@ -85,6 +85,12 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
 - **Next step:** Rotation without Axentra (v1 format) stays impossible; decide whether new servers default to the
   keyring, and rehearse the procedure on a staging copy (nodestro-server SRV-019).
 - **Depends on:** nodestro-runtime RT-010 (`SecretBox` support for an old key)
+
+### API-055 · Assistant chat files can be passed to a run by id
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** settings/providers round 2026-11-06 (attachments stream)
+- **What:** A user's own chat file id (unguessable; other users get 404) is accepted as a run input. Not a leak across users, but an implicit path from a chat into a run.
+- **Next step:** Refuse assistant files as run inputs by id, or require an explicit "use in run" action.
 
 ## Bugs and reliability
 
@@ -339,6 +345,54 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
   field objects in summaries and `part_name` in the model plan.
 - **Depends on:** None
 
+### API-056 · Retention for assistant chat files
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** settings/providers round 2026-11-06 (attachments stream)
+- **What:** Files attached in assistant conversations are kept until the conversation is deleted.
+- **Next step:** Admin-configurable retention, enforced by the existing cleanup job.
+
+### API-057 · Older assistant conversations have no owner on the server
+
+- **Priority:** P4 Optional · **Status:** Open · **Refs:** settings/providers round 2026-11-06 (attachments stream)
+- **What:** Conversations created before the owner field stay visible to the whole tenant.
+- **Next step:** Backfill the owner from the first message's author where it is known; leave the rest tenant-visible and documented.
+
+### API-058 · Published API answer for a blocked local model
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** settings/providers round 2026-11-06 (missing-model stream)
+- **What:** A published API call refused by `check.local_model_missing` returns the error, but no hint that an operator can fix it in the studio.
+- **Next step:** Add a short operator hint (no internal details) to the error body.
+
+### API-059 · Run chat live answers only within one API process
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** settings/providers round 2026-11-06 (thinking stream, THINK-2)
+- **What:** Live run chat answers stream only when the run and the chat request share an API process.
+- **Next step:** Relay through the store or event bus used for run events across processes.
+
+### API-060 · Internal assistants on Anthropic use the default thinking display
+
+- **Priority:** P4 Optional · **Status:** Open · **Refs:** settings/providers round 2026-11-06 (thinking stream, THINK-3)
+- **What:** Internal assistants do not request summarized thinking from Anthropic, so the studio shows "not transmitted".
+- **Next step:** Request `display: summarized` when the user enabled the thinking display.
+
+### API-061 · Settings defaults are not exposed
+
+- **Priority:** P4 Optional · **Status:** Open · **Refs:** settings/providers round 2026-11-06 (settings UI stream)
+- **What:** The studio can mark changed settings only in the Advanced section because the API does not return the defaults.
+- **Next step:** Return the default next to each setting; the studio then shows "default" or "changed" on every field (ST-059).
+
+### API-062 · `local.job_running` is a 400 while `/stop` answers 409
+
+- **Priority:** P4 Optional · **Status:** Open · **Refs:** settings/providers round 2026-11-06 (local setup stream)
+- **What:** Two status codes for the same conflict.
+- **Next step:** Answer 409 for `local.job_running` (compatible: the code stays the same).
+
+### API-063 · Publication overview: running exports and a lighter read
+
+- **Priority:** P4 Optional · **Status:** Open · **Refs:** settings/providers round 2026-11-06 (publications stream)
+- **What:** `GET /api/publication-overview` lists finished exports only and loads the active release bundle per publication.
+- **Next step:** Optionally list running portable export jobs; read a release summary instead of the whole bundle.
+
 ## Tests and quality assurance
 
 ### API-022 · Untested cases from the backend audit re-verification
@@ -388,6 +442,12 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
 - **Next step:** Run the load test on target hardware (nodestro-server SRV-013) and a live provider smoke test once
   approved. Add macOS and
   Windows runners when the desktop release needs them.
+
+### API-064 · Portable "Open folder" untested on real desktops
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** settings/providers round 2026-11-06 (result folder stream)
+- **What:** Opening the result folder from the portable web interface was tested with a stub only.
+- **Next step:** Exercise it on real Windows, macOS and Linux desktops in the portable smoke run; document a bind mount for `OUTPUT_DIR` in the standard export container.
 
 ## Documentation
 
