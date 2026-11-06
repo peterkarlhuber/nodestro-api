@@ -1,4 +1,9 @@
-"""The API for files as workflow inputs and for taking content over into knowledge."""
+"""The API for files as workflow inputs and for taking content over into knowledge.
+
+Files a user attached to a Nodestro Assistant conversation are input files too (``origin="assistant"``). On a server
+they are private to the user who uploaded them: these routes (and the adoption into knowledge) answer 404 for another
+user's assistant file, so a file id from someone else's conversation reveals nothing.
+"""
 
 from __future__ import annotations
 
@@ -136,13 +141,24 @@ def cleanup_inputs(body: CleanupRequest, ctx: Ctx) -> CleanupResult:
     return ctx.inputs.cleanup(older_than_days=body.older_than_days)
 
 
+def visible(ctx: Ctx, request: Request, file_id: str) -> None:
+    """Another user's assistant file does not exist for this request (``KeyError``, answered with 404)."""
+    if not is_input_id(file_id):
+        return
+    item = ctx.inputs.find(file_id)
+    if item is not None and item.origin == "assistant" and item.uploaded_by != actor_id(request):
+        raise KeyError(file_id)
+
+
 @router.get("/inputs/{file_id}", dependencies=READ)
-def input_file(file_id: str, ctx: Ctx) -> InputFileOut:
+def input_file(file_id: str, ctx: Ctx, request: Request) -> InputFileOut:
+    visible(ctx, request, file_id)
     return InputFileOut.of(ctx.inputs.get(file_id))
 
 
 @router.get("/inputs/{file_id}/content", dependencies=READ)
-def input_content(file_id: str, ctx: Ctx) -> Response:
+def input_content(file_id: str, ctx: Ctx, request: Request) -> Response:
+    visible(ctx, request, file_id)
     item = ctx.inputs.get(file_id)
     # A type the file storage keeps as an inert attachment (NODESTRO_FILES_BACKEND=axentra) is served as opaque bytes.
     media_type = ctx.inputs.download_type(file_id)
@@ -154,8 +170,14 @@ def input_content(file_id: str, ctx: Ctx) -> Response:
 
 
 @router.get("/inputs/{file_id}/text", dependencies=READ)
-def input_text(file_id: str, ctx: Ctx, path: str = "") -> FileText:
+def input_text(file_id: str, ctx: Ctx, request: Request, path: str = "") -> FileText:
     """What Nodestro read from a file (or one file of an archive): the text the agents can get."""
+    visible(ctx, request, file_id)
+    return read_text(file_id, ctx, path)
+
+
+def read_text(file_id: str, ctx: Ctx, path: str = "") -> FileText:
+    """What Nodestro read from a file (or one file of an archive); also the assistant's file preview."""
     item = ctx.inputs.get(file_id)
     if path:
         entry, extracted, _ = ctx.inputs.member(file_id, path)
@@ -182,7 +204,8 @@ def input_text(file_id: str, ctx: Ctx, path: str = "") -> FileText:
 
 
 @router.delete("/inputs/{file_id}", status_code=204, dependencies=EDIT)
-def delete_input(file_id: str, ctx: Ctx) -> Response:
+def delete_input(file_id: str, ctx: Ctx, request: Request) -> Response:
+    visible(ctx, request, file_id)
     ctx.inputs.delete(file_id)
     return Response(status_code=204)
 
@@ -235,12 +258,16 @@ def knowledge_collections(ctx: Ctx) -> list[CollectionInfo]:
 
 
 @router.post("/knowledge/adopt/check", dependencies=READ)
-def adopt_check(body: AdoptRequest, ctx: Ctx) -> list[AdoptCheck]:
+def adopt_check(body: AdoptRequest, ctx: Ctx, request: Request) -> list[AdoptCheck]:
     """What the chosen items would become in knowledge; stores nothing."""
+    for item in body.items:
+        visible(ctx, request, item.input_id or "")
     return check(ctx, body)
 
 
 @router.post("/knowledge/adopt", dependencies=EDIT)
-def adopt_confirm(body: AdoptConfirm, ctx: Ctx) -> AdoptOutcome:
+def adopt_confirm(body: AdoptConfirm, ctx: Ctx, request: Request) -> AdoptOutcome:
     """Store the confirmed items in knowledge (only with the tokens of the check)."""
+    for item in body.items:
+        visible(ctx, request, item.input_id or "")
     return adopt(ctx, body)

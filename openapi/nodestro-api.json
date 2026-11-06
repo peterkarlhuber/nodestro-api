@@ -3753,6 +3753,23 @@
         "title": "Body_parse_batch_file_api_batches_parse_post",
         "type": "object"
       },
+      "Body_upload_files_api_assistant_conversations__conversation_id__files_post": {
+        "properties": {
+          "files": {
+            "items": {
+              "contentMediaType": "application/octet-stream",
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "array"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "title": "Body_upload_files_api_assistant_conversations__conversation_id__files_post",
+        "type": "object"
+      },
       "Body_upload_inputs_api_inputs_post": {
         "properties": {
           "accept": {
@@ -4753,6 +4770,13 @@
             "title": "Estimated",
             "type": "boolean"
           },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/SentFile"
+            },
+            "title": "Files",
+            "type": "array"
+          },
           "finished_at": {
             "anyOf": [
               {
@@ -5594,6 +5618,20 @@
             "title": "Created At",
             "type": "string"
           },
+          "file_states": {
+            "items": {
+              "$ref": "#/components/schemas/FileView"
+            },
+            "title": "File States",
+            "type": "array"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationFile"
+            },
+            "title": "Files",
+            "type": "array"
+          },
           "history": {
             "items": {
               "$ref": "#/components/schemas/ChatMessage"
@@ -5614,6 +5652,17 @@
             "default": 0,
             "title": "Messages",
             "type": "integer"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
           },
           "streaming": {
             "anyOf": [
@@ -5643,6 +5692,84 @@
         "title": "ConversationDetail",
         "type": "object"
       },
+      "ConversationFile": {
+        "description": "A file attached to a conversation (an input file of origin ``assistant``).",
+        "properties": {
+          "added_at": {
+            "format": "date-time",
+            "title": "Added At",
+            "type": "string"
+          },
+          "chars": {
+            "default": 0,
+            "title": "Chars",
+            "type": "integer"
+          },
+          "format": {
+            "title": "Format",
+            "type": "string"
+          },
+          "group": {
+            "title": "Group",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "info": {
+            "additionalProperties": true,
+            "title": "Info",
+            "type": "object"
+          },
+          "media_type": {
+            "title": "Media Type",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "outline": {
+            "default": "",
+            "title": "Outline",
+            "type": "string"
+          },
+          "sent_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent At"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "format",
+          "group",
+          "media_type",
+          "size"
+        ],
+        "title": "ConversationFile",
+        "type": "object"
+      },
       "ConversationSummary": {
         "properties": {
           "attachments": {
@@ -5664,6 +5791,11 @@
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "files": {
+            "default": 0,
+            "title": "Files",
+            "type": "integer"
           },
           "id": {
             "title": "Id",
@@ -7057,6 +7189,54 @@
         "title": "FileRequest",
         "type": "object"
       },
+      "FileSupport": {
+        "description": "What the assistant accepts, and what its current model reads natively.",
+        "properties": {
+          "formats": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Formats",
+            "type": "array"
+          },
+          "images": {
+            "title": "Images",
+            "type": "boolean"
+          },
+          "max_file_mb": {
+            "default": 50,
+            "title": "Max File Mb",
+            "type": "integer"
+          },
+          "max_files_per_conversation": {
+            "default": 50,
+            "title": "Max Files Per Conversation",
+            "type": "integer"
+          },
+          "max_files_per_message": {
+            "default": 10,
+            "title": "Max Files Per Message",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "pdfs": {
+            "title": "Pdfs",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "model",
+          "images",
+          "pdfs",
+          "formats"
+        ],
+        "title": "FileSupport",
+        "type": "object"
+      },
       "FileText": {
         "properties": {
           "format": {
@@ -7097,6 +7277,145 @@
           "text"
         ],
         "title": "FileText",
+        "type": "object"
+      },
+      "FileUpload": {
+        "description": "One uploaded file: attached (``file``) or refused (``problem``, nothing is stored then).",
+        "properties": {
+          "file": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FileView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Problem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "FileUpload",
+        "type": "object"
+      },
+      "FileView": {
+        "description": "A conversation file with how the assistant's current model would receive it.",
+        "properties": {
+          "added_at": {
+            "format": "date-time",
+            "title": "Added At",
+            "type": "string"
+          },
+          "chars": {
+            "default": 0,
+            "title": "Chars",
+            "type": "integer"
+          },
+          "format": {
+            "title": "Format",
+            "type": "string"
+          },
+          "group": {
+            "title": "Group",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "info": {
+            "additionalProperties": true,
+            "title": "Info",
+            "type": "object"
+          },
+          "knowledge_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Knowledge Ids",
+            "type": "array"
+          },
+          "media_type": {
+            "title": "Media Type",
+            "type": "string"
+          },
+          "mode": {
+            "default": "text",
+            "enum": [
+              "text",
+              "document",
+              "image",
+              "ocr_text",
+              "overview",
+              "unavailable"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "mode_notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Mode Notes",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "outline": {
+            "default": "",
+            "title": "Outline",
+            "type": "string"
+          },
+          "sent_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent At"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "format",
+          "group",
+          "media_type",
+          "size"
+        ],
+        "title": "FileView",
         "type": "object"
       },
       "FormatsInfo": {
@@ -18036,10 +18355,18 @@
       "SendRequest": {
         "properties": {
           "content": {
+            "default": "",
             "maxLength": 12000,
-            "minLength": 1,
             "title": "Content",
             "type": "string"
+          },
+          "file_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "File Ids",
+            "type": "array"
           },
           "language": {
             "default": "en",
@@ -18055,10 +18382,84 @@
             "type": "string"
           }
         },
-        "required": [
-          "content"
-        ],
         "title": "SendRequest",
+        "type": "object"
+      },
+      "SentFile": {
+        "description": "A file a message was sent with, and how the model received it.",
+        "properties": {
+          "chars": {
+            "default": 0,
+            "title": "Chars",
+            "type": "integer"
+          },
+          "file_id": {
+            "title": "File Id",
+            "type": "string"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Format"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "text",
+                  "document",
+                  "image",
+                  "ocr_text",
+                  "overview",
+                  "unavailable"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "size": {
+            "default": 0,
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "file_id",
+          "name"
+        ],
+        "title": "SentFile",
         "type": "object"
       },
       "SentMessage": {
@@ -18830,6 +19231,7 @@
           "kind": {
             "enum": [
               "context",
+              "files",
               "docs_search",
               "docs_read",
               "generate",
@@ -23581,6 +23983,7 @@
     },
     "/api/assistant/conversations/{conversation_id}": {
       "delete": {
+        "description": "Delete the conversation with its messages, snapshots and files.",
         "operationId": "delete_conversation_api_assistant_conversations__conversation_id__delete",
         "parameters": [
           {
@@ -23849,6 +24252,215 @@
           }
         },
         "summary": "Refresh Attachment"
+      }
+    },
+    "/api/assistant/conversations/{conversation_id}/files": {
+      "post": {
+        "description": "Check, read and attach files to the conversation (they wait for the next message); refused files are\nreported with the reason and never stored.",
+        "operationId": "upload_files_api_assistant_conversations__conversation_id__files_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_files_api_assistant_conversations__conversation_id__files_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FileUpload"
+                  },
+                  "title": "Response Upload Files Api Assistant Conversations  Conversation Id  Files Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Upload Files"
+      }
+    },
+    "/api/assistant/conversations/{conversation_id}/files/{file_id}": {
+      "delete": {
+        "description": "Remove a file from the conversation and delete it (sent messages keep only its name).",
+        "operationId": "remove_file_api_assistant_conversations__conversation_id__files__file_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Remove File"
+      }
+    },
+    "/api/assistant/conversations/{conversation_id}/files/{file_id}/content": {
+      "get": {
+        "description": "The file as uploaded: always a download (never shown inline in the studio's origin).",
+        "operationId": "file_content_api_assistant_conversations__conversation_id__files__file_id__content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "File Content"
+      }
+    },
+    "/api/assistant/conversations/{conversation_id}/files/{file_id}/text": {
+      "get": {
+        "description": "What Nodestro read from the file (the text a model without native support gets).",
+        "operationId": "file_text_api_assistant_conversations__conversation_id__files__file_id__text_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileText"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "File Text"
       }
     },
     "/api/assistant/conversations/{conversation_id}/messages": {
@@ -24163,6 +24775,35 @@
           }
         },
         "summary": "Search Docs"
+      }
+    },
+    "/api/assistant/files/support": {
+      "get": {
+        "description": "The formats and limits of files, and whether the assistant's current model reads images and PDFs natively.",
+        "operationId": "file_support_api_assistant_files_support_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileSupport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "File Support"
       }
     },
     "/api/backup": {
