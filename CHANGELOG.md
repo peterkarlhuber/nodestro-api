@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- TODO abatement round 2 (2026-11-06):
+  - Idempotency-Keys of studio and published-API run starts are reserved with one atomic insert in the store
+    (runtime `put_raw_if_absent`) before the run starts, so concurrent retries on several API processes start one
+    run; a retry while the first start is in progress answers `409 idempotency.in_progress` with `Retry-After: 1`
+    (API-043).
+  - `GET /api/usage` reads only the runs of its period (keyset pages of the store's creation index with `since`);
+    the totals are unchanged (API-013).
+  - `GET`/`PUT /api/assistant/files/retention` (read / admin): how long assistant chat files are kept (none by
+    default, as before). The input file clean-up removes older ones and reports `assistant_files_expired`; the
+    desktop app also removes them at start and hourly (API-056).
+  - A workflow, run or publication that a request or a stored record refers to and that is gone answers
+    `404 <kind>.not_found` with `id`, `kind` and, where the reference knew it, `display` (its name) (API-053).
+  - `POST /api/library/{id}/copy` takes `memory_space`: a memory space of the copy's own for its agents with
+    persistent memory, checked with the runtime's space name rule (`memory.space_name`) (examples EX-007).
+  - `GET /api/tools/{name}/versions` (read): every stored version of a tool with code, tests, content hash and its
+    author (`editor`, `adopted` or `ai`), for the adoption dialog's diff (studio ST-036).
+  - The published routes declare their error answers (401, 403, 404, 422, 429 and their own 400, 409, 413, 503)
+    with the `PublishedError` schema, and every studio operation has an OpenAPI tag (workflows, runs,
+    publications, local models, MCP, pricing, ...) (API-016).
 - TODO abatement round (2026-11-06):
   - `GET /api/error-codes` (read): every problem code of the API and the runtime with its parameters and where it
     is raised (`ErrorCodeCatalog`), kept in `error_codes.json`; a test fails while it is out of date
