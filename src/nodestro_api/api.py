@@ -132,10 +132,14 @@ def _error(status_code: int, code: str, detail: str, **params: Any) -> JSONRespo
     return JSONResponse({"detail": detail, "code": code, "params": params}, status_code=status_code)
 
 
+#: Runtime error codes that are not a bad request but a conflict with work in progress (any other: ``400``).
+NODESTRO_ERROR_STATUS = {"local.job_running": 409}
+
+
 def install_error_handlers(app: FastAPI) -> None:
     async def nodestro_error(_: Request, exc: Exception) -> JSONResponse:
         assert isinstance(exc, NodestroError)
-        return _error(400, exc.code, str(exc), **exc.params)
+        return _error(NODESTRO_ERROR_STATUS.get(exc.code, 400), exc.code, str(exc), **exc.params)
 
     async def bad_request(_: Request, exc: Exception) -> JSONResponse:
         return _error(400, "bad_request", str(exc))
