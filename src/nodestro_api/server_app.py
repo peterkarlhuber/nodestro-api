@@ -7,7 +7,9 @@ session (:mod:`nodestro_api.identity`) and works on the context of the session's
 
 With a job queue (:attr:`TenantComposition.queue`, ADR-0004) the API processes execute no runs themselves: they
 store and queue them, and worker processes (:mod:`nodestro_api.worker`) execute them; event streams and waits read
-the worker's events from the database. Without a queue, runs execute in the API process (tests).
+the worker's events from the database. A semantic reindex (``POST /api/knowledge/index/rebuild``) is queued the same
+way (API-044): a worker builds it, every API process reads its job. Without a queue, runs and reindexes execute in
+the API process (tests).
 
 Unlike the desktop, the API reference (``/api/docs``, ``/api/openapi.json``) needs a login (``read``), and
 ``/api/health`` also reports whether the process reaches its database (``503`` when not).
@@ -45,7 +47,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from nodestro_runtime.bedrock import BedrockOperatorConfig
 from nodestro_runtime.extensions import Integration
 from nodestro_runtime.identity_store import IdentityStore
-from nodestro_runtime.jobs import JobQueue, QueuedRuns
+from nodestro_runtime.jobs import JobQueue, QueuedReindex, QueuedRuns
 from nodestro_runtime.postgres_tables import tenant_storage
 from nodestro_runtime.server_settings import TenantSecrets
 from nodestro_runtime.storage_postgres import PostgresDatabase
@@ -256,6 +258,8 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
         context = files.open(tenant_id)
         if queue is not None:
             QueuedRuns(queue, tenant_id, context.runs).attach()
+            # A semantic reindex is queued for a worker too (RT-046/API-044): never built in an API process.
+            QueuedReindex(queue, tenant_id, context.knowledge).attach()
         return context
 
     tenants = TenantWorkspaces(open_tenant, close_tenant)

@@ -574,6 +574,86 @@ def test_a_failing_tenant_does_not_stop_the_chat_file_retention_of_others(
     assert leader.call(leader.worker.expire_chat_files()) == {"globex": 1}
 
 
+class _Embeddings:
+    """A deterministic embedding model (the runtime's ``EmbeddingModel`` interface), so no model server is needed."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def _vector(self, text: str) -> list[float]:
+        return [1.0, float(len(text) % 7) + 1.0, 0.5]
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [self._vector(text) for text in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self._vector(text)
+
+    def identity(self) -> Any:
+        from orkexa.embeddings import EmbeddingIdentity
+
+        return EmbeddingIdentity(provider="test", model=self.name, dimensions=3, digest="d1")
+
+
+def _embeddings(knowledge: Any) -> None:
+    knowledge.embedding_model = _Embeddings
+
+
+def test_the_api_queues_a_reindex_that_a_worker_builds(
+    server: Server, make_worker: Callable[..., Background], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """API-044: the API process never builds the semantic index; it queues the job and every API request reads its
+    state from the queue, while a worker builds it."""
+    from nodestro_api import model_readiness
+
+    async def ready(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr(model_readiness, "require_local", ready)
+    alice = server.member("acme", "alice", "owner")
+    viewer = server.member("acme", "vic", "viewer")
+    for name in ("returns.md", "shipping.md"):
+        uploaded = alice.post("/api/knowledge", files={"files": (name, f"Notes about {name}".encode())})
+        assert uploaded.status_code in (200, 201), uploaded.text
+    _embeddings(server.app.state.tenants.get("acme").knowledge)
+    refused = viewer.post("/api/knowledge/index/rebuild", json={"model": "concepts:1"})
+    assert refused.status_code == 403
+    started = alice.post("/api/knowledge/index/rebuild", json={"model": "concepts:1"})
+    assert started.status_code == 202, started.text
+    assert started.json()["job"]["state"] == "running" and started.json()["state"] == "off"
+    again = alice.post("/api/knowledge/index/rebuild", json={"model": "concepts:1"})
+    assert again.status_code >= 400 and again.json()["code"] == "knowledge.reindex_running", again.text
+    assert server.app.state.tenants.get("acme").knowledge.reindexing() is False  # nothing runs in the API
+
+    worker = make_worker()
+    _embeddings(worker.worker.executing.get("acme").knowledge)
+    job = worker.call(worker.worker.reindexer.run_once())
+    assert job is not None and job.tenant_id == "acme"
+    status = alice.get("/api/knowledge/index").json()
+    assert status["job"]["state"] == "done" and status["state"] == "ready", status
+    assert status["embedded"] == status["chunks"] > 0
+    assert viewer.get("/api/knowledge/index").json()["job"]["state"] == "done"
+
+
+def test_a_queued_reindex_is_cancelled_through_the_queue(
+    server: Server, make_worker: Callable[..., Background], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from nodestro_api import model_readiness
+
+    async def ready(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr(model_readiness, "require_local", ready)
+    alice = server.member("acme", "alice", "owner")
+    alice.post("/api/knowledge", files={"files": ("a.md", b"Some notes")})
+    _embeddings(server.app.state.tenants.get("acme").knowledge)
+    assert alice.post("/api/knowledge/index/rebuild", json={"model": "concepts:1"}).status_code == 202
+    cancelled = alice.post("/api/knowledge/index/cancel")
+    assert cancelled.status_code == 200 and cancelled.json()["job"]["state"] == "cancelled", cancelled.text
+    worker = make_worker()
+    assert worker.call(worker.worker.reindexer.run_once()) is None  # withdrawn: no worker takes it
+
+
 # ---- suspended tenants ----------------------------------------------------------------------------------
 
 

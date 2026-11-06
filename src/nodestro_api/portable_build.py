@@ -168,7 +168,9 @@ def server_admission(ctx: Nodestro, estimated_bytes: int) -> None:
             403,
             "export.server_quota",
             "The packages of this workspace would use more space than this server allows; delete older exports",
-            **over,
+            size=over["size"],
+            used=over["used"],
+            limit=over["limit"],
         )
 
 

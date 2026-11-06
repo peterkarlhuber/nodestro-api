@@ -5,6 +5,9 @@ or more worker processes (:class:`ServerWorker`). Every worker:
 
 - claims run jobs and executes them in the tenant's context (:class:`nodestro_runtime.jobs.RunWorker`), with a lease
   it keeps renewing and its events written to the database;
+- claims semantic reindex jobs (``POST /api/knowledge/index/rebuild`` queues them, API-044) and builds them one at a
+  time (:class:`nodestro_runtime.jobs.ReindexWorker`), with a lease and its progress in the job; a suspended tenant's
+  reindex does not start or stops;
 - reaps jobs whose lease expired: their runs are marked ``run.interrupted`` and wait for a person to continue them;
   they are never executed again by themselves;
 - fires the tenants' schedules while it holds the scheduler lock (:class:`nodestro_runtime.jobs.LeaderLock`); the
@@ -38,8 +41,9 @@ backend, reusing an "active" answer for at most ``TENANT_CHECK_SECONDS``; a mode
 and at the latest within :attr:`WorkerSettings.reap_every` (a run waiting for a person), without storing more (as
 after a lost lease), and its schedules and tool-wait sweeps do not run.
 
-``nodestro-server worker`` (:mod:`nodestro_api.server`) runs one. Only runs go through the queue so far; batches,
-test series, assistant drafts and Python environment installations still run in the API process that started them.
+``nodestro-server worker`` (:mod:`nodestro_api.server`) runs one. Only runs and reindexes go through the queue so far;
+batches, test series, assistant drafts and Python environment installations still run in the API process that started
+them.
 """
 
 from __future__ import annotations
@@ -62,6 +66,7 @@ from nodestro_runtime.jobs import (
     LeaderLock,
     PostgresEventLog,
     QueuedRuns,
+    ReindexWorker,
     RunWorker,
     ScheduleFirings,
     reap,
@@ -212,6 +217,14 @@ class ServerWorker:
             max_waiting=self.settings.max_waiting,
             tenant_active=self.identity.tenant_active,
         )
+        #: Semantic reindex jobs (RT-046/API-044), one at a time, next to the runs.
+        self.reindexer = ReindexWorker(
+            self.queue,
+            self.executing.get,
+            name=self.name,
+            poll=self.settings.poll,
+            tenant_active=self.identity.tenant_active,
+        )
         self.leader = LeaderLock(files.database)
         self.price_sync = server_sync(files.database, self.settings.price_sync)
         #: Axentra duties, set by ``nodestro-server worker`` when switched on (``None``: off): the run usage
@@ -350,6 +363,7 @@ class ServerWorker:
                 self._every(stop, self.settings.reap_every, self.sweep_tool_waits), name="worker-tool-waits"
             ),
             asyncio.create_task(self.runner.serve(stop), name="worker-runs"),
+            asyncio.create_task(self.reindexer.serve(stop), name="worker-reindex"),
             asyncio.create_task(self._every(stop, self.settings.reap_every, self._reap_once), name="worker-reaper"),
             asyncio.create_task(
                 self._every(stop, self.settings.reap_every, self.stop_suspended), name="worker-suspended"
