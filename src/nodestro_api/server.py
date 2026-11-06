@@ -26,6 +26,9 @@ sentence listing every problem (``profile.invalid``); nothing has a default that
     keyring (``NODESTRO_AXENTRA=on``, ``NODESTRO_SECRETS_FORMAT=axs1``), or back to v1 with
     ``NODESTRO_SECRETS_FORMAT=v1`` (the rollback, before Axentra is switched off). Resumable and idempotent; a value
     that cannot be decrypted is left unchanged and reported (exit code 2).
+``nodestro-server assistant backfill-owners [--dry-run] [--tenant TENANT]``
+    Give assistant conversations from before the owner field the owner their files name (every file uploaded by the
+    same person); the others stay visible to their whole tenant. Idempotent.
 ``nodestro-server axentra status``
     The embedding state: switches, package version, schema state of both runners, keyring key ids (never keys),
     stored secrets by format, identity backend and its readiness, and the reconciliation backlog (counts only).
@@ -835,6 +838,35 @@ def reencrypt_secrets(server: ServerEnvironment, *, dry_run: bool, tenant: str |
     return result
 
 
+def backfill_conversation_owners(server: ServerEnvironment, *, dry_run: bool, tenant: str | None) -> dict[str, Any]:
+    """``nodestro-server assistant backfill-owners``: give assistant conversations from before the owner field an
+    owner where their files name exactly one person (:func:`nodestro_api.assistant.backfill_owners`, API-057); the
+    others stay visible to their whole tenant."""
+    from .assistant import backfill_owners
+
+    database = _database(server)
+    report: dict[str, Any] = {"dry_run": dry_run, "tenants": {}}
+    try:
+        database.require_current_schema()
+        with _identity(server, database) as identity:
+            if tenant is not None:
+                _require_tenant(identity, tenant)
+            tenants = [tenant] if tenant is not None else [item.id for item in identity.tenants()]
+        for tenant_id in tenants:
+            found = backfill_owners(database.store(tenant_id), dry_run=dry_run)
+            report["tenants"][tenant_id] = {
+                "without_owner": found.without_owner,
+                "assigned": len(found.assigned),
+                "ambiguous": len(found.ambiguous),
+                "unknown": found.unknown,
+            }
+    finally:
+        database.close()
+    assigned = sum(item["assigned"] for item in report["tenants"].values())
+    logger.info("Conversation owners%s: %d assigned", " (dry run)" if dry_run else "", assigned)
+    return report
+
+
 def reconcile_mirrors(server: ServerEnvironment, *, dry_run: bool, tenant: str | None) -> dict[str, Any]:
     """``nodestro-server axentra reconcile``: write the audit/usage mirrors that are missing in Axentra
     (:meth:`nodestro_runtime.axentra_platform.AxentraEvents.reconcile`; idempotent, Nodestro's records only read)."""
@@ -1479,6 +1511,14 @@ def parser() -> argparse.ArgumentParser:
     reencrypting = secrets_commands.add_parser("reencrypt", help="Re-encrypt stored tenant secrets (resumable)")
     reencrypting.add_argument("--dry-run", action="store_true", help="Only count what would be re-encrypted")
     reencrypting.add_argument("--tenant", help="Only this tenant")
+    assistant = commands.add_parser("assistant", help="Assistant conversations")
+    assistant_commands = assistant.add_subparsers(dest="assistant_command", required=True)
+    owners = assistant_commands.add_parser(
+        "backfill-owners",
+        help="Give conversations from before the owner field the owner their files name (others stay shared)",
+    )
+    owners.add_argument("--dry-run", action="store_true", help="Only report what would change")
+    owners.add_argument("--tenant", help="Only this tenant")
     platform = commands.add_parser("axentra", help="Axentra platform services")
     platform_commands = platform.add_subparsers(dest="axentra_command", required=True)
     platform_commands.add_parser(
@@ -1597,6 +1637,10 @@ def main(argv: Sequence[str] | None = None) -> None:
             print(json.dumps(report, indent=2))
             if report["failed"]:
                 raise SystemExit(2)
+        elif args.command == "assistant":
+            import json
+
+            print(json.dumps(backfill_conversation_owners(server, dry_run=args.dry_run, tenant=args.tenant), indent=2))
         elif args.command == "axentra" and args.axentra_command == "reconcile":
             import json
 

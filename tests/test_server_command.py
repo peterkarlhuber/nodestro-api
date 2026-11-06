@@ -478,3 +478,61 @@ def test_check_can_skip_the_identity_provider(schema: str, tmp_path: Path, monke
     found = command.check(loaded, http=client)
     assert len(found) == 1 and found[0].startswith("identity.provider:") and len(calls) == 1
     assert command.parser().parse_args(["check", "--skip-identity-provider"]).skip_identity_provider
+
+
+def test_conversations_from_before_owners_get_the_owner_their_files_name(
+    schema: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """API-057: ``assistant backfill-owners`` sets the owner where every file of a conversation was uploaded by one
+    person; without files or with files of several people a conversation stays visible to the tenant."""
+    from nodestro_runtime.input_files import COLLECTION, InputFile
+    from nodestro_runtime.schemas import now
+
+    from nodestro_api.assistant import Conversation
+    from nodestro_api.assistant_files import ConversationFile
+
+    loaded = command.load(_environment(tmp_path))
+    command.migrate(loaded, backup_dir=None, backup_taken=False)
+    command.create_tenant(loaded, "alpha", "Alpha")
+    database = command._database(loaded)
+    store = database.store("alpha")
+
+    def chat(conversation_id: str, uploaders: list[str], owner: str | None = None) -> None:
+        files = []
+        for index, who in enumerate(uploaders):
+            file_id = f"in_{conversation_id[-4:]}{index:08d}"
+            info = {"name": f"f{index}.txt", "format": "txt", "group": "text", "media_type": "text/plain", "size": 1}
+            store.put(
+                COLLECTION,
+                file_id,
+                InputFile(
+                    id=file_id, blob="b", sha256="0" * 64, created_at=now(), origin="assistant", uploaded_by=who, **info
+                ),
+            )
+            files.append(ConversationFile(id=file_id, **info))
+        store.put(
+            "assistant_conversations", conversation_id, Conversation(id=conversation_id, files=files, owner=owner)
+        )
+
+    chat("chat_one1", ["alice", "alice"])
+    chat("chat_two2", ["alice", "bob"])
+    chat("chat_none", [])
+    chat("chat_mine", ["carol"], owner="dave")
+    database.close()
+    dry = command.backfill_conversation_owners(loaded, dry_run=True, tenant=None)
+    assert dry["tenants"]["alpha"] == {"without_owner": 3, "assigned": 1, "ambiguous": 1, "unknown": 1}
+    report = command.backfill_conversation_owners(loaded, dry_run=False, tenant="alpha")
+    assert report["tenants"]["alpha"]["assigned"] == 1
+    database = command._database(loaded)
+    try:
+        owners = {item.id: item.owner for item in database.store("alpha").list("assistant_conversations", Conversation)}
+    finally:
+        database.close()
+    assert owners == {"chat_one1": "alice", "chat_two2": None, "chat_none": None, "chat_mine": "dave"}
+    again = command.backfill_conversation_owners(loaded, dry_run=False, tenant=None)
+    assert again["tenants"]["alpha"] == {"without_owner": 2, "assigned": 0, "ambiguous": 1, "unknown": 1}
+    with pytest.raises(NodestroError) as unknown:
+        command.backfill_conversation_owners(loaded, dry_run=True, tenant="nobody")
+    assert unknown.value.code == "identity.tenant_unknown"
+    parsed = command.parser().parse_args(["assistant", "backfill-owners", "--dry-run", "--tenant", "alpha"])
+    assert (parsed.assistant_command, parsed.dry_run, parsed.tenant) == ("backfill-owners", True, "alpha")

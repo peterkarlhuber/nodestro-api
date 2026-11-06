@@ -441,6 +441,50 @@ def _estimated_input_tokens(request: ModelRequest) -> int:
     return (len(messages) + len(request.system or "") + len(tools)) // 4
 
 
+class OwnerBackfill(BaseModel):
+    """What :func:`backfill_owners` found (API-057)."""
+
+    #: Conversations without an owner before the backfill.
+    without_owner: int = 0
+    #: Conversation id -> the owner it got (or would get, in a dry run).
+    assigned: dict[str, str] = Field(default_factory=dict)
+    #: Files of several people: the conversation stays visible to the whole tenant.
+    ambiguous: list[str] = Field(default_factory=list)
+    #: No file says who wrote in it: the conversation stays visible to the whole tenant.
+    unknown: int = 0
+
+
+def backfill_owners(store: Any, *, dry_run: bool = False) -> OwnerBackfill:
+    """Give conversations from before the owner field (``owner`` ``None``, visible to the whole tenant) an owner
+    where the conversation itself says who it belongs to: every file in it was uploaded by the same server user.
+    Messages record no author, so a conversation without files, or with files of several people, stays visible to
+    the whole tenant, as before. Idempotent; ``dry_run`` only reports."""
+    from nodestro_runtime.input_files import COLLECTION, InputFile
+
+    found = OwnerBackfill()
+    for conversation in store.list(_CONVERSATIONS, Conversation):
+        if conversation.owner is not None:
+            continue
+        found.without_owner += 1
+        uploaders = set()
+        for item in conversation.files:
+            stored = store.get(COLLECTION, item.id, InputFile)
+            if stored is not None and stored.origin == "assistant":
+                uploaders.add(stored.uploaded_by)
+        people = {who for who in uploaders if who and who != "local"}
+        if len(people) == 1 and len(uploaders) == 1:
+            owner = people.pop()
+            found.assigned[conversation.id] = owner
+            if not dry_run:
+                conversation.owner = owner
+                store.put(_CONVERSATIONS, conversation.id, conversation)
+        elif len(people) > 1:
+            found.ambiguous.append(conversation.id)
+        else:
+            found.unknown += 1
+    return found
+
+
 class Assistant:
     """Conversations, attachments and live replies of the Nodestro Assistant."""
 

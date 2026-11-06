@@ -233,8 +233,10 @@ Commands:
 - `nodestro-server pricing status|sync|approve VERSION|reject VERSION [--note …]`: the reference prices: their state
   and open reviews, a sync now, and the decision on a review.
 - Members and tenants (`members`, `set-role`, `remove-member`, `revoke-sessions`, `suspend-tenant`, `resume-tenant`),
-  tenant secrets (`secrets reencrypt`), Axentra platform services (`axentra`), input file storage (`files`) and
-  database roles (`db`): `nodestro-server <command> --help` shows the arguments, and the runbook in the
+  tenant secrets (`secrets reencrypt`), Axentra platform services (`axentra`), input file storage (`files`),
+  owners of assistant conversations from before the owner field (`assistant backfill-owners [--dry-run]`: the owner
+  their files name; conversations without files or with files of several people stay visible to the whole tenant)
+  and database roles (`db`): `nodestro-server <command> --help` shows the arguments, and the runbook in the
   `nodestro-server` repository (`docs/RUNBOOK.md`) describes when to use them.
 
 API and worker processes start only when the database schema is current and Docker is reachable: on a server tool
