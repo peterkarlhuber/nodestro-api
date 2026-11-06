@@ -76,6 +76,7 @@ from nodestro_runtime.schemas import (
     OutputNodeConfig,
     Position,
     QualityConfig,
+    ReportFormat,
     ResultFileSpec,
     StartConfig,
     ToolChoice,
@@ -316,7 +317,7 @@ class WorkflowPlan(BaseModel):
     approvals: list[PlannedApproval] = Field(
         default_factory=list, description="Points where a person must approve before the workflow continues."
     )
-    result_files: list[Literal["md", "json", "csv", "html", "pdf", "docx", "xlsx"]] = Field(
+    result_files: list[ReportFormat] = Field(
         default_factory=list,
         description="File formats the final result is saved as, only when the user asks for a report or export.",
     )
