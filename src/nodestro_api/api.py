@@ -1800,16 +1800,31 @@ class _UsageRun(BaseModel):
     cause: _UsageRunCause | None = None
 
 
+#: Runs the usage report reads per keyset page of the store.
+_USAGE_PAGE = 1000
+
+
 def _runs_since(ctx: Nodestro, cutoff: float) -> list[_UsageRun]:
     """Every top-level, not imported run created at ``cutoff`` (a timestamp) or later, newest first (C-04).
 
-    All of them, however many runs are stored: the store has no query by time, so this reads every run (with the
-    lean model above, which keeps that affordable)."""
-    counted = [
-        run
-        for run in ctx.store.list("runs", _UsageRun)
-        if run.created_at.timestamp() >= cutoff and run.imported_at is None and run.parent_run_id is None
-    ]
+    All of them, however many runs are stored, and only them (API-013): keyset pages of the store's creation index
+    with a ``since`` filter (``list_page``), reading only the fields of the lean model above, so runs before the
+    period are never read."""
+    since = datetime.fromtimestamp(cutoff, tz=UTC)
+    counted: list[_UsageRun] = []
+    before: tuple[datetime, str] | None = None
+    while True:
+        page, more = ctx.store.list_page(
+            "runs", _UsageRun, limit=_USAGE_PAGE, before=before, top_level=True, summary=True, since=since
+        )
+        counted += [
+            run
+            for run in page
+            if run.created_at.timestamp() >= cutoff and run.imported_at is None and run.parent_run_id is None
+        ]
+        if not more or not page:
+            break
+        before = (page[-1].created_at, page[-1].id)
     return sorted(counted, key=lambda run: run.created_at, reverse=True)
 
 
