@@ -15224,6 +15224,62 @@
         "title": "Publication",
         "type": "object"
       },
+      "PublicationBudget": {
+        "description": "The daily cost limit of one published API and how much of it the last 24 hours used (AD-20).",
+        "properties": {
+          "daily_budget_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Budget Usd"
+          },
+          "exhausted": {
+            "default": false,
+            "title": "Exhausted",
+            "type": "boolean"
+          },
+          "last_24h_usd": {
+            "default": 0.0,
+            "title": "Last 24H Usd",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "publication_id": {
+            "title": "Publication Id",
+            "type": "string"
+          },
+          "run_budget_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Budget Usd"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "publication_id",
+          "slug",
+          "name"
+        ],
+        "title": "PublicationBudget",
+        "type": "object"
+      },
       "PublicationEvent": {
         "properties": {
           "at": {
@@ -23516,6 +23572,30 @@
         "title": "UsageBucket",
         "type": "object"
       },
+      "UsageBudgets": {
+        "description": "Budgets in the usage report (AD-20): the daily limits of published APIs and the runs budgets stopped.",
+        "properties": {
+          "publications": {
+            "items": {
+              "$ref": "#/components/schemas/PublicationBudget"
+            },
+            "title": "Publications",
+            "type": "array"
+          },
+          "stopped_runs": {
+            "default": 0,
+            "title": "Stopped Runs",
+            "type": "integer"
+          },
+          "waiting_runs": {
+            "default": 0,
+            "title": "Waiting Runs",
+            "type": "integer"
+          }
+        },
+        "title": "UsageBudgets",
+        "type": "object"
+      },
       "UsageEntry": {
         "properties": {
           "at": {
@@ -23641,6 +23721,9 @@
       },
       "UsageReport": {
         "properties": {
+          "budgets": {
+            "$ref": "#/components/schemas/UsageBudgets"
+          },
           "by_day": {
             "items": {
               "$ref": "#/components/schemas/UsageBucket"
