@@ -18,7 +18,6 @@ from nodestro_api.missing import workflow_display
 from conftest import text
 from test_runs import agent_node, create, start, wait_run
 
-
 CASE = {"name": "Case", "input": "a"}
 
 

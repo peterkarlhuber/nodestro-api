@@ -935,6 +935,10 @@ class LibraryCopy(BaseModel):
     #: The person's model for an agent (agent key from ``GET /api/library/{id}/models`` -> model id); it always wins
     #: over the recommendation and the tiers.
     models: dict[str, str] = Field(default_factory=dict, max_length=200)
+    #: A memory space of the copy's own for its agents with persistent memory (EX-007; the runtime's space name
+    #: rule: letters, digits, spaces, ``_ . -``, 1 to 64). Empty or missing: the template's space, which every copy
+    #: of the template shares. Refused with ``memory.space_name`` before anything is created.
+    memory_space: str | None = Field(default=None, max_length=200)
 
 
 #: Metadata of a knowledge file stored by a copy: the SHA-256 of the file as the library rendered it, so a second
@@ -1064,6 +1068,7 @@ def copy_library_template(template_id: str, body: LibraryCopy, request: Request,
     """
     language = body.language or request_language(request)
     spec = library.structure(template_id)
+    space = check_space_name(body.memory_space) if body.memory_space and body.memory_space.strip() else None
     if body.tests and body.integrations:
         raise ApiError(
             422,
@@ -1079,7 +1084,9 @@ def copy_library_template(template_id: str, body: LibraryCopy, request: Request,
         raise ApiError(422, "library.agent_unknown", str(exc.args[0]) if exc.args else "Unknown agent") from None
     host = _LibraryHost(ctx)
     try:
-        made = library.instantiate(template_id, language, host, models=models, connections=connections)
+        made = library.instantiate(
+            template_id, language, host, models=models, connections=connections, memory_space=space
+        )
         # The copy remembers its origin (runtime RT-055), read-only: example, version, language and which
         # integrations run on sample data.
         origin = WorkflowOrigin(

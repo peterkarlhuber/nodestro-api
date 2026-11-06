@@ -282,3 +282,43 @@ def test_tests_and_integrations_cannot_be_combined(make_app: Callable[..., TestC
     assert client.get(f"/api/benchmarks?workflow_id={connected['id']}").json() == []
     policy = next(node["agent"] for node in connected["nodes"] if node["id"] == "policy")
     assert "mcp__erp__get_order" in policy["tools"] and "days_between" in policy["tools"]
+
+
+# ---- memory space (EX-007) --------------------------------------------------------------------------------------
+
+
+def _spaces(workflow: dict[str, Any]) -> set[str]:
+    return {
+        node["agent"]["memory"]["space"]
+        for node in workflow["nodes"]
+        if (node.get("agent") or {}).get("memory") and node["agent"]["memory"].get("mode") == "persistent"
+    }
+
+
+@pytest.mark.parametrize("template_id", ["learning-plan", "creator-strategy"])
+def test_a_copy_can_get_a_memory_space_of_its_own(make_app: Callable[..., TestClient], template_id: str) -> None:
+    client = make_app()
+    shared = client.post(f"/api/library/{template_id}/copy", json={"language": "en"}).json()
+    default = _spaces(shared)
+    assert default and len(default) == 1
+    again = client.post(f"/api/library/{template_id}/copy", json={"language": "en", "memory_space": "  "}).json()
+    assert _spaces(again) == default  # empty: the template's shared space, as before
+    own = client.post(f"/api/library/{template_id}/copy", json={"language": "en", "memory_space": " Anna 2027 "})
+    assert own.status_code == 201, own.text
+    assert _spaces(own.json()) == {"Anna 2027"}
+
+
+def test_an_invalid_memory_space_stores_nothing(make_app: Callable[..., TestClient]) -> None:
+    client = make_app()
+    for bad in ("-leading", "slash/inside", "x" * 65, "Prüfung"):
+        refused = client.post("/api/library/learning-plan/copy", json={"language": "en", "memory_space": bad})
+        assert refused.status_code == 400, (bad, refused.text)
+        assert refused.json()["code"] == "memory.space_name"
+        assert refused.json()["params"]["name"] == bad.strip()
+    stored_nothing(client)
+
+
+def test_a_template_without_memory_ignores_the_space(make_app: Callable[..., TestClient]) -> None:
+    client = make_app()
+    copied = client.post("/api/library/business-idea/copy", json={"language": "en", "memory_space": "Mine"})
+    assert copied.status_code == 201 and _spaces(copied.json()) == set()

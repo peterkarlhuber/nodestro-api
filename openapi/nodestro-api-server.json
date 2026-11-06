@@ -9423,6 +9423,18 @@
             ],
             "title": "Language"
           },
+          "memory_space": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Space"
+          },
           "models": {
             "additionalProperties": {
               "type": "string"
