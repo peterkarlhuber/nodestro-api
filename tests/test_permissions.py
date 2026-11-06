@@ -165,7 +165,8 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # install: + local model server start, stop, autostart; runtime install, model download, import, delete,
         # model folder move, job cancel (downloads and files on the computer, like package environments)
         # install: + measuring a local model's speed (RT-050; loads the model on the shared server)
-        "install": 20,
+        # install: + setting up the local model server step by step (setup)
+        "install": 21,
         "public": 1,
     }
     assert all(item.path.startswith("/api/") for item in found if item.access != "generated")
@@ -180,6 +181,7 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
 SENSITIVE = {
     ("PUT", "/api/settings"): "admin",
     ("POST", "/api/local-models/runtime"): "install",
+    ("POST", "/api/local-models/setup"): "install",
     ("PUT", "/api/local-models/storage"): "install",
     ("DELETE", "/api/local-models/models/{name:path}"): "install",
     ("POST", "/api/local-models/benchmark"): "install",
