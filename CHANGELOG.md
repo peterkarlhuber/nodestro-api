@@ -15,7 +15,7 @@
   - The Workflow Architect streams the reasoning of its sub-requests too: the Agent Architect (one per agent) and
     the Coding Agent each get a reasoning entry named by `step` and `subject` (`ArchitectReasoning.subject`), and
     their `thinking` events carry `step`, `subject` and `index` (runtime RT-063).
-  - Pins nodestro-runtime 3d69702 (runtime #120).
+  - Pins nodestro-runtime 3d69702 (runtime #120) and nodestro-examples 82d894b (examples #77).
   - `local.job_running` answers 409, like `/stop` does for the same conflict (API-062).
   - A reconciliation without a billing key returns a report naming the unreconciled providers instead of
     `pricing.billing_key_missing`; the code stays for workspaces with nothing to reconcile (API-007).
