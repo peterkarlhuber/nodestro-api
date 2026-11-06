@@ -10,9 +10,9 @@
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
-| P1 High | 0 |
-| P2 Medium | 4 |
-| P3 Low | 14 |
+| P1 High | 1 |
+| P2 Medium | 9 |
+| P3 Low | 15 |
 | P4 Optional | 7 |
 
 **Release blockers:** None for this repository; every entry below is not a release blocker. The next desktop
@@ -341,6 +341,67 @@ None known.
   install lock). An approval or rejection committed before the stop is still carried out, by design.
 - **Next step:** None. New requests of the tenant are refused at once; cancelling a running worker thread would need
   cooperative cancel points in each of those paths.
+
+## MUP-ONA
+
+Packages of the security and database backend plan MUP-ONA ([plan][mup-ona]) that touch this repository. Each entry is
+removed by the change that completes its package here.
+
+### API-MUP-A1 · PDF extraction limits: map `document.too_complex`
+
+- **Priority:** P1 High · **Status:** Open · **Refs:** MP-A1 (PS-1), [MUP-ONA][mup-ona]
+- **What:** Uploads and knowledge routes read PDFs through the runtime, which gets page, character, time and memory
+  limits in an isolated process (orkexa, runtime). The API must answer the new `document.too_complex` with 422 and keep
+  its upload and knowledge paths on the runtime's limited path.
+- **Next step:** After the runtime and orkexa parts merge: map the code, test the routes, bump the runtime pin through
+  the pin cascade.
+
+### API-MUP-A2 · Error answers without paths, inputs or library texts
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** MP-A2 (PS-2), [MUP-ONA][mup-ona]
+- **What:** Some error answers pass exception texts to clients (`bad_request`, `not_found`, provider and library
+  errors), which can name file paths, inputs or internals.
+- **Next step:** Fixed texts plus `request_id` for exceptions without a code of their own, filtered texts for coded ones
+  (branch `mup/a2-a3-a5-api-hardening`).
+
+### API-MUP-A3 · Client addresses behind a reverse proxy
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** MP-A3 (PS-3); nodestro-server RUNBOOK, [MUP-ONA][mup-ona]
+- **What:** Behind a proxy without `FORWARDED_ALLOW_IPS` every client has the proxy's address, so per-address limits
+  (login starts, failed published API keys) count all clients together.
+- **Next step:** Startup check (`NODESTRO_BEHIND_PROXY`, `NODESTRO_REQUIRE_CLIENT_ADDRESS`) and a failure count per key
+  id prefix for published API keys.
+
+### API-MUP-A5 · Route access check in every FastAPI app factory
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** MP-A5 (PS-5), [MUP-ONA][mup-ona]
+- **What:** `check_routes` runs for the studio and the server app only; the network listener and the standalone export
+  check access in their handlers.
+- **Next step:** Call `check_routes` (with explicitly listed public routes) in every app factory; a test finds all
+  `FastAPI(` constructions.
+
+### API-MUP-A11 · Tenant SQL check in CI with the pinned and the current runtime checker
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** MP-A11 (PS-10), [MUP-ONA][mup-ona]
+- **What:** The API is scanned only by the pinned runtime checker inside `pytest`; a rule change on runtime `master`
+  reaches the API only with a pin bump, and nothing fails the job when the check cannot run.
+- **Next step:** CI job `tenant-sql`: pinned checker and runtime `master` (public `git+https`, no secret), daily
+  schedule, `NODESTRO_REQUIRE_TENANT_SCAN=1`.
+
+### API-MUP-B0 · Declare the orkexa dependency with the runtime's commit
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** MP-B0, [MUP-ONA][mup-ona]
+- **What:** The API imports orkexa but gets it only through the runtime.
+- **Next step:** Declare orkexa in `pyproject.toml` at the same commit as the runtime pins it.
+
+### API-MUP-B6 · Server start verifies the schema of the orkexa PostgreSQL backend
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** MP-B6, [MUP-ONA][mup-ona]
+- **What:** When the runtime moves to `orkexa.backends.postgres`, the server profile must check the schema at start
+  (`verify_schema`, read only) and follow the pin cascade.
+- **Next step:** After B4/B5 and gate G1: call `verify_schema` in `server_app.py`, tests, pin bump.
+
+[mup-ona]: https://github.com/peterkarlhuber/nodestro-studio/blob/master/docs/architecture/mup-ona/MUP-ONA.md
 
 ## Cross-repository dependencies
 

@@ -46,10 +46,14 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: mypy
-      - run: pytest
+      - run: pytest -rs --junitxml=junit-test-${{ matrix.python }}.xml
         env:
           # One test installs a real package from PyPI with uv (needs the network).
           NODESTRO_NETWORK_TESTS: ${{ matrix.python == '3.13' && '1' || '' }}
+      # The skipped tests must be exactly the expected ones, each with its reason (MUP-ONA A0, T-SKIP-1): a test that
+      # starts to skip (a missing service, a lost variable) fails the job. A changed expectation needs a reason in the PR.
+      - name: Skipped tests are the expected ones
+        run: python scripts/check_skips.py junit-test-${{ matrix.python }}.xml tests/ci/skipped-test-${{ matrix.python }}.txt
       # Known vulnerabilities in the installed dependencies (as orkexa's CI checks them). Blocking: an advisory that
       # was reviewed and cannot be fixed yet goes into PIP_AUDIT_IGNORE (space-separated IDs, with the reason here).
       - name: Dependency audit

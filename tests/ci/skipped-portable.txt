@@ -1,0 +1,2 @@
+# Tests the "Portable packages" workflow (every platform) skips: none. The smoke test must run everywhere.
+# Checked by scripts/check_skips.py (MUP-ONA A0, T-SKIP-1). A change needs a reason in its PR.
