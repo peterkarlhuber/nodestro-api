@@ -636,6 +636,20 @@ def _superuser_role(server: ServerEnvironment, database: Any) -> str | None:
     )
 
 
+def _unknown_bedrock_tenants(server: ServerEnvironment) -> list[str]:
+    """Tenant ids of ``NODESTRO_BEDROCK_TENANT_ROLES`` without a tenant (a typo leaves the meant tenant without
+    Bedrock); only ids, never a role ARN or external id."""
+    if server.bedrock is None or not server.bedrock.roles:
+        return []
+    database = _database(server)
+    try:
+        with _identity(server, database) as identity:
+            known = {tenant.id for tenant in identity.tenants()}
+    finally:
+        database.close()
+    return sorted(set(server.bedrock.roles) - known)
+
+
 def check(
     server: ServerEnvironment,
     *,
@@ -644,7 +658,8 @@ def check(
     identity_provider: bool = True,
 ) -> list[str]:
     """What keeps this server from starting (empty: ready). ``warnings`` receives what does not keep it from starting
-    but is unsafe (a superuser or ``BYPASSRLS`` runtime role in Nodestro's own mode). ``http``: the client for the
+    but is unsafe (a superuser or ``BYPASSRLS`` runtime role in Nodestro's own mode) or likely a mistake (Bedrock
+    roles for tenants that do not exist). ``http``: the client for the
     identity provider's discovery document. ``identity_provider=False`` skips that request: a worker's periodic health
     check must not depend on (or poll) the identity provider, which only the API process uses."""
     problems: list[str] = []
@@ -687,6 +702,13 @@ def check(
             problems.append(f"{error.code}: {error}")
         finally:
             database.close()
+    if not problems and warnings is not None:
+        unknown = _unknown_bedrock_tenants(server)
+        if unknown:
+            warnings.append(
+                f"bedrock.tenant_unknown: NODESTRO_BEDROCK_TENANT_ROLES names tenants that do not exist: "
+                f"{', '.join(unknown)}; correct the ids, or those tenants stay without Bedrock"
+            )
     if not problems and server.settings.axentra.files_backend == "axentra":
         try:
             with _files_tools(server):

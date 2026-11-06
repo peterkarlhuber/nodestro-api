@@ -407,6 +407,29 @@ def test_check_warns_about_a_superuser_runtime_role(
     assert len(warnings) == 1 and warnings[0].startswith("storage.role_unsafe") and "is a superuser" in warnings[0]
 
 
+def test_check_warns_about_bedrock_roles_for_unknown_tenants(
+    schema: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """API-008: a typo in NODESTRO_BEDROCK_TENANT_ROLES is a warning that names the tenant id, never the role."""
+    import json
+
+    monkeypatch.setattr(command, "_require_containers", lambda _server: None)
+    monkeypatch.setattr(command, "_superuser_role", lambda _server, _database: None)
+    role = {"role_arn": "arn:aws:iam::123456789012:role/nodestro-alpha", "external_id": "external-alpha-0001"}
+    roles = json.dumps({"alpha": role, "aplha": role})
+    loaded = command.load(_environment(tmp_path, NODESTRO_BEDROCK_TENANT_ROLES=roles))
+    command.migrate(loaded, backup_dir=None, backup_taken=False)
+    command.create_tenant(loaded, "alpha", "Alpha")
+    warnings: list[str] = []
+    assert command.check(loaded, warnings=warnings) == []
+    assert len(warnings) == 1 and warnings[0].startswith("bedrock.tenant_unknown"), warnings
+    assert "aplha" in warnings[0] and "alpha," not in warnings[0]
+    assert "arn:aws" not in warnings[0] and "external-alpha" not in warnings[0]
+    command.create_tenant(loaded, "aplha", "Typo")
+    warnings.clear()
+    assert command.check(loaded, warnings=warnings) == [] and warnings == []
+
+
 @pytest.mark.real_identity_check
 def test_check_reads_the_identity_provider(tmp_path: Path) -> None:
     """DX-31: check verifies the issuer's discovery document (reachable, same issuer, https endpoints)."""
