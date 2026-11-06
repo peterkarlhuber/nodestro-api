@@ -18,7 +18,8 @@
   - Server exports: `NODESTRO_SERVER_EXPORT_TENANT_QUOTA_BYTES` (default 8 GiB) caps the packages one tenant keeps
     (`403 export.server_quota` with `size`, `used`, `limit`, also as an export check issue);
     `DELETE /api/exports/{export_id}` (edit) removes an export and its package (API-048).
-  - Pins nodestro-runtime b29b738 (runtime #121: `jobs.ReindexWorker`, `Workspace.background_work`).
+  - Pins nodestro-runtime b29b738 (runtime #121: `jobs.ReindexWorker`, `Workspace.background_work`) and
+    nodestro-examples 4b947c4 (examples #79: the same runtime pin).
 - TODO abatement round 2 (2026-11-06):
   - Idempotency-Keys of studio and published-API run starts are reserved with one atomic insert in the store
     (runtime `put_raw_if_absent`) before the run starts, so concurrent retries on several API processes start one
