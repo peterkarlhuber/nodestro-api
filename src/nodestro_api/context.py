@@ -172,7 +172,7 @@ class Nodestro(Workspace):
             # would inherit it); a server tenant keeps its own secret box.
             self.mcp.vault = TokenVault(vault_box_from_env({VAULT_KEY_ENV: self.config.vault_key}), self.tenant_id)
         self.organize = Organizer(self.store)
-        self.assistants = Assistants(self.tools, capabilities=self.builder.capabilities)
+        self.assistants = Assistants(self.tools, capabilities=self.builder.capabilities, builder=self.builder)
         self.batches = Batches(self)
         self.benchmarks = Benchmarks(self)
         self.schedules = Schedules(self)

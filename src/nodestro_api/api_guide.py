@@ -89,7 +89,7 @@ def generate(
         system_prompt=_SYSTEM + language_rule(language, texts="the guide"),
         output_format=_GuideText,
         effort=connection.effort(model, "medium"),
-        max_tokens=8000,
+        max_tokens=ctx.output_limit("api_guide", model, connection).value,
         max_tool_rounds=0,
         options=connection.options(),
         max_retries=MAX_RETRIES,

@@ -1122,7 +1122,7 @@ class _Reply:
                 messages=[Message.model_validate(item) for item in self.history()],
                 tools=self.tools(),
                 effort=connection.effort(model, "medium"),
-                max_tokens=16_000,
+                max_tokens=self.nodestro.output_limit("assistant_chat", model, connection).value,
                 max_tool_rounds=8,
                 raise_tool_errors=False,
                 stream=True,
