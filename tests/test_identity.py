@@ -37,6 +37,7 @@ import stub_oidc
 from nodestro_api.identity import (
     LOGIN_COOKIE,
     SESSION_COOKIE,
+    LoginStartLimit,
     OidcClient,
     OidcSettings,
     axentra_login_flow,
@@ -566,6 +567,48 @@ def test_the_login_cookie_must_match_and_is_cleared_after_the_callback(server: S
     assert any(item.startswith(f"{SESSION_COOKIE}=") for item in cookies)
     assert any(item.startswith(f'{LOGIN_COOKIE}=""') for item in cookies)  # cleared on success
     assert browser.get("/api/auth/me").status_code == 200
+
+
+def test_login_starts_are_limited_per_address(
+    database: PostgresDatabase, identity: IdentityStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """API-002: one address starts at most NODESTRO_LOGIN_STARTS_PER_MINUTE logins a minute in a process."""
+    monkeypatch.setenv("NODESTRO_LOGIN_STARTS_PER_MINUTE", "3")
+    provider = stub_oidc.StubProvider()
+    limited = Server(
+        tenant_app(identity, database, provider, tmp_path / "limited"),
+        identity,
+        provider,
+        [],
+    )
+    try:
+        browser = limited.browser()
+        assert [browser.get("/api/auth/login").status_code for _ in range(3)] == [303] * 3
+        refused = browser.get("/api/auth/login")
+        assert refused.status_code == 429 and refused.json()["code"] == "identity.rate_limited"
+    finally:
+        for client in limited.clients:
+            client.__exit__(None, None, None)
+
+
+def test_the_login_start_limit_slides_and_can_be_switched_off() -> None:
+    clock = [0.0]
+    limit = LoginStartLimit(2, clock=lambda: clock[0])
+    assert [limit.allow("a"), limit.allow("a"), limit.allow("a"), limit.allow("b")] == [True, True, False, True]
+    clock[0] = 61.0
+    assert limit.allow("a")
+    assert all(LoginStartLimit(0).allow("a") for _ in range(100))
+
+
+def test_oversized_login_parameters_are_refused(server: Server) -> None:
+    """API-002: a setup token, login state or code longer than any real one is refused before it is looked up."""
+    browser = server.browser()
+    setup = browser.get("/api/auth/login", params={"setup": "x" * 257})
+    assert setup.status_code == 400 and setup.json()["code"] == "identity.bootstrap_invalid"
+    state = browser.get("/api/auth/callback", params={"state": "s" * 513, "code": "c"})
+    assert state.status_code == 400 and state.json()["code"] == "identity.login_expired"
+    code = browser.get("/api/auth/callback", params={"state": "s", "code": "c" * 4097})
+    assert code.status_code == 400 and code.json()["code"] == "identity.login_failed"
 
 
 def test_setup_tokens_and_sign_in_codes_never_reach_the_access_log(server: Server) -> None:

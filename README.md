@@ -118,6 +118,9 @@ user login and does not lift the loopback-only rule. Without the variable (the `
 - Login with OpenID Connect at the operator's identity provider: authorization code flow with PKCE (`S256`),
   `state` (stored hashed, used once, expires after 10 minutes) and `nonce`. The ID token must be signed with an
   asymmetric key of the provider (never `none` or a shared secret) and match issuer, audience, expiry and nonce.
+- One address starts at most 60 logins a minute per API process (`NODESTRO_LOGIN_STARTS_PER_MINUTE`, `0` turns it
+  off; then `429 identity.rate_limited`), and oversized setup tokens, states and codes are refused. Behind a proxy
+  the address is the proxy's unless uvicorn trusts it (`FORWARDED_ALLOW_IPS`); a proxy rate limit stays advisable.
 - A login alone grants nothing: a user needs a role in a tenant (`owner`, `admin`, `editor`, `operator`,
   `viewer`). The first owner of a tenant logs in with a one-time setup link (`/api/auth/login?setup=<token>`) that
   an operator creates; there is no default administrator and no password.
