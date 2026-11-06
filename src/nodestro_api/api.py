@@ -141,7 +141,7 @@ def _error(status_code: int, code: str, detail: str, **params: Any) -> JSONRespo
 
 
 #: Runtime error codes that are not a bad request but a conflict with work in progress (any other: ``400``).
-NODESTRO_ERROR_STATUS = {"local.job_running": 409}
+NODESTRO_ERROR_STATUS = {"local.job_running": 409, "lease.lost": 409}
 
 
 def install_error_handlers(app: FastAPI) -> None:

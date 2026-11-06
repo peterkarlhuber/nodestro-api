@@ -2719,6 +2719,18 @@
             "title": "Kind",
             "type": "string"
           },
+          "lease_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lease Until"
+          },
           "max_cost_usd": {
             "anyOf": [
               {
@@ -2752,6 +2764,17 @@
             "default": "",
             "title": "Name",
             "type": "string"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
           },
           "ref": {
             "anyOf": [
@@ -3422,12 +3445,35 @@
           "judge_usage": {
             "$ref": "#/components/schemas/Usage"
           },
+          "lease_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lease Until"
+          },
           "models": {
             "additionalProperties": {
               "type": "string"
             },
             "title": "Models",
             "type": "object"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
           },
           "results": {
             "items": {

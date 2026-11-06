@@ -142,9 +142,10 @@ user login and does not lift the loopback-only rule. Without the variable (the `
 - Not part of it yet: published workflow APIs with tenant-bound keys, the network listener and backups in the studio
   (operators use `pg_dump`). Batches, test series, assistant drafts and Python environment installations still run
   in the API process; a batch or test series reads its runs, which workers execute, from the database every two
-  seconds to learn that they ended. Opening a tenant never marks its running batches or test series as interrupted, since another
-  API process may be running them; one whose API process died therefore stays `running` until someone cancels
-  it (they have no owner or lease yet).
+  seconds to learn that they ended. The API process that drives a batch or test series holds a lease of 60 seconds
+  and renews it every few seconds; when that process stops, the next read by any API process (after the lease ran
+  out) marks it `interrupted` (`batch.interrupted`, `benchmark.interrupted`), and a person continues it there. A
+  process that finds another owner on its batch stops driving it (`409 lease.lost` for a request).
 
 Uploaded files are served with `X-Content-Type-Options: nosniff`; HTML, SVG and XML files are always downloaded, and
 everything except PDF carries a restrictive `Content-Security-Policy`, so an uploaded page cannot run scripts in the
