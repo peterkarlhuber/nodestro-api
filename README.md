@@ -443,8 +443,10 @@ The tests run against the real application with scripted provider clients (`node
 call a paid provider. They cover the REST API, published APIs, keys, approvals, continued runs, batches, schedules,
 files, Python libraries, backups, the network listener, the Host/Origin guard and the export; the exported project
 passes its own tests. `NODESTRO_NETWORK_TESTS=1` enables the test that installs a real package from PyPI. CI runs on
-Python 3.11 and 3.13, builds the wheel and the source distribution, installs the wheel into a fresh environment and
-calls the started server over HTTP. It needs no secret: orkexa and the Nodestro repositories are public and are
+Python 3.11 and 3.13 and fails when the skipped tests differ from `tests/ci/skipped-<job>.txt` (every expected skip
+with its reason; `python scripts/check_skips.py junit.xml tests/ci/skipped-test-3.13.txt` after
+`pytest --junitxml=junit.xml`), builds the wheel and the source distribution, installs the wheel into a fresh
+environment and calls the started server over HTTP. It needs no secret: orkexa and the Nodestro repositories are public and are
 installed anonymously.
 
 Open work (known bugs, follow-ups and planned improvements) is listed in [docs/TODO.md](docs/TODO.md).
