@@ -396,7 +396,8 @@ def test_missing_api_key_is_explained(tmp_path: Any, monkeypatch: pytest.MonkeyP
     with TestClient(create_app(AppConfig(data_dir=tmp_path)), base_url="http://127.0.0.1") as client:
         # A new installation uses local models: without their runtime, that is what the answer explains.
         response = client.post("/api/agents/design", json={"description": "x"})
-        assert response.status_code == 400 and response.json()["code"] == "local.runtime_missing"
+        assert response.status_code == 409 and response.json()["code"] == "model.local_unavailable"
+        assert response.json()["params"]["problem"]["actions"] == ["setup_server"]
         # With a cloud model, the missing key is explained.
         client.put("/api/settings", json={"assistant_model": "anthropic:claude-sonnet-5-5"})
         response = client.post("/api/agents/design", json={"description": "x"})

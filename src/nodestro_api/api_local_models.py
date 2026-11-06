@@ -25,12 +25,16 @@ from typing import Literal
 from fastapi import APIRouter, Request, Response
 from nodestro_runtime.knowledge import KnowledgeIndexStatus
 from nodestro_runtime.local_models import CATALOG, TASKS, Hardware, LocalModelInfo, Recommendation, fits, recommend_all
+from nodestro_runtime.local_readiness import Readiness
 from nodestro_runtime.local_service import BuildInput, LocalAdvice, LocalJob, LocalStatus, build_inputs
+from orkexa.core.capabilities import Capability as CapabilityName
 from orkexa.local import OllamaError
 from pydantic import BaseModel, Field
 
+from . import model_readiness
 from .api import Ctx
-from .permissions import EDIT, INSTALL, READ, Permission, Principal
+from .model_readiness import ReadinessAction
+from .permissions import EDIT, INSTALL, READ, RUN, Permission, Principal
 from .serving import ApiError
 
 router = APIRouter(prefix="/api")
@@ -73,6 +77,18 @@ class SetupIn(BaseModel):
 
 class PullIn(BaseModel):
     model: str = Field(min_length=1, max_length=200)
+    #: Follow a download of the same model that runs already instead of refusing a second one
+    #: (``local.job_running``): a second click or another dialog never starts the download twice.
+    attach: bool = False
+
+
+class ReadinessIn(BaseModel):
+    #: The model the action uses (``ollama:<tag>``; any other model is ready as far as this check goes).
+    model: str = Field(min_length=1, max_length=200)
+    #: What the model is needed for: decides what it must be able to do and whether another model may be chosen.
+    action: ReadinessAction = "check"
+    #: Capabilities the action needs beyond its own (Orkexa names, e.g. ``tools`` for an agent with tools).
+    capabilities: list[CapabilityName] = Field(default_factory=list, max_length=20)
 
 
 class BenchmarkIn(BaseModel):
@@ -234,7 +250,18 @@ def local_install_runtime(body: RuntimeInstallIn, ctx: Ctx) -> LocalJob:
 @router.post("/local-models/pull", status_code=202, dependencies=INSTALL)
 async def local_pull(body: PullIn, ctx: Ctx) -> LocalJob:
     _manageable(ctx)
-    return await asyncio.to_thread(ctx.local_models.pull, body.model)
+    return await asyncio.to_thread(ctx.local_models.pull, body.model, attach=body.attach)
+
+
+@router.post("/local-models/readiness", dependencies=RUN)
+async def local_readiness(body: ReadinessIn, ctx: Ctx, request: Request) -> Readiness:
+    """Whether a local model can be used for an action now; if not, why (``problem.cause``: not installed, no
+    runtime, server not started or unreachable, invalid name, too little space, missing capability, hardware) and
+    what this person may do (``problem.actions``, from their permission, the operating mode and the strict offline
+    mode), plus the ready models that can do the same (``alternatives``). Interactive actions refuse such a model
+    with ``409 model.local_unavailable`` carrying the same answer; the studio checks again here after a download.
+    May start the managed server of the desktop (as the action would); never downloads anything."""
+    return await asyncio.to_thread(model_readiness.check, ctx, request, body.model, body.action, body.capabilities)
 
 
 @router.post("/local-models/benchmark", status_code=202, dependencies=INSTALL)
@@ -310,7 +337,12 @@ async def knowledge_index(ctx: Ctx) -> KnowledgeIndexStatus:
 
 
 @router.post("/knowledge/index/rebuild", status_code=202, dependencies=EDIT)
-async def knowledge_reindex(body: ReindexIn, ctx: Ctx) -> KnowledgeIndexStatus:
+async def knowledge_reindex(body: ReindexIn, ctx: Ctx, request: Request) -> KnowledgeIndexStatus:
+    """Build the semantic index; an embedding model the local model server does not have is refused first
+    (``409 model.local_unavailable``, with what can be done), instead of a job that fails at its first chunk."""
+    name = body.model or ctx.knowledge.retrieval()[1]
+    if name:
+        await model_readiness.require_local(ctx, request, f"ollama:{name.removeprefix('ollama:')}", "knowledge_index")
     return await asyncio.to_thread(ctx.knowledge.start_reindex, body.model)
 
 

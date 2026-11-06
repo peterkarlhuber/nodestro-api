@@ -2111,6 +2111,18 @@
             "title": "Mode",
             "type": "string"
           },
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
           "name": {
             "default": "",
             "maxLength": 120,
@@ -11309,6 +11321,57 @@
         "title": "Meta",
         "type": "object"
       },
+      "ModelAlternative": {
+        "description": "A model that is ready now and can do what the action needs.",
+        "properties": {
+          "context_window": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window"
+          },
+          "limited": {
+            "default": false,
+            "title": "Limited",
+            "type": "boolean"
+          },
+          "local": {
+            "title": "Local",
+            "type": "boolean"
+          },
+          "max_output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Output Tokens"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "provider",
+          "local"
+        ],
+        "title": "ModelAlternative",
+        "type": "object"
+      },
       "ModelCapabilities": {
         "description": "What a model supports according to Orkexa, for a model id typed in the editor (not only catalog entries).",
         "properties": {
@@ -11724,6 +11787,202 @@
           }
         },
         "title": "ModelPolicy",
+        "type": "object"
+      },
+      "ModelProblem": {
+        "description": "Why a local model cannot be used for an action now, and what may be done about it.",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "actions": {
+            "items": {
+              "enum": [
+                "download",
+                "setup_server",
+                "retry",
+                "choose_model",
+                "ask_admin",
+                "open_settings"
+              ],
+              "type": "string"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "blocked": {
+            "anyOf": [
+              {
+                "enum": [
+                  "permission",
+                  "operator",
+                  "offline"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked"
+          },
+          "catalog": {
+            "default": false,
+            "title": "Catalog",
+            "type": "boolean"
+          },
+          "cause": {
+            "enum": [
+              "model_missing",
+              "runtime_missing",
+              "server_stopped",
+              "server_unreachable",
+              "server_missing",
+              "model_name_invalid",
+              "disk_full",
+              "capability_missing",
+              "hardware_insufficient"
+            ],
+            "title": "Cause",
+            "type": "string"
+          },
+          "download_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Bytes"
+          },
+          "fits": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fits"
+          },
+          "free_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Bytes"
+          },
+          "host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host"
+          },
+          "job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalJob"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "location": {
+            "enum": [
+              "this_computer",
+              "container",
+              "remote",
+              "server"
+            ],
+            "title": "Location",
+            "type": "string"
+          },
+          "memory_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Bytes"
+          },
+          "missing_capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Capabilities",
+            "type": "array"
+          },
+          "mode": {
+            "enum": [
+              "managed",
+              "container",
+              "external",
+              "unavailable"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "offline": {
+            "default": false,
+            "title": "Offline",
+            "type": "boolean"
+          },
+          "partial_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Partial Bytes"
+          },
+          "previous_job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalJob"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "cause",
+          "model",
+          "name",
+          "action",
+          "mode",
+          "location"
+        ],
+        "title": "ModelProblem",
         "type": "object"
       },
       "ModelProfile": {
@@ -15147,6 +15406,11 @@
       },
       "PullIn": {
         "properties": {
+          "attach": {
+            "default": false,
+            "title": "Attach",
+            "type": "boolean"
+          },
           "model": {
             "maxLength": 200,
             "minLength": 1,
@@ -15378,6 +15642,96 @@
           "description"
         ],
         "title": "QualityCriterion",
+        "type": "object"
+      },
+      "Readiness": {
+        "description": "The answer of a readiness check: ``problem`` is ``None`` when the model can be used now.",
+        "properties": {
+          "alternatives": {
+            "items": {
+              "$ref": "#/components/schemas/ModelAlternative"
+            },
+            "title": "Alternatives",
+            "type": "array"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelProblem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "model",
+          "ready"
+        ],
+        "title": "Readiness",
+        "type": "object"
+      },
+      "ReadinessIn": {
+        "properties": {
+          "action": {
+            "default": "check",
+            "enum": [
+              "architect",
+              "assistant",
+              "agent_design",
+              "agent_test",
+              "run",
+              "knowledge_index",
+              "check"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "capabilities": {
+            "items": {
+              "enum": [
+                "tools",
+                "forced_tool_choice",
+                "parallel_tool_calls",
+                "strict_tool_schemas",
+                "structured_output",
+                "streaming",
+                "image_input",
+                "document_input",
+                "reasoning",
+                "caching",
+                "server_tools",
+                "native_memory_tool",
+                "token_counting",
+                "batch",
+                "system_messages"
+              ],
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "model": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model"
+        ],
+        "title": "ReadinessIn",
         "type": "object"
       },
       "ReasoningStreamInfo": {
@@ -16765,6 +17119,18 @@
             ],
             "title": "Language",
             "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
           }
         },
         "title": "RetryRequest",
@@ -19092,6 +19458,18 @@
             ],
             "title": "Language",
             "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
           }
         },
         "title": "SendRequest",
@@ -24504,7 +24882,7 @@
     },
     "/api/architect/jobs": {
       "post": {
-        "description": "Start designing (``create``) or revising (``revise``) a workflow; returns at once.",
+        "description": "Start designing (``create``) or revising (``revise``) a workflow; returns at once.\n\nA local assistant model that is not ready (not downloaded, no server) is refused before anything starts or\ncosts (``409 model.local_unavailable`` with what can be done); ``model`` uses another ready model for this job\nonly (one of the check's alternatives, ``model.choice_invalid`` otherwise).",
         "operationId": "start_architect_api_architect_jobs_post",
         "requestBody": {
           "content": {
@@ -27672,6 +28050,7 @@
     },
     "/api/knowledge/index/rebuild": {
       "post": {
+        "description": "Build the semantic index; an embedding model the local model server does not have is refused first\n(``409 model.local_unavailable``, with what can be done), instead of a job that fails at its first chunk.",
         "operationId": "knowledge_reindex_api_knowledge_index_rebuild_post",
         "requestBody": {
           "content": {
@@ -28588,6 +28967,45 @@
           }
         },
         "summary": "Local Pull"
+      }
+    },
+    "/api/local-models/readiness": {
+      "post": {
+        "description": "Whether a local model can be used for an action now; if not, why (``problem.cause``: not installed, no\nruntime, server not started or unreachable, invalid name, too little space, missing capability, hardware) and\nwhat this person may do (``problem.actions``, from their permission, the operating mode and the strict offline\nmode), plus the ready models that can do the same (``alternatives``). Interactive actions refuse such a model\nwith ``409 model.local_unavailable`` carrying the same answer; the studio checks again here after a download.\nMay start the managed server of the desktop (as the action would); never downloads anything.",
+        "operationId": "local_readiness_api_local_models_readiness_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReadinessIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Readiness"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Local Readiness"
       }
     },
     "/api/local-models/recommend": {

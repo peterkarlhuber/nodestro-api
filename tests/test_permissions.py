@@ -155,7 +155,8 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         "edit": 55,  # + the tool panel's test run (review H-1, was run); + semantic index rebuild, cancel, remove
         # run: + sending a live run chat message (LRC-1)
         # run: + deciding a run's budget request (BUDGET-1; the route also checks starter or admin)
-        "run": 33,  # + deciding a tool call (S-2b); - the tool panel's test run (review H-1)
+        # run: + the readiness check of a local model before an action (missing local models)
+        "run": 34,  # + deciding a tool call (S-2b); - the tool panel's test run (review H-1)
         # admin: + the Docker sandbox's self-test (A1)
         # admin: + adopting an AI-generated tool as one's own (R-4, desktop only)
         "admin": 45,  # + price sync, reviews, overrides, billing keys and reconciliation (PRICING-1); gate (Q-3);
@@ -185,6 +186,7 @@ SENSITIVE = {
     ("PUT", "/api/local-models/storage"): "install",
     ("DELETE", "/api/local-models/models/{name:path}"): "install",
     ("POST", "/api/local-models/benchmark"): "install",
+    ("POST", "/api/local-models/readiness"): "run",
     ("POST", "/api/settings/providers/bedrock/verify"): "admin",
     ("GET", "/api/sandbox/status"): "read",
     ("POST", "/api/sandbox/self-test"): "admin",

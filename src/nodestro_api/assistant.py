@@ -262,10 +262,15 @@ class SendRequest(BaseModel):
     file_ids: list[str] = Field(default_factory=list, max_length=MAX_FILES_PER_MESSAGE)
     #: The interface language: the default language of the answer.
     language: Language = "en"
+    #: Another ready model for this answer only (chosen when the assistant model was not available); the settings
+    #: stay as they are. The API accepts only a model of the readiness check's alternatives.
+    model: str | None = Field(default=None, max_length=200)
 
 
 class RetryRequest(BaseModel):
     language: Language = "en"
+    #: As for a new message: another ready model for this answer only.
+    model: str | None = Field(default=None, max_length=200)
 
 
 class SentMessage(BaseModel):
@@ -718,7 +723,7 @@ class Assistant:
         """Store the user's message with its context and files and start the answer in the background."""
         if not body.content.strip() and not body.file_ids:
             raise NodestroError("assistant.message_empty", "Please write a message")
-        self.nodestro.connect_model(self.nodestro.settings().assistant_model)  # fail fast: nothing is stored then
+        self.nodestro.connect_model(body.model or self.nodestro.settings().assistant_model)  # nothing stored then
         with self._lock:
             return self._send(conversation_id, body, loop)
 
@@ -773,7 +778,7 @@ class Assistant:
             status="streaming",
             reply_to=user.id,
             language=body.language,
-            model=self.nodestro.settings().assistant_model,
+            model=body.model or self.nodestro.settings().assistant_model,
         )
         conversation.last_seq += 2
         conversation.messages += 2
@@ -796,7 +801,7 @@ class Assistant:
         loop: asyncio.AbstractEventLoop | None = None,
     ) -> ChatMessage:
         """Answer a failed or cancelled message again, with the same question and context."""
-        self.nodestro.connect_model(self.nodestro.settings().assistant_model)
+        self.nodestro.connect_model(body.model or self.nodestro.settings().assistant_model)
         # Checked and started under the lock, like a new message: two retries never both start.
         with self._lock:
             return self._retry(conversation_id, message_id, body, loop)
@@ -831,7 +836,7 @@ class Assistant:
         message.estimated = False
         message.finished_at = None
         message.language = body.language
-        message.model = self.nodestro.settings().assistant_model
+        message.model = body.model or self.nodestro.settings().assistant_model
         self.store.put(_MESSAGES, _key(conversation_id, message.seq), message)
         self._start(conversation_id, message, user, loop)
         return message
