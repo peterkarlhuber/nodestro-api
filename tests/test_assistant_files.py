@@ -354,3 +354,40 @@ def test_server_users_see_only_their_own_conversations_and_files(make_app: Calla
     assert confirmed.status_code == 200 and [item["name"] for item in confirmed.json()["added"]] == ["private.txt"]
     detail = client.get(base).json()
     assert detail["file_states"][0]["knowledge_ids"]  # saved to knowledge on request, the file stays in the chat
+
+
+def test_a_chat_file_is_never_a_run_input_by_its_id(make_app: Callable[..., TestClient]) -> None:
+    """API-055: a run, batch, schedule or form field does not take a file of an assistant conversation by its id;
+    another person's chat file does not exist for it; an uploaded input file still works."""
+    from test_runs import agent_node, create, start
+
+    client = make_app({ASSISTANT: [text("ok")], "A": [text("done")] * 3})
+    app = client.app
+    app.state.principal_resolver = lambda _connection: _person("alice")  # type: ignore[attr-defined]
+    conversation_id = chat(client)
+    [chat_file] = attached(client, conversation_id, ("private.txt", b"Alice's notes"))
+    workflow_id = create(client, [agent_node("a", "A")], [])
+    refused = client.post(f"/api/workflows/{workflow_id}/runs", json={"input": "x", "file_ids": [chat_file]})
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["code"] == "input.assistant_file" and refused.json()["params"] == {"file_id": chat_file}
+    ctx = app.state.nodestro  # type: ignore[attr-defined]
+    catalog = ctx.file_catalog()
+    assert chat_file not in catalog and chat_file not in list(catalog)
+    with pytest.raises(KeyError):
+        catalog[chat_file]
+    rows = [{"input": "ok"}, {"input": "x", "file_ids": [chat_file]}]
+    batch = client.post("/api/batches", json={"workflow_id": workflow_id, "rows": rows})
+    assert batch.status_code == 201, batch.text
+    items = batch.json()["items"]
+    assert items[1]["status"] == "invalid" and items[1]["errors"][0]["code"] == "form.file_missing"
+    assert items[0]["status"] != "invalid"
+    app.state.principal_resolver = lambda _connection: _person("bob")  # type: ignore[attr-defined]
+    hidden = client.post(f"/api/workflows/{workflow_id}/runs", json={"input": "x", "file_ids": [chat_file]})
+    assert hidden.status_code == 404, hidden.text
+    upload_answer = client.post("/api/inputs", files={"files": ("input.txt", b"Bob's input", "text/plain")})
+    assert upload_answer.status_code == 201, upload_answer.text
+    own = upload_answer.json()[0]["file"]["id"]
+    assert own in ctx.file_catalog()
+    assert start(client, workflow_id)["status"] == "succeeded"
+    accepted = client.post(f"/api/workflows/{workflow_id}/runs", json={"input": "x", "file_ids": [own]})
+    assert accepted.status_code == 201, accepted.text

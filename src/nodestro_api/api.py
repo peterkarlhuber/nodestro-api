@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Callable, Iterable, Sequence
 from contextlib import suppress
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -23,6 +23,7 @@ from nodestro_runtime.agent_test import AgentTestIn, AgentTestResult
 from nodestro_runtime.catalog import SERVER_TOOLS, ModelInfo, ServerToolInfo, model_capabilities, models
 from nodestro_runtime.contracts import contract_of
 from nodestro_runtime.engine import check_workflow
+from nodestro_runtime.input_files import is_input_id
 from nodestro_runtime.knowledge import KnowledgeFile
 from nodestro_runtime.launcher import launch
 from nodestro_runtime.local_models import LOCAL_ASSISTANT_MODEL, LOCAL_DEFAULT_MODEL
@@ -1094,6 +1095,25 @@ def preview(body: PreviewRequest, ctx: Ctx) -> ContextPreview:
 # ---- runs -----------------------------------------------------------------------
 
 
+def refuse_chat_files(ctx: Nodestro, request: Request, file_ids: Iterable[str]) -> None:
+    """A run never takes a file of an assistant conversation by its id (API-055): the person's own one is refused
+    with ``input.assistant_file`` (upload it as an input file instead), another person's does not exist (404).
+    Form fields and the stored file lists of batches, schedules and test cases are checked by the context's file
+    catalog (:class:`nodestro_api.context.RunFileCatalog`)."""
+    for file_id in file_ids:
+        item = ctx.inputs.find(file_id) if is_input_id(file_id) else None
+        if item is None or item.origin != "assistant":
+            continue
+        if item.uploaded_by != actor_id(request):
+            raise KeyError(file_id)
+        raise ApiError(
+            400,
+            "input.assistant_file",
+            "A file of an assistant conversation cannot be a run input; upload it for the run instead",
+            file_id=file_id,
+        )
+
+
 @router.post(
     "/workflows/{workflow_id}/runs",
     status_code=201,
@@ -1118,6 +1138,7 @@ async def start_run(
 ) -> Run:
     """Start a run (201). With ``Idempotency-Key`` a retried request never starts it twice (API2-08)."""
     workflow = _workflow(ctx, workflow_id)
+    refuse_chat_files(ctx, request, body.file_ids)
     # A person starts this run: a local model that is not ready is named with what can be done (download, set up),
     # before anything starts. Unattended starts (schedules, batches, published APIs) only get the check's problem.
     await model_readiness.require_all_local(ctx, request, workflow_models(workflow), "run")
