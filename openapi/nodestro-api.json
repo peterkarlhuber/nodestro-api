@@ -6633,6 +6633,55 @@
         "title": "EnvironmentInfo",
         "type": "object"
       },
+      "ErrorCode": {
+        "properties": {
+          "params": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Params",
+            "type": "array"
+          },
+          "source": {
+            "enum": [
+              "runtime",
+              "api",
+              "both"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "ErrorCode",
+        "type": "object"
+      },
+      "ErrorCodeCatalog": {
+        "description": "Every problem code of the studio API and the runtime, sorted, with its parameters.",
+        "properties": {
+          "codes": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ErrorCode"
+            },
+            "title": "Codes",
+            "type": "object"
+          },
+          "patterns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Patterns",
+            "type": "array"
+          }
+        },
+        "required": [
+          "codes"
+        ],
+        "title": "ErrorCodeCatalog",
+        "type": "object"
+      },
       "ErrorOut": {
         "properties": {
           "code": {
@@ -17372,6 +17421,16 @@
             ],
             "title": "Budget Usd"
           },
+          "cause": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunCause"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -17828,6 +17887,35 @@
           "policy"
         ],
         "title": "RunBudgetOut",
+        "type": "object"
+      },
+      "RunCause": {
+        "description": "Why a failed run failed (AD-02): the step that failed first and its problem, so that a run list or a banner\ncan say \"<step>: <reason>\" without reading every step. Set together with ``error_code`` ``run.nodes_failed``;\n``code``/``params`` are the step's own (``run.budget_exceeded``, ``provider.rate_limited`` ...).",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          }
+        },
+        "required": [
+          "node_id",
+          "label",
+          "code"
+        ],
+        "title": "RunCause",
         "type": "object"
       },
       "RunChatView": {
@@ -18365,6 +18453,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/RunBudget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cause": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunCause"
               },
               {
                 "type": "null"
@@ -27428,6 +27526,35 @@
         "summary": "Diagnostics Connection"
       }
     },
+    "/api/error-codes": {
+      "get": {
+        "description": "Every problem code the API and the runtime answer with (``code`` of an error, an issue or a status), with the\nnames of its parameters and where it is raised. A client can check that it has a text for each of them.",
+        "operationId": "error_codes_api_error_codes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorCodeCatalog"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Error Codes"
+      }
+    },
     "/api/export-jobs/{job_id}": {
       "get": {
         "operationId": "get_export_job_api_export_jobs__job_id__get",
@@ -33295,7 +33422,7 @@
     },
     "/api/runs/{run_id}/approvals/{node_id}": {
       "post": {
-        "description": "Approve or reject at an approval node; the run (its top-level run) continues right away.",
+        "description": "Approve or reject at an approval node; the run (its top-level run) continues right away.\n\nAnswers the top-level run as it goes on: ``queued`` (or already ``running``/finished), never the ``paused`` state\nthe decision ended (X-01).",
         "operationId": "decide_approval_api_runs__run_id__approvals__node_id__post",
         "parameters": [
           {

@@ -1309,7 +1309,10 @@ def list_approvals(ctx: Ctx) -> list[PendingApproval]:
 
 @router.post("/runs/{run_id}/approvals/{node_id}", dependencies=RUN)
 async def decide_approval(run_id: str, node_id: str, body: ApprovalDecision, request: Request, ctx: Ctx) -> Run:
-    """Approve or reject at an approval node; the run (its top-level run) continues right away."""
+    """Approve or reject at an approval node; the run (its top-level run) continues right away.
+
+    Answers the top-level run as it goes on: ``queued`` (or already ``running``/finished), never the ``paused`` state
+    the decision ended (X-01)."""
     return ctx.runs.decide(run_id, node_id, body.decision, body.comment, decided_by=actor_id(request))
 
 

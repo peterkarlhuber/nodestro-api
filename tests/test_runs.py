@@ -142,6 +142,20 @@ def test_failed_node_blocks_successors(make_app: Callable[..., TestClient]) -> N
     assert run["nodes"]["after"]["error_code"] == "run.blocked"
     assert run["nodes"]["other"]["status"] == "succeeded"
     assert run["error_code"] == "run.nodes_failed" and run["error_params"] == {"nodes": "Broken"}
+    # The run-level cause (AD-02, API-018): the step that failed first and its own problem, on the run and in lists.
+    cause = {"node_id": "broken", "label": "Broken", "code": "run.agent.IncompleteResponseError", "params": {}}
+    assert {**run["cause"], "params": {}} == cause and run["cause"]["params"] == run["nodes"]["broken"]["error_params"]
+    listed = next(item for item in client.get("/api/runs").json() if item["id"] == run["id"])
+    assert listed["cause"] == run["cause"]
+    by_workflow = client.get("/api/runs", params={"workflow_id": workflow_id}).json()
+    assert by_workflow[0]["cause"] == run["cause"]
+
+
+def test_a_successful_run_has_no_cause(make_app: Callable[..., TestClient]) -> None:
+    client = make_app({"FINE": [text("ok")]})
+    run = start(client, create(client, [agent_node("fine", "FINE")], []))
+    assert run["status"] == "succeeded" and run["cause"] is None
+    assert client.get("/api/runs").json()[0]["cause"] is None
 
 
 def test_budget_stops_the_run(make_app: Callable[..., TestClient]) -> None:

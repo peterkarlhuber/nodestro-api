@@ -68,6 +68,7 @@ from .api_run_chat import router as run_chat_router
 from .api_tool_approvals import router as tool_approvals_router
 from .body_limit import BodyLimitMiddleware, BodyLimits
 from .context import AppConfig, Nodestro
+from .error_codes import router as error_codes_router
 from .frontend import mount_frontend
 from .identity import (
     LoginFlow,
@@ -312,6 +313,7 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
     app.include_router(budget_router)
     app.include_router(tool_approvals_router)
     app.include_router(run_chat_router)
+    app.include_router(error_codes_router)
     app.include_router(router)
     app.include_router(data_router)
     if composition.notifications is not None:
