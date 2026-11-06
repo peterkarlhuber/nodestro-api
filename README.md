@@ -379,6 +379,11 @@ package for one platform with its own Python, every library, start scripts and o
 it is built as a background job (`POST /api/publications/{id}/export-jobs`, `GET /api/export-jobs/{id}`). See
 [docs/portable-export.md](docs/portable-export.md).
 
+`GET /api/publication-overview` (read permission, like the other publication reads) lists every publication of the
+installation (on a server: of the tenant) with its workflow's current name, the active release's workflow version and
+date, and its export records, newest first: the studio's *Publications* page reads it in one request. It only reads
+the stored publications, releases and export records.
+
 Amazon Bedrock in an export: the manifest keeps only the region and the data residency (`settings.bedrock`; an
 `eu_only` stays in force), never an AWS profile name, a role or a key. The exported API signs in with the AWS default
 credential chain of the machine it runs on; `AWS_REGION` (or `AWS_DEFAULT_REGION`) overrides the exported region,

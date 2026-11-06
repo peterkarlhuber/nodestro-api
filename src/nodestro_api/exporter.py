@@ -2063,6 +2063,14 @@ def records(ctx: Nodestro, publication_id: str) -> list[ExportRecord]:
     return sorted(found, key=lambda item: item.created_at, reverse=True)
 
 
+def records_by_publication(ctx: Nodestro) -> dict[str, list[ExportRecord]]:
+    """Every export record of this installation (tenant) per publication, newest first (one read of the store)."""
+    found: dict[str, list[ExportRecord]] = {}
+    for item in sorted(ctx.store.list(EXPORTS, ExportRecord), key=lambda item: item.created_at, reverse=True):
+        found.setdefault(item.publication_id, []).append(item)
+    return found
+
+
 def normalize_records(store: DocumentStore) -> None:
     """Bring stored export records to the current format (idempotent).
 

@@ -15266,6 +15266,110 @@
         "title": "PublicationListItem",
         "type": "object"
       },
+      "PublicationOverviewItem": {
+        "description": "One publication on the studio's *Publications* page: the stored publication, its workflow, the active\nrelease and the export history. Read only; everything comes from the stored publications, releases and\nexport records (nothing is stored for the page).",
+        "properties": {
+          "active_release": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Release"
+          },
+          "active_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Version"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "exports": {
+            "items": {
+              "$ref": "#/components/schemas/ExportRecord"
+            },
+            "title": "Exports",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "network": {
+            "title": "Network",
+            "type": "boolean"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "workflow_id": {
+            "title": "Workflow Id",
+            "type": "string"
+          },
+          "workflow_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Name"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "workflow_id",
+          "enabled",
+          "network",
+          "active_release",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PublicationOverviewItem",
+        "type": "object"
+      },
       "PublicationPatch": {
         "properties": {
           "description": {
@@ -30876,6 +30980,39 @@
           }
         },
         "summary": "Sync Prices"
+      }
+    },
+    "/api/publication-overview": {
+      "get": {
+        "description": "All publications of this installation (on a server: of the tenant) with their workflow, active release and\nexports, for the studio's *Publications* page (one request instead of one per publication).",
+        "operationId": "publication_overview_api_publication_overview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PublicationOverviewItem"
+                  },
+                  "title": "Response Publication Overview Api Publication Overview Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Publication Overview"
       }
     },
     "/api/publications": {
