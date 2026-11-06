@@ -5,8 +5,10 @@ The runtime does the work (:mod:`nodestro_runtime.local_service`, :mod:`nodestro
 
 - ``GET /api/local-models``: the server's state, the catalog with what is installed, this computer's hardware and a
   recommendation per task.
-- Jobs (``202`` with the job; progress at ``GET /api/local-models/jobs/{id}``, ``POST .../cancel``): install the
-  runtime (from a local archive or by download), download a model, import an offline model package or a GGUF file,
+- Jobs (``202`` with the job; progress at ``GET /api/local-models/jobs/{id}``, ``POST .../cancel``): set up the
+  server step by step (``/setup``: check, prerequisites, download, verify, install, configure, start, reachability,
+  hardware; steps that are not needed are skipped with the reason), install the runtime (the same job), download a
+  model (Ollama's steps with measured bytes, rate and remaining time), import an offline model package or a GGUF file,
   build a catalog model from local files, measure a model's speed, move the model folder.
 - ``/api/knowledge/index``: the semantic index (state, rebuild, cancel, remove).
 
@@ -60,6 +62,13 @@ class RuntimeInstallIn(BaseModel):
     #: A release archive on this computer (offline); ``download`` fetches it from the Ollama release page instead.
     archive: str | None = None
     download: bool = False
+
+
+class SetupIn(BaseModel):
+    #: Allow downloading the pinned runtime when it is missing (refused in the strict offline mode).
+    download: bool = False
+    #: A release archive on this computer to install the runtime from instead.
+    archive: str | None = Field(default=None, max_length=4096)
 
 
 class PullIn(BaseModel):
@@ -191,7 +200,11 @@ async def local_start(ctx: Ctx) -> LocalStatus:
 
 @router.post("/local-models/stop", dependencies=INSTALL)
 async def local_stop(ctx: Ctx) -> LocalStatus:
+    """Stop the server Nodestro started (desktop). Local Docker's container and a server the user runs are never
+    stopped from here (``local.not_managed``)."""
     _manageable(ctx)
+    if ctx.local_models.mode != "managed":
+        raise ApiError(409, "local.not_managed", "Nodestro does not manage this local model server")
     await asyncio.to_thread(ctx.local_models.stop)
     return await asyncio.to_thread(ctx.local_models.status)
 
@@ -201,6 +214,15 @@ def local_autostart(body: AutostartIn, ctx: Ctx) -> LocalStatus:
     _manageable(ctx)
     ctx.local_models.set_autostart(body.enabled)
     return ctx.local_models.status()
+
+
+@router.post("/local-models/setup", status_code=202, dependencies=INSTALL)
+def local_setup(body: SetupIn, ctx: Ctx) -> LocalJob:
+    """Set up the local model server as one job with steps (see the module documentation); one at a time
+    (``local.job_running``). For Local Docker and the user's own server it only checks the server and the hardware:
+    such a server is never started, stopped or changed."""
+    _manageable(ctx)
+    return ctx.local_models.setup(archive=body.archive, download=body.download)
 
 
 @router.post("/local-models/runtime", status_code=202, dependencies=INSTALL)

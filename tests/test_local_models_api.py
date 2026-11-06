@@ -217,3 +217,59 @@ def test_a_folder_that_is_no_offline_package_has_its_own_code(
     assert answer.status_code == 400, answer.text
     assert answer.json()["code"] == "local.invalid_package"
     assert answer.json()["params"]["reason"] == "invalid_package"
+
+
+def _finished(client: TestClient, job: dict[str, Any]) -> dict[str, Any]:
+    deadline = time.monotonic() + 15
+    while (state := client.get(f"/api/local-models/jobs/{job['id']}").json())["state"] == "running":
+        assert time.monotonic() < deadline
+        time.sleep(0.05)
+    return state
+
+
+def test_the_setup_reports_its_steps_and_one_runs_at_a_time(managed: TestClient) -> None:
+    started = managed.post("/api/local-models/setup", json={})
+    assert started.status_code == 202, started.text
+    job = started.json()
+    assert job["kind"] == "setup" and [step["id"] for step in job["steps"]] == [
+        "check",
+        "prerequisites",
+        "download",
+        "verify",
+        "install",
+        "configure",
+        "start",
+        "reachable",
+        "hardware",
+        "ready",
+    ]
+    again = managed.post("/api/local-models/setup", json={})
+    if again.status_code == 202:  # the first one was already done
+        _finished(managed, again.json())
+    else:
+        assert again.status_code == 400 and again.json()["code"] == "local.job_running"
+    state = _finished(managed, job)
+    assert state["state"] == "done", state
+    steps = {step["id"]: step for step in state["steps"]}
+    assert steps["check"]["note"] == "bundled" and steps["download"]["state"] == "skipped"
+    assert steps["start"]["state"] == "done" and steps["reachable"]["detail"].startswith("Ollama 0.40.14 at http://127")
+    assert steps["hardware"]["note"].startswith("gpu_") and steps["ready"]["note"] == "ready"
+    # A reload of the interface finds the job with its steps (and the server running).
+    listed = {item["id"]: item for item in managed.get("/api/local-models/jobs").json()}
+    assert listed[job["id"]]["steps"] == state["steps"]
+    assert managed.get("/api/local-models").json()["status"]["running"] is True
+
+
+def test_a_users_own_server_is_checked_but_never_stopped(make_app: MakeApp) -> None:
+    client = make_app()
+    saved = client.put("/api/settings", json={"providers": {"ollama": {"base_url": "http://127.0.0.1:9/v1"}}})
+    assert saved.status_code == 200, saved.text
+    assert client.get("/api/local-models").json()["status"]["mode"] == "external"
+    refused = client.post("/api/local-models/stop")
+    assert refused.status_code == 409 and refused.json()["code"] == "local.not_managed"
+    state = _finished(client, client.post("/api/local-models/setup", json={}).json())
+    steps = {step["id"]: step for step in state["steps"]}
+    # Nothing answers on port 9: the check of the address fails, nothing was started or configured.
+    assert state["state"] == "failed" and state["error_code"] == "local.unreachable" and state["retryable"] is True
+    assert steps["start"]["state"] == "skipped" and steps["start"]["note"] == "not_managed"
+    assert steps["reachable"]["state"] == "failed"

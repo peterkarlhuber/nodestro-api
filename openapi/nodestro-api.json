@@ -8148,6 +8148,36 @@
         "title": "InstalledModel",
         "type": "object"
       },
+      "JobLayer": {
+        "description": "One file (layer) of a model download, as Ollama reports it.",
+        "properties": {
+          "completed": {
+            "default": 0,
+            "title": "Completed",
+            "type": "integer"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "digest"
+        ],
+        "title": "JobLayer",
+        "type": "object"
+      },
       "JobRequest": {
         "properties": {
           "requirement": {
@@ -8160,6 +8190,78 @@
           "requirement"
         ],
         "title": "JobRequest",
+        "type": "object"
+      },
+      "JobStep": {
+        "description": "One step of a job, as the code runs it.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "state": {
+            "default": "pending",
+            "enum": [
+              "pending",
+              "running",
+              "done",
+              "skipped",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "JobStep",
         "type": "object"
       },
       "JudgeVerdict": {
@@ -9029,6 +9131,32 @@
             ],
             "title": "Error Code"
           },
+          "eta_scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "job",
+                  "file"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta Scope"
+          },
+          "eta_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta Seconds"
+          },
           "finished_at": {
             "anyOf": [
               {
@@ -9049,6 +9177,7 @@
             "enum": [
               "pull",
               "build",
+              "setup",
               "install_runtime",
               "import_package",
               "import_gguf",
@@ -9058,10 +9187,78 @@
             "title": "Kind",
             "type": "string"
           },
+          "layers": {
+            "items": {
+              "$ref": "#/components/schemas/JobLayer"
+            },
+            "title": "Layers",
+            "type": "array"
+          },
+          "log": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Log",
+            "type": "array"
+          },
           "message": {
             "default": "",
             "title": "Message",
             "type": "string"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase"
+          },
+          "progress_step": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Step"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
+          "resumed_bytes": {
+            "default": 0,
+            "title": "Resumed Bytes",
+            "type": "integer"
+          },
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "stalled_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stalled Seconds"
           },
           "started_at": {
             "format": "date-time",
@@ -9079,6 +9276,13 @@
             "title": "State",
             "type": "string"
           },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/JobStep"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
           "target": {
             "title": "Target",
             "type": "string"
@@ -9093,6 +9297,23 @@
               }
             ],
             "title": "Total"
+          },
+          "total_final": {
+            "default": true,
+            "title": "Total Final",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
           }
         },
         "required": [
@@ -18571,6 +18792,29 @@
         "title": "SettingsIn",
         "type": "object"
       },
+      "SetupIn": {
+        "properties": {
+          "archive": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archive"
+          },
+          "download": {
+            "default": false,
+            "title": "Download",
+            "type": "boolean"
+          }
+        },
+        "title": "SetupIn",
+        "type": "object"
+      },
       "Snapshot": {
         "description": "What the assistant gets of one object at one point in time; never changed afterwards.",
         "properties": {
@@ -27192,6 +27436,45 @@
         "summary": "Local Install Runtime"
       }
     },
+    "/api/local-models/setup": {
+      "post": {
+        "description": "Set up the local model server as one job with steps (see the module documentation); one at a time\n(``local.job_running``). For Local Docker and the user's own server it only checks the server and the hardware:\nsuch a server is never started, stopped or changed.",
+        "operationId": "local_setup_api_local_models_setup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalJob"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Local Setup"
+      }
+    },
     "/api/local-models/start": {
       "post": {
         "operationId": "local_start_api_local_models_start_post",
@@ -27222,6 +27505,7 @@
     },
     "/api/local-models/stop": {
       "post": {
+        "description": "Stop the server Nodestro started (desktop). Local Docker's container and a server the user runs are never\nstopped from here (``local.not_managed``).",
         "operationId": "local_stop_api_local_models_stop_post",
         "responses": {
           "200": {
