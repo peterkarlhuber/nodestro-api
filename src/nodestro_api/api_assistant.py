@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
-from typing import Annotated
+from typing import Annotated, TypeVar
 
 from fastapi import APIRouter, File, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
@@ -23,6 +23,7 @@ from nodestro_runtime.problems import NodestroError, Problem
 from nodestro_runtime.schemas import Language, WorkflowIn
 from pydantic import BaseModel, Field
 
+from . import model_readiness
 from .api import Ctx, _sse, actor_id, uploaded_file_headers
 from .api_inputs import FileText, read_text
 from .assistant import (
@@ -37,6 +38,8 @@ from .assistant_context import AttachRequest, Snapshot
 from .assistant_files import FileSupport, FileView
 from .docs_index import DocsIndex
 from .permissions import EDIT, READ, RUN, StreamAccess
+
+_Body = TypeVar("_Body", SendRequest, RetryRequest)
 
 router = APIRouter(prefix="/api/assistant")
 
@@ -212,6 +215,7 @@ def file_text(conversation_id: str, file_id: str, ctx: Ctx, request: Request, pa
 async def send_message(conversation_id: str, body: SendRequest, ctx: Ctx, request: Request) -> SentMessage:
     """Store the message and start the answer; follow it via its events."""
     _own(ctx, request, conversation_id)
+    body = await _ready(ctx, request, body)
     # send() checks the model's connection (a local model server is asked): off the event loop (RT3-04 pattern).
     loop = asyncio.get_running_loop()
     return await asyncio.to_thread(ctx.assistant.send, conversation_id, body, loop=loop)
@@ -222,8 +226,18 @@ async def retry_message(
     conversation_id: str, message_id: str, body: RetryRequest, ctx: Ctx, request: Request
 ) -> ChatMessage:
     _own(ctx, request, conversation_id)
+    body = await _ready(ctx, request, body)
     loop = asyncio.get_running_loop()
     return await asyncio.to_thread(ctx.assistant.retry, conversation_id, message_id, body, loop=loop)
+
+
+async def _ready(ctx: Ctx, request: Request, body: _Body) -> _Body:
+    """The answer's model: the assistant model, or another ready one chosen for it; a local model that is not
+    ready is refused before the message is stored (``409 model.local_unavailable``), so its text and files stay in
+    the composer."""
+    model = await model_readiness.chosen_model(ctx, body.model, ctx.settings().assistant_model, "assistant")
+    await model_readiness.require_local(ctx, request, model, "assistant")
+    return body.model_copy(update={"model": model if body.model else None})
 
 
 @router.post("/conversations/{conversation_id}/messages/{message_id}/cancel", dependencies=RUN)

@@ -16,6 +16,7 @@ from nodestro_runtime.tool_drafts import ToolDraft
 from nodestro_runtime.tool_library import ToolInfo
 from pydantic import BaseModel, Field
 
+from . import model_readiness
 from .api import Ctx, _sse
 from .architect import ArchitectJob, ArchitectRequest
 from .permissions import EDIT, READ, RUN, StreamAccess
@@ -24,11 +25,17 @@ router = APIRouter(prefix="/api")
 
 
 @router.post("/architect/jobs", status_code=201, dependencies=RUN)
-async def start_architect(body: ArchitectRequest, ctx: Ctx) -> ArchitectJob:
-    """Start designing (``create``) or revising (``revise``) a workflow; returns at once."""
+async def start_architect(body: ArchitectRequest, ctx: Ctx, request: Request) -> ArchitectJob:
+    """Start designing (``create``) or revising (``revise``) a workflow; returns at once.
+
+    A local assistant model that is not ready (not downloaded, no server) is refused before anything starts or
+    costs (``409 model.local_unavailable`` with what can be done); ``model`` uses another ready model for this job
+    only (one of the check's alternatives, ``model.choice_invalid`` otherwise)."""
+    model = await model_readiness.chosen_model(ctx, body.model, ctx.settings().assistant_model, "architect")
+    await model_readiness.require_local(ctx, request, model, "architect")
     # Fail fast without provider settings; a local model server is asked off the event loop (RT3-04 pattern).
-    await asyncio.to_thread(ctx.connect_model, ctx.settings().assistant_model)
-    return ctx.architect.start(body, loop=asyncio.get_running_loop())
+    await asyncio.to_thread(ctx.connect_model, model)
+    return ctx.architect.start(body.model_copy(update={"model": model}), loop=asyncio.get_running_loop())
 
 
 @router.get("/architect/jobs/{job_id}", dependencies=READ)

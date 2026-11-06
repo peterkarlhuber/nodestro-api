@@ -25,7 +25,7 @@ from nodestro_runtime.knowledge import KnowledgeFile
 from nodestro_runtime.launcher import launch
 from nodestro_runtime.memory_spaces import MemoryFile, MemorySpaceInfo, check_space_name
 from nodestro_runtime.model_profile import ModelProfile
-from nodestro_runtime.preflight import WorkflowCheck, preflight
+from nodestro_runtime.preflight import WorkflowCheck, preflight, workflow_models
 from nodestro_runtime.preview import ContextPreview, PreviewRequest, build_preview, latest_run
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.profile import ProfileKind
@@ -74,7 +74,7 @@ from orkexa import __version__ as library_version
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import __version__, library_models, sandbox_status
+from . import __version__, library_models, model_readiness, sandbox_status
 from .assistants import AgentDraft, MemorySeed
 from .benchmarks import SuiteIn, TestCase
 from .context import Nodestro
@@ -1063,6 +1063,9 @@ async def start_run(
 ) -> Run:
     """Start a run (201). With ``Idempotency-Key`` a retried request never starts it twice (API2-08)."""
     workflow = _workflow(ctx, workflow_id)
+    # A person starts this run: a local model that is not ready is named with what can be done (download, set up),
+    # before anything starts. Unattended starts (schedules, batches, published APIs) only get the check's problem.
+    await model_readiness.require_all_local(ctx, request, workflow_models(workflow), "run")
     # Who started the run decides its budget requests (BUDGET-1), besides administrators.
     started_by = actor_id(request)
     key = (idempotency_key or "").strip()
@@ -1614,8 +1617,9 @@ class DesignRequest(BaseModel):
 
 
 @router.post("/agents/design", dependencies=RUN)
-def design_agent(body: DesignRequest, ctx: Ctx) -> AgentDraft:
+def design_agent(body: DesignRequest, ctx: Ctx, request: Request) -> AgentDraft:
     settings = ctx.settings()
+    model_readiness.require_local_now(ctx, request, settings.assistant_model, "agent_design")
     connection = ctx.connect_model(settings.assistant_model)
     tracker = ctx.tracker()
     try:
@@ -1665,6 +1669,11 @@ async def test_agent(body: AgentTestIn, ctx: Ctx, request: Request) -> AgentTest
             "Testing a changed agent configuration needs the permission 'edit'",
             permission=Permission.EDIT.value,
         )
+    # A local model that is not ready is named with what can be done (download, another model for the test).
+    tools = ["tools"] if body.agent.tools else []
+    await model_readiness.require_local(ctx, request, body.agent.model, "agent_test", tools)
+    if body.agent.quality.enabled:
+        await model_readiness.require_local(ctx, request, body.agent.quality.judge_model, "check")
     # The checks may ask a local model server (/api/show, /api/ps): never on the event loop (RT3-04 pattern).
     await asyncio.to_thread(_check_agent_test, ctx, body)
     result, tracker = await asyncio.to_thread(ctx.tester.run, body)
@@ -1778,8 +1787,9 @@ def list_jobs(ctx: Ctx) -> list[ToolJob]:
 
 
 @router.post("/tools/jobs", status_code=201, dependencies=RUN)
-def start_job(body: JobRequest, ctx: Ctx) -> ToolJob:
+def start_job(body: JobRequest, ctx: Ctx, request: Request) -> ToolJob:
     model = ctx.settings().assistant_model
+    model_readiness.require_local_now(ctx, request, model, "agent_design")
     connection = ctx.connect_model(model)  # fail fast without provider settings
 
     def record(job: ToolJob, tracker: UsageTracker) -> None:

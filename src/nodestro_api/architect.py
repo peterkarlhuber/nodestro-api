@@ -177,6 +177,9 @@ class ArchitectRequest(BaseModel):
     generate_tools: bool = True
     #: Cost limit of this job in USD; the setting ``architect_budget_usd`` when empty.
     budget_usd: float | None = Field(default=None, ge=0)
+    #: Another ready model for this job only (the person chose it when the assistant model was not available);
+    #: the settings stay as they are. Empty: the assistant model of the settings.
+    model: str | None = Field(default=None, max_length=200)
 
 
 # ---- what the model returns ------------------------------------------------------
@@ -681,7 +684,7 @@ class _Session:
         self.request = request
         self.cancelled = cancelled
         settings = self.nodestro.settings()
-        self.model = settings.assistant_model
+        self.model = request.model or settings.assistant_model
         self.default_model = settings.default_model
         #: Whether a cut-off answer is asked again with a higher output limit, and the highest limit that may use.
         self.retry_truncated = settings.architect_retry_truncated
