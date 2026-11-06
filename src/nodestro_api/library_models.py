@@ -26,6 +26,8 @@ class AgentModel(BaseModel):
     key: str
     name: str
     part: str | None = None
+    #: The name of :attr:`part` in the requested language (API-053; ``None`` for the template's own agents).
+    part_name: str | None = None
     kind: str = "agent"
     task: str
     tier: str
@@ -92,6 +94,7 @@ def plan(ctx: Any, template_id: str, language: str, overrides: Mapping[str, str]
 
     ``overrides`` (agent key -> model) are the person's choices; an unknown key is a ``KeyError``."""
     agents = library.agent_plan(template_id, language)
+    part_names = {part: library.part_texts(part, language).name for part in {a.part for a in agents if a.part}}
     chosen = dict(overrides or {})
     unknown = sorted(set(chosen) - {agent.key for agent in agents})
     if unknown:
@@ -107,6 +110,7 @@ def plan(ctx: Any, template_id: str, language: str, overrides: Mapping[str, str]
                     key=agent.key,
                     name=agent.name,
                     part=agent.part,
+                    part_name=part_names.get(agent.part or ""),
                     kind=agent.kind,
                     task=agent.task,
                     tier=agent.tier,
@@ -139,6 +143,7 @@ def plan(ctx: Any, template_id: str, language: str, overrides: Mapping[str, str]
                 key=agent.key,
                 name=agent.name,
                 part=agent.part,
+                part_name=part_names.get(agent.part or ""),
                 kind=agent.kind,
                 task=agent.task,
                 tier=agent.tier,

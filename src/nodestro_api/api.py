@@ -60,8 +60,10 @@ from nodestro_runtime.schemas import (
     Usage,
     Workflow,
     WorkflowIn,
-    WorkflowSummary,
     now,
+)
+from nodestro_runtime.schemas import (
+    WorkflowSummary as RuntimeWorkflowSummary,
 )
 from nodestro_runtime.tool_adoption import adopt_tool as run_adoption
 from nodestro_runtime.tool_legacy import keep_only_inherited
@@ -571,6 +573,21 @@ def request_language(request: Request) -> str:
     return "en"
 
 
+class ContractFieldSummary(BaseModel):
+    """One field of a workflow's output contract, as the workflow list shows it."""
+
+    name: str
+    type: str
+    description: str = ""
+    required: bool = True
+
+
+class WorkflowSummary(RuntimeWorkflowSummary):
+    """A workflow in the list; ``contract`` keeps the field names, ``contract_fields`` describes them (API-053)."""
+
+    contract_fields: list[ContractFieldSummary] = Field(default_factory=list)
+
+
 @router.get("/workflows", dependencies=READ)
 def list_workflows(ctx: Ctx) -> list[WorkflowSummary]:
     last_status: dict[str, Any] = {}
@@ -588,6 +605,12 @@ def list_workflows(ctx: Ctx) -> list[WorkflowSummary]:
             last_run_status=last_status.get(w.id),
             capabilities=w.capabilities,
             contract=[field.name for field in contract_of(w)],
+            contract_fields=[
+                ContractFieldSummary(
+                    name=field.name, type=field.type, description=field.description, required=field.required
+                )
+                for field in contract_of(w)
+            ],
         )
         for w in stored_workflows(ctx.store)
     ]

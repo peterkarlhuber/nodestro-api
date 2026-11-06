@@ -697,6 +697,17 @@
             ],
             "title": "Part"
           },
+          "part_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Part Name"
+          },
           "reasons": {
             "items": {
               "type": "string"
@@ -5682,6 +5693,35 @@
           "description"
         ],
         "title": "ContractField",
+        "type": "object"
+      },
+      "ContractFieldSummary": {
+        "description": "One field of a workflow's output contract, as the workflow list shows it.",
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "default": true,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ],
+        "title": "ContractFieldSummary",
         "type": "object"
       },
       "ConversationDetail": {
@@ -24228,6 +24268,7 @@
         "type": "object"
       },
       "WorkflowSummary": {
+        "description": "A workflow in the list; ``contract`` keeps the field names, ``contract_fields`` describes them (API-053).",
         "properties": {
           "agents": {
             "title": "Agents",
@@ -24245,6 +24286,13 @@
               "type": "string"
             },
             "title": "Contract",
+            "type": "array"
+          },
+          "contract_fields": {
+            "items": {
+              "$ref": "#/components/schemas/ContractFieldSummary"
+            },
+            "title": "Contract Fields",
             "type": "array"
           },
           "description": {

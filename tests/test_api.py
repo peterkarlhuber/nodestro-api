@@ -66,13 +66,27 @@ def test_workflow_list_names_capabilities_and_contract(make_app: Callable[..., T
     team = {
         "name": "Team",
         "capabilities": ["research", " Research "],
-        "nodes": [{"id": "out", "type": "output", "output": {"contract": [{"name": "summary"}, {"name": "score"}]}}],
+        "nodes": [
+            {
+                "id": "out",
+                "type": "output",
+                "output": {
+                    "contract": [{"name": "summary", "description": "Short"}, {"name": "score", "type": "number"}]
+                },
+            }
+        ],
     }
     client.post("/api/workflows", json=team)
     client.post("/api/workflows", json={"name": "Plain"})
     listed = {item["name"]: item for item in client.get("/api/workflows").json()}
     assert listed["Team"]["capabilities"] == ["research"] and listed["Team"]["contract"] == ["summary", "score"]
     assert listed["Plain"]["capabilities"] == [] and listed["Plain"]["contract"] == []
+    # API-053: the fields with their type and description, not only their names.
+    assert listed["Team"]["contract_fields"] == [
+        {"name": "summary", "type": "string", "description": "Short", "required": True},
+        {"name": "score", "type": "number", "description": "", "required": True},
+    ]
+    assert listed["Plain"]["contract_fields"] == []
 
 
 def test_agent_templates(make_app: Callable[..., TestClient]) -> None:
