@@ -492,6 +492,43 @@ def _ready(server: ServerEnvironment) -> Any:
 # ---- the API process --------------------------------------------------------------------------
 
 
+#: ``NODESTRO_BEHIND_PROXY`` and ``NODESTRO_REQUIRE_CLIENT_ADDRESS`` take these values as "on" (MUP-ONA A3).
+_ON_VALUES = frozenset({"1", "true", "on", "yes"})
+
+
+def client_address_problem(environ: Mapping[str, str] | None = None) -> str | None:
+    """Why the API would see the proxy's address instead of the clients' (MUP-ONA A3, PS-3), or None.
+
+    With ``NODESTRO_BEHIND_PROXY=1`` (the API runs behind a reverse proxy) uvicorn takes the client address from
+    ``X-Forwarded-For`` only for requests from the addresses in ``FORWARDED_ALLOW_IPS`` (default ``127.0.0.1``). When
+    that is not set, every client gets the proxy's address, and the per-address limits (login starts, failed keys)
+    then count all clients together: one client could lock everybody out."""
+    env = os.environ if environ is None else environ
+    if env.get("NODESTRO_BEHIND_PROXY", "").strip().lower() not in _ON_VALUES:
+        return None
+    if env.get("FORWARDED_ALLOW_IPS", "").strip():
+        return None
+    return (
+        "proxy.client_address_unknown: NODESTRO_BEHIND_PROXY is set but FORWARDED_ALLOW_IPS is not; set it to the "
+        "reverse proxy's address(es) so the API sees client addresses (else every client shares the proxy's address "
+        "and its login and API key limits)"
+    )
+
+
+def require_client_address(environ: Mapping[str, str] | None = None) -> None:
+    """Log :func:`client_address_problem`; refuse to start with ``NODESTRO_REQUIRE_CLIENT_ADDRESS=1``."""
+    env = os.environ if environ is None else environ
+    problem = client_address_problem(env)
+    if problem is None:
+        return
+    if env.get("NODESTRO_REQUIRE_CLIENT_ADDRESS", "").strip().lower() in _ON_VALUES:
+        raise NodestroError(
+            "proxy.client_address_unknown",
+            f"{problem.partition(': ')[2]} (NODESTRO_REQUIRE_CLIENT_ADDRESS=1 refuses to start)",
+        )
+    logger.warning("%s", problem)
+
+
 def create_server_app() -> Any:
     """The studio API of a server, built from the environment (``uvicorn --factory``)."""
     import httpx
@@ -501,6 +538,7 @@ def create_server_app() -> Any:
     from .server_app import TenantComposition, create_tenant_app
 
     server = load()
+    require_client_address()
     database = _ready(server)
     services, identity = _platform(server, database)  # open for the life of the process, as the database
     services, notifications, metrics = _observed(server, database, services, identity)
@@ -726,6 +764,12 @@ def check(
         provider = check_identity_provider(server, http)
         if provider is not None:
             problems.append(provider)
+    proxy = client_address_problem()
+    if proxy is not None:  # a problem only when the operator requires client addresses (MUP-ONA A3)
+        if os.environ.get("NODESTRO_REQUIRE_CLIENT_ADDRESS", "").strip().lower() in _ON_VALUES:
+            problems.append(proxy)
+        elif warnings is not None:
+            warnings.append(proxy)
     return problems
 
 
@@ -1606,6 +1650,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         elif args.command == "api":
             import uvicorn
 
+            require_client_address()  # behind a proxy without FORWARDED_ALLOW_IPS (MUP-ONA A3)
             _ready(server).close()  # stop with one sentence before uvicorn starts
             uvicorn.run(
                 "nodestro_api.server:create_server_app",

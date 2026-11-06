@@ -192,7 +192,9 @@ its permissions:
 
 A key never reaches other publications (they answer `404` as if they did not exist), runs of other publications or
 the studio API. Revoking a key takes effect at once; rotating creates a new key with the same name, permissions and
-publications and revokes the old one in the same step. Failed authentications are limited per client address.
+publications and revokes the old one in the same step. Failed authentications are limited per client address; those
+of a well-formed key are counted per key id instead (its first 8 characters, never the secret), with a ten times
+higher limit per address, so one client's wrong key does not lock out other keys sent through the same reverse proxy.
 
 ## The server (`nodestro-server`)
 
@@ -220,6 +222,7 @@ unsafe value is listed at once (`profile.invalid`), and nothing has a default th
 | `NODESTRO_PRICE_SYNC`, `NODESTRO_PRICE_LITELLM`, `NODESTRO_PRICE_SNAPSHOT_FILE` | reference price sync of the workers (`on`/`off`, default `on`; LiteLLM's cost map `on`/`off`; a reviewed Orkexa snapshot file), see "Model prices" |
 | `NODESTRO_LOG_FORMAT` | `json` writes one JSON object per log line (`time`, `level`, `logger`, `message`, `request_id`, `exception`) for `api` and `worker`; default plain text. Every API answer carries `X-Request-ID` (a proxy's short id is kept), and its log lines name it. `GET /api/ready` (no login) answers 503 while the process starts, stops or cannot reach its database, for a load balancer; `/api/health` stays the liveness check |
 | `NODESTRO_LOGIN_STARTS_PER_MINUTE` | login starts per address and minute in one API process (default 60, `0` off) |
+| `NODESTRO_BEHIND_PROXY`, `FORWARDED_ALLOW_IPS`, `NODESTRO_REQUIRE_CLIENT_ADDRESS` | behind a reverse proxy: `NODESTRO_BEHIND_PROXY=1` states that there is one, and uvicorn's `FORWARDED_ALLOW_IPS` must then name the proxy's address(es), so the API takes the client address from `X-Forwarded-For` (only from those addresses). Without it every client has the proxy's address and shares its per-address limits (login starts, failed API keys). `check` prints `warning: proxy.client_address_unknown` and `api` logs it; with `NODESTRO_REQUIRE_CLIENT_ADDRESS=1` both refuse instead |
 
 Commands:
 

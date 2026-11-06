@@ -11,7 +11,7 @@
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 1 |
-| P2 Medium | 8 |
+| P2 Medium | 7 |
 | P3 Low | 15 |
 | P4 Optional | 7 |
 
@@ -355,14 +355,6 @@ removed by the change that completes its package here.
   its upload and knowledge paths on the runtime's limited path.
 - **Next step:** After the runtime and orkexa parts merge: map the code, test the routes, bump the runtime pin through
   the pin cascade.
-
-### API-MUP-A3 · Client addresses behind a reverse proxy
-
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** MP-A3 (PS-3); nodestro-server RUNBOOK, [MUP-ONA][mup-ona]
-- **What:** Behind a proxy without `FORWARDED_ALLOW_IPS` every client has the proxy's address, so per-address limits
-  (login starts, failed published API keys) count all clients together.
-- **Next step:** Startup check (`NODESTRO_BEHIND_PROXY`, `NODESTRO_REQUIRE_CLIENT_ADDRESS`) and a failure count per key
-  id prefix for published API keys.
 
 ### API-MUP-A5 · Route access check in every FastAPI app factory
 

@@ -739,6 +739,7 @@
   "provider.verify_not_supported": {"params": ["provider"], "source": "runtime"},
   "provider.verify_rate_limited": {"params": ["retry_after"], "source": "both"},
   "provider_api": {"params": ["provider", "request_id", "status"], "source": "api"},
+  "proxy.client_address_unknown": {"params": [], "source": "api"},
   "publication.dependencies_changed": {"params": [], "source": "api"},
   "publication.dependencies_unavailable": {"params": ["state"], "source": "api"},
   "publication.disabled": {"params": ["headers"], "source": "api"},

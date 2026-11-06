@@ -10,6 +10,10 @@
     redacted). Coded texts keep their wording with `[path]` for absolute paths; validation messages show `[input]`
     instead of the input. Statuses and codes are unchanged; clients that read `detail` of these answers get the
     fixed text.
+  - Security (A3, PS-3): `nodestro-server check` warns and `api` logs `proxy.client_address_unknown` when
+    `NODESTRO_BEHIND_PROXY=1` is set without `FORWARDED_ALLOW_IPS`; `NODESTRO_REQUIRE_CLIENT_ADDRESS=1` makes both
+    refuse. Failed published API keys are counted per key id prefix (8 characters, never the secret), with a ten
+    times higher limit per address, so one client's wrong key does not throttle other keys behind the same proxy.
 - MUP-ONA A0 (security and test baseline, no code change):
   - CI compares the skipped tests of every pytest job with an expectation file (`tests/ci/skipped-<job>.txt`, each
     entry with its reason; `scripts/check_skips.py`): a test that starts to skip, or an expected skip that runs, fails
