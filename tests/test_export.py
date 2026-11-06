@@ -203,6 +203,24 @@ def test_export_contains_no_secrets_and_is_reproducible(exported: Callable[..., 
     assert [item["id"] for item in history] == [second["id"], first["id"]]
 
 
+def test_an_export_can_be_deleted_with_its_file(exported: Callable[..., Any]) -> None:
+    """API-048: deleting an export removes its record and its ZIP (unknown ids answer 404)."""
+    client, publication = exported()
+    first, second = _export(client, publication["id"]), _export(client, publication["id"])
+    data_dir = client.app.state.nodestro.config.data_dir  # type: ignore[attr-defined]
+    assert (data_dir / "exports" / f"{first['id']}.zip").is_file()
+    assert client.delete(f"/api/exports/{first['id']}").status_code == 204
+    assert not (data_dir / "exports" / f"{first['id']}.zip").exists()
+    assert [item["id"] for item in client.get(f"/api/publications/{publication['id']}/exports").json()] == [
+        second["id"]
+    ]
+    assert client.get(f"/api/exports/{first['id']}/download").status_code == 404
+    assert client.delete(f"/api/exports/{first['id']}").status_code == 404
+    assert client.delete("/api/exports/exp_unknown").status_code == 404
+    (data_dir / "exports" / f"{second['id']}.zip").unlink()  # a file already gone does not block the delete
+    assert client.delete(f"/api/exports/{second['id']}").status_code == 204
+
+
 @pytest.mark.parametrize("language", ["en", "de", "es", "fr", "it", "pt-BR"])
 @pytest.mark.parametrize("kind", ["standard", "portable"])
 def test_a_readme_without_approval_steps_has_no_approval_part(kind: str, language: str) -> None:

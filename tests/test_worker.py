@@ -499,6 +499,161 @@ def test_the_leader_deletes_expired_sessions_logins_old_jobs_and_events(
     assert database._query("SELECT seq FROM nodestro_run_events") == [(2,)]
 
 
+def _old_chat_file(browser: TestClient, background: Background, tenant: str, days: int) -> tuple[str, str]:
+    """A conversation with one chat file attached ``days`` ago (the worker's context backdates it)."""
+    conversation = browser.post("/api/assistant/conversations", json={"title": "Files"})
+    assert conversation.status_code == 201, conversation.text
+    conversation_id = conversation.json()["id"]
+    uploaded = browser.post(
+        f"/api/assistant/conversations/{conversation_id}/files", files=[("files", ("old.txt", b"old notes"))]
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    file_id = uploaded.json()[0]["file"]["id"]
+
+    async def backdate() -> None:
+        assistant = background.worker.scheduling.get(tenant).assistant
+        with assistant._lock:
+            found = assistant._conversation(conversation_id)
+            found.files[0].added_at = datetime.now(UTC) - timedelta(days=days)
+            assistant._save(found, touch=False)
+
+    background.call(backdate())
+    return conversation_id, file_id
+
+
+def test_the_leader_removes_chat_files_past_each_tenants_retention(
+    server: Server, make_worker: Callable[..., Background]
+) -> None:
+    """API-066: on a server the worker enforces the assistant file retention by itself, per tenant, without anyone
+    running the input clean-up; a tenant without a retention period, and a suspended tenant, keep their files."""
+    alice = server.member("acme", "alice", "owner")
+    bob = server.member("globex", "bob", "owner")
+    carol = server.member("initech", "carol", "owner")
+    leader, other = make_worker(), make_worker()
+    acme = _old_chat_file(alice, leader, "acme", 5)
+    globex = _old_chat_file(bob, leader, "globex", 5)
+    initech = _old_chat_file(carol, leader, "initech", 5)
+    for browser in (alice, carol):
+        assert browser.put("/api/assistant/files/retention", json={"retention_days": 2}).status_code == 200
+    server.identity.set_tenant_status("initech", "suspended")
+
+    assert leader.call(leader.worker.fire_schedules()) == []  # takes the scheduler lock
+    assert other.call(other.worker.expire_chat_files()) == {}  # only the leader removes them
+    assert leader.call(leader.worker.expire_chat_files()) == {"acme": 1}
+    assert leader.call(leader.worker.expire_chat_files()) == {}  # nothing left to remove
+
+    def files(browser: TestClient, conversation_id: str) -> list[str]:
+        found = browser.get(f"/api/assistant/conversations/{conversation_id}")
+        assert found.status_code == 200, found.text
+        return [item["id"] for item in found.json()["files"]]
+
+    assert files(alice, acme[0]) == []
+    assert alice.get(f"/api/inputs/{acme[1]}").status_code == 404  # the bytes went too
+    assert files(bob, globex[0]) == [globex[1]]  # no retention period: kept
+    server.identity.set_tenant_status("initech", "active")
+    assert files(carol, initech[0]) == [initech[1]]  # suspended while the pass ran: kept until the next pass
+    assert leader.call(leader.worker.expire_chat_files()) == {"initech": 1}
+
+
+def test_a_failing_tenant_does_not_stop_the_chat_file_retention_of_others(
+    server: Server, make_worker: Callable[..., Background], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    alice = server.member("acme", "alice", "owner")
+    bob = server.member("globex", "bob", "owner")
+    leader = make_worker()
+    _old_chat_file(alice, leader, "acme", 5)
+    _old_chat_file(bob, leader, "globex", 5)
+    for browser in (alice, bob):
+        assert browser.put("/api/assistant/files/retention", json={"retention_days": 1}).status_code == 200
+    broken = leader.worker.scheduling.get("acme").assistant
+
+    def fail(**_kwargs: Any) -> int:
+        raise RuntimeError("storage unavailable")
+
+    monkeypatch.setattr(broken, "expire_files", fail)
+    assert leader.call(leader.worker.expire_chat_files()) == {"globex": 1}
+
+
+class _Embeddings:
+    """A deterministic embedding model (the runtime's ``EmbeddingModel`` interface), so no model server is needed."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def _vector(self, text: str) -> list[float]:
+        return [1.0, float(len(text) % 7) + 1.0, 0.5]
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [self._vector(text) for text in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self._vector(text)
+
+    def identity(self) -> Any:
+        from orkexa.embeddings import EmbeddingIdentity
+
+        return EmbeddingIdentity(provider="test", model=self.name, dimensions=3, digest="d1")
+
+
+def _embeddings(knowledge: Any) -> None:
+    knowledge.embedding_model = _Embeddings
+
+
+def test_the_api_queues_a_reindex_that_a_worker_builds(
+    server: Server, make_worker: Callable[..., Background], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """API-044: the API process never builds the semantic index; it queues the job and every API request reads its
+    state from the queue, while a worker builds it."""
+    from nodestro_api import model_readiness
+
+    async def ready(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr(model_readiness, "require_local", ready)
+    alice = server.member("acme", "alice", "owner")
+    viewer = server.member("acme", "vic", "viewer")
+    for name in ("returns.md", "shipping.md"):
+        uploaded = alice.post("/api/knowledge", files={"files": (name, f"Notes about {name}".encode())})
+        assert uploaded.status_code in (200, 201), uploaded.text
+    _embeddings(server.app.state.tenants.get("acme").knowledge)
+    refused = viewer.post("/api/knowledge/index/rebuild", json={"model": "concepts:1"})
+    assert refused.status_code == 403
+    started = alice.post("/api/knowledge/index/rebuild", json={"model": "concepts:1"})
+    assert started.status_code == 202, started.text
+    assert started.json()["job"]["state"] == "running" and started.json()["state"] == "off"
+    again = alice.post("/api/knowledge/index/rebuild", json={"model": "concepts:1"})
+    assert again.status_code >= 400 and again.json()["code"] == "knowledge.reindex_running", again.text
+    assert server.app.state.tenants.get("acme").knowledge.reindexing() is False  # nothing runs in the API
+
+    worker = make_worker()
+    _embeddings(worker.worker.executing.get("acme").knowledge)
+    job = worker.call(worker.worker.reindexer.run_once())
+    assert job is not None and job.tenant_id == "acme"
+    status = alice.get("/api/knowledge/index").json()
+    assert status["job"]["state"] == "done" and status["state"] == "ready", status
+    assert status["embedded"] == status["chunks"] > 0
+    assert viewer.get("/api/knowledge/index").json()["job"]["state"] == "done"
+
+
+def test_a_queued_reindex_is_cancelled_through_the_queue(
+    server: Server, make_worker: Callable[..., Background], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from nodestro_api import model_readiness
+
+    async def ready(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr(model_readiness, "require_local", ready)
+    alice = server.member("acme", "alice", "owner")
+    alice.post("/api/knowledge", files={"files": ("a.md", b"Some notes")})
+    _embeddings(server.app.state.tenants.get("acme").knowledge)
+    assert alice.post("/api/knowledge/index/rebuild", json={"model": "concepts:1"}).status_code == 202
+    cancelled = alice.post("/api/knowledge/index/cancel")
+    assert cancelled.status_code == 200 and cancelled.json()["job"]["state"] == "cancelled", cancelled.text
+    worker = make_worker()
+    assert worker.call(worker.worker.reindexer.run_once()) is None  # withdrawn: no worker takes it
+
+
 # ---- suspended tenants ----------------------------------------------------------------------------------
 
 

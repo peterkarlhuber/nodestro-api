@@ -435,6 +435,14 @@ def download_export(export_id: str, ctx: Ctx) -> Response:
     return FileResponse(path, media_type="application/zip", headers=headers)
 
 
+@router.delete("/exports/{export_id}", status_code=204, dependencies=EDIT)
+def delete_export(export_id: str, ctx: Ctx) -> Response:
+    """Delete an export and its ZIP file (``404`` for an unknown id). On a server this frees space of the
+    workspace's quota for stored packages (``NODESTRO_SERVER_EXPORT_TENANT_QUOTA_BYTES``, API-048)."""
+    exporter.delete_export(ctx, export_id)
+    return Response(status_code=204)
+
+
 # ---- portable packages (background jobs) ---------------------------------------------------
 
 

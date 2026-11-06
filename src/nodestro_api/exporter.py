@@ -507,11 +507,12 @@ def _issue(code: str, message: str, level: Literal["error", "warning", "info"] =
     return CheckIssue(code=code, message=message, level=level, params=params)
 
 
-def _server_package_issues(estimated_bytes: int) -> list[CheckIssue]:
+def _server_package_issues(ctx: Nodestro, estimated_bytes: int) -> list[CheckIssue]:
     """What a server says about a portable package before "Build package" (API-053): refused unless its operator
-    enabled export jobs (``export.server_unsupported``), and its size limit (``export.server_too_large`` when the
-    estimate is above it, else ``export.server_limit`` as information)."""
-    from .portable_build import server_jobs_enabled, server_max_bytes
+    enabled export jobs (``export.server_unsupported``), its size limit (``export.server_too_large`` when the
+    estimate is above it, else ``export.server_limit`` as information) and the tenant's quota for stored packages
+    (``export.server_quota``, API-048)."""
+    from .portable_build import quota_problem, server_jobs_enabled, server_max_bytes
 
     if not server_jobs_enabled():
         return [
@@ -532,9 +533,20 @@ def _server_package_issues(estimated_bytes: int) -> list[CheckIssue]:
                 limit=limit,
             )
         ]
-    return [
+    found = [
         _issue("export.server_limit", "This server builds packages up to its size limit", level="info", limit=limit)
     ]
+    over = quota_problem(ctx, estimated_bytes)
+    if over is not None:
+        found.append(
+            _issue(
+                "export.server_quota",
+                "The packages of this workspace would use more space than this server allows; delete older exports",
+                level="error",
+                **over,
+            )
+        )
+    return found
 
 
 def check(ctx: Nodestro, publication: Publication, release: Release, options: ExportOptions) -> ExportCheck:
@@ -734,7 +746,7 @@ def check(ctx: Nodestro, publication: Publication, release: Release, options: Ex
             )
     portable = _portable_check(ctx, release, options, problems) if options.kind == "portable" else None
     if portable is not None and ctx.profile.kind == "server":
-        problems += _server_package_issues(portable.estimated_bytes)
+        problems += _server_package_issues(ctx, portable.estimated_bytes)
     if options.web_ui:
         problems.append(
             _issue(
@@ -2160,6 +2172,17 @@ def content(ctx: Nodestro, export_id: str) -> tuple[ExportRecord, bytes]:
     if _sha(data) != record.sha256:
         raise NodestroError("export.file_changed", "The ZIP file of this export was changed; export again")
     return record, data
+
+
+def delete_export(ctx: Nodestro, export_id: str) -> ExportRecord:
+    """Remove an export: its record and its ZIP (the space counts against a server tenant's quota, API-048).
+    A ZIP that is already gone is not an error; an unknown id raises ``KeyError``."""
+    record = ctx.store.get(EXPORTS, export_id, ExportRecord)
+    if record is None:
+        raise KeyError(export_id)
+    ctx.store.delete(EXPORTS, record.id)
+    (ctx.config.data_dir / "exports" / f"{record.id}.zip").unlink(missing_ok=True)
+    return record
 
 
 def content_path(ctx: Nodestro, export_id: str) -> tuple[ExportRecord, Path]:

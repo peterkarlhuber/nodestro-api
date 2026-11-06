@@ -5,6 +5,9 @@ or more worker processes (:class:`ServerWorker`). Every worker:
 
 - claims run jobs and executes them in the tenant's context (:class:`nodestro_runtime.jobs.RunWorker`), with a lease
   it keeps renewing and its events written to the database;
+- claims semantic reindex jobs (``POST /api/knowledge/index/rebuild`` queues them, API-044) and builds them one at a
+  time (:class:`nodestro_runtime.jobs.ReindexWorker`), with a lease and its progress in the job; a suspended tenant's
+  reindex does not start or stops;
 - reaps jobs whose lease expired: their runs are marked ``run.interrupted`` and wait for a person to continue them;
   they are never executed again by themselves;
 - fires the tenants' schedules while it holds the scheduler lock (:class:`nodestro_runtime.jobs.LeaderLock`); the
@@ -18,7 +21,9 @@ or more worker processes (:class:`ServerWorker`). Every worker:
   idempotent, so a second worker or a retry never counts or notifies twice);
 - deletes what is no longer needed while it holds the scheduler lock (:meth:`ServerWorker.clean_up`): expired
   sessions and abandoned login starts, finished jobs after :attr:`WorkerSettings.job_retention` and run events after
-  :attr:`WorkerSettings.event_retention` (the runs themselves stay);
+  :attr:`WorkerSettings.event_retention` (the runs themselves stay); and, every
+  :attr:`WorkerSettings.chat_file_every` seconds, the assistant chat files past the retention an administrator of the
+  tenant set (:meth:`ServerWorker.expire_chat_files`, API-066);
 - keeps the Docker sandbox's proof warm (:class:`DockerWatch`): from its start it reads the process's Docker monitor
   (:mod:`nodestro_runtime.docker_status`) every :attr:`WorkerSettings.docker_every` seconds, well within the proof's
   ``PROOF_TTL``, so a job after an idle spell is not refused with ``docker-checking`` only because the proof expired.
@@ -36,8 +41,9 @@ backend, reusing an "active" answer for at most ``TENANT_CHECK_SECONDS``; a mode
 and at the latest within :attr:`WorkerSettings.reap_every` (a run waiting for a person), without storing more (as
 after a lost lease), and its schedules and tool-wait sweeps do not run.
 
-``nodestro-server worker`` (:mod:`nodestro_api.server`) runs one. Only runs go through the queue so far; batches,
-test series, assistant drafts and Python environment installations still run in the API process that started them.
+``nodestro-server worker`` (:mod:`nodestro_api.server`) runs one. Only runs and reindexes go through the queue so far;
+batches, test series, assistant drafts and Python environment installations still run in the API process that started
+them.
 """
 
 from __future__ import annotations
@@ -60,6 +66,7 @@ from nodestro_runtime.jobs import (
     LeaderLock,
     PostgresEventLog,
     QueuedRuns,
+    ReindexWorker,
     RunWorker,
     ScheduleFirings,
     reap,
@@ -102,6 +109,9 @@ class WorkerSettings:
     job_retention: timedelta = timedelta(days=7)
     #: Run events are kept this long: live streams and waits read them; a run's own record keeps its results.
     event_retention: timedelta = timedelta(days=2)
+    #: How often the scheduler leader removes assistant chat files past the retention an administrator of each
+    #: tenant set (``PUT /api/assistant/files/retention``, API-056/API-066; nothing without a retention period).
+    chat_file_every: float = 3600.0
     #: How often the scheduler leader settles run usage and sweeps notifications into Axentra (seconds).
     platform_every: float = 30.0
     #: How often the worker reads the Docker monitor's status to keep the sandbox's proof fresh (seconds; at most
@@ -207,6 +217,14 @@ class ServerWorker:
             max_waiting=self.settings.max_waiting,
             tenant_active=self.identity.tenant_active,
         )
+        #: Semantic reindex jobs (RT-046/API-044), one at a time, next to the runs.
+        self.reindexer = ReindexWorker(
+            self.queue,
+            self.executing.get,
+            name=self.name,
+            poll=self.settings.poll,
+            tenant_active=self.identity.tenant_active,
+        )
         self.leader = LeaderLock(files.database)
         self.price_sync = server_sync(files.database, self.settings.price_sync)
         #: Axentra duties, set by ``nodestro-server worker`` when switched on (``None``: off): the run usage
@@ -293,6 +311,24 @@ class ServerWorker:
             logger.info("Cleanup removed %s", ", ".join(f"{count} {name}" for name, count in removed.items()))
         return removed
 
+    async def expire_chat_files(self) -> dict[str, int]:
+        """Remove assistant chat files past their tenant's retention period while this worker leads (API-066): the
+        same expiry as the desktop's hourly pass, for every active tenant (a suspended tenant's files stay until it is
+        resumed). Returns the files removed per tenant (only tenants where some went; empty: another worker leads).
+        A tenant whose pass fails is logged and skipped; the next pass tries again."""
+        if not await asyncio.to_thread(self.leader.acquire):
+            return {}
+        removed: dict[str, int] = {}
+        for tenant_id in await self._active_tenants():
+            try:
+                count = await asyncio.to_thread(self.scheduling.get(tenant_id).assistant.expire_files)
+            except Exception:
+                logger.exception("Removing the expired assistant chat files of tenant %s failed", tenant_id)
+                continue
+            if count:
+                removed[tenant_id] = count
+        return removed
+
     async def platform_duties(self) -> dict[str, Any]:
         """Settle finished runs' usage and send due inbox notifications while this worker leads (empty: off, or
         another worker leads). Both read what changed since their last pass and are idempotent per record."""
@@ -327,6 +363,7 @@ class ServerWorker:
                 self._every(stop, self.settings.reap_every, self.sweep_tool_waits), name="worker-tool-waits"
             ),
             asyncio.create_task(self.runner.serve(stop), name="worker-runs"),
+            asyncio.create_task(self.reindexer.serve(stop), name="worker-reindex"),
             asyncio.create_task(self._every(stop, self.settings.reap_every, self._reap_once), name="worker-reaper"),
             asyncio.create_task(
                 self._every(stop, self.settings.reap_every, self.stop_suspended), name="worker-suspended"
@@ -337,6 +374,11 @@ class ServerWorker:
         ]
         tasks.append(
             asyncio.create_task(self._every(stop, self.settings.cleanup_every, self.clean_up), name="worker-cleanup")
+        )
+        tasks.append(
+            asyncio.create_task(
+                self._every(stop, self.settings.chat_file_every, self.expire_chat_files), name="worker-chat-files"
+            )
         )
         if self.settlement is not None or self.notifications is not None:
             tasks.append(

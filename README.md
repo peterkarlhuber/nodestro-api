@@ -131,6 +131,10 @@ user login and does not lift the loopback-only rule. Without the variable (the `
   `set-role`, `remove-member`, `revoke-sessions`, `tenant suspend|resume`, actor `operator`). It holds ids and codes,
   never a secret; with `NODESTRO_AXENTRA_AUDIT=1` each event is mirrored into Axentra's audit log in the same
   transaction (`nodestro.access.<kind>`). The desktop records its API key changes the same way.
+- A tenant's administrators manage its members (`GET /api/members`, `PUT /api/members/{user_id}/role`,
+  `DELETE /api/members/{user_id}`, permission `admin`, server only): only within their own tenant, only an owner
+  gives, takes or changes the owner role, the last owner stays (`409 identity.last_owner`), and every change is in
+  the access audit trail with the administrator as actor. Invitations do not exist yet (setup link or `set-role`).
 - One address starts at most 60 logins a minute per API process (`NODESTRO_LOGIN_STARTS_PER_MINUTE`, `0` turns it
   off; then `429 identity.rate_limited`), and oversized setup tokens, states and codes are refused. Behind a proxy
   the address is the proxy's unless uvicorn trusts it (`FORWARDED_ALLOW_IPS`); a proxy rate limit stays advisable.

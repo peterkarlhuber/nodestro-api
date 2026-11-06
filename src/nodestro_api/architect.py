@@ -562,6 +562,11 @@ class WorkflowArchitect:
         self.finish(job, "cancelled")
         return job
 
+    def active(self) -> list[str]:
+        """The drafts this process is writing now."""
+        with self._lock:
+            return [job_id for job_id, job in self.jobs.items() if job.status == "running"]
+
     def cancel_all(self) -> list[str]:
         """Stop every running job (a suspended tenant, security review SR-03); returns their ids."""
         with self._lock:

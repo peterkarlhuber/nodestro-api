@@ -346,7 +346,10 @@ async def knowledge_index(ctx: Ctx) -> KnowledgeIndexStatus:
 @router.post("/knowledge/index/rebuild", status_code=202, dependencies=EDIT)
 async def knowledge_reindex(body: ReindexIn, ctx: Ctx, request: Request) -> KnowledgeIndexStatus:
     """Build the semantic index; an embedding model the local model server does not have is refused first
-    (``409 model.local_unavailable``, with what can be done), instead of a job that fails at its first chunk."""
+    (``409 model.local_unavailable``, with what can be done), instead of a job that fails at its first chunk.
+
+    The desktop builds it in a thread of its process; a server queues it for a worker process (API-044), so the
+    answer's ``job`` is ``running`` while it waits for one (``knowledge.reindex_running`` for a second start)."""
     name = body.model or ctx.knowledge.retrieval()[1]
     if name:
         await model_readiness.require_local(ctx, request, f"ollama:{name.removeprefix('ollama:')}", "knowledge_index")

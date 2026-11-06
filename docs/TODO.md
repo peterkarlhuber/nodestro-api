@@ -3,7 +3,7 @@
 > Open work for this repository: release blockers, known bugs, security follow-ups, technical debt and planned improvements.
 > GitHub issues are the source of truth for details; this file is the entry point and summary.
 >
-> **Last full review:** 2026-11-06 against master at 0fc2700 (TODO abatement round)
+> **Last full review:** 2026-11-06 against master at 984c61d (TODO abatement round)
 
 ## Summary
 
@@ -12,8 +12,8 @@
 | P0 Critical | 0 |
 | P1 High | 1 |
 | P2 Medium | 6 |
-| P3 Low | 15 |
-| P4 Optional | 7 |
+| P3 Low | 12 |
+| P4 Optional | 6 |
 
 **Release blockers:** None for this repository; every entry below is not a release blocker. The next desktop
 preview is gated by nodestro-desktop DSK-001 (new candidate and Go/No-Go).
@@ -52,13 +52,6 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
 - **Next step:** Have the export, the exported app and the launcher reviewed independently; record the result here.
 - **Depends on:** None
 
-### API-001 · Cleanup of idle tenant contexts on the server
-
-- **Priority:** P3 Low · **Status:** Open · **Refs:** backend audit A-09 (residual); request size limits done in
-  backend audit round 2 (API2-03)
-- **What:** Hardening follow-up: resource cleanup for idle tenant contexts on the server. Details are kept privately.
-- **Next step:** Add the cleanup, as described in the internal audit.
-
 ### API-005 · Rotation of the server secret key
 
 - **Priority:** P2 Medium · **Status:** In progress · **Refs:** #52, nodestro-runtime `docs/AXENTRA.md`
@@ -82,18 +75,22 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
   to the existing leader task.
 - **Depends on:** nodestro-runtime RT-014 (store deletes for runs and versions)
 
-### API-048 · Portable export builds on the server profile: quota and retention
+### API-048 · Portable export builds on the server profile: retention and job leases
 
-- **Priority:** P3 Low · **Status:** Open · **Refs:** backend audit round 3 (API3-07), `docs/portable-export.md`
+- **Priority:** P3 Low · **Status:** Needs decision · **Refs:** backend audit round 3 (API3-07), `docs/portable-export.md`
   ("On a server")
-- **What:** Since round 3 the server profile refuses export jobs (`export.server_unsupported`) unless the operator
-  sets `NODESTRO_SERVER_EXPORT_JOBS=1`; then one build runs at a time on the whole server and
-  `NODESTRO_SERVER_EXPORT_MAX_BYTES` (default 2 GiB) caps a package. Left: no per-tenant quota and no retention, so
-  packages stay until a member deletes them, and the build still runs in the API process.
-- **Next step:** Before anyone enables export jobs on a shared server: per-tenant quota plus retention (see
-  API-009), and run builds as server batch jobs with a lease (like API-044). Document the switch in the
-  nodestro-server RUNBOOK.
-- **Depends on:** None
+- **What:** The server profile refuses export jobs (`export.server_unsupported`) unless the operator sets
+  `NODESTRO_SERVER_EXPORT_JOBS=1`; then one build runs at a time per API process, `NODESTRO_SERVER_EXPORT_MAX_BYTES`
+  (default 2 GiB) caps a package and, since the TODO abatement round 3, `NODESTRO_SERVER_EXPORT_TENANT_QUOTA_BYTES`
+  (default 8 GiB) caps what one tenant keeps (`403 export.server_quota`; `DELETE /api/exports/{id}` frees space).
+  Left: no automatic retention (packages stay until a member deletes them; the default retention is the open API-009
+  owner decision), the build still runs in the API process (not as a server batch job with a lease), and the
+  one-build slot is per API process, not per server (opening a tenant context also marks builds that another API
+  process is running as failed).
+- **Next step:** After the API-009 decision, add export retention to the worker's leader clean-up; move builds to a
+  queued job with a lease (like the server's reindex jobs) and document the switch in the nodestro-server
+  RUNBOOK.
+- **Depends on:** API-009 (retention policy)
 
 ## Architecture and modularity
 
@@ -148,24 +145,6 @@ None known.
   bundled Python and Ollama binaries keep their upstream signatures where they have one.
 - **Next step:** Needs signing identities (Apple Developer ID, Windows code-signing certificate) owned by the
   project; then sign and notarize in the export job or in a separate release step.
-
-### API-044 · Reindex jobs run inside the API process
-
-- **Priority:** P3 Low · **Status:** Open · **Refs:** local models work order (2026-11-03)
-- **What:** `POST /api/knowledge/index/rebuild` runs the embedding job in a thread of the API process. A restart
-  stops it; the next rebuild continues where it stopped. On a multi-process server two replicas could each start
-  one for the same tenant (the runtime's final switch stays atomic, but the work is done twice).
-- **Next step:** Run reindex jobs as server batch jobs with a lease once the server profile gets them.
-- **Depends on:** nodestro-runtime RT-046
-
-### API-019 · Member and role management for tenant admins (server)
-
-- **Priority:** P3 Low · **Status:** Open · **Refs:** backend audit D-03 (residual)
-- **What:** Members, roles and sessions can be managed only with the operator CLI (`set-role`, `remove-member`,
-  `revoke-sessions`). Tenant owners have no API for it, and invitations do not exist.
-- **Next step:** Add admin routes for members, roles and invitations (permission `admin`), with audit events
-  (the access audit trail, `GET /api/access-audit`, exists).
-- **Depends on:** nodestro-studio (access UI)
 
 ### API-020 · Tool approval phase for published workflow APIs
 
@@ -229,17 +208,6 @@ None known.
   (Assistant conversations have an owner on the server since the settings/providers round; older ones get one with
   `nodestro-server assistant backfill-owners`.)
 - **Next step:** Decide whether approval nodes get a "needs another member" option.
-
-### API-066 · Assistant file retention on the server runs only with the input clean-up
-
-- **Priority:** P4 Optional · **Status:** Open · **Refs:** API-056 (TODO abatement round 2, 2026-11-06)
-- **What:** An administrator sets how long assistant chat files are kept (`PUT /api/assistant/files/retention`,
-  none by default). The desktop app removes expired files at start and hourly; on a server they go only when a
-  member runs the input file clean-up (`POST /api/inputs/cleanup`), because tenant contexts live in the API
-  processes and the worker has no per-tenant clean-up pass yet.
-- **Next step:** Add a per-tenant pass to the server worker's leader clean-up (`ServerWorker.clean_up`) that opens
-  each tenant's store and calls the same expiry, or run it as a server batch job with a lease (see API-009).
-- **Depends on:** None
 
 ### API-060 · Internal assistants on Anthropic use the default thinking display
 
@@ -390,11 +358,10 @@ removed by the change that completes its package here.
 | API-011 | nodestro-server | SRV-007 (RUNBOOK monitoring section) | server documents what this adds |
 | (pointer) | nodestro-sdk | SDK-005 | the server contract `openapi/nodestro-api-server.json` exists now (API-012 done); the SDK contract tests can use it |
 | API-054 | nodestro-studio | portable export dialog (studio #121, ST-047) | one independent review covers both; full entry here |
-| API-044 | nodestro-runtime | RT-046 (reindex jobs in the API process) | runtime change first |
 | API-021 | nodestro-runtime | RT-015 | runtime change first |
 | API-023 | nodestro-server | SRV-013 (PostgreSQL load test) | load test runs there |
 | (pointer) | nodestro-local-docker | LD-010 (session hardening) | implementation would be here; tracked there |
-| API-001, API-005, API-010, API-019 | nodestro-server | RUNBOOK limitations (pointer rows in its table) | server documents the current limits until these land |
+| API-005, API-010 | nodestro-server | RUNBOOK limitations (pointer rows in its table) | server documents the current limits until these land |
 
 ## CI access to private repositories
 

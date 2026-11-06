@@ -125,6 +125,9 @@ def app_context(request: Request) -> Nodestro:
     principal = getattr(request.state, "principal", None)
     if principal is None:
         raise AccessError(401, "access.login_required", "Log in to use this part of Nodestro")
+    hold = getattr(tenants, "hold", None)
+    if hold is not None:  # held until the whole answer was sent (API-001, nodestro_api.tenant_contexts)
+        return hold(request, principal.tenant_id)  # type: ignore[no-any-return]
     return tenants.get(principal.tenant_id)  # type: ignore[no-any-return]
 
 

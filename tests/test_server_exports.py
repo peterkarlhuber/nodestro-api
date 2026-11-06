@@ -21,8 +21,25 @@ def backend() -> str:
     return "nodestro"
 
 
-def _ctx(kind: str) -> Any:
-    return types.SimpleNamespace(profile=types.SimpleNamespace(kind=kind))
+def _ctx(kind: str, stored: tuple[int, ...] = ()) -> Any:
+    """A context of ``kind`` whose tenant keeps packages of the ``stored`` sizes."""
+    from nodestro_api.exporter import ExportOptions, ExportRecord
+
+    records = [
+        ExportRecord(
+            publication_id="pub",
+            release_id="rel",
+            release_number=1,
+            options=ExportOptions(),
+            file_name="x.zip",
+            size=size,
+            sha256="0" * 64,
+            files=1,
+        )
+        for size in stored
+    ]
+    store = types.SimpleNamespace(list=lambda _collection, _model: list(records))
+    return types.SimpleNamespace(profile=types.SimpleNamespace(kind=kind), store=store)
 
 
 def test_server_admission_is_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -46,6 +63,27 @@ def test_server_admission_is_off_by_default(monkeypatch: pytest.MonkeyPatch) -> 
     for raw, expected in (("1000", 1000), ("x", default), ("-5", default)):
         monkeypatch.setenv(portable_build.SERVER_MAX_BYTES_ENV, raw)
         assert portable_build.server_max_bytes() == expected
+
+
+def test_a_tenants_stored_packages_have_a_quota(monkeypatch: pytest.MonkeyPatch) -> None:
+    """API-048: a build is refused when the tenant's stored packages plus the estimate exceed its quota (default
+    8 GiB; an invalid or non-positive value is the default, never unlimited)."""
+    monkeypatch.setenv(portable_build.SERVER_JOBS_ENV, "1")
+    monkeypatch.delenv(portable_build.SERVER_MAX_BYTES_ENV, raising=False)
+    monkeypatch.delenv(portable_build.SERVER_TENANT_QUOTA_ENV, raising=False)
+    quota = portable_build.SERVER_TENANT_QUOTA
+    assert quota == 8 * 1024**3 and portable_build.server_tenant_quota() == quota
+    for raw in ("x", "0", "-1", "1.5"):
+        monkeypatch.setenv(portable_build.SERVER_TENANT_QUOTA_ENV, raw)
+        assert portable_build.server_tenant_quota() == quota
+    monkeypatch.setenv(portable_build.SERVER_TENANT_QUOTA_ENV, "1000")
+    portable_build.server_admission(_ctx("server", (400, 300)), 300)  # exactly at the quota
+    with pytest.raises(ApiError) as over:
+        portable_build.server_admission(_ctx("server", (400, 300)), 301)
+    assert (over.value.status, over.value.code) == (403, "export.server_quota")
+    assert over.value.params == {"size": 301, "used": 700, "limit": 1000}
+    for kind in ("desktop", "local-container"):  # only servers have the quota
+        portable_build.server_admission(_ctx(kind, (10**12,)), 10**12)
 
 
 def _published(owner: Any) -> str:
@@ -165,3 +203,77 @@ def test_the_export_check_reports_the_server_refusal_and_limit_up_front(
         threading.Event().wait(0.05)
     assert job["state"] == "failed" and job["error_code"] == "export.server_too_large"
     assert job["error_params"] == {"size": 5, "limit": 4}
+
+
+def test_the_quota_counts_each_tenants_own_packages(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """API-048: the check and the job refuse a build once the tenant's stored exports reach the quota; another
+    tenant's packages never count, and deleting an export frees its space."""
+    studio: Server = request.getfixturevalue("server")
+    monkeypatch.setenv(portable_build.SERVER_JOBS_ENV, "1")
+    monkeypatch.delenv(portable_build.SERVER_MAX_BYTES_ENV, raising=False)
+    built: list[str] = []
+    monkeypatch.setattr(portable_build, "build", lambda *_args: built.append("x"))
+    alice = studio.member("acme", "alice", "owner")
+    bob = studio.member("globex", "bob", "owner")
+    mine, theirs = _published(alice), _published(bob)
+    source = alice.post(f"/api/publications/{mine}/exports", json={"options": {"kind": "standard"}})
+    assert source.status_code == 201, source.text
+    stored = source.json()["size"]
+    assert stored > 0
+
+    def check(client: Any, publication: str) -> dict[str, Any]:
+        answer = client.post(f"/api/publications/{publication}/export/check", json={"options": OPTIONS})
+        assert answer.status_code == 200, answer.text
+        return answer.json()  # type: ignore[no-any-return]
+
+    def codes(client: Any, publication: str) -> dict[str, dict[str, Any]]:
+        return {item["code"]: item for item in check(client, publication)["problems"]}
+
+    estimate = check(alice, mine)["portable"]["estimated_bytes"]
+    # One byte short for acme with its stored export; globex keeps nothing, so its package fits.
+    monkeypatch.setenv(portable_build.SERVER_TENANT_QUOTA_ENV, str(stored + estimate - 1))
+
+    full = codes(alice, mine)["export.server_quota"]
+    assert full["level"] == "error" and full["params"] == {
+        "size": estimate,
+        "used": stored,
+        "limit": stored + estimate - 1,
+    }
+    refused = alice.post(f"/api/publications/{mine}/export-jobs", json={"options": OPTIONS})
+    assert refused.status_code == 403 and refused.json()["code"] == "export.server_quota", refused.text
+    assert "export.server_quota" not in codes(bob, theirs)  # globex keeps nothing
+    assert built == []
+    viewer = studio.member("acme", "vera", "viewer")
+    assert viewer.delete(f"/api/exports/{source.json()['id']}").status_code == 403
+    assert bob.delete(f"/api/exports/{source.json()['id']}").status_code == 404  # another tenant's export
+    assert alice.delete(f"/api/exports/{source.json()['id']}").status_code == 204
+    assert alice.get(f"/api/exports/{source.json()['id']}/download").status_code == 404
+    assert alice.delete(f"/api/exports/{source.json()['id']}").status_code == 404
+    assert "export.server_quota" not in codes(alice, mine)
+    started = alice.post(f"/api/publications/{mine}/export-jobs", json={"options": OPTIONS})
+    assert started.status_code == 202, started.text
+
+
+def test_a_finished_package_above_the_quota_is_deleted(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """API-048: a package that would take the stored packages above the quota (others were kept meanwhile, or the
+    estimate was low) is deleted and the build fails with ``export.server_quota``; the size limit comes first."""
+    monkeypatch.delenv(portable_build.SERVER_MAX_BYTES_ENV, raising=False)
+    monkeypatch.setenv(portable_build.SERVER_TENANT_QUOTA_ENV, "1000")
+    package = tmp_path / "exp_x.zip"
+    package.write_bytes(b"x" * 10)
+    portable_build.keep_within_server_limits(_ctx("server", (990,)), package, 10)  # fits exactly
+    assert package.exists()
+    with pytest.raises(portable_build.NodestroError) as over:
+        portable_build.keep_within_server_limits(_ctx("server", (991,)), package, 10)
+    assert over.value.code == "export.server_quota" and over.value.params == {"size": 10, "used": 991, "limit": 1000}
+    assert not package.exists()
+    package.write_bytes(b"x" * 10)
+    monkeypatch.setenv(portable_build.SERVER_MAX_BYTES_ENV, "5")
+    with pytest.raises(portable_build.NodestroError) as large:
+        portable_build.keep_within_server_limits(_ctx("server"), package, 10)
+    assert large.value.code == "export.server_too_large" and not package.exists()
+    package.write_bytes(b"x" * 10)
+    portable_build.keep_within_server_limits(_ctx("desktop", (10**12,)), package, 10)  # not limited off a server
+    assert package.exists()
