@@ -15345,6 +15345,13 @@
             "title": "Enabled",
             "type": "boolean"
           },
+          "export_jobs": {
+            "items": {
+              "$ref": "#/components/schemas/ExportJob"
+            },
+            "title": "Export Jobs",
+            "type": "array"
+          },
           "exports": {
             "items": {
               "$ref": "#/components/schemas/ExportRecord"

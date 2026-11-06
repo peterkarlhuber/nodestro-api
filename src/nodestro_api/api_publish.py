@@ -30,7 +30,7 @@ from .api_guide import ApiGuide
 from .api_keys import ApiKeyOut, NewApiKey
 from .network import NetworkConfig, NetworkStatus
 from .permissions import ADMIN, EDIT, INSTALL, READ, RUN
-from .publishing import ApiCheck, Publication, Release, ReleaseSummary, api_runs
+from .publishing import RELEASES, ApiCheck, Publication, Release, ReleaseSummary, api_runs
 from .release_gate import GateOverride, GateReport, ReleaseGate
 from .serving import SCOPES, ApiLimits, KeyIdentity, ServedRelease, openapi_document
 
@@ -193,6 +193,15 @@ class PublicationOverviewItem(PublicationListItem):
     published_at: datetime | None = None
     #: The publication's exports, newest first (as ``GET /api/publications/{id}/exports``).
     exports: list[exporter.ExportRecord] = Field(default_factory=list)
+    #: Portable export jobs still being built, newest first (as ``GET /api/publications/{id}/export-jobs``).
+    export_jobs: list[portable_build.ExportJob] = Field(default_factory=list)
+
+
+class _ReleaseHead(BaseModel):
+    """The two fields of a stored release the overview shows; its bundle is not validated (API-063)."""
+
+    workflow_version: int | None = None
+    created_at: datetime
 
 
 @router.get("/publication-overview", dependencies=READ)
@@ -200,15 +209,16 @@ def publication_overview(ctx: Ctx) -> list[PublicationOverviewItem]:
     """All publications of this installation (on a server: of the tenant) with their workflow, active release and
     exports, for the studio's *Publications* page (one request instead of one per publication)."""
     exports = exporter.records_by_publication(ctx)
+    jobs: dict[str, list[portable_build.ExportJob]] = {}
+    for job in sorted(ctx.store.list(portable_build.JOBS, portable_build.ExportJob), key=lambda job: job.created_at):
+        if job.state == "running":
+            jobs.setdefault(job.publication_id, []).insert(0, job)
     found = []
     for publication in sorted(ctx.publications.all(), key=lambda item: item.name.lower()):
         workflow = ctx.store.get("workflows", publication.workflow_id, Workflow)
-        release: Release | None = None
+        release: _ReleaseHead | None = None
         if publication.active_release is not None:
-            try:
-                release = ctx.publications.release(publication.id, publication.active_release)
-            except KeyError:
-                release = None
+            release = ctx.store.get(RELEASES, f"{publication.id}:{publication.active_release:06d}", _ReleaseHead)
         found.append(
             PublicationOverviewItem(
                 **publication.model_dump(include=set(PublicationListItem.model_fields)),
@@ -218,6 +228,7 @@ def publication_overview(ctx: Ctx) -> list[PublicationOverviewItem]:
                 active_version=release.workflow_version if release is not None else None,
                 published_at=release.created_at if release is not None else None,
                 exports=exports.get(publication.id, []),
+                export_jobs=jobs.get(publication.id, []),
             )
         )
     return found
