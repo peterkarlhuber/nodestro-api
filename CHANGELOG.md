@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- TODO abatement round 3 (2026-11-06):
+  - Server profile: `GET /api/members`, `PUT /api/members/{user_id}/role` and `DELETE /api/members/{user_id}`
+    (admin): a tenant's administrators list members and change or remove them. Only an owner gives, takes or
+    changes the owner role (`403 identity.owner_required`), a tenant keeps one owner (`409 identity.last_owner`),
+    a user of another tenant is `404 identity.not_a_member`, and each change is in the access audit trail
+    (`role_changed`, `member_removed`) (API-019).
+  - Server profile: tenant contexts that nobody uses and that have no background work are closed after
+    `NODESTRO_TENANT_IDLE_MINUTES` (default 30, `0` keeps them open); requests hold their tenant's context while
+    they run (API-001).
+  - Server worker: semantic reindex runs as a `reindex` job of the job queue with a lease, so it survives a restart
+    of the API process and every process sees its progress (runtime RT-046) (API-044).
+  - Server worker: the leader removes assistant chat files older than each tenant's retention every hour
+    (`WorkerSettings.chat_file_every`) (API-066).
+  - Server exports: `NODESTRO_SERVER_EXPORT_TENANT_QUOTA_BYTES` (default 8 GiB) caps the packages one tenant keeps
+    (`403 export.server_quota` with `size`, `used`, `limit`, also as an export check issue);
+    `DELETE /api/exports/{export_id}` (edit) removes an export and its package (API-048).
+  - Needs nodestro-runtime 6be22c0 or later (`jobs.ReindexWorker`, `Workspace.background_work`).
 - TODO abatement round 2 (2026-11-06):
   - Idempotency-Keys of studio and published-API run starts are reserved with one atomic insert in the store
     (runtime `put_raw_if_absent`) before the run starts, so concurrent retries on several API processes start one
