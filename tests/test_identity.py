@@ -696,6 +696,25 @@ def test_the_server_health_check_reports_the_database(server: Server, monkeypatc
     assert browser.get("/api/health").status_code == 200
 
 
+def test_the_server_reports_readiness_and_request_ids(server: Server, monkeypatch: pytest.MonkeyPatch) -> None:
+    """API-011: ``/api/ready`` (no login) is 200 only while the process serves and reaches its database; every
+    answer carries ``X-Request-ID``."""
+    browser = server.browser()
+    answer = browser.get("/api/ready")
+    assert answer.status_code == 200 and answer.json() == {"status": "ready", "database": "ok"}
+    assert len(answer.headers["X-Request-ID"]) == 16
+    refused = browser.get("/api/workflows", headers={"X-Request-ID": "proxy-7"})
+    assert refused.status_code == 401 and refused.headers["X-Request-ID"] == "proxy-7"
+    check = server.app.state.health_check
+    monkeypatch.setattr(check.database, "ping", lambda **_kwargs: False)
+    assert browser.get("/api/ready").status_code == 503
+    monkeypatch.undo()
+    server.app.state.accepting = False  # the process is stopping
+    stopping = browser.get("/api/ready")
+    assert stopping.status_code == 503 and stopping.json()["reason"] == "stopping"
+    server.app.state.accepting = True
+
+
 def test_meta_names_the_server_profile(server: Server) -> None:
     """AD-05: the studio can tell a server from the desktop and adapt its local-only copy."""
     viewer = server.member("acme", "victor", "viewer")

@@ -218,6 +218,8 @@ unsafe value is listed at once (`profile.invalid`), and nothing has a default th
 | `NODESTRO_MAX_RUN_BUDGET_USD` | The highest limit a budget decision may set for one run (BUDGET-1), on top of the tenant setting `max_run_budget_usd`; the lower one applies. Empty: no operator maximum |
 | `NODESTRO_TOOL_APPROVALS` | `1` asks a person before tool calls that change or reach out. Off by default. Order: first `POST /api/tool-approvals/legacy` (once; stamps existing bindings of workflows, versions and published releases, whose digest changes once), review the report, then set this and restart, only after the security acceptance |
 | `NODESTRO_PRICE_SYNC`, `NODESTRO_PRICE_LITELLM`, `NODESTRO_PRICE_SNAPSHOT_FILE` | reference price sync of the workers (`on`/`off`, default `on`; LiteLLM's cost map `on`/`off`; a reviewed Orkexa snapshot file), see "Model prices" |
+| `NODESTRO_LOG_FORMAT` | `json` writes one JSON object per log line (`time`, `level`, `logger`, `message`, `request_id`, `exception`) for `api` and `worker`; default plain text. Every API answer carries `X-Request-ID` (a proxy's short id is kept), and its log lines name it. `GET /api/ready` (no login) answers 503 while the process starts, stops or cannot reach its database, for a load balancer; `/api/health` stays the liveness check |
+| `NODESTRO_LOGIN_STARTS_PER_MINUTE` | login starts per address and minute in one API process (default 60, `0` off) |
 
 Commands:
 

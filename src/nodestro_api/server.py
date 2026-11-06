@@ -1585,7 +1585,9 @@ def parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> None:
     args = parser().parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    from .observability import configure_logging
+
+    configure_logging()  # request ids; NODESTRO_LOG_FORMAT=json for one JSON object per line (API-011)
     try:
         server = load()
         if args.command == "check":
@@ -1611,6 +1613,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 host=args.host,
                 port=args.port,
                 log_level="info",
+                log_config=None,  # uvicorn's own loggers write through the handler above (request ids, JSON)
                 proxy_headers=True,
                 server_header=False,
             )
