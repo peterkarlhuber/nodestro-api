@@ -355,6 +355,10 @@ def test_approval_pauses_and_continues_after_approval(make_app: Callable[..., Te
         f"/api/runs/{paused['id']}/approvals/check", json={"decision": "approved", "comment": "Rabatt ok"}
     )
     assert response.status_code == 200, response.text
+    # The answer is the run as it goes on (X-01, API-018): not the pause that just ended.
+    answer = response.json()
+    assert answer["status"] in ("queued", "running", "succeeded"), answer["status"]
+    assert answer["nodes"]["check"]["approval"]["decision"] == "approved"
     done = wait(client, paused["id"])
     assert done["status"] == "succeeded", done
     assert done["nodes"]["check"]["approval"]["decision"] == "approved"

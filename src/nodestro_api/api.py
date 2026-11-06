@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Callable, Iterable, Sequence
 from contextlib import suppress
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 import hashlib
 import json
@@ -60,6 +60,8 @@ from nodestro_runtime.schemas import (
     Usage,
     Workflow,
     WorkflowIn,
+    WorkflowOrigin,
+    keep_origin,
     now,
 )
 from nodestro_runtime.schemas import (
@@ -774,7 +776,7 @@ def _replace_workflow(
             raise KeyError(workflow.id)
         if expected is not None and expected != previous.updated_at:
             raise _conflict(previous)
-        saved = keep_only_inherited(workflow, previous)
+        saved = keep_origin(keep_only_inherited(workflow, previous), previous)
         # Conditional as a second guard: a writer that skips the lock still cannot bring back a deleted workflow.
         if not ctx.store.replace_if("workflows", saved.id, saved, field="id", expected=saved.id):
             raise KeyError(saved.id)
@@ -1070,7 +1072,16 @@ def copy_library_template(template_id: str, body: LibraryCopy, request: Request,
     host = _LibraryHost(ctx)
     try:
         made = library.instantiate(template_id, language, host, models=models, connections=connections)
-        copy = ctx.save_workflow(_checked(made.workflow))
+        # The copy remembers its origin (runtime RT-055), read-only: example, version, language and which
+        # integrations run on sample data.
+        origin = WorkflowOrigin(
+            example_id=template_id,
+            version=library.__version__,
+            language=language,
+            offline=[item.id for item in spec.integrations if item.id not in connections],
+            connected=[item.id for item in spec.integrations if item.id in connections],
+        )
+        copy = ctx.save_workflow(Workflow(**_checked(made.workflow).model_dump(), origin=origin))
         host.workflows.append(copy.id)
         if body.tests and spec.tests:
             text = library.texts(template_id, language)
@@ -1402,7 +1413,10 @@ def list_approvals(ctx: Ctx) -> list[PendingApproval]:
 
 @router.post("/runs/{run_id}/approvals/{node_id}", dependencies=RUN)
 async def decide_approval(run_id: str, node_id: str, body: ApprovalDecision, request: Request, ctx: Ctx) -> Run:
-    """Approve or reject at an approval node; the run (its top-level run) continues right away."""
+    """Approve or reject at an approval node; the run (its top-level run) continues right away.
+
+    Answers the top-level run as it goes on: ``queued`` (or already ``running``/finished), never the ``paused`` state
+    the decision ended (X-01)."""
     return ctx.runs.decide(run_id, node_id, body.decision, body.comment, decided_by=actor_id(request))
 
 
@@ -1531,6 +1545,34 @@ class UsageBucket(BaseModel):
 _QUALITY_ORDER = ("estimated", "unverified", "contract", "verified")
 
 
+class PublicationBudget(BaseModel):
+    """The daily cost limit of one published API and how much of it the last 24 hours used (AD-20)."""
+
+    publication_id: str
+    slug: str
+    name: str
+    #: The daily cost limit in USD (``None``: no daily limit).
+    daily_budget_usd: float | None = None
+    #: The cost of the API's runs of the last 24 hours, the amount the daily limit is checked against.
+    last_24h_usd: float = 0.0
+    #: The cost limit of one run in USD (``None``: the workflow's budget, else the default budget).
+    run_budget_usd: float | None = None
+    #: Whether the daily limit is reached: new runs are refused with ``limit.daily_budget``.
+    exhausted: bool = False
+
+
+class UsageBudgets(BaseModel):
+    """Budgets in the usage report (AD-20): the daily limits of published APIs and the runs budgets stopped."""
+
+    #: Every publication, the ones closest to their daily limit first.
+    publications: list[PublicationBudget] = Field(default_factory=list)
+    #: Top-level runs of the period that a budget ended (``run.budget_exceeded``, ``run.budget_ended``), the run itself
+    #: or the step that failed it.
+    stopped_runs: int = 0
+    #: Top-level runs of the period that wait for a budget decision (paused with a pending budget request).
+    waiting_runs: int = 0
+
+
 class UsageReport(BaseModel):
     total: UsageBucket
     by_day: list[UsageBucket]
@@ -1539,6 +1581,7 @@ class UsageReport(BaseModel):
     by_source: list[UsageBucket]
     #: The latest AI operations outside workflow runs, newest first.
     recent: list[UsageEntry]
+    budgets: UsageBudgets = Field(default_factory=UsageBudgets)
 
 
 def _add(bucket: UsageBucket, usage: Any, *, run: bool = False) -> None:
@@ -1609,7 +1652,8 @@ def usage(ctx: Ctx, days: int = Query(30, ge=1, le=365)) -> UsageReport:
             key = model
         return by_model.setdefault(key, UsageBucket(key=key, label=key))
 
-    for run in _runs_since(ctx, cutoff):
+    runs = _runs_since(ctx, cutoff)
+    for run in runs:
         day = run.created_at.date().isoformat()
         buckets = [
             total,
@@ -1640,6 +1684,56 @@ def usage(ctx: Ctx, days: int = Query(30, ge=1, le=365)) -> UsageReport:
         by_model=sorted(by_model.values(), key=lambda b: b.estimated_cost_usd, reverse=True),
         by_source=[bucket for bucket in by_source.values() if bucket.runs or bucket.operations],
         recent=entries[:25],
+        budgets=_budgets(ctx, runs),
+    )
+
+
+#: The codes of a run that a budget ended (the limit was reached, or a person ended it at a budget decision).
+BUDGET_STOPS = frozenset({"run.budget_exceeded", "run.budget_ended"})
+
+
+def _budget_stopped(run: _UsageRun) -> bool:
+    """A budget ended the run itself, or the step that failed it (the run's cause, RT-012)."""
+    return run.error_code in BUDGET_STOPS or (run.cause is not None and run.cause.code in BUDGET_STOPS)
+
+
+def _budgets(ctx: Nodestro, runs: list[_UsageRun]) -> UsageBudgets:
+    """The budgets section of the usage report, from the runs it already read (the period is at least one day, so
+    the last 24 hours are among them). The daily cost of an API is counted like the check before a run starts
+    (``ServingCore.spent_since``): the estimated cost of its top-level runs created in the last 24 hours."""
+    day = now() - timedelta(hours=24)
+    spent: dict[str, float] = {}
+    for run in runs:
+        if run.trigger == "api" and run.trigger_ref and run.created_at >= day:
+            spent[run.trigger_ref] = spent.get(run.trigger_ref, 0.0) + (run.usage.estimated_cost_usd or 0.0)
+    publications = []
+    for publication in ctx.publications.all():
+        limits = publication.limits
+        used = round(spent.get(publication.id, 0.0), 6)
+        publications.append(
+            PublicationBudget(
+                publication_id=publication.id,
+                slug=publication.slug,
+                name=publication.name,
+                daily_budget_usd=limits.daily_budget_usd,
+                last_24h_usd=used,
+                run_budget_usd=limits.run_budget_usd,
+                exhausted=limits.daily_budget_usd is not None and used >= limits.daily_budget_usd,
+            )
+        )
+
+    def share(item: PublicationBudget) -> tuple[float, float, str]:
+        limit = item.daily_budget_usd
+        used = item.last_24h_usd / limit if limit else (1.0 if limit == 0 else 0.0)
+        return (-used, -item.last_24h_usd, item.name.lower())
+
+    return UsageBudgets(
+        publications=sorted(publications, key=share),
+        stopped_runs=sum(_budget_stopped(run) for run in runs),
+        waiting_runs=sum(
+            run.status == "paused" and run.budget is not None and run.budget.pending_request_id is not None
+            for run in runs
+        ),
     )
 
 
@@ -1674,6 +1768,14 @@ class _UsageNodeRun(BaseModel):
     decision_usage: Usage | None = None
 
 
+class _UsageRunCause(BaseModel):
+    code: str = ""
+
+
+class _UsageRunBudget(BaseModel):
+    pending_request_id: str | None = None
+
+
 class _UsageRun(BaseModel):
     id: str
     workflow_id: str
@@ -1684,7 +1786,12 @@ class _UsageRun(BaseModel):
     created_at: datetime
     imported_at: datetime | None = None
     trigger: str = "manual"
+    trigger_ref: str | None = None
     parent_run_id: str | None = None
+    status: str = "queued"
+    error_code: str | None = None
+    budget: _UsageRunBudget | None = None
+    cause: _UsageRunCause | None = None
 
 
 def _runs_since(ctx: Nodestro, cutoff: float) -> list[_UsageRun]:

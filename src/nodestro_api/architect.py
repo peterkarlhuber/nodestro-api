@@ -365,9 +365,12 @@ class ArchitectEvent(BaseModel):
 
 
 class ArchitectReasoning(ReasoningTrace):
-    """The reasoning of one request of a job: ``step`` is ``analysis``, ``plan``, ``agent_revision`` or ``repair``."""
+    """The reasoning of one request of a job: ``step`` is ``analysis``, ``plan``, ``agent_revision`` or ``repair``,
+    or for the sub-requests ``agent`` (the Agent Architect designs an agent) and ``tool`` (the Coding Agent writes a
+    tool), whose ``subject`` names the agent or tool (RT-063)."""
 
     step: str = "plan"
+    subject: str | None = None
 
 
 #: Reasoning text kept per request of a job (the rest still streams live, but is not stored).
@@ -763,6 +766,49 @@ class _Session:
             self._reasoning = ArchitectReasoning(step=self._step)
             self.job.reasoning.append(self._reasoning)
         return self._reasoning
+
+    def sub_reasoning(self, step: str, subject: str) -> Any:
+        """The ``on_event`` hook of a sub-request (the Agent Architect for one agent, the Coding Agent for one tool,
+        RT-063): its reasoning streams as ``thinking``/``thinking_status`` events with ``step`` and ``subject``, into
+        an entry of its own, so sub-requests that run in parallel never mix their text."""
+        entry: ArchitectReasoning | None = None
+
+        def own() -> ArchitectReasoning:
+            nonlocal entry
+            if entry is None:
+                entry = ArchitectReasoning(step=step, subject=subject)
+                self.job.reasoning.append(entry)
+            return entry
+
+        def on_delta(delta: str, kind: ReasoningKind) -> None:
+            self.check()
+            with self.service._lock:
+                found = own()
+                added = delta if len(found.text) >= _MAX_REASONING_CHARS else found.delta(delta, kind)
+                data = {
+                    "reasoning_kind": kind,
+                    "step": step,
+                    "subject": subject,
+                    "index": next(i for i, item in enumerate(self.job.reasoning) if item is found),
+                }
+                self.service.emit(self.job, "thinking", message=added, data=data)
+
+        def on_status(state: str, kind: ReasoningKind | None, redacted: bool) -> None:
+            self.check()
+            with self.service._lock:
+                found = own()
+                found.status(state, redacted)
+                data = {
+                    "state": state,
+                    "reasoning_kind": kind,
+                    "redacted": redacted,
+                    "step": step,
+                    "subject": subject,
+                    "index": next(i for i, item in enumerate(self.job.reasoning) if item is found),
+                }
+                self.service.emit(self.job, "thinking_status", data=data)
+
+        return reasoning_hook(on_delta, on_status)
 
     def _on_thinking(self, delta: str, kind: ReasoningKind) -> None:
         self.check()
@@ -1407,6 +1453,7 @@ class _Session:
             default_model=self.default_model,
             language=self.job.language,
             tracker=self.tracker,
+            on_event=self.sub_reasoning("agent", item.name),
         )
         self.job.notes.extend(draft.notes)
         for missing in draft.missing_tools:
@@ -1482,6 +1529,8 @@ class _Session:
             credentials={connection.provider: connection.settings(self.model)},
             usage_tracker=self.tracker,
         )
+        # Its reasoning streams like the architect's own (RT-063); a streaming hook makes its requests stream.
+        coding.agent.on_event = self.sub_reasoning("tool", tool.name)
         taken = set(self.nodestro.tools.registry.names()) | set(self.pending_tools) | set(RESERVED_TOOL_NAMES)
         requirement = f"{tool.requirement}\n\nName the function `{tool.name}`."
         feedback: str | None = None

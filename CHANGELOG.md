@@ -3,6 +3,19 @@
 ## Unreleased
 
 - TODO abatement round (2026-11-06):
+  - `GET /api/error-codes` (read): every problem code of the API and the runtime with its parameters and where it
+    is raised (`ErrorCodeCatalog`), kept in `error_codes.json`; a test fails while it is out of date
+    (`python -m nodestro_api.error_codes --write`) (API-016).
+  - Runs and run summaries carry `cause` (`RunCause`: the step that failed first, its code and params); the approval
+    decision answers the run as it goes on (`queued`) (API-018).
+  - `GET /api/usage` has `budgets`: every publication's daily limit with the cost of the last 24 hours, its run
+    limit and whether the limit is reached, and the runs of the period a budget stopped or holds (API-017).
+  - Copies of examples carry `origin` (example id, library version, language, offline and connected connections,
+    copy time); it is read-only and kept when the workflow is saved (runtime RT-055).
+  - The Workflow Architect streams the reasoning of its sub-requests too: the Agent Architect (one per agent) and
+    the Coding Agent each get a reasoning entry named by `step` and `subject` (`ArchitectReasoning.subject`), and
+    their `thinking` events carry `step`, `subject` and `index` (runtime RT-063).
+  - Pins nodestro-runtime 3d69702 (runtime #120).
   - `local.job_running` answers 409, like `/stop` does for the same conflict (API-062).
   - A reconciliation without a billing key returns a report naming the unreconciled providers instead of
     `pricing.billing_key_missing`; the code stays for workspaces with nothing to reconcile (API-007).

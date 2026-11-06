@@ -8,7 +8,7 @@ is applied automatically: the editor shows the proposal and the user decides.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from nodestro_runtime.catalog import SERVER_TOOLS
 from nodestro_runtime.model_profile import native_tool_support
@@ -156,8 +156,10 @@ class Assistants:
         default_model: str,
         language: str = "en",
         tracker: UsageTracker | None = None,
+        on_event: Callable[[Any], Any] | None = None,
     ) -> AgentDraft:
-        """``tracker`` collects the usage (the caller records it, also when this fails).
+        """``tracker`` collects the usage (the caller records it, also when this fails); ``on_event`` receives the
+        Agent Architect's stream events (its live reasoning, RT-063).
 
         ``connection`` belongs to the provider of ``model`` (the assistant model); ``allowed_models``
         are the models the designed agent may use (those of configured providers).
@@ -182,6 +184,8 @@ class Assistants:
             credentials={connection.provider: connection.settings(model)},
             usage_tracker=tracker,
         )
+        if on_event is not None:
+            architect.agent.on_event = on_event
         catalog = self.tools.catalog() + [
             {"name": key, "description": info.description} for key, info in SERVER_TOOLS.items()
         ]

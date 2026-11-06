@@ -2094,7 +2094,7 @@
         "type": "object"
       },
       "ArchitectReasoning": {
-        "description": "The reasoning of one request of a job: ``step`` is ``analysis``, ``plan``, ``agent_revision`` or ``repair``.",
+        "description": "The reasoning of one request of a job: ``step`` is ``analysis``, ``plan``, ``agent_revision`` or ``repair``,\nor for the sub-requests ``agent`` (the Agent Architect designs an agent) and ``tool`` (the Coding Agent writes a\ntool), whose ``subject`` names the agent or tool (RT-063).",
         "properties": {
           "active": {
             "default": false,
@@ -2130,6 +2130,17 @@
             "default": "plan",
             "title": "Step",
             "type": "string"
+          },
+          "subject": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject"
           },
           "text": {
             "default": "",
@@ -6789,6 +6800,55 @@
           "path"
         ],
         "title": "EnvironmentInfo",
+        "type": "object"
+      },
+      "ErrorCode": {
+        "properties": {
+          "params": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Params",
+            "type": "array"
+          },
+          "source": {
+            "enum": [
+              "runtime",
+              "api",
+              "both"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "ErrorCode",
+        "type": "object"
+      },
+      "ErrorCodeCatalog": {
+        "description": "Every problem code of the studio API and the runtime, sorted, with its parameters.",
+        "properties": {
+          "codes": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ErrorCode"
+            },
+            "title": "Codes",
+            "type": "object"
+          },
+          "patterns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Patterns",
+            "type": "array"
+          }
+        },
+        "required": [
+          "codes"
+        ],
+        "title": "ErrorCodeCatalog",
         "type": "object"
       },
       "ErrorOut": {
@@ -15338,6 +15398,62 @@
         "title": "Publication",
         "type": "object"
       },
+      "PublicationBudget": {
+        "description": "The daily cost limit of one published API and how much of it the last 24 hours used (AD-20).",
+        "properties": {
+          "daily_budget_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Budget Usd"
+          },
+          "exhausted": {
+            "default": false,
+            "title": "Exhausted",
+            "type": "boolean"
+          },
+          "last_24h_usd": {
+            "default": 0.0,
+            "title": "Last 24H Usd",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "publication_id": {
+            "title": "Publication Id",
+            "type": "string"
+          },
+          "run_budget_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Budget Usd"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "publication_id",
+          "slug",
+          "name"
+        ],
+        "title": "PublicationBudget",
+        "type": "object"
+      },
       "PublicationEvent": {
         "properties": {
           "at": {
@@ -17542,6 +17658,16 @@
             ],
             "title": "Budget Usd"
           },
+          "cause": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunCause"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -17998,6 +18124,35 @@
           "policy"
         ],
         "title": "RunBudgetOut",
+        "type": "object"
+      },
+      "RunCause": {
+        "description": "Why a failed run failed (AD-02): the step that failed first and its problem, so that a run list or a banner\ncan say \"<step>: <reason>\" without reading every step. Set together with ``error_code`` ``run.nodes_failed``;\n``code``/``params`` are the step's own (``run.budget_exceeded``, ``provider.rate_limited`` ...).",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          }
+        },
+        "required": [
+          "node_id",
+          "label",
+          "code"
+        ],
+        "title": "RunCause",
         "type": "object"
       },
       "RunChatView": {
@@ -18535,6 +18690,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/RunBudget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cause": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunCause"
               },
               {
                 "type": "null"
@@ -23752,6 +23917,30 @@
         "title": "UsageBucket",
         "type": "object"
       },
+      "UsageBudgets": {
+        "description": "Budgets in the usage report (AD-20): the daily limits of published APIs and the runs budgets stopped.",
+        "properties": {
+          "publications": {
+            "items": {
+              "$ref": "#/components/schemas/PublicationBudget"
+            },
+            "title": "Publications",
+            "type": "array"
+          },
+          "stopped_runs": {
+            "default": 0,
+            "title": "Stopped Runs",
+            "type": "integer"
+          },
+          "waiting_runs": {
+            "default": 0,
+            "title": "Waiting Runs",
+            "type": "integer"
+          }
+        },
+        "title": "UsageBudgets",
+        "type": "object"
+      },
       "UsageEntry": {
         "properties": {
           "at": {
@@ -23877,6 +24066,9 @@
       },
       "UsageReport": {
         "properties": {
+          "budgets": {
+            "$ref": "#/components/schemas/UsageBudgets"
+          },
           "by_day": {
             "items": {
               "$ref": "#/components/schemas/UsageBucket"
@@ -24163,6 +24355,16 @@
             "title": "Nodes",
             "type": "array"
           },
+          "origin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowOrigin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -24390,6 +24592,55 @@
           }
         },
         "title": "WorkflowLimits",
+        "type": "object"
+      },
+      "WorkflowOrigin": {
+        "description": "Where a workflow came from when it was made as a copy (RT-055): today a copy of an example.\n\nSet once by the code that makes the copy and kept by every later save (:func:`keep_origin`): it is history, not\nsomething an editor or a client sends (``WorkflowIn`` has no such field). An interface uses it to mark a copy\nwhose integrations run on sample data, or to offer the example's newer version.",
+        "properties": {
+          "connected": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Connected",
+            "type": "array"
+          },
+          "copied_at": {
+            "format": "date-time",
+            "title": "Copied At",
+            "type": "string"
+          },
+          "example_id": {
+            "title": "Example Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "example",
+            "default": "example",
+            "title": "Kind",
+            "type": "string"
+          },
+          "language": {
+            "title": "Language",
+            "type": "string"
+          },
+          "offline": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Offline",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "example_id",
+          "version",
+          "language"
+        ],
+        "title": "WorkflowOrigin",
         "type": "object"
       },
       "WorkflowSummary": {
@@ -27845,6 +28096,35 @@
           }
         },
         "summary": "Diagnostics Connection"
+      }
+    },
+    "/api/error-codes": {
+      "get": {
+        "description": "Every problem code the API and the runtime answer with (``code`` of an error, an issue or a status), with the\nnames of its parameters and where it is raised. A client can check that it has a text for each of them.",
+        "operationId": "error_codes_api_error_codes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorCodeCatalog"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Error Codes"
       }
     },
     "/api/export-jobs/{job_id}": {
@@ -33714,7 +33994,7 @@
     },
     "/api/runs/{run_id}/approvals/{node_id}": {
       "post": {
-        "description": "Approve or reject at an approval node; the run (its top-level run) continues right away.",
+        "description": "Approve or reject at an approval node; the run (its top-level run) continues right away.\n\nAnswers the top-level run as it goes on: ``queued`` (or already ``running``/finished), never the ``paused`` state\nthe decision ended (X-01).",
         "operationId": "decide_approval_api_runs__run_id__approvals__node_id__post",
         "parameters": [
           {

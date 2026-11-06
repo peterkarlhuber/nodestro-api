@@ -35,6 +35,7 @@ from .api_run_chat import router as run_chat_router
 from .api_tool_approvals import router as tool_approvals_router
 from .body_limit import BodyLimitMiddleware, BodyLimits
 from .context import AppConfig, Nodestro
+from .error_codes import router as error_codes_router
 from .launch import LOCAL_COOKIE, LaunchSecretMiddleware, check_secret
 from .local_access import LocalAccessMiddleware, allowed_hosts, listens_everywhere, require_loopback_only
 from .local_container import CONTAINER_PORT, loopback_hosts, require_safe_configuration
@@ -206,6 +207,7 @@ def create_app(
     app.include_router(budget_router)
     app.include_router(tool_approvals_router)
     app.include_router(run_chat_router)
+    app.include_router(error_codes_router)
     app.include_router(router)
     app.include_router(data_router)
     install_api_reference(app, "/api/openapi.json")

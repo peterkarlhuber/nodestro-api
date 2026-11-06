@@ -17,7 +17,7 @@ from nodestro_runtime.testing import thinking
 from test_architect import start, wait_job
 from test_assistant import ASSISTANT, chat, wait
 
-from architect_script import ANALYST, analysis, create_script, thinking_first
+from architect_script import AGENT, ANALYST, CODER, agent_spec, analysis, create_script, thinking_first, tool_proposal
 
 
 def _sse(body: str) -> list[tuple[str, Any]]:
@@ -139,10 +139,45 @@ def test_architect_reasoning_streams_per_step_and_stays_on_the_job(make_app: Cal
             "redacted": False,
             "active": False,
             "step": "analysis",
+            "subject": None,
         }
     ]
     # Live-only events are not kept in the job's event list (a long reasoning cannot crowd out the log).
     assert not [event for event in job["events"] if event["type"].startswith("thinking")]
+
+
+def test_the_sub_requests_stream_their_reasoning_too(make_app: Callable[..., TestClient]) -> None:
+    """RT-063: the Agent Architect (one request per agent, in parallel) and the Coding Agent stream their reasoning
+    like the architect's own steps, each into an entry of its own named by step and subject."""
+    script = create_script()
+    script[AGENT] = [thinking_first(agent_spec(), "Which tools does it need?"), agent_spec(), agent_spec()]
+    script[CODER] = [thinking_first(tool_proposal(), "Count the keyword, divide by the words.")]
+    client = make_app(script)
+    architect = client.app.state.nodestro.architect  # type: ignore[attr-defined]
+    recorded: list[Any] = []
+    emit = architect.emit
+
+    def record(job: Any, kind: str, **fields: Any) -> None:
+        emit(job, kind, **fields)
+        if kind == "thinking":
+            recorded.append(fields)
+
+    architect.emit = record
+    job = wait_job(client, start(client)["id"])
+    assert job["status"] == "ready", job["error"]
+    by_step: dict[tuple[str, str], str] = {}
+    for item in recorded:  # the events are deltas
+        key = (item["data"]["step"], item["data"]["subject"])
+        by_step[key] = by_step.get(key, "") + item["message"]
+    agent = next(key for key in by_step if key[0] == "agent")
+    assert by_step[agent] == "Which tools does it need?" and agent[1]
+    assert by_step[("tool", "keyword_density")] == "Count the keyword, divide by the words."
+    entries = {(entry["step"], entry["subject"]): entry for entry in job["reasoning"]}
+    assert entries[("tool", "keyword_density")]["text"] == "Count the keyword, divide by the words."
+    assert entries[agent]["text"] == "Which tools does it need?"
+    for item in recorded:  # every event points at its own entry
+        entry = job["reasoning"][item["data"]["index"]]
+        assert (entry["step"], entry["subject"]) == (item["data"]["step"], item["data"]["subject"])
 
 
 def test_model_capabilities_declare_what_the_stream_transmits(make_app: Callable[..., TestClient]) -> None:

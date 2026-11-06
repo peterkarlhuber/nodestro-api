@@ -12,7 +12,7 @@
 | P0 Critical | 0 |
 | P1 High | 0 |
 | P2 Medium | 4 |
-| P3 Low | 20 |
+| P3 Low | 18 |
 | P4 Optional | 7 |
 
 **Release blockers:** None for this repository; every entry below is not a release blocker. The next desktop
@@ -174,35 +174,15 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
 - **Next step:** Run reindex jobs as server batch jobs with a lease once the server profile gets them.
 - **Depends on:** nodestro-runtime RT-046
 
-### API-016 · Machine-readable list of all error codes (X-03)
+### API-016 · Error responses of published routes and router tags (X-03 rest)
 
-- **Priority:** P3 Low · **Status:** Open · **Refs:** #53, backend audit X-03
-- **What:** No generated list of error codes exists, so new codes reach the studio without a text. The OpenAPI
-  document also declares only 422/429 for the published run routes (the real answers include 401, 403, 404, 409,
-  413 and 503 with `ErrorResponse`), and most studio routes have no tag, so `/api/docs` is one flat list (UX
-  round 3 handover B13).
-- **Next step:** Generate one list of API and runtime codes, published next to the OpenAPI document. Add a test
-  for codes that are missing from it. Declare the error responses of the published routes and tag the studio
-  routers (workflows, runs, publications, local models, MCP, pricing).
-- **Depends on:** nodestro-runtime RT-011
-
-### API-017 · Budget information in the usage report (AD-20)
-
-- **Priority:** P3 Low · **Status:** Open · **Refs:** #54, UX audit AD-20
-- **What:** The usage report has no budget fields: daily budget use per publication, runs stopped by budget.
-- **Next step:** Add a `budgets` section to `UsageReport`, then regenerate the contract and the SDK types.
-- **Depends on:** nodestro-studio ST-014 (Usage page "Budgets" card). Re-confirmed unchanged by UX round 3 (backlog
-  handover H3).
-
-### API-018 · Expose the decision result and the run-level failure cause (X-01, AD-02)
-
-- **Priority:** P3 Low · **Status:** Blocked · **Refs:** backend audit X-01, UX audit AD-02
-- **What:** The approval decision still answers with the run in `paused` (`decide_approval`), and failed runs carry
-  no run-level cause. Both shapes come from the runtime.
-- **Next step:** Once runtime RT-005 and RT-012 land, update the response models and docstrings, regenerate the
-  OpenAPI document, and add API tests.
-- **Depends on:** nodestro-runtime RT-005, RT-012; consumed by nodestro-studio ST-003 (studio #81). Re-confirmed
-  unchanged by UX round 3 (backlog handover H2).
+- **Priority:** P3 Low · **Status:** Open · **Refs:** #53, backend audit X-03, UX round 3 handover B13
+- **What:** The code list exists (`GET /api/error-codes`, `src/nodestro_api/error_codes.json`, kept fresh by
+  `tests/test_error_codes.py`). Still open: the OpenAPI document declares only 422/429 for the published run routes
+  (the real answers include 401, 403, 404, 409, 413 and 503 with `ErrorResponse`), and most studio routes have no tag,
+  so `/api/docs` is one flat list.
+- **Next step:** Declare the error responses of the published routes and tag the studio routers (workflows, runs,
+  publications, local models, MCP, pricing); regenerate the contract and the SDK together.
 
 ### API-019 · Member and role management for tenant admins (server)
 
@@ -404,14 +384,11 @@ None known.
 | API-009 | nodestro-runtime | RT-014 | runtime provides deletes |
 | API-011 | nodestro-server | SRV-007 (RUNBOOK monitoring section) | server documents what this adds |
 | (pointer) | nodestro-sdk | SDK-005 | the server contract `openapi/nodestro-api-server.json` exists now (API-012 done); the SDK contract tests can use it |
-| API-013 | nodestro-runtime | RT-009 (store time filter) | runtime change first |
+| API-013 | nodestro-runtime | RT-009 (store time filter) | runtime part done (`list_page(since=...)`, `list_since`) |
 | API-016 | nodestro-runtime | RT-011 | combined code list |
-| (pointer) | nodestro-runtime | RT-055 (origin of an example copy, UX round 3 examples handover B-1) | runtime stores the origin; the API exposes it read-only; full entry in runtime |
 | API-054 | nodestro-studio | portable export dialog (studio #121, ST-047) | one independent review covers both; full entry here |
-| API-043 | nodestro-runtime | RT-045 (atomic insert-if-absent) | runtime change first |
+| API-043 | nodestro-runtime | RT-045 (atomic insert-if-absent) | runtime part done (`put_raw_if_absent`) |
 | API-044 | nodestro-runtime | RT-046 (reindex jobs in the API process) | runtime change first |
-| API-017 | nodestro-studio | ST-014 (AD-20 Usage page card) | studio consumes the field |
-| API-018 | nodestro-runtime, nodestro-studio | RT-005, RT-012; ST-003 (studio #81) | runtime changes the run shape first; studio consumes it |
 | API-021 | nodestro-runtime | RT-015 | runtime change first |
 | API-023 | nodestro-server | SRV-013 (PostgreSQL load test) | load test runs there |
 | (pointer) | nodestro-local-docker | LD-010 (session hardening) | implementation would be here; tracked there |
