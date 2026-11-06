@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import suppress
 from datetime import UTC, datetime
+from decimal import Decimal
 import hashlib
 import json
 import time
@@ -16,6 +17,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 import nodestro_examples as library
 from nodestro_examples import samples as library_samples
+from nodestro_runtime import output_limits, run_budget
 from nodestro_runtime.agent_builder import ConfigIssue
 from nodestro_runtime.agent_test import AgentTestIn, AgentTestResult
 from nodestro_runtime.catalog import SERVER_TOOLS, ModelInfo, ServerToolInfo, model_capabilities, models
@@ -23,6 +25,7 @@ from nodestro_runtime.contracts import contract_of
 from nodestro_runtime.engine import check_workflow
 from nodestro_runtime.knowledge import KnowledgeFile
 from nodestro_runtime.launcher import launch
+from nodestro_runtime.local_models import LOCAL_ASSISTANT_MODEL, LOCAL_DEFAULT_MODEL
 from nodestro_runtime.memory_spaces import MemoryFile, MemorySpaceInfo, check_space_name
 from nodestro_runtime.model_profile import ModelProfile
 from nodestro_runtime.preflight import WorkflowCheck, preflight, workflow_models
@@ -40,6 +43,8 @@ from nodestro_runtime.resume import resume as resume_from
 from nodestro_runtime.run_views import PendingApproval, models_of_run, pending_approvals
 from nodestro_runtime.sanitize import sanitize_run
 from nodestro_runtime.schemas import (
+    DEFAULT_AGENT_MODEL,
+    DEFAULT_ASSISTANT_MODEL,
     AgentConfig,
     AgentTemplate,
     AgentTemplateIn,
@@ -375,6 +380,46 @@ def get_settings(request: Request, ctx: Ctx) -> Settings:
     if _is_admin(request):
         return settings
     return sandbox_status.redact_settings(settings, server=ctx.profile.kind == "server")
+
+
+class SettingsDefaults(BaseModel):
+    """The value each setting of ``GET /api/settings`` has while nobody changed it (API-061), so an interface can mark
+    a field as "default" or "changed". The defaults of the output limits are ``output_limit_defaults`` of the
+    settings; provider settings have no default."""
+
+    #: ``local`` models on an installation that started with them (``model_defaults``), else the cloud models.
+    default_model: str
+    assistant_model: str
+    default_budget_usd: float | None = 2.0
+    #: ``docker`` wherever only containers may run code (a server, Nodestro Local Docker), else ``auto``.
+    sandbox: Literal["auto", "subprocess", "linux", "docker"] = "auto"
+    #: ``None``: follow the browser.
+    language: Language | None = None
+    architect_budget_usd: float | None = 2.0
+    architect_max_repairs: int = 2
+    architect_retry_truncated: bool = True
+    architect_retry_max_tokens: int = output_limits.ARCHITECT_RETRY_DEFAULT
+    ocr_enabled: bool = False
+    price_mode: Literal["standard", "strict"] = "standard"
+    max_run_budget_usd: Decimal | None = None
+    budget_decision_hours: int = run_budget.DEFAULT_DECISION_HOURS
+    knowledge_retrieval: Literal["fts", "vector", "hybrid"] = "fts"
+    embedding_model: str | None = None
+    strict_offline: bool = False
+    prefer_european_models: bool = False
+    local_reasoning: Literal["auto", "full"] = "auto"
+    reasoning_summaries: bool = False
+
+
+@router.get("/settings/defaults", dependencies=READ)
+def get_settings_defaults(ctx: Ctx) -> SettingsDefaults:
+    """The default of every setting that ``PUT /api/settings`` changes (see :class:`SettingsDefaults`)."""
+    local = ctx.settings().model_defaults == "local"
+    return SettingsDefaults(
+        default_model=LOCAL_DEFAULT_MODEL if local else DEFAULT_AGENT_MODEL,
+        assistant_model=LOCAL_ASSISTANT_MODEL if local else DEFAULT_ASSISTANT_MODEL,
+        sandbox="auto" if ctx.sandbox_policy.profile == "desktop" else "docker",
+    )
 
 
 #: The longest ``wait`` of ``GET /api/sandbox/status`` and the longest ``timeout`` of ``POST

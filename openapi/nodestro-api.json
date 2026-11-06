@@ -19953,6 +19953,169 @@
         "title": "Settings",
         "type": "object"
       },
+      "SettingsDefaults": {
+        "description": "The value each setting of ``GET /api/settings`` has while nobody changed it (API-061), so an interface can mark\na field as \"default\" or \"changed\". The defaults of the output limits are ``output_limit_defaults`` of the\nsettings; provider settings have no default.",
+        "properties": {
+          "architect_budget_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 2.0,
+            "title": "Architect Budget Usd"
+          },
+          "architect_max_repairs": {
+            "default": 2,
+            "title": "Architect Max Repairs",
+            "type": "integer"
+          },
+          "architect_retry_max_tokens": {
+            "default": 64000,
+            "title": "Architect Retry Max Tokens",
+            "type": "integer"
+          },
+          "architect_retry_truncated": {
+            "default": true,
+            "title": "Architect Retry Truncated",
+            "type": "boolean"
+          },
+          "assistant_model": {
+            "title": "Assistant Model",
+            "type": "string"
+          },
+          "budget_decision_hours": {
+            "default": 24,
+            "title": "Budget Decision Hours",
+            "type": "integer"
+          },
+          "default_budget_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 2.0,
+            "title": "Default Budget Usd"
+          },
+          "default_model": {
+            "title": "Default Model",
+            "type": "string"
+          },
+          "embedding_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Model"
+          },
+          "knowledge_retrieval": {
+            "default": "fts",
+            "enum": [
+              "fts",
+              "vector",
+              "hybrid"
+            ],
+            "title": "Knowledge Retrieval",
+            "type": "string"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "enum": [
+                  "de",
+                  "en",
+                  "es",
+                  "fr",
+                  "pt-BR",
+                  "it"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "local_reasoning": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "full"
+            ],
+            "title": "Local Reasoning",
+            "type": "string"
+          },
+          "max_run_budget_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Run Budget Usd"
+          },
+          "ocr_enabled": {
+            "default": false,
+            "title": "Ocr Enabled",
+            "type": "boolean"
+          },
+          "prefer_european_models": {
+            "default": false,
+            "title": "Prefer European Models",
+            "type": "boolean"
+          },
+          "price_mode": {
+            "default": "standard",
+            "enum": [
+              "standard",
+              "strict"
+            ],
+            "title": "Price Mode",
+            "type": "string"
+          },
+          "reasoning_summaries": {
+            "default": false,
+            "title": "Reasoning Summaries",
+            "type": "boolean"
+          },
+          "sandbox": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "subprocess",
+              "linux",
+              "docker"
+            ],
+            "title": "Sandbox",
+            "type": "string"
+          },
+          "strict_offline": {
+            "default": false,
+            "title": "Strict Offline",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "default_model",
+          "assistant_model"
+        ],
+        "title": "SettingsDefaults",
+        "type": "object"
+      },
       "SettingsIn": {
         "properties": {
           "api_key": {
@@ -34808,6 +34971,35 @@
           }
         },
         "summary": "Put Settings"
+      }
+    },
+    "/api/settings/defaults": {
+      "get": {
+        "description": "The default of every setting that ``PUT /api/settings`` changes (see :class:`SettingsDefaults`).",
+        "operationId": "get_settings_defaults_api_settings_defaults_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsDefaults"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Settings Defaults"
       }
     },
     "/api/settings/providers/bedrock/verify": {

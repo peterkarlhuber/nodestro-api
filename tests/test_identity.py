@@ -727,6 +727,16 @@ def test_automatic_language_clears_the_stored_one_on_a_server(server: Server) ->
     assert admin.get("/api/settings").json()["language"] is None
 
 
+def test_settings_defaults_on_a_server(server: Server) -> None:
+    """API-061: a server's tenants start with the cloud models and run tool code in containers only."""
+    reader = server.member("acme", "rita", "viewer")
+    defaults = reader.get("/api/settings/defaults")
+    assert defaults.status_code == 200, defaults.text
+    assert defaults.json()["sandbox"] == "docker" and defaults.json()["default_model"].startswith("anthropic:")
+    settings = reader.get("/api/settings").json()
+    assert {name: settings[name] for name in defaults.json()} == defaults.json()
+
+
 # ---- suspended tenants, session rotation, one person per identity -------------------------------------------
 
 

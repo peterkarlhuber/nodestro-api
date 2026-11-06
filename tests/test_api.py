@@ -412,3 +412,29 @@ def test_the_openapi_contract_is_up_to_date() -> None:
 
     committed = Path(__file__).resolve().parents[1] / "openapi" / "nodestro-api.json"
     assert committed.read_text(encoding="utf-8") == openapi.text(), "run `make openapi`"
+
+
+def test_settings_defaults_match_an_unchanged_installation(make_app: Any) -> None:
+    """API-061: ``GET /api/settings/defaults`` names the value of every changeable setting nobody changed, so the
+    studio can mark each field as default or changed; the defaults stay when a setting changes."""
+    client = make_app(local_defaults=True)
+    defaults = client.get("/api/settings/defaults")
+    assert defaults.status_code == 200, defaults.text
+    expected = defaults.json()
+    settings = client.get("/api/settings").json()
+    assert expected["default_model"] == "ollama:qwen3.5:4b" and expected["sandbox"] == "auto"
+    assert {name: settings[name] for name in expected} == expected
+    # Every setting PUT /api/settings changes has a default here, apart from providers, output limits (they have
+    # output_limit_defaults) and the one-way switches.
+    from nodestro_runtime.schemas import SettingsIn
+
+    changeable = set(SettingsIn.model_fields) - {"providers", "api_key", "output_limits", "clear_max_run_budget"}
+    assert set(expected) == changeable
+    changed = client.put("/api/settings", json={"default_budget_usd": 7, "price_mode": "strict"}).json()
+    assert changed["default_budget_usd"] == 7 and changed["price_mode"] == "strict"
+    assert client.get("/api/settings/defaults").json() == expected
+    # An installation that kept its cloud models has those as defaults.
+    cloud = make_app()
+    cloud.app.state.nodestro.store.put_raw("installation", "model_defaults", {"origin": "kept"})  # type: ignore[attr-defined]
+    kept = cloud.get("/api/settings/defaults").json()
+    assert kept["default_model"].startswith("anthropic:") and kept["assistant_model"].startswith("anthropic:")
