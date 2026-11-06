@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- Settings, attachments and providers (2026-11-06; contract additions only):
+  - Assistant files: `/api/assistant/files/support` and `/api/assistant/conversations/{id}/files[/{file_id}]`
+    (upload, remove, download as attachment, text), `SendRequest.file_ids`; in server mode a conversation belongs
+    to the user who created it (others get 404, also on `/api/inputs/*` and knowledge adoption).
+  - `GET /api/models/profile`; the Workflow Architect plan defaults to 32,000 tokens (was 16,000), every step uses
+    its configurable limit, and a cut-off answer is retried once with a higher limit within the cap and the job
+    budget (`architect.truncated`, `architect.truncated_over_budget`).
+  - Live reasoning in the assistant, the Workflow Architect and the run chat (`thinking`, `thinking_status`, SSE
+    `answering`); `GET /api/models/capabilities` declares `reasoning`.
+  - `POST /api/local-models/setup`; `/stop` refuses Local Docker and external servers (409 `local.not_managed`);
+    `LocalJob` carries steps, layers, rate, ETA and resume information.
+  - 409 `model.local_unavailable` before the Workflow Architect, the assistant, agent design and test, runs and the
+    knowledge index use a local model that is not ready; `POST /api/local-models/readiness`; `attach` on pull; an
+    optional per-request `model` for the architect and the assistant (`model.choice_invalid`).
+  - `GET /api/publication-overview` (read) for the studio's Publications page.
+  - The inline download and the Architect plan use the runtime's result format table; Word and Excel results are
+    tested end to end (dev extras `python-docx`, `openpyxl`).
+  - Portable web interface: Settings → Result folder shows the folder clearly and lets the operator choose another
+    one with a folder browser (folder names only), create it after confirming, open it on this computer and restore
+    the default; stored in `data/settings/output-folder.json`, used from the next run, `OUTPUT_DIR` still wins.
+
 - Pin nodestro-runtime 57b40d2 (runtime #116: strict offline mode, RT-004, expired budget decisions, missing
   sqlite-vec) and nodestro-examples f015a4d (examples #74: MCP demo setup texts name the computer where Nodestro runs).
 - In the strict offline mode the background price check makes no request, also when the mode is switched on while the
