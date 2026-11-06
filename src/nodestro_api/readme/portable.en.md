@@ -52,9 +52,15 @@ A changed key applies to the next run; no new export is needed.
 {output_section}
 
 Every run also keeps its files in the application (download them in the browser or with
-`GET /runs/{run_id}/files/{file_id}`). The browser cannot choose folders on this computer: the folder is set by the
-operator in `config/settings.toml` (`[data] output_dir`, relative to this folder or absolute). File names are made
-safe for every system; a name that exists already gets ` (2)`, ` (3)` …
+`GET /runs/{run_id}/files/{file_id}`). The default folder is `[data] output_dir` in `config/settings.toml` (relative
+to this folder or absolute). The operator can choose another folder in the web interface under **Settings → Result
+folder**: a folder browser of this computer (folder names only), a new folder is created only after confirming, and
+**Restore default** goes back to the settings file's folder. The choice is kept in `data/settings/output-folder.json`
+and applies from the next run without a restart; files saved earlier stay where they are. System folders and the
+application's own folders (program, Python, data, logs) are refused. `OUTPUT_DIR` set in the environment wins and
+cannot be changed on that page. **Open folder** appears only in a browser on this computer when the application
+serves this computer alone. File names are made safe for every system; a name that exists already gets ` (2)`,
+` (3)` …
 
 ## Settings
 
