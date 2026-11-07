@@ -8,7 +8,7 @@
   a column type changed) stops the start with `storage.schema_mismatch` and every difference, and nothing is changed.
   The check runs only on a current migration, so a new database still reports just the missing migration. The catalog
   code `partition.missing` left `error_codes.json` (orkexa raises it now, as a `RetrievalError`). Temporary pins:
-  nodestro-runtime `mup/b6-orkexa-postgres`, orkexa 744c9a1 (orkexa #66). New tests: T-UPG-7 in
+  nodestro-runtime `mup/b6-orkexa-postgres`; orkexa 792a041 (orkexa #66 merged). New tests: T-UPG-7 in
   `tests/test_server_command.py`, T-NOD-HTTP in `tests/test_identity.py` (the same document id, source, memory space
   and path, and search term in two tenants).
 - MUP-ONA B4 cascade (2026-11-07): pins nodestro-runtime 76f9cb2 (runtime #137 the tenant SQL rule engine as
