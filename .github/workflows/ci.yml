@@ -141,9 +141,10 @@ jobs:
           repository=https://github.com/peterkarlhuber/nodestro-runtime.git
           python -m venv "$RUNNER_TEMP/runtime-master"
           # The checker needs only the standard library and pglast (the range of the dev extra).
-          "$RUNNER_TEMP/runtime-master/bin/pip" install --no-deps "nodestro-runtime @ git+$repository@master"
+          # TEMPORARY (MUP-ONA B4 checker-change rule; never merged): the runtime branch mup/b4-sqlcheck-engine.
+          "$RUNNER_TEMP/runtime-master/bin/pip" install --no-deps "nodestro-runtime @ git+$repository@d639320843f875fb9175611afb2d365520eb7e9f"
           "$RUNNER_TEMP/runtime-master/bin/pip" install "pglast>=7,<9"
-          master="$(git ls-remote "$repository" refs/heads/master | cut -f1)"
+          master=d639320843f875fb9175611afb2d365520eb7e9f
           test -n "$master" || { echo "::error::runtime master not found with git ls-remote"; exit 1; }
           echo "runtime master: $master"
           # Prints the installed runtime's commit and fails unless it is master (T-CHK-6).
