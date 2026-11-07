@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "comment": "Mandatory checks (S2) per CI-FAST. A PR is ok only if every listed check ran on the PR head SHA and succeeded. Changing this list needs a reason in the PR.",
+  "pull_request": {
+    "ci.yml": [
+      "test (3.11)",
+      "test (3.13)",
+      "package",
+      "tenant-sql"
+    ]
+  },
+  "pull_request_path_filtered": {
+    "portable.yml": [
+      "Linux x64",
+      "Linux ARM64",
+      "Windows x64",
+      "Windows ARM64",
+      "macOS Apple Silicon",
+      "macOS Intel"
+    ]
+  },
+  "comment_path_filtered": "Checks that run on a pull request only when it changes the files in the workflow's paths filter; required only when they ran on the PR head SHA.",
+  "path_filters": {
+    "portable.yml": {
+      "paths": [
+        "src/nodestro_api/portable*.py",
+        "src/nodestro_api/webui*/**",
+        "src/nodestro_api/webui_server.py",
+        "src/nodestro_api/standalone.py",
+        "src/nodestro_api/exporter.py",
+        "src/nodestro_api/export_models.py",
+        "src/nodestro_api/readme/**",
+        "tests/test_portable_smoke.py",
+        "tests/ci/skipped-portable.txt",
+        "scripts/check_skips.py",
+        ".github/workflows/portable.yml"
+      ]
+    }
+  },
+  "comment_path_filters": "Copied verbatim from each path-filtered workflow's on.pull_request paths/paths-ignore; ci-ok uses them to decide whether the workflow had to run, and 'ci_ok.py --self-check' reports it when they differ from the workflow file.",
+  "nightly": {
+    "nightly.yml": [
+      "report"
+    ]
+  }
+}
