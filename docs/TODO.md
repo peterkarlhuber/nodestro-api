@@ -11,7 +11,7 @@
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 1 |
-| P2 Medium | 6 |
+| P2 Medium | 5 |
 | P3 Low | 10 |
 | P4 Optional | 6 |
 
@@ -309,14 +309,6 @@ removed by the change that completes its package here.
   its upload and knowledge paths on the runtime's limited path.
 - **Next step:** After the runtime and orkexa parts merge: map the code, test the routes, bump the runtime pin through
   the pin cascade.
-
-### API-MUP-A11 · Tenant SQL check in CI with the pinned and the current runtime checker
-
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** MP-A11 (PS-10), [MUP-ONA][mup-ona]
-- **What:** The API is scanned only by the pinned runtime checker inside `pytest`; a rule change on runtime `master`
-  reaches the API only with a pin bump, and nothing fails the job when the check cannot run.
-- **Next step:** CI job `tenant-sql`: pinned checker and runtime `master` (public `git+https`, no secret), daily
-  schedule, `NODESTRO_REQUIRE_TENANT_SCAN=1`.
 
 ### API-MUP-B0 · Declare the orkexa dependency with the runtime's commit
 

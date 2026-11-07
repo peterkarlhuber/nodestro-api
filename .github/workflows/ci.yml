@@ -5,12 +5,16 @@ on:
     branches: [master]
   pull_request:
   workflow_dispatch:
+  # Daily: the tenant SQL check of runtime master against this API, also without a new API change (MUP-ONA A11).
+  schedule:
+    - cron: "17 4 * * *"
 
 permissions:
   contents: read
 
 jobs:
   test:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -67,6 +71,7 @@ jobs:
 
   package:
     # The wheel installs on its own and contains what the package needs at run time.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -103,3 +108,44 @@ jobs:
         with:
           name: dist
           path: dist/
+
+  tenant-sql:
+    # Every PostgreSQL statement of the API on tenant data is bound to one tenant (security review SR-01), checked by
+    # the runtime's tenant SQL check twice (MUP-ONA A11, PS-10): with the runtime this API pins, and with the current
+    # runtime master, installed the same way as the pin (public git+https, no secret), so a rule change on the
+    # runtime reaches the API before its next pin bump; daily as well. NODESTRO_REQUIRE_TENANT_SCAN=1: a checker that
+    # cannot be imported, a missing pglast, a failed install, a scan of no file, a planted leak that is not reported
+    # or a runtime that is not master fails the job; it never skips.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NODESTRO_REQUIRE_TENANT_SCAN: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: tenant-sql (pinned)
+        run: |
+          pytest -rs --junitxml=junit-tenant-sql.xml tests/test_tenant_filters.py tests/test_tenant_sql_scan.py
+          python scripts/check_skips.py junit-tenant-sql.xml tests/ci/skipped-tenant-sql.txt
+          python scripts/tenant_sql_scan.py
+      - name: tenant-sql (runtime master)
+        run: |
+          set -euo pipefail
+          repository=https://github.com/peterkarlhuber/nodestro-runtime.git
+          python -m venv "$RUNNER_TEMP/runtime-master"
+          # The checker needs only the standard library and pglast (the range of the dev extra).
+          "$RUNNER_TEMP/runtime-master/bin/pip" install --no-deps "nodestro-runtime @ git+$repository@master"
+          "$RUNNER_TEMP/runtime-master/bin/pip" install "pglast>=7,<9"
+          master="$(git ls-remote "$repository" refs/heads/master | cut -f1)"
+          test -n "$master" || { echo "::error::runtime master not found with git ls-remote"; exit 1; }
+          echo "runtime master: $master"
+          # Prints the installed runtime's commit and fails unless it is master (T-CHK-6).
+          "$RUNNER_TEMP/runtime-master/bin/python" -I scripts/tenant_sql_scan.py \
+            --package src/nodestro_api --expect-runtime-commit "$master"
