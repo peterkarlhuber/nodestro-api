@@ -836,8 +836,14 @@ def api_run_summaries(store: DocumentStore, publication_id: str) -> list[RunSumm
 class ServingCore:
     """The behaviour of every published endpoint; :func:`build_router` only maps HTTP to it."""
 
-    #: Failed authentications per client address and minute before it gets 429.
+    #: Failed authentications per client address and minute before it gets 429; for a well-formed key, per key id
+    #: (:data:`KEY_PREFIX_LENGTH` characters of it, never the secret) instead (MUP-ONA A3, PS-3).
     MAX_AUTH_FAILURES = 30
+    #: Failed authentications with well-formed keys per client address and minute: the address limit for keys, high
+    #: enough that clients behind one proxy address do not lock each other out by one client's wrong key.
+    MAX_ADDRESS_KEY_FAILURES = 300
+    #: How much of a key id names the key in the failure count (a key id is not secret).
+    KEY_PREFIX_LENGTH = 8
 
     def __init__(self, host: ServingHost) -> None:
         self.host = host
@@ -960,7 +966,7 @@ class ServingCore:
         parsed = parse_token(token)
         identity = self.host.verify(*parsed) if parsed is not None else None
         if identity is None:
-            self.auth_failed(client)
+            self.auth_failed(client, key_id=parsed[0] if parsed is not None else None)
             raise ApiError(
                 401,
                 "auth.invalid",
@@ -969,9 +975,18 @@ class ServingCore:
             )
         return identity
 
-    def auth_failed(self, client: str) -> None:
-        """Count a failed authentication of ``client``; ``429`` once it failed too often within a minute."""
-        wait = self._failures.allow(f"auth:{client}", self.MAX_AUTH_FAILURES)
+    def auth_failed(self, client: str, *, key_id: str | None = None) -> None:
+        """Count a failed authentication of ``client``; ``429`` once it failed too often within a minute.
+
+        A well-formed key (``key_id``) is counted per key id prefix, plus a much higher limit per address, so the
+        failures of one key do not block other keys sent from the same address (clients behind one reverse proxy
+        without ``FORWARDED_ALLOW_IPS``); anything else is counted per address (MUP-ONA A3, PS-3)."""
+        if key_id:
+            wait = self._failures.allow(f"authkey:{key_id[: self.KEY_PREFIX_LENGTH]}", self.MAX_AUTH_FAILURES)
+            if wait is None:
+                wait = self._failures.allow(f"auth:{client}", self.MAX_ADDRESS_KEY_FAILURES)
+        else:
+            wait = self._failures.allow(f"auth:{client}", self.MAX_AUTH_FAILURES)
         if wait is not None:
             raise ApiError(
                 429,

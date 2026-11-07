@@ -72,6 +72,14 @@ the desktop profile the only principal is the local owner, who holds every permi
 studio; without a principal a route answers `401 access.login_required`, without the permission `403
 access.forbidden`. The application refuses to start when a route declares no permission.
 
+Every FastAPI application of this package checks this when it is built (`nodestro_api.permissions.check_routes`,
+deny by default): the desktop studio, the server's studio, the network listener of published APIs and an exported
+project. Deliberately public routes (`/health`, an export's API reference) declare `PUBLIC`; published endpoints are
+authenticated by their keys (`KEY_AUTHENTICATED_ROUTES`); the routes of an export's web interface check their session
+or token in the handler and are listed one by one with how they do it (`WEB_UI_ROUTES` in
+`nodestro_api.webui_server`). A new route that fits none of these stops the application from being built, and
+`tests/test_route_factories.py` finds every `FastAPI(...)` construction, so a new application needs the check too.
+
 Because there is no login, the studio API cannot be exposed to a network: `--host 0.0.0.0`, `::`, any address
 other than a loopback address, and `NODESTRO_ALLOWED_HOSTS` with names other than loopback names (or `*`) are
 refused at start with `access.network_needs_login`, on the command line, through the environment and in
@@ -199,7 +207,9 @@ its permissions:
 
 A key never reaches other publications (they answer `404` as if they did not exist), runs of other publications or
 the studio API. Revoking a key takes effect at once; rotating creates a new key with the same name, permissions and
-publications and revokes the old one in the same step. Failed authentications are limited per client address.
+publications and revokes the old one in the same step. Failed authentications are limited per client address; those
+of a well-formed key are counted per key id instead (its first 8 characters, never the secret), with a ten times
+higher limit per address, so one client's wrong key does not lock out other keys sent through the same reverse proxy.
 
 ## The server (`nodestro-server`)
 
@@ -228,6 +238,7 @@ unsafe value is listed at once (`profile.invalid`), and nothing has a default th
 | `NODESTRO_PRICE_SYNC`, `NODESTRO_PRICE_LITELLM`, `NODESTRO_PRICE_SNAPSHOT_FILE` | reference price sync of the workers (`on`/`off`, default `on`; LiteLLM's cost map `on`/`off`; a reviewed Orkexa snapshot file), see "Model prices" |
 | `NODESTRO_LOG_FORMAT` | `json` writes one JSON object per log line (`time`, `level`, `logger`, `message`, `request_id`, `exception`) for `api` and `worker`; default plain text. Every API answer carries `X-Request-ID` (a proxy's short id is kept), and its log lines name it. `GET /api/ready` (no login) answers 503 while the process starts, stops or cannot reach its database, for a load balancer; `/api/health` stays the liveness check |
 | `NODESTRO_LOGIN_STARTS_PER_MINUTE` | login starts per address and minute in one API process (default 60, `0` off) |
+| `NODESTRO_BEHIND_PROXY`, `FORWARDED_ALLOW_IPS`, `NODESTRO_REQUIRE_CLIENT_ADDRESS` | behind a reverse proxy: `NODESTRO_BEHIND_PROXY=1` states that there is one, and uvicorn's `FORWARDED_ALLOW_IPS` must then name the proxy's address(es), so the API takes the client address from `X-Forwarded-For` (only from those addresses). Without it every client has the proxy's address and shares its per-address limits (login starts, failed API keys). `check` prints `warning: proxy.client_address_unknown` and `api` logs it; with `NODESTRO_REQUIRE_CLIENT_ADDRESS=1` both refuse instead |
 
 Commands:
 
@@ -437,6 +448,15 @@ again. The SDKs in [nodestro-sdk](https://github.com/peterkarlhuber/nodestro-sdk
 against a running server. `openapi/nodestro-api-server.json` is the document of the server profile (logins and
 tenant switching added, no published APIs yet); `python -m nodestro_api.openapi --server
 openapi/nodestro-api-server.json` writes it, and a test checks it the same way.
+
+Error answers of the studio API have the form `{"detail", "code", "params"}`; clients evaluate `code` and
+`params`, never `detail` (an English technical text). `detail` names no file system path, input value, credential
+or library internals: an exception without an error code of its own (`bad_request`, a `not_found` for a key the
+request did not name, `provider_api`, `agent.<error>` except `agent.RetrievalError`) answers with a fixed text and
+`params.request_id`, and its original text is logged (logger `nodestro_api.errors`, credentials redacted) with the
+same request id; on a server it is the `X-Request-ID` of the answer. Texts of codes the API or the runtime raise on
+purpose keep their wording, with absolute paths replaced by `[path]` and credentials redacted. Validation errors
+(`request.invalid`) list `loc`, `msg` and `type`, and a message that repeats the input shows `[input]` instead.
 
 ## Development
 

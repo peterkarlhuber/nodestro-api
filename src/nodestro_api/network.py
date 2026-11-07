@@ -26,6 +26,7 @@ from nodestro_runtime.problems import NodestroError
 from pydantic import BaseModel, Field
 
 from .body_limit import BodyLimitMiddleware, BodyLimits
+from .permissions import PUBLIC, check_routes
 from .serving import ServingCore, build_router
 
 if TYPE_CHECKING:
@@ -70,10 +71,11 @@ def network_app(core: ServingCore) -> FastAPI:
     # Bodies that FastAPI reads before the key check (approve, resume) are limited like the studio's (API3-02).
     app.add_middleware(BodyLimitMiddleware, limits=BodyLimits.from_env())
 
-    @app.get("/health", include_in_schema=False)
+    @app.get("/health", include_in_schema=False, dependencies=PUBLIC)
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    check_routes(app)  # every route declares its protection (MUP-ONA A5)
     return app
 
 

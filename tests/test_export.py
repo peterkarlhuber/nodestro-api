@@ -119,7 +119,10 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     # + nodestro_runtime.model_profile and nodestro_runtime.output_limits: the agent builder checks options and
     # output limits by the model's profile.
     expected |= {"nodestro_runtime.model_profile", "nodestro_runtime.output_limits"}
-    assert len(modules) == 57 and expected | {"nodestro_runtime.local_models"} <= set(modules)
+    # + nodestro_api.permissions: the exported application checks every route's protection when it is built
+    # (MUP-ONA A5, PS-5).
+    expected.add("nodestro_api.permissions")
+    assert len(modules) == 58 and expected | {"nodestro_runtime.local_models"} <= set(modules)
     assert "nodestro_runtime.local_service" not in modules
     # The audit/usage hook protocol is exported (tool approvals and the usage log import it); the Axentra
     # integration itself is server-only and never part of an export.

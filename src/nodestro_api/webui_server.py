@@ -337,6 +337,30 @@ def _headers(*, html: bool = False) -> dict[str, str]:
     return headers
 
 
+#: The web interface's routes, which check access in their handlers (no principal: an export has no logins), with
+#: how; :func:`nodestro_api.permissions.check_routes` accepts exactly these without a declared requirement (MUP-ONA
+#: A5). A new route of :func:`build_router` must be added here, or the application is not built.
+WEB_UI_ROUTES: dict[tuple[str, str], str] = {
+    ("GET", "/"): "public: the interface's page (no data; the API calls need a session)",
+    ("GET", "/ui/assets/{path:path}"): "public: the interface's static files",
+    ("GET", "/ui/launch"): "the operator's one-time launch token (UiSessions.use_launch_token)",
+    ("GET", "/ui/api/bootstrap"): "public: what the sign-in page needs (language, whether a session exists)",
+    ("POST", "/ui/api/session"): "signs in with an API key (verified; failures counted per address)",
+    ("DELETE", "/ui/api/session"): "ends the session of the request's own cookie (same origin)",
+    ("GET", "/ui/api/config"): "session (WebUi.require)",
+    ("GET", "/ui/api/setup"): "operator session (WebUi.require(operator=True))",
+    ("PUT", "/ui/api/setup/providers/{provider}"): "operator session (WebUi.require(operator=True))",
+    ("DELETE", "/ui/api/setup/providers/{provider}"): "operator session (WebUi.require(operator=True))",
+    ("PUT", "/ui/api/setup/output"): "operator session (WebUi.require(operator=True))",
+    ("DELETE", "/ui/api/setup/output"): "operator session (WebUi.require(operator=True))",
+    ("GET", "/ui/api/setup/output/browse"): "operator session (WebUi.require(operator=True))",
+    ("POST", "/ui/api/setup/output/folders"): "operator session (WebUi.require(operator=True))",
+    ("POST", "/ui/api/setup/output/open"): "operator session (WebUi.require(operator=True))",
+    ("POST", "/ui/control/stop"): "the launcher's control token (UiOptions.control_token)",
+    ("POST", "/ui/control/launch"): "the launcher's control token (UiOptions.control_token)",
+}
+
+
 def build_router(ui: WebUi) -> APIRouter:
     """The interface's pages and endpoints (``/``, ``/ui/...``); the workflow itself runs through the published API."""
     router = APIRouter(include_in_schema=False, route_class=KeyAuthenticatedRoute)
@@ -524,4 +548,13 @@ def guess_type(name: str) -> str:
     return mimetypes.guess_type(name)[0] or "application/octet-stream"
 
 
-__all__ = ["COOKIE", "LANGUAGES", "UiOptions", "UiSessions", "WebUi", "build_router", "check_same_origin"]
+__all__ = [
+    "COOKIE",
+    "LANGUAGES",
+    "WEB_UI_ROUTES",
+    "UiOptions",
+    "UiSessions",
+    "WebUi",
+    "build_router",
+    "check_same_origin",
+]
