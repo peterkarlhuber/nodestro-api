@@ -13,10 +13,18 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # CI-FAST AP1: a new push to a pull request cancels the older run of that pull request. Every other run (master
+  # push, schedule, dispatch, and the nightly's workflow_call, where github.workflow is "Nightly") gets its own group
+  # from github.run_id, so it is never cancelled and never waits behind another run.
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 30 # CI-FAST AP1: p99 15.5 min, slowest entry 3.13 (successful runs 2026-11-01..07)
     strategy:
       fail-fast: false
       matrix:
@@ -74,6 +82,7 @@ jobs:
     # The wheel installs on its own and contains what the package needs at run time.
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 15 # CI-FAST AP1: p99 1.0 min (successful runs 2026-11-01..07)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
