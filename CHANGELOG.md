@@ -30,6 +30,9 @@
     answering (`/api/health` included) while a PDF is read; a published API's run start now also stores and reads
     its uploaded files off the event loop (it blocked every request of the process before), and answers a PDF over a
     limit with `422 document.too_complex`.
+- MUP-ONA B0: `pyproject.toml` declares `orkexa`, which the API imports, at the commit the runtime pins
+  (`f89102c`). The Axentra login flow builds its provider settings with `model_validate`, so type checking passes
+  with the Axentra commit the runtime pins next (`273e675`).
 - MUP-ONA security hardening (A2, A3, A5):
   - Security (A2, PS-2): error answers name no file system path, input value, credential or library text. An
     exception without an error code of its own (`bad_request`, a `not_found` for a key the request did not name,

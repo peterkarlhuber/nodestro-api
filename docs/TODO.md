@@ -12,7 +12,7 @@
 | P0 Critical | 0 |
 | P1 High | 0 |
 | P2 Medium | 6 |
-| P3 Low | 12 |
+| P3 Low | 11 |
 | P4 Optional | 6 |
 
 **Release blockers:** None for this repository; every entry below is not a release blocker. The next desktop
@@ -322,12 +322,6 @@ removed by the change that completes its package here.
   reaches the API only with a pin bump, and nothing fails the job when the check cannot run.
 - **Next step:** CI job `tenant-sql`: pinned checker and runtime `master` (public `git+https`, no secret), daily
   schedule, `NODESTRO_REQUIRE_TENANT_SCAN=1`.
-
-### API-MUP-B0 · Declare the orkexa dependency with the runtime's commit
-
-- **Priority:** P3 Low · **Status:** Open · **Refs:** MP-B0, [MUP-ONA][mup-ona]
-- **What:** The API imports orkexa but gets it only through the runtime.
-- **Next step:** Declare orkexa in `pyproject.toml` at the same commit as the runtime pins it.
 
 ### API-MUP-B6 · Server start verifies the schema of the orkexa PostgreSQL backend
 
