@@ -8,7 +8,7 @@
   a column type changed) stops the start with `storage.schema_mismatch` and every difference, and nothing is changed.
   The check runs only on a current migration, so a new database still reports just the missing migration. The catalog
   code `partition.missing` left `error_codes.json` (orkexa raises it now, as a `RetrievalError`). Pins
-  nodestro-runtime 81b0f55 (runtime #140), orkexa 792a041 (orkexa #66) and nodestro-examples EXAMPLES_SHA. New tests: T-UPG-7 in
+  nodestro-runtime 81b0f55 (runtime #140), orkexa 792a041 (orkexa #66) and nodestro-examples e063e89 (examples #89). New tests: T-UPG-7 in
   `tests/test_server_command.py`, T-NOD-HTTP in `tests/test_identity.py` (the same document id, source, memory space
   and path, and search term in two tenants).
 - CI: the tenant SQL check of runtime master also installs orkexa (with the `sqlcheck` extra) at the commit the
