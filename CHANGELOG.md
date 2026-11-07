@@ -62,7 +62,8 @@
     `DELETE /api/exports/{export_id}` (edit) removes an export and its package (API-048).
   - Pins nodestro-runtime b29b738 (runtime #121: `jobs.ReindexWorker`, `Workspace.background_work`) and
     nodestro-examples 4b947c4 (examples #79: the same runtime pin).
-- MUP-ONA A1 (PS-1), with the runtime's PDF limits (pins nodestro-runtime de56875, runtime #127, orkexa #59):
+- MUP-ONA A1 (PS-1), with the runtime's PDF limits (pins nodestro-runtime de56875, runtime #127, orkexa #59, and
+  nodestro-examples cda07c4, examples #82: the same runtime pin):
   - Security: the runtime reads PDF text in a separate, limited process (`NODESTRO_PDF_TIMEOUT_SECONDS`,
     `NODESTRO_PDF_MAX_PAGES`, `NODESTRO_PDF_MAX_CHARS`, `NODESTRO_PDF_MAX_MEMORY_MB`). A knowledge upload with a PDF
     over a limit answers `422 document.too_complex` (`name`, `reason`: `pages`, `chars`, `timeout`, `memory`,

@@ -16,7 +16,7 @@ dependencies = [
     # The API imports orkexa itself (providers, pricing, usage, errors), so it declares it: always the commit the
     # runtime pin above pins, never another one (MUP-ONA B0).
     "orkexa @ git+https://github.com/peterkarlhuber/orkexa.git@f89102c4357d0a03dbc41dd68be147f0cbda3bd9",
-    "nodestro-examples @ git+https://github.com/peterkarlhuber/nodestro-examples.git@570ef4f070e09b5bbaa52335fa13ad5b7f401fcd",
+    "nodestro-examples @ git+https://github.com/peterkarlhuber/nodestro-examples.git@cda07c4bc5e26cb1c6a78bebba0f2c620979d08b",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "python-multipart>=0.0.9",
