@@ -3,7 +3,7 @@
 > Open work for this repository: release blockers, known bugs, security follow-ups, technical debt and planned improvements.
 > GitHub issues are the source of truth for details; this file is the entry point and summary.
 >
-> **Last full review:** 2026-11-06 against master at 7142761 (TODO abatement round)
+> **Last full review:** 2026-11-06 against master at 1f99df7 (TODO abatement round)
 
 ## Summary
 
@@ -13,7 +13,7 @@
 | P1 High | 1 |
 | P2 Medium | 5 |
 | P3 Low | 10 |
-| P4 Optional | 6 |
+| P4 Optional | 5 |
 
 **Release blockers:** None for this repository; every entry below is not a release blocker. The next desktop
 preview is gated by nodestro-desktop DSK-001 (new candidate and Go/No-Go).
@@ -145,13 +145,6 @@ None known.
   their own, so such calls are refused at run time.
 - **Next step:** Design the approval flow for the `approve` key scope after the S-2 review.
 - **Depends on:** nodestro-runtime RT-001 (independent S-2 review)
-
-### API-021 · Region in usage data (Bedrock)
-
-- **Priority:** P4 Optional · **Status:** Open · **Refs:** Bedrock final report, section 7
-- **What:** Usage records carry no provider region, so the usage views cannot show costs by Bedrock region.
-- **Next step:** Record the region in the runtime usage data, then add it to `UsageBucket` or a `by_region` view.
-- **Depends on:** nodestro-runtime RT-015 (region in usage records)
 
 ### API-027 · Docker sandbox status routes: follow-ups
 
@@ -336,7 +329,6 @@ removed by the change that completes its package here.
 | API-011 | nodestro-server | SRV-007 (RUNBOOK monitoring section) | server documents the heartbeat file and `worker-health` |
 | (pointer) | nodestro-sdk | SDK-005 | the server contract `openapi/nodestro-api-server.json` exists now (API-012 done); the SDK contract tests can use it |
 | API-054 | nodestro-studio | portable export dialog (studio #121, ST-047) | one independent review covers both; full entry here |
-| API-021 | nodestro-runtime | RT-015 | runtime change first |
 | API-023 | nodestro-server | SRV-013 (PostgreSQL load test) | load test runs there |
 | (pointer) | nodestro-local-docker | LD-010 (session hardening) | implementation would be here; tracked there |
 | API-005, API-010 | nodestro-server | RUNBOOK limitations (pointer rows in its table) | server documents the current limits until these land |
