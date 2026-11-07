@@ -685,7 +685,6 @@
   "output.not_writable": {"params": ["path", "problem"], "source": "api"},
   "output.open_unavailable": {"params": [], "source": "api"},
   "output.protected": {"params": ["path"], "source": "api"},
-  "partition.missing": {"params": [], "source": "runtime"},
   "preview.not_agent": {"params": [], "source": "runtime"},
   "pricing.billing_key_missing": {"params": [], "source": "api"},
   "pricing.billing_key_not_storable": {"params": ["provider"], "source": "api"},
