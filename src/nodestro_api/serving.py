@@ -1349,7 +1349,9 @@ class ServingCore:
             )
         self.check_limits(release)
         await self.host.prepare_start(release)
-        run_request = self.run_request(release, body)
+        # Storing the uploaded files reads them (a PDF in a separate process, for up to its time budget): off the event
+        # loop, so the other requests of this process keep being answered meanwhile (MUP-ONA A1).
+        run_request = await asyncio.to_thread(self.run_request, release, body)
         return self.host.runs.start(
             self.workflow_for(release),
             run_request,

@@ -149,8 +149,10 @@ def _error(status_code: int, code: str, detail: str, **params: Any) -> JSONRespo
     return JSONResponse({"detail": detail, "code": code, "params": params}, status_code=status_code)
 
 
-#: Runtime error codes that are not a bad request but a conflict with work in progress (any other: ``400``).
-NODESTRO_ERROR_STATUS = {"local.job_running": 409, "lease.lost": 409}
+#: Runtime error codes that are not a plain bad request (any other: ``400``): a conflict with work in progress
+#: (``409``), or a well-formed file the runtime refuses to process, such as a PDF over the PDF limits (``422``,
+#: MUP-ONA A1).
+NODESTRO_ERROR_STATUS = {"local.job_running": 409, "lease.lost": 409, "document.too_complex": 422}
 
 
 def install_error_handlers(app: FastAPI) -> None:

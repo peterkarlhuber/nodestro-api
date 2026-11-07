@@ -10,7 +10,7 @@
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
-| P1 High | 1 |
+| P1 High | 0 |
 | P2 Medium | 6 |
 | P3 Low | 12 |
 | P4 Optional | 6 |
@@ -314,15 +314,6 @@ None known.
 
 Packages of the security and database backend plan MUP-ONA ([plan][mup-ona]) that touch this repository. Each entry is
 removed by the change that completes its package here.
-
-### API-MUP-A1 · PDF extraction limits: map `document.too_complex`
-
-- **Priority:** P1 High · **Status:** Open · **Refs:** MP-A1 (PS-1), [MUP-ONA][mup-ona]
-- **What:** Uploads and knowledge routes read PDFs through the runtime, which gets page, character, time and memory
-  limits in an isolated process (orkexa, runtime). The API must answer the new `document.too_complex` with 422 and keep
-  its upload and knowledge paths on the runtime's limited path.
-- **Next step:** After the runtime and orkexa parts merge: map the code, test the routes, bump the runtime pin through
-  the pin cascade.
 
 ### API-MUP-A11 · Tenant SQL check in CI with the pinned and the current runtime checker
 

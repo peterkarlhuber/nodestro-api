@@ -20,6 +20,16 @@
     `DELETE /api/exports/{export_id}` (edit) removes an export and its package (API-048).
   - Pins nodestro-runtime b29b738 (runtime #121: `jobs.ReindexWorker`, `Workspace.background_work`) and
     nodestro-examples 4b947c4 (examples #79: the same runtime pin).
+- MUP-ONA A1 (PS-1), with the runtime's PDF limits (nodestro-runtime `mup/a1-pdf`, orkexa #59):
+  - Security: the runtime reads PDF text in a separate, limited process (`NODESTRO_PDF_TIMEOUT_SECONDS`,
+    `NODESTRO_PDF_MAX_PAGES`, `NODESTRO_PDF_MAX_CHARS`, `NODESTRO_PDF_MAX_MEMORY_MB`). A knowledge upload with a PDF
+    over a limit answers `422 document.too_complex` (`name`, `reason`: `pages`, `chars`, `timeout`, `memory`,
+    `limit`, `crash`) and keeps none of the upload's files; an input file over a limit is reported with that code in
+    its upload result. The error code list has `document.too_complex` and `document.limits_invalid` (an invalid
+    `NODESTRO_PDF_*` value, `variable`). Knowledge and input uploads read PDFs off the event loop, so the API keeps
+    answering (`/api/health` included) while a PDF is read; a published API's run start now also stores and reads
+    its uploaded files off the event loop (it blocked every request of the process before), and answers a PDF over a
+    limit with `422 document.too_complex`.
 - MUP-ONA security hardening (A2, A3, A5):
   - Security (A2, PS-2): error answers name no file system path, input value, credential or library text. An
     exception without an error code of its own (`bad_request`, a `not_found` for a key the request did not name,
