@@ -1025,6 +1025,13 @@
           },
           "usage": {
             "$ref": "#/components/schemas/Usage"
+          },
+          "value_warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ValueWarning"
+            },
+            "title": "Value Warnings",
+            "type": "array"
           }
         },
         "required": [
@@ -12168,6 +12175,11 @@
               }
             ],
             "title": "Free Bytes"
+          },
+          "from_registry": {
+            "default": false,
+            "title": "From Registry",
+            "type": "boolean"
           },
           "host": {
             "anyOf": [
@@ -23964,6 +23976,13 @@
             "title": "Pricing Versions",
             "type": "array"
           },
+          "regions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Regions",
+            "type": "array"
+          },
           "requests": {
             "default": 0,
             "title": "Requests",
@@ -24190,6 +24209,17 @@
             ],
             "title": "Ref"
           },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
           "request": {
             "anyOf": [
               {
@@ -24414,6 +24444,50 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "ValueWarning": {
+        "description": "A key figure (``source=\"tool\"``) that the agent's own computing tool calls in the test do not back (RT-054).\n\nA workflow run would ask the agent once to correct it and then fail the step (``run.value_unverified``); the\ntest only warns, because a step that copies a figure an earlier step computed has no earlier steps here.\n``reason`` as :class:`~nodestro_runtime.value_checks.Unverified`: ``missing``, ``not_from_tool``,\n``table_incomplete`` or ``table_changed``.",
+        "properties": {
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "rows_in_input": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rows In Input"
+          },
+          "rows_passed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rows Passed"
+          },
+          "value": {
+            "title": "Value"
+          }
+        },
+        "required": [
+          "field",
+          "reason"
+        ],
+        "title": "ValueWarning",
         "type": "object"
       },
       "VersionNote": {
