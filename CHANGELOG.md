@@ -8,6 +8,10 @@
     whose `azp` names another client (also with a single audience) and one whose `sub` is empty, not a string or
     longer than 255 characters (OpenID Connect Core 1.0, section 2). A `kid` whose key does not fit the header's
     algorithm ends the login with `identity.login_failed` instead of an unhandled error.
+  - Tests: `tests/test_security_vectors_jwt.py` runs the ID token vectors of the shared security test vectors
+    against the OIDC client, with keys generated in the test (T-VEC-3). It reads a pinned copy of nodestro-runtime's
+    canonical corpus (`tests/vectors/security-vectors.json`, version 1; origin and SHA-256 in
+    `tests/vectors/SOURCE.md`, checked by the test).
 - TODO abatement round 4 (2026-11-06):
   - Server exports: a portable export job is queued (`export` job of the job queue, `ExportJob.queued`) and a worker
     builds it with a lease, one package at a time on the whole server (session advisory lock); a workspace has one
