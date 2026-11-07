@@ -773,6 +773,41 @@ def test_a_worker_checks_docker_from_its_start_and_stops_watching_with_stop(
     ]
 
 
+def test_a_serving_worker_writes_its_heartbeat_and_removes_it_when_it_stops(
+    make_worker: Callable[..., Background], tmp_path: Path
+) -> None:
+    """API-011: a real ``ServerWorker.serve`` with every duty writes the heartbeat; a duty that ends makes it
+    unhealthy (``nodestro-server worker-health``)."""
+    from nodestro_api.worker_health import check
+
+    path = tmp_path / "run" / "worker.json"
+    worker = make_worker(heartbeat_file=path, heartbeat_every=0.05)
+    stop = asyncio.Event()
+    serving = worker.submit(worker.worker.serve(stop))
+    try:
+        deadline = time.monotonic() + 15
+        while not check(path).alive:
+            assert time.monotonic() < deadline, check(path).reason
+            time.sleep(0.02)
+        beat = json.loads(path.read_text(encoding="utf-8"))
+        assert beat["worker"] == worker.worker.name and beat["database"] == "ok"
+        assert {"worker-runs", "worker-reindex", "worker-exports", "worker-reaper", "worker-scheduler"} <= set(
+            beat["duties"]
+        )
+        assert set(beat["duties"].values()) == {"running"}
+        # A duty loop that ends while the worker serves (here: cancelled from outside) makes it unhealthy.
+        worker.loop.call_soon_threadsafe(worker.worker.duties["worker-exports"].cancel)
+        while check(path).alive:
+            assert time.monotonic() < deadline + 15
+            time.sleep(0.02)
+        assert check(path).reason == "duties of the worker ended: worker-exports"
+    finally:
+        worker.loop.call_soon_threadsafe(stop.set)
+    serving.result(30)
+    assert not path.exists()  # a stopped worker is not alive
+    assert not check(path).alive
+
+
 def test_a_batch_on_the_server_finishes_when_the_worker_ran_its_runs(
     server: Server, make_worker: Callable[..., Background]
 ) -> None:

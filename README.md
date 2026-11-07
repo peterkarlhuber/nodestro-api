@@ -221,6 +221,7 @@ unsafe value is listed at once (`profile.invalid`), and nothing has a default th
 | `NODESTRO_BEDROCK_TENANT_ROLES` (or `_FILE`) | Amazon Bedrock per tenant: JSON `{"<tenant id>": {"role_arn": "arn:aws:iam::<account>:role/<name>", "external_id": "…"}}`. The API and worker processes assume a tenant's role with STS (the server's own AWS credentials as base, `ExternalId`, `RoleSessionName=nodestro-<tenant>`, regional STS endpoint, 30 minutes); the server's own AWS chain is never used for a tenant, and a tenant sees only `operator_role: true`. A tenant without an entry cannot use Bedrock (`provider.bedrock_not_available`) |
 | `NODESTRO_BEDROCK_DATA_RESIDENCY`, `NODESTRO_BEDROCK_ALLOWED_REGIONS` | `eu_only` forces EU-only data residency for every tenant (they cannot relax it); a comma-separated list limits the regions tenants may choose (with `eu_only` only EU regions) |
 | `NODESTRO_WORKER_LEASE_SECONDS`, `…_POLL_SECONDS`, `…_REAP_SECONDS` | worker timing (defaults 60, 1, 15) |
+| `NODESTRO_WORKER_HEARTBEAT_FILE` | a path in the worker's own container (e.g. `/tmp/nodestro-worker.json`, not the shared data volume): the worker writes its heartbeat there every 10 s (state, database reachable, which duties run; no tenant data), and `nodestro-server worker-health` checks it for the container's health check (exit 0 alive; 1 when the file is older than `--max-age`, default 60 s, the database was unreachable or a duty ended; 2 without a file). Unset: no heartbeat |
 | `NODESTRO_WORKER_MAX_RUNS`, `NODESTRO_WORKER_MAX_WAITING` | runs one worker holds at once, and how many of them may wait for a person's tool approval (defaults 2 and 1; waiting must stay below the runs, so one slot always executes) |
 | `NODESTRO_MAX_RUN_BUDGET_USD` | The highest limit a budget decision may set for one run (BUDGET-1), on top of the tenant setting `max_run_budget_usd`; the lower one applies. Empty: no operator maximum |
 | `NODESTRO_TOOL_APPROVALS` | `1` asks a person before tool calls that change or reach out. Off by default. Order: first `POST /api/tool-approvals/legacy` (once; stamps existing bindings of workflows, versions and published releases, whose digest changes once), review the report, then set this and restart, only after the security acceptance |
@@ -245,6 +246,8 @@ Commands:
   TLS-terminating reverse proxy in front of it; the session cookie is `Secure`.
 - `nodestro-server worker`: executes queued runs, reaps runs of dead workers and fires schedules. SIGTERM lets a
   running run finish first.
+- `nodestro-server worker-health [--file PATH] [--max-age SECONDS]`: the worker's liveness check (see
+  `NODESTRO_WORKER_HEARTBEAT_FILE`); it reads only the heartbeat file and needs no database.
 - `nodestro-server create-tenant ID NAME` and `nodestro-server setup-link TENANT`: create a tenant and print a
   one-time link (24 hours) that makes the person who logs in with it the tenant's first owner. The id
   `nodestro-price-reference` is reserved (the server's reference prices).

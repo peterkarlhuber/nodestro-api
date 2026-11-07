@@ -36,6 +36,10 @@ or more worker processes (:class:`ServerWorker`). Every worker:
   Nothing runs in Docker before the check passed (fail-closed, as before); the worker logs each change of the state
   (proven, unavailable with its reason) once, with fixed texts and no host details.
 
+With :attr:`WorkerSettings.heartbeat_file` (``NODESTRO_WORKER_HEARTBEAT_FILE``) the worker writes a heartbeat file
+from its event loop (:mod:`nodestro_api.worker_health`, API-011), which ``nodestro-server worker-health`` checks: the
+liveness signal for a container's health check.
+
 A suspended tenant (:meth:`nodestro_runtime.identity_store.IdentityStore.tenant_active`, answered by the identity
 backend) is closed for workers too: a claimed job of it fails with ``identity.tenant_suspended`` before its run starts
 or continues (the orphan sweep later marks the run interrupted, so it can be continued once the tenant is resumed),
@@ -57,6 +61,7 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import timedelta
 import logging
+from pathlib import Path
 from typing import Any
 
 from nodestro_runtime import docker_status
@@ -82,7 +87,8 @@ from .identity import TenantWorkspaces
 from .pricing_setup import PriceSyncConfig, server_sync
 from .sandbox_status import PUBLIC_DETAILS
 from .schedules import TICK_SECONDS
-from .server_app import TenantFiles, close_tenant
+from .server_app import DatabaseHealth, TenantFiles, close_tenant
+from .worker_health import Heartbeat
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +127,10 @@ class WorkerSettings:
     #: How often the worker reads the Docker monitor's status to keep the sandbox's proof fresh (seconds; at most
     #: half of ``PROOF_TTL``, 600 s). Each read costs at most one ``docker info`` in the monitor's thread.
     docker_every: float = 120.0
+    #: The heartbeat file of this worker (API-011, :mod:`nodestro_api.worker_health`; ``None``: none is written) and
+    #: how often it is written (seconds).
+    heartbeat_file: Path | None = None
+    heartbeat_every: float = 10.0
 
 
 #: How often :class:`DockerWatch` reads the status while the check runs (seconds): below the monitor's
@@ -245,6 +255,8 @@ class ServerWorker:
         self.settlement: Any | None = None
         self.notifications: Any | None = None
         self.docker = DockerWatch(self._docker_monitors)
+        #: The duty tasks while :meth:`serve` runs, by name (the heartbeat reports them).
+        self.duties: dict[str, asyncio.Task[Any]] = {}
 
     def _docker_monitors(self) -> list[DockerMonitorLike]:
         """The Docker monitors of the open contexts that use Docker (on a server: one, shared by every tenant)."""
@@ -407,6 +419,19 @@ class ServerWorker:
                     self._every(stop, self.settings.price_check_every, self.sync_prices), name="worker-prices"
                 )
             )
+        self.duties = {task.get_name(): task for task in tasks}
+        done = asyncio.Event()
+        heartbeat: asyncio.Task[None] | None = None
+        if self.settings.heartbeat_file is not None:
+            beats = Heartbeat(
+                self.settings.heartbeat_file,
+                name=self.name,
+                duties=lambda: self.duties,
+                database=DatabaseHealth(self.files.database),
+                stopping=stop.is_set,
+                every=self.settings.heartbeat_every,
+            )
+            heartbeat = asyncio.create_task(beats.run(done), name="worker-heartbeat")
         try:
             await stop.wait()
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -414,6 +439,13 @@ class ServerWorker:
             for task in tasks:
                 task.cancel()
             await self.aclose()
+            done.set()
+            if heartbeat is not None:
+                with suppress(Exception):
+                    await heartbeat
+                # A stopped worker is not alive: its file goes, so the health check fails at once.
+                with suppress(OSError):
+                    self.settings.heartbeat_file.unlink()  # type: ignore[union-attr]
 
     async def sync_prices(self) -> None:
         """Sync the reference prices when they are due; another worker holding the lock means it syncs."""
