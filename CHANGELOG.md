@@ -7,10 +7,12 @@
   `PostgresLayout("nodestro_")`) after the migration check; a deviation the checksums cannot see (an index dropped,
   a column type changed) stops the start with `storage.schema_mismatch` and every difference, and nothing is changed.
   The check runs only on a current migration, so a new database still reports just the missing migration. The catalog
-  code `partition.missing` left `error_codes.json` (orkexa raises it now, as a `RetrievalError`). Temporary pins:
-  nodestro-runtime `mup/b6-orkexa-postgres`; orkexa 792a041 (orkexa #66 merged). New tests: T-UPG-7 in
+  code `partition.missing` left `error_codes.json` (orkexa raises it now, as a `RetrievalError`). Pins
+  nodestro-runtime 81b0f55 (runtime #140), orkexa 792a041 (orkexa #66) and nodestro-examples EXAMPLES_SHA. New tests: T-UPG-7 in
   `tests/test_server_command.py`, T-NOD-HTTP in `tests/test_identity.py` (the same document id, source, memory space
   and path, and search term in two tenants).
+- CI: the tenant SQL check of runtime master also installs orkexa (with the `sqlcheck` extra) at the commit the
+  runtime pins; from MUP-ONA B6 on, the check's rule engine is `orkexa.testing.sqlcheck`.
 - Pins nodestro-runtime df4aeb3 (runtime #139: the B4 SQL rendering tests skip without psycopg) and
   nodestro-examples c9ef422. No API change.
 - MUP-ONA B4 cascade (2026-11-07): pins nodestro-runtime 76f9cb2 (runtime #137 the tenant SQL rule engine as
