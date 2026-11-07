@@ -468,16 +468,20 @@ def axentra_login_flow(identity: Any, settings: OidcSettings, *, transport: Any 
     from axentra.identity.oidc import OidcService
 
     platform = identity.platform
-    provider = OidcProviderSettings(
-        id=AXENTRA_PROVIDER,
-        name="Nodestro",
-        issuer=settings.issuer,
-        client_id=settings.client_id,
-        client_secret=settings.client_secret,
-        scopes=list(settings.scopes),
-        allow_signup=True,
-        allow_signup_without_email=True,
-        link_by_verified_email=False,
+    # Validated from a mapping: Axentra's later settings declare fields with a positional ``Field`` default (e.g.
+    # ``id_token_max_age_seconds``), which type checkers read as required keyword arguments.
+    provider = OidcProviderSettings.model_validate(
+        {
+            "id": AXENTRA_PROVIDER,
+            "name": "Nodestro",
+            "issuer": settings.issuer,
+            "client_id": settings.client_id,
+            "client_secret": settings.client_secret,
+            "scopes": list(settings.scopes),
+            "allow_signup": True,
+            "allow_signup_without_email": True,
+            "link_by_verified_email": False,
+        }
     )
     service = OidcService(
         platform.db,

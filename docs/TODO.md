@@ -10,9 +10,9 @@
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
-| P1 High | 1 |
+| P1 High | 0 |
 | P2 Medium | 5 |
-| P3 Low | 10 |
+| P3 Low | 9 |
 | P4 Optional | 5 |
 
 **Release blockers:** None for this repository; every entry below is not a release blocker. The next desktop
@@ -294,20 +294,6 @@ None known.
 Packages of the security and database backend plan MUP-ONA ([plan][mup-ona]) that touch this repository. Each entry is
 removed by the change that completes its package here.
 
-### API-MUP-A1 · PDF extraction limits: map `document.too_complex`
-
-- **Priority:** P1 High · **Status:** Open · **Refs:** MP-A1 (PS-1), [MUP-ONA][mup-ona]
-- **What:** Uploads and knowledge routes read PDFs through the runtime, which gets page, character, time and memory
-  limits in an isolated process (orkexa, runtime). The API must answer the new `document.too_complex` with 422 and keep
-  its upload and knowledge paths on the runtime's limited path.
-- **Next step:** After the runtime and orkexa parts merge: map the code, test the routes, bump the runtime pin through
-  the pin cascade.
-
-### API-MUP-B0 · Declare the orkexa dependency with the runtime's commit
-
-- **Priority:** P3 Low · **Status:** Open · **Refs:** MP-B0, [MUP-ONA][mup-ona]
-- **What:** The API imports orkexa but gets it only through the runtime.
-- **Next step:** Declare orkexa in `pyproject.toml` at the same commit as the runtime pins it.
 
 ### API-MUP-B6 · Server start verifies the schema of the orkexa PostgreSQL backend
 
