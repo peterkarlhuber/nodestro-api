@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- CI: the tenant SQL check of runtime master also installs orkexa (with the `sqlcheck` extra) at the commit the
+  runtime pins; from MUP-ONA B6 on, the check's rule engine is `orkexa.testing.sqlcheck`.
 - Pins nodestro-runtime df4aeb3 (runtime #139: the B4 SQL rendering tests skip without psycopg) and
   nodestro-examples c9ef422. No API change.
 - MUP-ONA B4 cascade (2026-11-07): pins nodestro-runtime 76f9cb2 (runtime #137 the tenant SQL rule engine as
