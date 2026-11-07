@@ -297,10 +297,14 @@ removed by the change that completes its package here.
 
 ### API-MUP-B6 · Server start verifies the schema of the orkexa PostgreSQL backend
 
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** MP-B6, [MUP-ONA][mup-ona]
+- **Priority:** P2 Medium · **Status:** In progress · **Refs:** MP-B6, [MUP-ONA][mup-ona]
 - **What:** When the runtime moves to `orkexa.backends.postgres`, the server profile must check the schema at start
   (`verify_schema`, read only) and follow the pin cascade.
-- **Next step:** After B4/B5 and gate G1: call `verify_schema` in `server_app.py`, tests, pin bump.
+- **Done (`mup/b6-api-verify-schema`):** `check`, `api` and `worker` call the runtime's `require_knowledge_schema`
+  (`verify_schema` with `PostgresLayout("nodestro_")`) after the migration check; tests T-UPG-7 (API) and
+  T-NOD-HTTP (identical ids in two tenants).
+- **Next step:** pins to the merge commits of runtime B6 and orkexa B5, then the cascade (sdk, studio, server,
+  local-docker).
 
 [mup-ona]: https://github.com/peterkarlhuber/nodestro-studio/blob/master/docs/architecture/mup-ona/MUP-ONA.md
 
