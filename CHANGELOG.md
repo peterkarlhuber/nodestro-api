@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- TODO abatement round 5 (2026-11-07):
+  - Usage by region (API-021): `GET /api/usage` gains `by_region`, the usage per provider region (Amazon Bedrock),
+    the most expensive first, and every `UsageBucket` lists its `regions`. Runs are split step by step (agents,
+    orchestrator decisions, sub-workflows and orchestrator teams, from the runtime's `Usage.regions` of each step);
+    usage log entries go to their `region`. Usage without a known region (other providers, usage recorded before the
+    runtime recorded regions) is in no region bucket. Additive OpenAPI fields; the SDK types are regenerated.
+  - `nodestro-server check` warns when pgvector does not rank the knowledge vectors of the server's schema
+    (RT-048): `warning: knowledge.pgvector_<state>` (`installable`, `other_schema`, `unavailable`) with the
+    runtime's message and the SQL that fixes it. It is a warning, never a reason for "not ready"; a state that
+    cannot be read gives `knowledge.pgvector_unknown` without the error text.
 - MUP-ONA A8 (shared security test vectors, VB-7):
   - Security: the OIDC client checks ID tokens as Axentra does. A token issued more than
     `OidcSettings.id_token_max_age` (default 600 s, plus 120 s clock skew) ago is refused (`iat`), as is a token

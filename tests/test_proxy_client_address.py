@@ -53,6 +53,7 @@ def test_check_warns_or_refuses_a_proxy_without_client_addresses(
 ) -> None:
     monkeypatch.setattr(command, "_require_containers", lambda _server: None)
     monkeypatch.setattr(command, "_superuser_role", lambda _server, _database: None)
+    monkeypatch.setattr(command, "_pgvector_warning", lambda _database: None)  # RT-048, tested on its own
     loaded = command.load(test_server_command._environment(tmp_path))
     command.migrate(loaded, backup_dir=None, backup_taken=False)
     monkeypatch.setenv("NODESTRO_BEHIND_PROXY", "1")

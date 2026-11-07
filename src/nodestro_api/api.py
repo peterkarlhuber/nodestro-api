@@ -22,7 +22,7 @@ from nodestro_runtime.agent_builder import ConfigIssue
 from nodestro_runtime.agent_test import AgentTestIn, AgentTestResult
 from nodestro_runtime.catalog import SERVER_TOOLS, ModelInfo, ServerToolInfo, model_capabilities, models
 from nodestro_runtime.contracts import contract_of
-from nodestro_runtime.engine import check_workflow
+from nodestro_runtime.engine import add_usage, check_workflow
 from nodestro_runtime.input_files import is_input_id
 from nodestro_runtime.knowledge import KnowledgeFile
 from nodestro_runtime.launcher import launch
@@ -1656,6 +1656,9 @@ class UsageBucket(BaseModel):
     pricing_versions: list[str] = Field(default_factory=list)
     pricing_sources: list[str] = Field(default_factory=list)
     pricing_quality: str | None = None
+    #: The provider regions of the requests, for providers billed per region (Amazon Bedrock); empty when there were
+    #: none or the region is not known (usage recorded before the runtime recorded it, RT-015).
+    regions: list[str] = Field(default_factory=list)
 
 
 _QUALITY_ORDER = ("estimated", "unverified", "contract", "verified")
@@ -1695,6 +1698,9 @@ class UsageReport(BaseModel):
     by_workflow: list[UsageBucket]
     by_model: list[UsageBucket]
     by_source: list[UsageBucket]
+    #: Per provider region (Amazon Bedrock, API-021), the most expensive first. Requests without a known region (other
+    #: providers, usage recorded before the runtime recorded the region) are in no bucket here.
+    by_region: list[UsageBucket] = Field(default_factory=list)
     #: The latest AI operations outside workflow runs, newest first.
     recent: list[UsageEntry]
     budgets: UsageBudgets = Field(default_factory=UsageBudgets)
@@ -1724,6 +1730,7 @@ def _add(bucket: UsageBucket, usage: Any, *, run: bool = False) -> None:
         (bucket.missing_cost_components, getattr(usage, "missing_cost_components", None) or []),
         (bucket.pricing_versions, getattr(usage, "pricing_versions", None) or []),
         (bucket.pricing_sources, getattr(usage, "pricing_sources", None) or []),
+        (bucket.regions, getattr(usage, "regions", None) or []),
     ):
         target.extend(value for value in values if value not in target)
     quality = getattr(usage, "pricing_quality", None)
@@ -1752,6 +1759,7 @@ def usage(ctx: Ctx, days: int = Query(30, ge=1, le=365)) -> UsageReport:
     by_day: dict[str, UsageBucket] = {}
     by_workflow: dict[str, UsageBucket] = {}
     by_model: dict[str, UsageBucket] = {}
+    by_region: dict[str, UsageBucket] = {}
     by_source: dict[str, UsageBucket] = {
         key: UsageBucket(key=key, label=key) for key in ("workflow_run", "api_run", *USAGE_SOURCES)
     }
@@ -1759,6 +1767,9 @@ def usage(ctx: Ctx, days: int = Query(30, ge=1, le=365)) -> UsageReport:
 
     def day_bucket(day: str) -> UsageBucket:
         return by_day.setdefault(day, UsageBucket(key=day, label=day))
+
+    def region_bucket(region: str) -> UsageBucket:
+        return by_region.setdefault(region, UsageBucket(key=region, label=region))
 
     def model_bucket(model: str) -> UsageBucket:
         # Bare Claude ids and qualified names land in the same bucket.
@@ -1783,6 +1794,9 @@ def usage(ctx: Ctx, days: int = Query(30, ge=1, le=365)) -> UsageReport:
         # The lean run has every field models_of_run reads (sub-workflow runs it reads in full itself).
         for model, model_usage in models_of_run(ctx, cast(Run, run)).items():
             _add(model_bucket(model), model_usage, run=True)
+        if run.usage.regions:  # only runs with a known region are walked step by step
+            for region, region_usage in _regions_of_run(ctx, run).items():
+                _add(region_bucket(region), region_usage, run=True)
     since = datetime.fromtimestamp(cutoff, tz=UTC)
     entries = ctx.usage_log.entries(since)
     for entry in entries:
@@ -1793,15 +1807,57 @@ def usage(ctx: Ctx, days: int = Query(30, ge=1, le=365)) -> UsageReport:
             model_bucket(entry.model),
         ):
             _add(bucket, entry.usage)
+        region = _region_key(entry.usage.regions or ([entry.region] if entry.region else []))
+        if region:
+            _add(region_bucket(region), entry.usage)
     return UsageReport(
         total=total,
         by_day=sorted(by_day.values(), key=lambda b: b.key),
         by_workflow=sorted(by_workflow.values(), key=lambda b: b.estimated_cost_usd, reverse=True),
         by_model=sorted(by_model.values(), key=lambda b: b.estimated_cost_usd, reverse=True),
         by_source=[bucket for bucket in by_source.values() if bucket.runs or bucket.operations],
+        by_region=sorted(by_region.values(), key=lambda b: (-b.estimated_cost_usd, b.key)),
         recent=entries[:25],
         budgets=_budgets(ctx, runs),
     )
+
+
+def _region_key(regions: Sequence[str]) -> str:
+    """The ``by_region`` key of usage with these regions: the region; several regions (not expected: one step or
+    entry uses one connection) are joined with ``+`` so that no request is counted twice; empty for none."""
+    return "+".join(sorted(set(regions)))
+
+
+def _regions_of_run(ctx: Nodestro, run: _UsageRun, depth: int = 0) -> dict[str, Usage]:
+    """The usage of a run per provider region (API-021), step by step like the runtime's ``models_of_run``
+    (agents, orchestrator decisions, sub-workflows and orchestrator teams); steps without a known region are left
+    out. A step goes to one region, so a run that used several is split exactly."""
+    found: dict[str, Usage] = {}
+
+    def take(usage: Usage | None) -> None:
+        key = _region_key(usage.regions) if usage is not None and usage.requests else ""
+        if usage is not None and key:
+            found[key] = add_usage(found.get(key, Usage()), usage)
+
+    def walk(child_id: str | None) -> None:
+        child = ctx.store.get("runs", child_id, _UsageRun) if child_id and depth < 6 else None
+        if child is not None:
+            for key, usage in _regions_of_run(ctx, child, depth + 1).items():
+                found[key] = add_usage(found.get(key, Usage()), usage)
+
+    for node in run.workflow.nodes:
+        state = run.nodes.get(node.id)
+        if state is None or not state.usage.requests:
+            continue
+        if node.agent is not None:
+            take(state.usage)
+        elif node.type == "subworkflow":
+            walk(state.child_run_id)
+        elif node.type == "orchestrator" and node.orchestrator is not None:
+            take(state.decision_usage)
+            for child_id in state.child_run_ids:
+                walk(child_id)
+    return found
 
 
 #: The codes of a run that a budget ended (the limit was reached, or a person ended it at a budget decision).

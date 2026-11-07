@@ -24105,6 +24105,13 @@
             "title": "Pricing Versions",
             "type": "array"
           },
+          "regions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Regions",
+            "type": "array"
+          },
           "requests": {
             "default": 0,
             "title": "Requests",
@@ -24313,6 +24320,13 @@
               "$ref": "#/components/schemas/UsageBucket"
             },
             "title": "By Model",
+            "type": "array"
+          },
+          "by_region": {
+            "items": {
+              "$ref": "#/components/schemas/UsageBucket"
+            },
+            "title": "By Region",
             "type": "array"
           },
           "by_source": {
