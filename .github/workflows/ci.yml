@@ -140,9 +140,14 @@ jobs:
           set -euo pipefail
           repository=https://github.com/peterkarlhuber/nodestro-runtime.git
           python -m venv "$RUNNER_TEMP/runtime-master"
-          # The checker needs only the standard library and pglast (the range of the dev extra).
+          # The checker needs the standard library, pglast (the range of the dev extra) and, since MUP-ONA B6, its rule
+          # engine orkexa.testing.sqlcheck: orkexa with its own dependencies and the sqlcheck extra, at the commit this
+          # runtime pins.
           "$RUNNER_TEMP/runtime-master/bin/pip" install --no-deps "nodestro-runtime @ git+$repository@master"
           "$RUNNER_TEMP/runtime-master/bin/pip" install "pglast>=7,<9"
+          orkexa_url="$("$RUNNER_TEMP/runtime-master/bin/python" -I -c 'import importlib.metadata as m; print(next(r for r in m.requires("nodestro-runtime") if r.startswith("orkexa") and "extra ==" not in r).split("@", 1)[1].strip())')"
+          echo "orkexa pinned by the runtime: $orkexa_url"
+          "$RUNNER_TEMP/runtime-master/bin/pip" install "orkexa[sqlcheck] @ $orkexa_url"
           master="$(git ls-remote "$repository" refs/heads/master | cut -f1)"
           test -n "$master" || { echo "::error::runtime master not found with git ls-remote"; exit 1; }
           echo "runtime master: $master"
