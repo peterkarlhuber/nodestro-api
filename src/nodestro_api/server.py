@@ -21,7 +21,12 @@ sentence listing every problem (``profile.invalid``); nothing has a default that
     (resource cleanup). Behind a TLS-terminating reverse proxy in production.
 ``nodestro-server worker``
     Executes queued runs and reindexes, reaps jobs of dead workers and fires schedules
-    (:class:`nodestro_api.worker.ServerWorker`).
+    (:class:`nodestro_api.worker.ServerWorker`). With ``NODESTRO_WORKER_HEARTBEAT_FILE`` it writes a heartbeat file.
+
+``nodestro-server worker-health [--file PATH] [--max-age SECONDS]``
+    Exit ``0`` when the worker that writes the heartbeat file (default ``NODESTRO_WORKER_HEARTBEAT_FILE``) is alive,
+    ``1`` when not, ``2`` when no file is configured (:mod:`nodestro_api.worker_health`, API-011): for a container's
+    health check. Reads only that file; needs no database or other setting.
 ``nodestro-server create-tenant ID NAME`` / ``nodestro-server setup-link TENANT``
     Create a tenant, and print a one-time setup link that makes the person who opens it the tenant's first owner.
 ``nodestro-server secrets reencrypt [--dry-run] [--tenant TENANT]``
@@ -614,6 +619,7 @@ async def run_worker(server: ServerEnvironment) -> None:
     """Serve as a worker until SIGTERM or SIGINT; a running run is finished first."""
     from .server_app import TenantFiles
     from .worker import ServerWorker, WorkerSettings
+    from .worker_health import heartbeat_path
 
     database = _ready(server)
     mirrors, identity = _platform(server, database)
@@ -631,6 +637,7 @@ async def run_worker(server: ServerEnvironment) -> None:
     settings = WorkerSettings(
         lease=timedelta(seconds=timing.pop("lease")) if "lease" in timing else WorkerSettings.lease,
         price_sync=server.price_sync,
+        heartbeat_file=heartbeat_path(),
         **server.capacity,  # type: ignore[arg-type]
         **timing,  # type: ignore[arg-type]
     )
@@ -652,6 +659,22 @@ async def run_worker(server: ServerEnvironment) -> None:
         if mirrors is not None:
             mirrors.close()
         logger.info("Worker %s stopped", worker.name)
+
+
+def worker_health(path: Path | None = None, max_age: float | None = None) -> int:
+    """``nodestro-server worker-health``: prints the answer; returns the exit code (0 alive, 1 not, 2 no file)."""
+    from .worker_health import DEFAULT_MAX_AGE, HEARTBEAT_ENV, check, heartbeat_path
+
+    found = path or heartbeat_path()
+    if found is None:
+        print(f"no heartbeat file: set {HEARTBEAT_ENV} for the worker and this check, or pass --file", file=sys.stderr)
+        return 2
+    if max_age is not None and max_age <= 0:
+        print("--max-age must be a positive number of seconds", file=sys.stderr)
+        return 2
+    health = check(found, max_age=max_age or DEFAULT_MAX_AGE)
+    print(health.reason, file=sys.stdout if health.alive else sys.stderr)
+    return 0 if health.alive else 1
 
 
 # ---- operator commands ------------------------------------------------------------------------
@@ -1568,6 +1591,9 @@ def parser() -> argparse.ArgumentParser:
     api.add_argument("--host", default=os.environ.get("NODESTRO_HOST", "0.0.0.0"))
     api.add_argument("--port", type=int, default=int(os.environ.get("NODESTRO_PORT", str(DEFAULT_PORT))))
     commands.add_parser("worker", help="Execute queued runs, reap and fire schedules")
+    health = commands.add_parser("worker-health", help="Exit 0 when the worker writing the heartbeat file is alive")
+    health.add_argument("--file", type=Path, help="The heartbeat file (default: NODESTRO_WORKER_HEARTBEAT_FILE)")
+    health.add_argument("--max-age", type=float, help="Seconds a heartbeat may be old (default 60)")
     backing_up = commands.add_parser("backup", help="Write a pg_dump of the database into a directory")
     backing_up.add_argument("directory", type=Path)
     tenant = commands.add_parser("create-tenant", help="Create a tenant")
@@ -1662,6 +1688,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     from .observability import configure_logging
 
     configure_logging()  # request ids; NODESTRO_LOG_FORMAT=json for one JSON object per line (API-011)
+    if args.command == "worker-health":
+        raise SystemExit(worker_health(args.file, args.max_age))
     try:
         server = load()
         if args.command == "check":
@@ -1814,4 +1842,5 @@ __all__ = [
     "runtime_role",
     "set_role",
     "setup_link",
+    "worker_health",
 ]

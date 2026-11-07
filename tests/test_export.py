@@ -280,6 +280,28 @@ def test_readme_says_how_to_build_the_sandbox_image(
     assert "Orkexa's README" not in readme and "Orkexas README" not in readme
 
 
+@pytest.mark.parametrize("language", ["en", "de", "es", "fr", "it", "pt-BR"])
+def test_the_dockerfile_is_pinned_and_the_readme_shows_the_container_with_mounts(
+    exported: Callable[..., Any], tmp_path: Path, language: str
+) -> None:
+    """API-027/API-064: the export's base image is pinned by the digest the runtime reviewed, and the README shows a
+    container run that keeps the data and the result folder (``OUTPUT_DIR``) on the host."""
+    import sys
+
+    from nodestro_runtime.container_images import BASE_IMAGES
+
+    client, publication = exported()
+    project = _extract(_download(client, _export(client, publication["id"], language=language)["id"]), tmp_path)
+    dockerfile = (project / "Dockerfile").read_text()
+    minor = f"{sys.version_info.major}.{sys.version_info.minor}"
+    assert f"FROM {BASE_IMAGES[minor]}\n" in dockerfile and "@sha256:" in BASE_IMAGES[minor]
+    assert "ENV DATA_DIR=/data" in dockerfile
+    readme = (project / "README.md").read_text()
+    assert "| `OUTPUT_DIR` |" in readme
+    assert "`DATA_DIR=/data`" in readme and "`OUTPUT_DIR=/results`" in readme
+    assert '-v "$PWD/data:/data" -v "$PWD/results:/results" workflow-api' in readme
+
+
 def test_bundled_library_mode(exported: Callable[..., Any], tmp_path: Path) -> None:
     client, publication = exported()
     record = _export(client, publication["id"], orkexa="bundle", confirm_distribution=True)

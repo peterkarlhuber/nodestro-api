@@ -115,6 +115,9 @@ este equipo). `examples/client.py` lo muestra todo en Python.
 - Las herramientas que escribió una persona se ejecutan como procesos separados. Las herramientas generadas por IA solo se ejecutan en un contenedor
   Docker aislado (`[tools] sandbox = "docker"`, requiere Docker); sin Docker, se rechazan las ejecuciones que las necesitan y
   nada se ejecuta sin protección.
+- El modo sin conexión no es un cortafuegos: las herramientas que escribió una persona se ejecutan con el acceso a la red
+  de tu cuenta de usuario, y nada en este paquete lo bloquea. Donde ningún tráfico pueda salir del equipo, ejecuta el
+  paquete sin red.
 - El servidor de modelos local escucha solo en `127.0.0.1`, en un puerto propio.
 
 ## Solución de problemas

@@ -1801,13 +1801,23 @@ def _library_license() -> str:
     return NODESTRO_LICENSE
 
 
+def _base_image() -> str:
+    """The Python base image of the export's ``Dockerfile``: this installation's Python version, pinned by the digest
+    the runtime reviewed for its own environment images (``container_images.BASE_IMAGES``, API-027); a version the
+    runtime has no digest for keeps the plain tag."""
+    from nodestro_runtime.container_images import BASE_IMAGES
+
+    minor = f"{sys.version_info.major}.{sys.version_info.minor}"
+    return BASE_IMAGES.get(minor, f"python:{minor}-slim")
+
+
 def _dockerfile(agent_git: bool) -> str:
     note = (
         "# orkexa comes from its public Git repository: building needs access to github.com (see README).\n"
         if agent_git
         else ""
     )
-    return f"""{note}FROM python:{sys.version_info.major}.{sys.version_info.minor}-slim
+    return f"""{note}FROM {_base_image()}
 WORKDIR /srv/api
 COPY . .
 RUN pip install --no-cache-dir -r requirements.lock

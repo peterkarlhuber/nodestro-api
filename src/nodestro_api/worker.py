@@ -8,6 +8,9 @@ or more worker processes (:class:`ServerWorker`). Every worker:
 - claims semantic reindex jobs (``POST /api/knowledge/index/rebuild`` queues them, API-044) and builds them one at a
   time (:class:`nodestro_runtime.jobs.ReindexWorker`), with a lease and its progress in the job; a suspended tenant's
   reindex does not start or stops;
+- claims portable export builds (``POST /api/publications/{id}/export-jobs`` queues them, API-048) and builds them
+  (:class:`nodestro_api.export_jobs.ExportWorker`) with a lease, one at a time on the whole server (the export lock);
+  a reaped build fails with ``export.interrupted`` and its work folder is removed;
 - reaps jobs whose lease expired: their runs are marked ``run.interrupted`` and wait for a person to continue them;
   they are never executed again by themselves;
 - fires the tenants' schedules while it holds the scheduler lock (:class:`nodestro_runtime.jobs.LeaderLock`); the
@@ -33,6 +36,10 @@ or more worker processes (:class:`ServerWorker`). Every worker:
   Nothing runs in Docker before the check passed (fail-closed, as before); the worker logs each change of the state
   (proven, unavailable with its reason) once, with fixed texts and no host details.
 
+With :attr:`WorkerSettings.heartbeat_file` (``NODESTRO_WORKER_HEARTBEAT_FILE``) the worker writes a heartbeat file
+from its event loop (:mod:`nodestro_api.worker_health`, API-011), which ``nodestro-server worker-health`` checks: the
+liveness signal for a container's health check.
+
 A suspended tenant (:meth:`nodestro_runtime.identity_store.IdentityStore.tenant_active`, answered by the identity
 backend) is closed for workers too: a claimed job of it fails with ``identity.tenant_suspended`` before its run starts
 or continues (the orphan sweep later marks the run interrupted, so it can be continued once the tenant is resumed),
@@ -41,9 +48,9 @@ backend, reusing an "active" answer for at most ``TENANT_CHECK_SECONDS``; a mode
 and at the latest within :attr:`WorkerSettings.reap_every` (a run waiting for a person), without storing more (as
 after a lost lease), and its schedules and tool-wait sweeps do not run.
 
-``nodestro-server worker`` (:mod:`nodestro_api.server`) runs one. Only runs and reindexes go through the queue so far;
-batches, test series, assistant drafts and Python environment installations still run in the API process that started
-them.
+``nodestro-server worker`` (:mod:`nodestro_api.server`) runs one. Runs, reindexes and export builds go through the
+queue; batches, test series, assistant drafts and Python environment installations still run in the API process that
+started them.
 """
 
 from __future__ import annotations
@@ -54,6 +61,7 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import timedelta
 import logging
+from pathlib import Path
 from typing import Any
 
 from nodestro_runtime import docker_status
@@ -74,11 +82,13 @@ from nodestro_runtime.jobs import (
 )
 
 from .context import Nodestro
+from .export_jobs import ExportWorker, interrupt_reaped
 from .identity import TenantWorkspaces
 from .pricing_setup import PriceSyncConfig, server_sync
 from .sandbox_status import PUBLIC_DETAILS
 from .schedules import TICK_SECONDS
-from .server_app import TenantFiles, close_tenant
+from .server_app import DatabaseHealth, TenantFiles, close_tenant
+from .worker_health import Heartbeat
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +127,10 @@ class WorkerSettings:
     #: How often the worker reads the Docker monitor's status to keep the sandbox's proof fresh (seconds; at most
     #: half of ``PROOF_TTL``, 600 s). Each read costs at most one ``docker info`` in the monitor's thread.
     docker_every: float = 120.0
+    #: The heartbeat file of this worker (API-011, :mod:`nodestro_api.worker_health`; ``None``: none is written) and
+    #: how often it is written (seconds).
+    heartbeat_file: Path | None = None
+    heartbeat_every: float = 10.0
 
 
 #: How often :class:`DockerWatch` reads the status while the check runs (seconds): below the monitor's
@@ -225,6 +239,14 @@ class ServerWorker:
             poll=self.settings.poll,
             tenant_active=self.identity.tenant_active,
         )
+        #: Portable export builds (API-048), one at a time on the whole server, next to the runs.
+        self.exporter = ExportWorker(
+            self.queue,
+            self.executing.get,
+            name=self.name,
+            poll=self.settings.poll,
+            tenant_active=self.identity.tenant_active,
+        )
         self.leader = LeaderLock(files.database)
         self.price_sync = server_sync(files.database, self.settings.price_sync)
         #: Axentra duties, set by ``nodestro-server worker`` when switched on (``None``: off): the run usage
@@ -233,6 +255,8 @@ class ServerWorker:
         self.settlement: Any | None = None
         self.notifications: Any | None = None
         self.docker = DockerWatch(self._docker_monitors)
+        #: The duty tasks while :meth:`serve` runs, by name (the heartbeat reports them).
+        self.duties: dict[str, asyncio.Task[Any]] = {}
 
     def _docker_monitors(self) -> list[DockerMonitorLike]:
         """The Docker monitors of the open contexts that use Docker (on a server: one, shared by every tenant)."""
@@ -276,8 +300,10 @@ class ServerWorker:
     # ---- the three duties -------------------------------------------------------------------------
 
     def reap(self) -> list[Any]:
-        """Mark the runs of dead workers as interrupted (any worker may do it)."""
-        return reap(self.queue, self.scheduling.get)
+        """Mark the runs and export builds of dead workers as interrupted (any worker may do it)."""
+        reaped = reap(self.queue, self.scheduling.get)
+        interrupt_reaped(self.scheduling.get, reaped)
+        return reaped
 
     async def fire_schedules(self) -> list[str]:
         """Fire the due schedules of every tenant while this worker leads; returns the queued runs."""
@@ -364,6 +390,7 @@ class ServerWorker:
             ),
             asyncio.create_task(self.runner.serve(stop), name="worker-runs"),
             asyncio.create_task(self.reindexer.serve(stop), name="worker-reindex"),
+            asyncio.create_task(self.exporter.serve(stop), name="worker-exports"),
             asyncio.create_task(self._every(stop, self.settings.reap_every, self._reap_once), name="worker-reaper"),
             asyncio.create_task(
                 self._every(stop, self.settings.reap_every, self.stop_suspended), name="worker-suspended"
@@ -392,6 +419,19 @@ class ServerWorker:
                     self._every(stop, self.settings.price_check_every, self.sync_prices), name="worker-prices"
                 )
             )
+        self.duties = {task.get_name(): task for task in tasks}
+        done = asyncio.Event()
+        heartbeat: asyncio.Task[None] | None = None
+        if self.settings.heartbeat_file is not None:
+            beats = Heartbeat(
+                self.settings.heartbeat_file,
+                name=self.name,
+                duties=lambda: self.duties,
+                database=DatabaseHealth(self.files.database),
+                stopping=stop.is_set,
+                every=self.settings.heartbeat_every,
+            )
+            heartbeat = asyncio.create_task(beats.run(done), name="worker-heartbeat")
         try:
             await stop.wait()
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -399,6 +439,13 @@ class ServerWorker:
             for task in tasks:
                 task.cancel()
             await self.aclose()
+            done.set()
+            if heartbeat is not None:
+                with suppress(Exception):
+                    await heartbeat
+                # A stopped worker is not alive: its file goes, so the health check fails at once.
+                with suppress(OSError):
+                    self.settings.heartbeat_file.unlink()  # type: ignore[union-attr]
 
     async def sync_prices(self) -> None:
         """Sync the reference prices when they are due; another worker holding the lock means it syncs."""

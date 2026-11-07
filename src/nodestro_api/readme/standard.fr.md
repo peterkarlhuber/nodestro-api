@@ -46,6 +46,7 @@ Tous les paramètres proviennent de variables d’environnement ou de `.env` (vo
 | `API_DOCS` | `local` (par défaut : `/docs` uniquement depuis cet ordinateur), `on` ou `off`. |
 | `RUN_RETENTION_DAYS` | Supprime au démarrage les exécutions plus anciennes que ce nombre de jours (0 conserve tout). |
 | `TOOL_SANDBOX` | `subprocess` (par défaut) ou `docker`, voir ci-dessous. |
+| `OUTPUT_DIR` | Un dossier qui reçoit en plus une copie de chaque fichier de résultat (vide : les fichiers de résultat restent dans `DATA_DIR`). |
 
 `TOOL_SANDBOX=subprocess` n’exécute que les outils écrits par une personne dans l’éditeur d’outils, sous forme de processus de ce serveur.
 `TOOL_SANDBOX=docker` exécute chaque outil propre dans un conteneur isolé. Il nécessite Docker et l’image sandbox d’Orkexa
@@ -88,6 +89,18 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000
 L’API ne répond alors que sur cet ordinateur. Pour servir d’autres ordinateurs, écoutez sur `0.0.0.0` **derrière HTTPS**
 (par ex. un proxy inverse, ou `--ssl-certfile`/`--ssl-keyfile`) : les clés ne doivent pas circuler en clair.
 Documentation interactive : http://127.0.0.1:8000/docs
+
+Dans un conteneur : le `Dockerfile` fourni construit une image (son image de base Python est fixée par digest ; la
+construction a besoin d’un accès réseau pour `requirements.lock`). Montez le dossier de données et, si vous voulez les
+fichiers de résultat sur l’hôte, un dossier de résultats. Dans `.env`, définissez `DATA_DIR=/data` et `OUTPUT_DIR=/results`.
+
+```bash
+docker build -t workflow-api .
+docker run --rm -p 127.0.0.1:8000:8000 --env-file .env \
+  -v "$PWD/data:/data" -v "$PWD/results:/results" workflow-api
+```
+
+Sans le second montage, les fichiers copiés dans `OUTPUT_DIR` restent dans le conteneur et disparaissent avec lui.
 
 ## Utilisation
 

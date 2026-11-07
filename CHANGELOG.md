@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- TODO abatement round 4 (2026-11-06):
+  - Server exports: a portable export job is queued (`export` job of the job queue, `ExportJob.queued`) and a worker
+    builds it with a lease, one package at a time on the whole server (session advisory lock); a workspace has one
+    active export job (`export.busy`). Cancelling works for queued and running jobs from any API process, a job
+    whose worker died ends as `export.interrupted` (the reaper, or the next read), and a suspended tenant's job ends
+    as `identity.tenant_suspended`. Workers need `NODESTRO_SERVER_EXPORT_JOBS=1` and the shared data volume as the
+    API processes do. The package is written to a work folder and moved into place (API-048).
+  - Server worker: with `NODESTRO_WORKER_HEARTBEAT_FILE` the worker writes a heartbeat file every 10 s (state,
+    database reachability, duties); `nodestro-server worker-health [--file] [--max-age 60]` exits 0 when it is fresh,
+    the database was reachable and no duty ended, 1 otherwise and 2 when there is nothing to check (API-011).
+  - Tests: crash and multi-process tests with real killed processes on PostgreSQL: a workflow delete killed inside
+    its transaction (desktop and server), a test series whose API process was killed, and schedules changed while
+    two worker processes tick and the leader is killed (API-022).
+  - The export's `Dockerfile` is pinned by digest from nodestro-runtime's `container_images.BASE_IMAGES` (API-027);
+    the standard export README (six languages) shows the container with bind mounts for `DATA_DIR` and
+    `OUTPUT_DIR` (API-064); the portable README and `docs/portable-export.md` say what offline mode restricts and
+    that it is not a firewall for person-written tools (API-047).
 - TODO abatement round 3 (2026-11-06):
   - Server profile: `GET /api/members`, `PUT /api/members/{user_id}/role` and `DELETE /api/members/{user_id}`
     (admin): a tenant's administrators list members and change or remove them. Only an owner gives, takes or

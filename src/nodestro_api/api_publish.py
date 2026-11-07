@@ -451,9 +451,10 @@ def start_export_job(publication_id: str, body: ExportIn, ctx: Ctx) -> portable_
     """Build a portable package in the background (``options.kind`` must be ``portable``).
 
     On a server this answers ``403 export.server_unsupported`` unless its operator enabled export jobs
-    (``NODESTRO_SERVER_EXPORT_JOBS=1``); then one package is built at a time on the whole server
-    (``export.busy`` otherwise) and a package larger than ``NODESTRO_SERVER_EXPORT_MAX_BYTES`` (default 2 GiB) is
-    refused (``403 export.server_too_large`` from the estimate, or the job fails with that code)."""
+    (``NODESTRO_SERVER_EXPORT_JOBS=1``); then the job is queued for a worker (``queued``), which builds one package
+    at a time on the whole server (API-048), a workspace has one active export job (``export.busy`` otherwise), and a
+    package larger than ``NODESTRO_SERVER_EXPORT_MAX_BYTES`` (default 2 GiB) is refused (``403
+    export.server_too_large`` from the estimate, or the job fails with that code)."""
     publication = ctx.publications.get(publication_id)
     release, _ = _served(ctx, publication, body.number)
     options = body.options
