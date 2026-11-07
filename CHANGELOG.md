@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- MUP-ONA B1/B3 cascade (2026-11-07): pins nodestro-runtime 099f4d4 (runtime #130 B1 orkexa conformance suite,
+  #131 B3 PostgreSQL ranking drift fixes and bounded reindex switch, #132 sandbox gateway fix), orkexa b3d6fae
+  (orkexa #63) and nodestro-examples b8998b2. New catalog codes `agent.VectorError` and `run.agent.VectorError`
+  (orkexa's vector check, `vector.invalid`/`vector.dimension`): a refused vector answers 422 like the other retrieval
+  errors, not as a generic bad request although it is also a `ValueError` (test). Searches over 1000 characters or
+  64 distinct words now get 422 `agent.RetrievalError` (`query.too_long`); the global search allows 200 characters.
 - TODO abatement round 5 (2026-11-07):
   - Usage by region (API-021): `GET /api/usage` gains `by_region`, the usage per provider region (Amazon Bedrock),
     the most expensive first, and every `UsageBucket` lists its `regions`. Runs are split step by step (agents,

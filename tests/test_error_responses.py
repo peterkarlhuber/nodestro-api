@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from nodestro_runtime.problems import NodestroError
 from orkexa import ProviderError, ToolExecutionError
-from orkexa.retrieval import RetrievalError
+from orkexa.retrieval import RetrievalError, VectorError
 from pydantic import BaseModel, field_validator
 import pytest
 
@@ -42,6 +42,8 @@ def _app() -> TestClient:
         "provider": ProviderError("Invalid key sk-ant-abcdefghijklmnopqrstuvwxyz at /srv/app", provider="anthropic"),
         "agent": ToolExecutionError(f"tool crashed in {SECRET_PATH}"),
         "retrieval": RetrievalError("vector_unavailable", "No vectors for this space"),
+        # Also a ValueError: it must still answer as a retrieval error, not as a generic bad request (MUP-ONA B1).
+        "vector": VectorError("vector.dimension", "The vector has 3 dimensions, the space expects 4"),
         "nodestro": NodestroError("local.file_missing", f"{SECRET_PATH} is missing", path="model.gguf"),
         "api": ApiError(409, "output.exists", "C:\\Users\\x\\out.txt exists (api_key=abcdefgh1234)"),
     }
@@ -90,6 +92,9 @@ def test_texts_with_an_error_code_keep_their_text_without_paths_and_credentials(
     retrieval = client.get("/raise/retrieval")
     assert retrieval.status_code == 422 and retrieval.json()["code"] == "agent.RetrievalError"
     assert retrieval.json()["detail"] == "RetrievalError: No vectors for this space"
+    vector = client.get("/raise/vector")
+    assert vector.status_code == 422 and vector.json()["code"] == "agent.VectorError"
+    assert vector.json()["detail"] == "VectorError: The vector has 3 dimensions, the space expects 4"
 
 
 # MUP-ONA T-API-ERR-1
@@ -170,6 +175,7 @@ def test_the_server_request_id_is_the_answer_s_request_id() -> None:
         ("provider", 502, "provider_api"),
         ("agent", 422, "agent.ToolExecutionError"),
         ("retrieval", 422, "agent.RetrievalError"),
+        ("vector", 422, "agent.VectorError"),
         ("nodestro", 400, "local.file_missing"),
         ("api", 409, "output.exists"),
     ],
