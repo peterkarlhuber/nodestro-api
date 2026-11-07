@@ -23,10 +23,8 @@ permissions:
 jobs:
   ci:
     # ci.yml uses no secrets (runtime master is installed anonymously over https), so nothing is inherited.
-    # OPEN DECISION (CI-FAST W0, see the hand-back): ci.yml's jobs test and package carry
-    # "if: github.event_name != 'schedule'" for ci.yml's own daily tenant SQL run. In a called workflow github.event_name
-    # is the caller's event, so on this workflow's schedule only tenant-sql runs and test/package are skipped (a skipped
-    # job inside a called workflow does not make this job fail); on workflow_dispatch all three run.
+    # ci.yml's jobs test and package skip ci.yml's own daily schedule (tenant SQL only). In a called workflow
+    # github.event_name is the caller's event, so their condition also admits github.workflow == 'Nightly' (CI-FAST W0).
     uses: ./.github/workflows/ci.yml
 
   portable:
