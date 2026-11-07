@@ -508,11 +508,22 @@ def _identity(server: ServerEnvironment, database: Any) -> Iterator[Any]:
             services.close()
 
 
+def _require_knowledge_schema(database: Any) -> None:
+    """Refuse knowledge and memory tables that Orkexa's PostgreSQL backends cannot use (MUP-ONA B6): the read-only
+    ``verify_schema`` with Nodestro's layout ``nodestro_``, after the migration checksums (which cannot see an index
+    dropped or a column changed by hand). ``storage.schema_mismatch`` names every difference; nothing is changed."""
+    from nodestro_runtime.postgres_tables import require_knowledge_schema
+
+    require_knowledge_schema(database)
+
+
 def _ready(server: ServerEnvironment) -> Any:
-    """The database, after checking that its schema is current and Docker is reachable."""
+    """The database, after checking that its schema is current (the migrations and the knowledge tables) and Docker is
+    reachable."""
     database = _database(server)
     try:
         database.require_current_schema()
+        _require_knowledge_schema(database)
         _require_axentra_schema(server, database)
         _require_readable_secrets(server, database)
         _require_runtime_role(server, database)
@@ -792,6 +803,7 @@ def check(
     try:
         steps = (
             database.require_current_schema,
+            lambda: None if problems else _require_knowledge_schema(database),  # after a current migration
             lambda: _require_axentra_schema(server, database),
             runtime_role,
         )

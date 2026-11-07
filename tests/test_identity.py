@@ -577,6 +577,44 @@ def test_no_tenant_sees_another_tenants_resources(server: Server) -> None:
     assert alice.get(f"/api/knowledge/{ids['knowledge']}/content").content == b"Alpha secret contract"
 
 
+# MUP-ONA T-NOD-HTTP
+def test_identical_ids_in_two_tenants_stay_apart(server: Server) -> None:
+    """MUP-ONA B6: the knowledge base and memory on Orkexa's PostgreSQL backend, over HTTP, with the same document id,
+    source, namespace, memory space and path, and search term in two tenants: each sees and changes only its own
+    rows, and a marker of one is never found by the other."""
+    alice = server.member("acme", "alice", "owner")
+    bob = server.member("globex", "bob", "owner")
+    shared = ("shared.txt", b"Heron handbook: the heron nests by the river delta.", "text/plain")
+    ids = {}
+    for browser, marker in ((alice, b"Aardvark amethyst ledger"), (bob, b"Zebra zircon ledger")):
+        added = browser.post("/api/knowledge", files={"files": shared})
+        assert added.status_code == 201, added.text
+        ids[browser] = added.json()[0]["id"]
+        assert browser.post("/api/knowledge", files={"files": ("marker.txt", marker, "text/plain")}).status_code == 201
+        written = browser.put("/api/memory/Team/file", json={"path": "/memories/shared.md", "content": marker.decode()})
+        assert written.status_code in (200, 204), written.text
+    assert ids[alice] == ids[bob]  # content addressed: the same document id (and chunk source) in both tenants
+    for browser, own, other in ((alice, "aardvark", "zebra"), (bob, "zebra", "aardvark")):
+        hits = browser.get("/api/knowledge/search", params={"q": "heron", "mode": "fts"}).json()
+        assert [hit["file_id"] for hit in hits] == [ids[alice]], hits  # one hit: its own, not the other tenant's
+        assert [hit["title"] for hit in browser.get("/api/knowledge/search", params={"q": own, "mode": "fts"}).json()]
+        assert browser.get("/api/knowledge/search", params={"q": other, "mode": "fts"}).json() == []
+        assert {item["name"] for item in browser.get("/api/knowledge").json()} == {"shared.txt", "marker.txt"}
+    assert alice.get("/api/memory/Team/file", params={"path": "/memories/shared.md"}).json()["content"] == (
+        "Aardvark amethyst ledger"
+    )
+    # Bob deletes the same document id and clears the same memory space: Alice keeps hers.
+    assert bob.delete(f"/api/knowledge/{ids[bob]}").status_code == 204
+    assert bob.delete("/api/memory/Team").status_code == 204
+    assert bob.get("/api/knowledge/search", params={"q": "heron", "mode": "fts"}).json() == []
+    assert [hit["file_id"] for hit in alice.get("/api/knowledge/search", params={"q": "heron", "mode": "fts"}).json()]
+    assert alice.get(f"/api/knowledge/{ids[alice]}/content").content == shared[1]
+    assert alice.get("/api/memory/Team/file", params={"path": "/memories/shared.md"}).json()["content"] == (
+        "Aardvark amethyst ledger"
+    )
+    assert bob.get("/api/memory/Team/file", params={"path": "/memories/shared.md"}).status_code == 404
+
+
 def test_switching_tenants_needs_a_membership(server: Server) -> None:
     alice = server.member("acme", "alice", "owner")
     server.member("globex", "bob", "owner")

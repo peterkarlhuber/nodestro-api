@@ -163,6 +163,48 @@ def test_without_docker_the_server_is_not_ready(schema: str, tmp_path: Path) -> 
     assert error.value.code == "sandbox.unavailable"
 
 
+# MUP-ONA T-UPG-7
+def test_a_deviating_knowledge_table_stops_the_start_and_changes_nothing(
+    schema: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """MUP-ONA B6: after the migration checksums the server checks the knowledge and memory tables read-only with
+    Orkexa's ``verify_schema`` (``nodestro_runtime.postgres_tables.require_knowledge_schema``). An index dropped by
+    hand passes the checksums but stops ``check`` and the start with ``storage.schema_mismatch``; nothing is
+    repaired."""
+    import psycopg
+    from psycopg import sql
+
+    monkeypatch.setattr(command, "_require_containers", lambda _server: None)
+    monkeypatch.setattr(command, "_superuser_role", lambda _server, _database: None)
+    loaded = command.load(_environment(tmp_path))
+    command.migrate(loaded, backup_dir=None, backup_taken=False)
+    assert command.check(loaded, identity_provider=False) == []
+    command._ready(loaded).close()
+    index = sql.Identifier(schema, "nodestro_chunks_search")
+    probe = "SELECT count(*) FROM pg_indexes WHERE schemaname = %s AND indexname = 'nodestro_chunks_search'"
+    with psycopg.connect(DSN, autocommit=True) as connection:
+        connection.execute(sql.SQL("DROP INDEX {}").format(index))
+    problems = command.check(loaded, identity_provider=False)
+    assert len(problems) == 1 and problems[0].startswith("storage.schema_mismatch: "), problems
+    assert "missing_index: nodestro_chunks.nodestro_chunks_search" in problems[0]
+    with pytest.raises(NodestroError) as error:
+        command._ready(loaded)
+    assert error.value.code == "storage.schema_mismatch"
+    assert error.value.params["problems"] == [
+        "missing_index: nodestro_chunks.nodestro_chunks_search: expected an index USING gin (search)"
+    ]
+    with psycopg.connect(DSN, autocommit=True) as connection:
+        assert connection.execute(probe, (schema,)).fetchone() == (0,)  # nothing was repaired
+
+
+def test_a_database_without_migrations_reports_only_the_migration(schema: str, tmp_path: Path) -> None:
+    """The knowledge check runs only on a current migration: a new database reports the missing migration, not every
+    missing table."""
+    problems = command.check(command.load(_environment(tmp_path)), identity_provider=False)
+    assert any("schema version 0" in item for item in problems)
+    assert not [item for item in problems if "missing_table" in item]
+
+
 def test_the_api_process_serves_the_studio_and_requires_a_login(
     schema: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
