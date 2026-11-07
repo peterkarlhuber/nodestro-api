@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- MUP-ONA B4 cascade (2026-11-07): pins nodestro-runtime 76f9cb2 (runtime #137 the tenant SQL rule engine as
+  `sqlcheck_rules`, #138 the generic PostgreSQL part with a statement catalog and a partition guard) and
+  nodestro-examples 647f501. New catalog code `partition.missing` (runtime): a knowledge or memory statement not bound
+  to the instance's tenant is refused before any database access. No API change.
 - MUP-ONA B2 cascade (2026-11-07): pins nodestro-runtime d9c3d6e (runtime #136 B2, #135 Axentra 60d83b3 with the
   A8 fixes, #134 PostgreSQL reindex switch under load), orkexa 028faa1 (orkexa #64: SQLite backends in
   `orkexa.backends.sqlite`, old import paths unchanged) and nodestro-examples a0edd20. No API change.
