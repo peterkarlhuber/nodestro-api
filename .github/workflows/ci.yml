@@ -143,8 +143,11 @@ jobs:
           # The checker needs only the standard library and pglast (the range of the dev extra).
           "$RUNNER_TEMP/runtime-master/bin/pip" install --no-deps "nodestro-runtime @ git+$repository@da9e9092d903ea880310960d146966fbaae0b141"
           "$RUNNER_TEMP/runtime-master/bin/pip" install "pglast>=7,<9"
-          # PROBE: the B6 checker uses orkexa.testing.sqlcheck (orkexa #66).
-          "$RUNNER_TEMP/runtime-master/bin/pip" install --no-deps "orkexa @ git+https://github.com/peterkarlhuber/orkexa.git@792a041883c74d613c3af491db51210881d2a453"
+          # Since MUP-ONA B6 the checker's rule engine is orkexa.testing.sqlcheck: install orkexa (with its own
+          # dependencies and the sqlcheck extra) at the commit this runtime pins.
+          orkexa_url="$("$RUNNER_TEMP/runtime-master/bin/python" -I -c 'import importlib.metadata as m; print(next(r for r in m.requires("nodestro-runtime") if r.startswith("orkexa") and "extra ==" not in r).split("@", 1)[1].strip())')"
+          echo "orkexa pinned by the runtime: $orkexa_url"
+          "$RUNNER_TEMP/runtime-master/bin/pip" install "orkexa[sqlcheck] @ $orkexa_url"
           master=da9e9092d903ea880310960d146966fbaae0b141  # PROBE: MUP-ONA B6 runtime branch (runtime #140); never merge
           test -n "$master" || { echo "::error::runtime master not found with git ls-remote"; exit 1; }
           echo "runtime master: $master"
