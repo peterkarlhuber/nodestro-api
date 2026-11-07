@@ -20,7 +20,7 @@ is [PLATFORM.md](https://github.com/peterkarlhuber/nodestro-studio/blob/master/d
 | Application | `app` (`create_app`), `context` (`AppConfig`; `Nodestro` extends the runtime `Workspace`), `cli` (`nodestro-api`), `local_access` (Host/Origin guard) |
 | Studio REST API `/api` | `api`, `api_data`, `api_inputs`, `api_examples`, `api_python`, `api_architect`, `api_assistant`, `api_automation`, `api_guide`, `api_publish`, `api_pricing` (model prices, reconciliation), `api_mcp` (connected MCP services), `api_local_models` (local models and the semantic knowledge index), `model_readiness` (missing local models: refusal and readiness), `api_budget`, `api_run_chat`, `api_tool_approvals`, `api_notifications`, `api_reference` (the API reference page) |
 | Published APIs `/api/published/{slug}` | `serving` (shared with exports), `publishing`, `release_gate` (opt-in release gate), `api_keys`, `network` (separate listener for the local network) |
-| Export | `exporter` (ZIP with runtime, lock file, tests; orkexa from Git or bundled), `standalone`, `export_models`; portable packages: `portable_build`, `portable` (the launcher), `portable_secrets`, `webui_server` (see [docs/portable-export.md](docs/portable-export.md)) |
+| Export | `exporter` (ZIP with runtime, lock file, tests; orkexa from Git or bundled), `standalone`, `export_models`; portable packages: `portable_build`, `export_jobs` (builds on a server's workers), `portable` (the launcher), `portable_secrets`, `webui_server` (see [docs/portable-export.md](docs/portable-export.md)) |
 | Services | `pricing_setup` (price sync on desktop and server), `assistants`, `architect`, `assistant`, `assistant_context`, `docs_index`, `batches`, `benchmarks`, `schedules`, `backup`, `organize`, `search`, `diagnostics` |
 | Contract | `openapi` and `openapi/nodestro-api.json` |
 
@@ -146,6 +146,9 @@ user login and does not lift the loopback-only rule. Without the variable (the `
   runs and write their events to the database, where every API process streams them from. A worker that dies
   leaves its run `run.interrupted` (found by the reaper of another worker); it is never executed again by itself.
   The worker that holds the scheduler lock fires the tenants' schedules, and each slot fires once.
+- Portable export builds (with `NODESTRO_SERVER_EXPORT_JOBS=1`) are jobs of the same queue: a worker builds one
+  package at a time on the whole server, with a lease; a build whose worker died fails with `export.interrupted`
+  (see [docs/portable-export.md](docs/portable-export.md), "On a server").
 - A tenant's provider keys are stored encrypted with the server's secret key (per-tenant key, AES-256-GCM); the
   server's own environment variables such as `ANTHROPIC_API_KEY` are never used for any tenant.
 - Not part of it yet: published workflow APIs with tenant-bound keys, the network listener and backups in the studio

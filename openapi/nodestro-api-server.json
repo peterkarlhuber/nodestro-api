@@ -7014,6 +7014,11 @@
             "title": "Publication Id",
             "type": "string"
           },
+          "queued": {
+            "default": false,
+            "title": "Queued",
+            "type": "boolean"
+          },
           "release_number": {
             "title": "Release Number",
             "type": "integer"
