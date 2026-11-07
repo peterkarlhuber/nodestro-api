@@ -63,6 +63,11 @@
     built, like the studio and the server (`check_routes`; deny by default): `/health` and an export's API reference
     are declared `PUBLIC`, the export's web interface routes are listed in `WEB_UI_ROUTES`. Exports now contain
     `nodestro_api.permissions`.
+- MUP-ONA A11: CI job `tenant-sql` checks every PostgreSQL statement of the API with the runtime's tenant SQL check
+  twice, with the pinned runtime and with the current runtime `master` (installed over the same public `git+https`
+  route as the pin, no secret), on every change and daily. `NODESTRO_REQUIRE_TENANT_SCAN=1`: a checker that cannot
+  run, a missing `pglast`, a failed install, a scan of no file, a planted leak that is not reported or a runtime that
+  is not `master` fails the job (`scripts/tenant_sql_scan.py`); none of its tests may skip.
 - MUP-ONA A0 (security and test baseline, no code change):
   - CI compares the skipped tests of every pytest job with an expectation file (`tests/ci/skipped-<job>.txt`, each
     entry with its reason; `scripts/check_skips.py`): a test that starts to skip, or an expected skip that runs, fails

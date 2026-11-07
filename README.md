@@ -475,6 +475,20 @@ with its reason; `python scripts/check_skips.py junit.xml tests/ci/skipped-test-
 environment and calls the started server over HTTP. It needs no secret: orkexa and the Nodestro repositories are public and are
 installed anonymously.
 
+The tenant isolation check (security review SR-01) scans the API with the runtime's `tenant_sql_check`:
+`tests/test_tenant_filters.py` and `python scripts/tenant_sql_scan.py` use the pinned runtime. CI's job `tenant-sql`
+also scans with the current runtime `master` (daily too); locally:
+
+```bash
+python -m venv /tmp/runtime-master
+/tmp/runtime-master/bin/pip install --no-deps "nodestro-runtime @ git+https://github.com/peterkarlhuber/nodestro-runtime.git@master"
+/tmp/runtime-master/bin/pip install "pglast>=7,<9"
+/tmp/runtime-master/bin/python scripts/tenant_sql_scan.py --package src/nodestro_api
+```
+
+The scan prints the runtime commit it used and fails when it cannot run or proves nothing (no file scanned, a planted
+leak in a copy of the package not reported).
+
 Open work (known bugs, follow-ups and planned improvements) is listed in [docs/TODO.md](docs/TODO.md).
 
 ## Limitations
