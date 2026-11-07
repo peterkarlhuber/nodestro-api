@@ -12,11 +12,11 @@ license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [{ name = "Peter Karlhuber" }]
 dependencies = [
-    "nodestro-runtime @ git+https://github.com/peterkarlhuber/nodestro-runtime.git@099f4d4f676a1e3102a120b3ee57628e76e2e92c",
+    "nodestro-runtime @ git+https://github.com/peterkarlhuber/nodestro-runtime.git@d9c3d6ef6dc93305dd587b9dd4919fb1f0edfa18",
     # The API imports orkexa itself (providers, pricing, usage, errors), so it declares it: always the commit the
     # runtime pin above pins, never another one (MUP-ONA B0).
-    "orkexa @ git+https://github.com/peterkarlhuber/orkexa.git@b3d6faeb67e4d2cd65c0c848bb10e42daa25747d",
-    "nodestro-examples @ git+https://github.com/peterkarlhuber/nodestro-examples.git@b8998b28e60f80ca57f59a6ba7431d54a7559cbb",
+    "orkexa @ git+https://github.com/peterkarlhuber/orkexa.git@028faa16a529ae66228138af3b71a01c6d3aa6fc",
+    "nodestro-examples @ git+https://github.com/peterkarlhuber/nodestro-examples.git@a0edd20f236a368f2f2ac0d2afa3caec69e66507",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "python-multipart>=0.0.9",
@@ -27,13 +27,13 @@ dependencies = [
 # The multi-tenant studio API with logins (nodestro_api.server_app): PostgreSQL and OpenID Connect.
 server = [
     # The runtime's PostgreSQL store and Axentra (off unless NODESTRO_AXENTRA=on).
-    "nodestro-runtime[postgres] @ git+https://github.com/peterkarlhuber/nodestro-runtime.git@099f4d4f676a1e3102a120b3ee57628e76e2e92c",
+    "nodestro-runtime[postgres] @ git+https://github.com/peterkarlhuber/nodestro-runtime.git@d9c3d6ef6dc93305dd587b9dd4919fb1f0edfa18",
     "psycopg[binary,pool]>=3.2",
     "PyJWT[crypto]>=2.9",
     "httpx>=0.27",
 ]
 dev = [
-    "nodestro-runtime[postgres] @ git+https://github.com/peterkarlhuber/nodestro-runtime.git@099f4d4f676a1e3102a120b3ee57628e76e2e92c",
+    "nodestro-runtime[postgres] @ git+https://github.com/peterkarlhuber/nodestro-runtime.git@d9c3d6ef6dc93305dd587b9dd4919fb1f0edfa18",
     "httpx>=0.27",
     "psycopg[binary,pool]>=3.2",
     "PyJWT[crypto]>=2.9",

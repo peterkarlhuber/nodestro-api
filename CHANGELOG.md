@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- MUP-ONA B2 cascade (2026-11-07): pins nodestro-runtime d9c3d6e (runtime #136 B2, #135 Axentra 60d83b3 with the
+  A8 fixes, #134 PostgreSQL reindex switch under load), orkexa 028faa1 (orkexa #64: SQLite backends in
+  `orkexa.backends.sqlite`, old import paths unchanged) and nodestro-examples a0edd20. No API change.
 - MUP-ONA B1/B3 cascade (2026-11-07): pins nodestro-runtime 099f4d4 (runtime #130 B1 orkexa conformance suite,
   #131 B3 PostgreSQL ranking drift fixes and bounded reindex switch, #132 sandbox gateway fix), orkexa b3d6fae
   (orkexa #63) and nodestro-examples b8998b2. New catalog codes `agent.VectorError` and `run.agent.VectorError`
