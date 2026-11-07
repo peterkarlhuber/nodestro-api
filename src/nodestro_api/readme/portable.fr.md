@@ -115,6 +115,9 @@ cet ordinateur). `examples/client.py` montre tout cela en Python.
 - Les outils écrits par une personne s’exécutent dans des processus séparés. Les outils générés par IA ne s’exécutent que dans un conteneur
   Docker isolé (`[tools] sandbox = "docker"`, Docker requis) ; sans Docker, les exécutions qui en ont besoin sont refusées et
   rien ne s’exécute sans protection.
+- Le mode hors ligne n’est pas un pare-feu : les outils écrits par une personne s’exécutent avec l’accès réseau de votre
+  compte utilisateur, et rien dans ce paquet ne le bloque. Là où aucun trafic ne doit quitter l’ordinateur, lancez le
+  paquet sans réseau.
 - Le serveur de modèles local écoute uniquement sur `127.0.0.1`, sur un port qui lui est propre.
 
 ## Dépannage

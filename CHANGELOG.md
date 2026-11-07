@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+- MUP-ONA A8 (shared security test vectors, VB-7):
+  - Security: the OIDC client checks ID tokens as Axentra does. A token issued more than
+    `OidcSettings.id_token_max_age` (default 600 s, plus 120 s clock skew) ago is refused (`iat`), as is a token
+    whose `azp` names another client (also with a single audience) and one whose `sub` is empty, not a string or
+    longer than 255 characters (OpenID Connect Core 1.0, section 2). A `kid` whose key does not fit the header's
+    algorithm ends the login with `identity.login_failed` instead of an unhandled error.
+  - Tests: `tests/test_security_vectors_jwt.py` runs the ID token vectors of the shared security test vectors
+    against the OIDC client, with keys generated in the test (T-VEC-3). It reads a pinned copy of nodestro-runtime's
+    canonical corpus (`tests/vectors/security-vectors.json`, version 1; origin and SHA-256 in
+    `tests/vectors/SOURCE.md`, checked by the test).
+- TODO abatement round 4 (2026-11-06):
+  - Pins nodestro-runtime f26dac4 (runtime #126: a busy sandbox image build stays `checking` (LD-020), Bedrock
+    region in usage, registry facts before a download, `pgvector_status()`; includes the price-table date fix of
+    runtime #125, runtime #128: the legacy fixture restore test skips without psycopg, and MUP-ONA A11 runtime #123)
+    and nodestro-examples 570ef4f (examples #81: the same runtime pin). The OpenAPI documents gain the
+    runtime's new optional fields: `value_warnings` (agent test, RT-054), `from_registry`, `regions` and `region`.
+  - Server exports: a portable export job is queued (`export` job of the job queue, `ExportJob.queued`) and a worker
+    builds it with a lease, one package at a time on the whole server (session advisory lock); a workspace has one
+    active export job (`export.busy`). Cancelling works for queued and running jobs from any API process, a job
+    whose worker died ends as `export.interrupted` (the reaper, or the next read), and a suspended tenant's job ends
+    as `identity.tenant_suspended`. Workers need `NODESTRO_SERVER_EXPORT_JOBS=1` and the shared data volume as the
+    API processes do. The package is written to a work folder and moved into place (API-048).
+  - Server worker: with `NODESTRO_WORKER_HEARTBEAT_FILE` the worker writes a heartbeat file every 10 s (state,
+    database reachability, duties); `nodestro-server worker-health [--file] [--max-age 60]` exits 0 when it is fresh,
+    the database was reachable and no duty ended, 1 otherwise and 2 when there is nothing to check (API-011).
+  - Tests: crash and multi-process tests with real killed processes on PostgreSQL: a workflow delete killed inside
+    its transaction (desktop and server), a test series whose API process was killed, and schedules changed while
+    two worker processes tick and the leader is killed (API-022).
+  - The export's `Dockerfile` is pinned by digest from nodestro-runtime's `container_images.BASE_IMAGES` (API-027);
+    the standard export README (six languages) shows the container with bind mounts for `DATA_DIR` and
+    `OUTPUT_DIR` (API-064); the portable README and `docs/portable-export.md` say what offline mode restricts and
+    that it is not a firewall for person-written tools (API-047).
 - TODO abatement round 3 (2026-11-06):
   - Server profile: `GET /api/members`, `PUT /api/members/{user_id}/role` and `DELETE /api/members/{user_id}`
     (admin): a tenant's administrators list members and change or remove them. Only an owner gives, takes or
@@ -49,6 +81,11 @@
     built, like the studio and the server (`check_routes`; deny by default): `/health` and an export's API reference
     are declared `PUBLIC`, the export's web interface routes are listed in `WEB_UI_ROUTES`. Exports now contain
     `nodestro_api.permissions`.
+- MUP-ONA A11: CI job `tenant-sql` checks every PostgreSQL statement of the API with the runtime's tenant SQL check
+  twice, with the pinned runtime and with the current runtime `master` (installed over the same public `git+https`
+  route as the pin, no secret), on every change and daily. `NODESTRO_REQUIRE_TENANT_SCAN=1`: a checker that cannot
+  run, a missing `pglast`, a failed install, a scan of no file, a planted leak that is not reported or a runtime that
+  is not `master` fails the job (`scripts/tenant_sql_scan.py`); none of its tests may skip.
 - MUP-ONA A0 (security and test baseline, no code change):
   - CI compares the skipped tests of every pytest job with an expectation file (`tests/ci/skipped-<job>.txt`, each
     entry with its reason; `scripts/check_skips.py`): a test that starts to skip, or an expected skip that runs, fails

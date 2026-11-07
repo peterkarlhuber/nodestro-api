@@ -445,7 +445,12 @@ def test_launcher_keys_are_stored_as_hashes(tmp_path: Path, capsys: pytest.Captu
     assert portable.keys(args, settings) == 0
     token = capsys.readouterr().out.splitlines()[1].strip()
     stored = (tmp_path / "data" / "api-keys.txt").read_text()
-    assert token.split("_")[-1] not in stored and stored.count(":") >= 3 and "run+read:CRM" in stored
+    from nodestro_api.serving import parse_token
+
+    parsed = parse_token(token)
+    assert parsed is not None
+    # The secret is url-safe base64 and may itself contain "_", so take it from the parsed token.
+    assert parsed[1] not in stored and stored.count(":") >= 3 and "run+read:CRM" in stored
     if os.name == "posix":
         assert stat.S_IMODE((tmp_path / "data" / "api-keys.txt").stat().st_mode) == 0o600
     from nodestro_api.standalone import parse_keys

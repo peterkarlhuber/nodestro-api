@@ -1,11 +1,12 @@
 """Logins for the server: OpenID Connect, sessions, roles and the tenant of every request (ADR-0003).
 
 A person logs in at the operator's identity provider (authorization code flow with PKCE, ``state`` and ``nonce``).
-The callback checks the ID token (signature from the provider's keys, issuer, audience, expiry, nonce), finds or
-creates the user (:class:`~nodestro_runtime.identity_store.IdentityStore`) and starts a server-side session in one
-tenant. The browser holds only a random session token in an ``HttpOnly; Secure; SameSite=Lax`` cookie with the
-``__Host-`` prefix; the database holds its hash. :class:`SessionResolver` turns the cookie into the request's
-:class:`~nodestro_api.permissions.Principal`: the user, the tenant and the permissions of the user's role there.
+The callback checks the ID token (signature from the provider's keys, issuer, audience and ``azp``, expiry, age,
+nonce, subject), finds or creates the user (:class:`~nodestro_runtime.identity_store.IdentityStore`) and starts a
+server-side session in one tenant. The browser holds only a random session token in an ``HttpOnly; Secure;
+SameSite=Lax`` cookie with the ``__Host-`` prefix; the database holds its hash. :class:`SessionResolver` turns the
+cookie into the request's :class:`~nodestro_api.permissions.Principal`: the user, the tenant and the permissions of the
+user's role there.
 
 Nothing is granted by a login alone: a user needs a role in a tenant. The first owner of a tenant is bound with a
 one-time setup link (``/api/auth/login?setup=<bootstrap token>``) that an operator creates; there is no default
@@ -75,6 +76,8 @@ assert all(ROLE_PERMISSIONS[role] == {Permission(p) for p in ROLE_GRANTS[role]} 
 _TENANT_PERMISSIONS = frozenset({Permission.READ, Permission.EDIT, Permission.RUN, Permission.ADMIN})
 #: Signature algorithms accepted for ID tokens (asymmetric only: never ``none`` or a shared secret).
 ALGORITHMS = ("RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512", "EdDSA")
+#: Allowed clock difference for the age check of an ID token's ``iat`` (on top of ``OidcSettings.id_token_max_age``).
+IAT_CLOCK_SKEW_SECONDS = 120
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 
@@ -124,6 +127,9 @@ class OidcSettings:
     scopes: tuple[str, ...] = ("openid", "email", "profile")
     #: Allowed clock difference to the provider, in seconds.
     leeway: int = 60
+    #: Oldest accepted ID token: its ``iat`` may lie at most this many seconds in the past (plus two minutes of clock
+    #: skew). Providers issue the token at the code exchange, so a fresh login is seconds old.
+    id_token_max_age: int = 600
 
 
 class OidcClient:
@@ -234,13 +240,28 @@ class OidcClient:
                 leeway=self.settings.leeway,
                 options={"require": ["exp", "iat", "iss", "aud", "sub"]},
             )
-        except jwt.PyJWTError as exc:
+        except (jwt.PyJWTError, TypeError, ValueError) as exc:
+            # TypeError/ValueError: the key named by ``kid`` does not fit the header's algorithm (an RSA key for ES256).
             raise LoginError("identity.login_failed", f"Invalid ID token: {exc}") from exc
+        # PyJWT refuses an iat in the future (beyond the leeway) but accepts any age: a token issued long ago (replayed
+        # or from a provider with a broken clock) is refused here.
+        if time.time() - float(claims["iat"]) > self.settings.id_token_max_age + IAT_CLOCK_SKEW_SECONDS:
+            raise LoginError(
+                "identity.login_failed",
+                f"The ID token was issued more than {self.settings.id_token_max_age} s ago (iat)",
+            )
         if not secrets.compare_digest(str(claims.get("nonce") or ""), nonce):
             raise LoginError("identity.login_failed", "The ID token belongs to another login (nonce)")
         audience = claims["aud"]
-        if isinstance(audience, list) and len(audience) > 1 and claims.get("azp") != self.settings.client_id:
+        azp = claims.get("azp")
+        if isinstance(audience, list) and len(audience) > 1 and azp is None:
+            raise LoginError("identity.login_failed", "The ID token has several audiences and no azp")
+        if azp is not None and azp != self.settings.client_id:
             raise LoginError("identity.login_failed", "The ID token was issued to another client (azp)")
+        subject = claims["sub"]
+        # OpenID Connect Core 1.0 section 2: a case-sensitive string of at most 255 ASCII characters.
+        if not isinstance(subject, str) or not subject or len(subject) > 255:
+            raise LoginError("identity.login_failed", "The ID token has no usable subject")
         return claims
 
     def _key(self, kid: str | None) -> Any:

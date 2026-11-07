@@ -1,0 +1,2 @@
+# Tests the CI job "tenant-sql" skips: none. No test of the tenant SQL check may be skipped (MUP-ONA A11).
+# Checked by scripts/check_skips.py (MUP-ONA A0, T-SKIP-1). A change needs a reason in its PR.

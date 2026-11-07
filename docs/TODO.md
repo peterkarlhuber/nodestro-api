@@ -3,7 +3,7 @@
 > Open work for this repository: release blockers, known bugs, security follow-ups, technical debt and planned improvements.
 > GitHub issues are the source of truth for details; this file is the entry point and summary.
 >
-> **Last full review:** 2026-11-06 against master at 984c61d (TODO abatement round)
+> **Last full review:** 2026-11-06 against master at 7142761 (TODO abatement round)
 
 ## Summary
 
@@ -11,15 +11,15 @@
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 0 |
-| P2 Medium | 6 |
-| P3 Low | 11 |
+| P2 Medium | 5 |
+| P3 Low | 9 |
 | P4 Optional | 6 |
 
 **Release blockers:** None for this repository; every entry below is not a release blocker. The next desktop
 preview is gated by nodestro-desktop DSK-001 (new candidate and Go/No-Go).
 
-The desktop API is in solid shape. Most open work is in the multi-process server profile: worker observability,
-key rotation, published APIs on the server. The portable export (#85, hardened in #87) still needs an independent
+The desktop API is in solid shape. Most open work is in the multi-process server profile: key rotation, published
+APIs on the server, worker metrics and tracing. The portable export (#85, hardened in #87) still needs an independent
 security review (API-054). The rest is follow-up from the internal backend audits and the UX rounds. Live Run Chat
 (LRC-1) is merged (#49).
 
@@ -70,57 +70,49 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
 - **Priority:** P3 Low · **Status:** Needs decision · **Refs:** backend audit C-12 (residual)
 - **What:** Jobs, events, sessions, login states and idempotency records are cleaned up. Runs, the usage log,
   workflow versions, `before-restore-*.zip`, `pre-migration-*.db` and exports with portable packages
-  (`<data>/exports`, up to several GB each) grow without limit.
+  (`<data>/exports`, up to several GB each) grow without limit. On the server, `NODESTRO_SERVER_EXPORT_TENANT_QUOTA_BYTES`
+  (default 8 GiB) caps what one tenant keeps (`403 export.server_quota`), but packages stay until a member deletes
+  them (the former API-048 rest; export builds themselves run as queued worker jobs with a lease since 2026-11-06).
 - **Next step:** Decide on a retention policy (defaults, per tenant on the server). Then add configurable cleanup
-  to the existing leader task.
+  to the existing leader task of the worker, including export packages.
 - **Depends on:** nodestro-runtime RT-014 (store deletes for runs and versions)
-
-### API-048 · Portable export builds on the server profile: retention and job leases
-
-- **Priority:** P3 Low · **Status:** Needs decision · **Refs:** backend audit round 3 (API3-07), `docs/portable-export.md`
-  ("On a server")
-- **What:** The server profile refuses export jobs (`export.server_unsupported`) unless the operator sets
-  `NODESTRO_SERVER_EXPORT_JOBS=1`; then one build runs at a time per API process, `NODESTRO_SERVER_EXPORT_MAX_BYTES`
-  (default 2 GiB) caps a package and, since the TODO abatement round 3, `NODESTRO_SERVER_EXPORT_TENANT_QUOTA_BYTES`
-  (default 8 GiB) caps what one tenant keeps (`403 export.server_quota`; `DELETE /api/exports/{id}` frees space).
-  Left: no automatic retention (packages stay until a member deletes them; the default retention is the open API-009
-  owner decision), the build still runs in the API process (not as a server batch job with a lease), and the
-  one-build slot is per API process, not per server (opening a tenant context also marks builds that another API
-  process is running as failed).
-- **Next step:** After the API-009 decision, add export retention to the worker's leader clean-up; move builds to a
-  queued job with a lease (like the server's reindex jobs) and document the switch in the nodestro-server
-  RUNBOOK.
-- **Depends on:** API-009 (retention policy)
 
 ## Architecture and modularity
 
 ### API-010 · Server profile: published APIs, network listener and backups are not served yet
 
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** README "Server logins", `src/nodestro_api/server_app.py`
+- **Priority:** P2 Medium · **Status:** Needs decision · **Refs:** README "Server logins", `src/nodestro_api/server_app.py`
   docstring
-- **What:** On the server, the published workflow APIs (with tenant-bound keys) are not served (the S-2 pilot saw
-  405; `openapi/nodestro-api-server.json` has no `/api/published` route). The network listener and studio backups
-  are not offered there either; operators use `pg_dump`. Batches, test series, assistant drafts and Python
-  environment installs still run in the API process.
-- **Next step:** (1) Tenant-bound API keys: the key record names its tenant, the key prefix carries no tenant id,
-  and lookup goes through one platform table (key hash -> tenant), so a key never opens another tenant's context.
-  (2) Serve `/api/published/{slug}` in `create_tenant_app` by resolving the key first, then the tenant context, and
-  start runs through the worker queue (`QueuedRuns`), with per-tenant limits. (3) Leave the network listener off on
-  the server (the proxy is the listener) and document that. (4) Document the server backup path (`nodestro-server
-  backup`) in the studio. Each step needs its own security review before it is enabled.
-- **Depends on:** None
+- **What:** On the server, the published workflow APIs are not served (`openapi/nodestro-api-server.json` has no
+  `/api/published` route; the S-2 pilot saw 405). The network listener and studio backups are not offered there
+  either (operators use `nodestro-server backup`, a `pg_dump`); the README says so. Batches and test series run in the
+  API process that started them, with leases that hand them to another process when it dies (API-006); assistant
+  drafts and Python environment installs run in the API process.
+- **Why not started (re-verified 2026-11-06):** there is no self-contained first step that leaves the security
+  boundary unchanged. Serving published APIs needs tenant-bound API keys first (the key record names its tenant, a
+  platform table maps key hash to tenant, so a key never opens another tenant's context): that changes key format
+  and lookup for every published API and is the security-relevant part. Serving `/api/published/{slug}` through the
+  worker queue (`QueuedRuns`) with per-tenant limits builds on it. Keeping the listener off on the server is the
+  current state; offering backups in the studio is studio work.
+- **Next step:** Owner decision whether published APIs are served by the server profile at all; if yes, design the
+  tenant-bound keys and have the design reviewed before it is built, then each later step reviewed before it is
+  enabled.
+- **Depends on:** Owner decision; independent security review of the key design
 
-### API-011 · Observability for the server profile: workers and tracing
+### API-011 · Observability for the server profile: worker metrics and tracing
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** backend audit D-10 (residual)
 - **What:** The API process has `/api/health` (liveness with the database), `GET /api/ready` (readiness),
   `GET /api/metrics` (Prometheus, with `NODESTRO_METRICS_TOKEN`), request ids (`X-Request-ID`) and JSON logs
-  (`NODESTRO_LOG_FORMAT=json`; since the TODO abatement round of 2026-11-06). Workers still have no liveness signal or
-  metrics listener of their own, and there is no tracing (OpenTelemetry).
-- **Next step:** A worker liveness signal (for example a heartbeat row the API's readiness or the metrics expose),
-  then optional OpenTelemetry as an extra that is off by default. The nodestro-server RUNBOOK ("Metrics and status")
-  documents `/api/ready`, `X-Request-ID` and `NODESTRO_LOG_FORMAT`.
-- **Depends on:** nodestro-server (RUNBOOK monitoring section)
+  (`NODESTRO_LOG_FORMAT=json`). Since 2026-11-06 a worker writes a heartbeat file (`NODESTRO_WORKER_HEARTBEAT_FILE`)
+  and `nodestro-server worker-health` checks it (age, database, duties) for the container health check. Left: the
+  API's readiness and metrics do not show whether any worker is alive (that needs a heartbeat row in the database,
+  a runtime migration), workers have no metrics of their own, and there is no tracing (OpenTelemetry).
+- **Next step:** A worker heartbeat table in the runtime's server schema, exposed by `/api/metrics`; then optional
+  OpenTelemetry as an extra that is off by default. The nodestro-server RUNBOOK and compose file should use the
+  heartbeat file and `worker-health` for the worker container.
+- **Depends on:** nodestro-runtime (server schema migration for the heartbeat row); nodestro-server (RUNBOOK
+  monitoring section, compose health check)
 
 ## Performance
 
@@ -175,11 +167,12 @@ None known.
   which an export does not carry, and an image id cannot be pinned in the export because it is local to one daemon.
   The self-test resolves the tag to an id and every container runs that id, so a tag moved later is not run
   unchecked. The routes were tested with stand-ins only (no Docker daemon in the development container).
+  The export's own `Dockerfile` is pinned by digest from nodestro-runtime's `container_images.BASE_IMAGES` since
+  2026-11-06 (plain tag only for a Python version the runtime has no digest for).
 - **Next step:** Decide whether the export should build its sandbox image itself (for example a pinned
-  `docker/sandbox.Dockerfile` shipped in the export); pin the export's own `Dockerfile` (`FROM python:<v>-slim`,
-  no digest yet) by digest, e.g. from nodestro-runtime's `container_images.BASE_IMAGES`; a real-daemon test of both
-  routes and of the server worker's Docker watch (`DockerWatch`, which keeps the proof warm; tested with stand-ins
-  and by hand against a daemon that refused or could not be reached only) in the CI `docker` job.
+  `docker/sandbox.Dockerfile` shipped in the export); a real-daemon test of both routes and of the server worker's
+  Docker watch (`DockerWatch`, which keeps the proof warm; tested with stand-ins and by hand against a daemon that
+  refused or could not be reached only) in the CI `docker` job (needs a runner with a Docker daemon).
 - **Depends on:** None
 
 ### API-028 · Docker sandbox status: residual risks after the security review (DS-6, DS-8, DS-12)
@@ -221,14 +214,6 @@ None known.
 
 ## Tests and quality assurance
 
-### API-022 · Untested cases from the backend audit re-verification
-
-- **Priority:** P3 Low · **Status:** Open · **Refs:** backend audit final report, section 9 ("known test gaps")
-- **What:** The following cases have not been run: schedules changed during a tick with several processes (C-09),
-  atomicity of workflow deletion on a crash (C-16) and recovery of test series (C-15). (The MCP OAuth callback in
-  the access log, D-02, is covered by `test_setup_tokens_and_sign_in_codes_never_reach_the_access_log`.)
-- **Next step:** Add PostgreSQL-backed multi-process tests for C-09. Test C-15 and C-16 with a forced crash.
-
 ### API-040 · Run budget decisions: browser and server image checks
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** BUDGET-1, `api_budget.py`, runtime `docs/BUDGET.md`
@@ -241,18 +226,17 @@ None known.
 
 ### API-047 · Portable packages: platforms tested only by the CI smoke test
 
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** `.github/workflows/portable.yml`, `docs/portable-export.md`,
-  backend audit round 3 API3-11 (info, documentation open)
+- **Priority:** P2 Medium · **Status:** Blocked · **Refs:** `.github/workflows/portable.yml`, `docs/portable-export.md`,
+  backend audit round 3 API3-11
 - **What:** Linux x86-64 is tested end to end (offline container without Python or network, a real local model
   run, restart, browser E2E). Linux ARM64, Windows x64/ARM64 and macOS Apple Silicon/Intel are covered only by the
   CI smoke test (build, self-test, start, a run without a model call, stop, restart): no local models, no browser,
   no Gatekeeper/SmartScreen. Windows ARM64 has no `sqlite-vec` wheel (semantic search falls back to full text). Releases using Gemini cannot be
-  packaged for macOS Intel or Windows ARM64 (no `cryptography` wheel since 46.0.4).
-  An offline package does not restrict the network of tools written by people in the workflow; this is not
-  documented yet.
+  packaged for macOS Intel or Windows ARM64 (no `cryptography` wheel since 46.0.4). What the offline mode restricts
+  and what not (it is not a firewall for person-written tools) is documented in `docs/portable-export.md` and the
+  package README since 2026-11-06.
 - **Next step:** Run a package with local models on real macOS and Windows machines, and a browser check there.
-  Document the network behavior of person-written tools in offline packages and the other design notes of API3-11
-  (what the offline mode and the default export do and do not restrict).
+- **Depends on:** macOS and Windows machines or CI runners with local models
 
 ### API-023 · Platforms and environments not verified
 
@@ -270,9 +254,11 @@ None known.
 
 ### API-064 · Portable "Open folder" untested on real desktops
 
-- **Priority:** P3 Low · **Status:** Open · **Refs:** settings/providers round 2026-11-06 (result folder stream)
-- **What:** Opening the result folder from the portable web interface was tested with a stub only.
-- **Next step:** Exercise it on real Windows, macOS and Linux desktops in the portable smoke run; document a bind mount for `OUTPUT_DIR` in the standard export container.
+- **Priority:** P3 Low · **Status:** Blocked · **Refs:** settings/providers round 2026-11-06 (result folder stream)
+- **What:** Opening the result folder from the portable web interface was tested with a stub only. (The standard
+  export's README shows the container with bind mounts for `DATA_DIR` and `OUTPUT_DIR` since 2026-11-06.)
+- **Next step:** Exercise it on real Windows, macOS and Linux desktops in the portable smoke run.
+- **Depends on:** real desktop machines (no desktop session in CI)
 
 ## Documentation
 
@@ -315,13 +301,6 @@ None known.
 Packages of the security and database backend plan MUP-ONA ([plan][mup-ona]) that touch this repository. Each entry is
 removed by the change that completes its package here.
 
-### API-MUP-A11 · Tenant SQL check in CI with the pinned and the current runtime checker
-
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** MP-A11 (PS-10), [MUP-ONA][mup-ona]
-- **What:** The API is scanned only by the pinned runtime checker inside `pytest`; a rule change on runtime `master`
-  reaches the API only with a pin bump, and nothing fails the job when the check cannot run.
-- **Next step:** CI job `tenant-sql`: pinned checker and runtime `master` (public `git+https`, no secret), daily
-  schedule, `NODESTRO_REQUIRE_TENANT_SCAN=1`.
 
 ### API-MUP-B6 · Server start verifies the schema of the orkexa PostgreSQL backend
 
@@ -340,7 +319,7 @@ removed by the change that completes its package here.
 | (pointer) | nodestro-runtime | RT-001 (independent S-2 review, covers the approval routes here) | full entry in runtime |
 | API-005 | nodestro-runtime | RT-010 | runtime adds old-key decryption; the operator command lives here |
 | API-009 | nodestro-runtime | RT-014 | runtime provides deletes |
-| API-011 | nodestro-server | SRV-007 (RUNBOOK monitoring section) | server documents what this adds |
+| API-011 | nodestro-server | SRV-007 (RUNBOOK monitoring section) | server documents the heartbeat file and `worker-health` |
 | (pointer) | nodestro-sdk | SDK-005 | the server contract `openapi/nodestro-api-server.json` exists now (API-012 done); the SDK contract tests can use it |
 | API-054 | nodestro-studio | portable export dialog (studio #121, ST-047) | one independent review covers both; full entry here |
 | API-021 | nodestro-runtime | RT-015 | runtime change first |
