@@ -3,6 +3,11 @@
 ## Unreleased
 
 - TODO abatement round 4 (2026-11-06):
+  - Pins nodestro-runtime f26dac4 (runtime #126: a busy sandbox image build stays `checking` (LD-020), Bedrock
+    region in usage, registry facts before a download, `pgvector_status()`; includes the price-table date fix of
+    runtime #125, runtime #128: the legacy fixture restore test skips without psycopg, and MUP-ONA A11 runtime #123)
+    and nodestro-examples 570ef4f (examples #81: the same runtime pin). The OpenAPI documents gain the
+    runtime's new optional fields: `value_warnings` (agent test, RT-054), `from_registry`, `regions` and `region`.
   - Server exports: a portable export job is queued (`export` job of the job queue, `ExportJob.queued`) and a worker
     builds it with a lease, one package at a time on the whole server (session advisory lock); a workspace has one
     active export job (`export.busy`). Cancelling works for queued and running jobs from any API process, a job
