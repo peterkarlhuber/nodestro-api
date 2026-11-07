@@ -46,6 +46,7 @@ All settings come from environment variables or `.env` (see `app/config.py`):
 | `API_DOCS` | `local` (default: `/docs` only from this computer), `on` or `off`. |
 | `RUN_RETENTION_DAYS` | Delete runs older than this many days at start (0 keeps everything). |
 | `TOOL_SANDBOX` | `subprocess` (default) or `docker`, see below. |
+| `OUTPUT_DIR` | A folder that also receives a copy of every result file (empty: result files stay in `DATA_DIR`). |
 
 `TOOL_SANDBOX=subprocess` runs only tools a person wrote in the tool editor, as a process of this server.
 `TOOL_SANDBOX=docker` runs every own tool in an isolated container. It needs Docker and Orkexa's sandbox image
@@ -88,6 +89,18 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000
 The API then answers on this computer only. To serve other computers, listen on `0.0.0.0` **behind HTTPS**
 (e.g. a reverse proxy, or `--ssl-certfile`/`--ssl-keyfile`): keys must not travel unencrypted.
 Interactive documentation: http://127.0.0.1:8000/docs
+
+In a container: the included `Dockerfile` builds an image (its Python base image is pinned by digest; building
+needs network access for `requirements.lock`). Mount the data folder and, if you want the result files on the host,
+a result folder. In `.env`, set `DATA_DIR=/data` and `OUTPUT_DIR=/results`.
+
+```bash
+docker build -t workflow-api .
+docker run --rm -p 127.0.0.1:8000:8000 --env-file .env \
+  -v "$PWD/data:/data" -v "$PWD/results:/results" workflow-api
+```
+
+Without the second mount, the files copied to `OUTPUT_DIR` stay inside the container and are lost with it.
 
 ## Use
 

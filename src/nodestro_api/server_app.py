@@ -8,8 +8,9 @@ session (:mod:`nodestro_api.identity`) and works on the context of the session's
 With a job queue (:attr:`TenantComposition.queue`, ADR-0004) the API processes execute no runs themselves: they
 store and queue them, and worker processes (:mod:`nodestro_api.worker`) execute them; event streams and waits read
 the worker's events from the database. A semantic reindex (``POST /api/knowledge/index/rebuild``) is queued the same
-way (API-044): a worker builds it, every API process reads its job. Without a queue, runs and reindexes execute in
-the API process (tests).
+way (API-044), and so is a portable export build (API-048, :mod:`nodestro_api.export_jobs`): a worker builds it,
+every API process reads its job. Without a queue, runs, reindexes and export builds execute in the API process
+(tests).
 
 Unlike the desktop, the API reference (``/api/docs``, ``/api/openapi.json``) needs a login (``read``), and
 ``/api/health`` also reports whether the process reaches its database (``503`` when not).
@@ -76,6 +77,7 @@ from .api_tool_approvals import router as tool_approvals_router
 from .body_limit import BodyLimitMiddleware, BodyLimits
 from .context import AppConfig, Nodestro
 from .error_codes import router as error_codes_router
+from .export_jobs import QueuedExports
 from .frontend import mount_frontend
 from .identity import (
     LoginFlow,
@@ -285,6 +287,8 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
             QueuedRuns(queue, tenant_id, context.runs).attach()
             # A semantic reindex is queued for a worker too (RT-046/API-044): never built in an API process.
             QueuedReindex(queue, tenant_id, context.knowledge).attach()
+            # Portable export builds too (API-048): a worker builds them, one at a time on the whole server.
+            QueuedExports(queue, tenant_id).attach(context)
         return context
 
     tenants = TenantContexts(open_tenant, close_tenant, busy=tenant_busy)

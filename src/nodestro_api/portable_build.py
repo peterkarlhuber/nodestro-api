@@ -24,6 +24,10 @@ the project
 Building happens in a background job (:class:`ExportJob`): files are written to a work folder and streamed into the
 ZIP, never held in memory; every step can be cancelled; downloads (Python, wheels, the Ollama archive) are kept in
 ``<data>/export-cache`` and reused. The person sees beforehand what will be downloaded (:func:`plan`).
+
+On a server with a job queue (API-048), the API process only stores the job and queues it; a worker process builds it
+(:mod:`nodestro_api.export_jobs`) with a lease, one build at a time on the whole server, and every API process reads
+the same job. Without a queue (the desktop, Nodestro Local Docker) the build runs in a thread of this process.
 """
 
 from __future__ import annotations
@@ -75,7 +79,8 @@ SERVER_MAX_BYTES = 2 * 1024**3
 #: and a finished package that would is deleted. The default holds four packages of the default size limit.
 SERVER_TENANT_QUOTA_ENV = "NODESTRO_SERVER_EXPORT_TENANT_QUOTA_BYTES"
 SERVER_TENANT_QUOTA = 8 * 1024**3
-#: One build at a time on a server, across all tenants (each tenant has its own :class:`JobRunner`).
+#: One build at a time per process on a server without a job queue, across all tenants (each tenant has its own
+#: :class:`JobRunner`). With a queue the workers take the server-wide export lock instead (API-048).
 _SERVER_SLOT = threading.Lock()
 
 
@@ -287,6 +292,9 @@ class ExportJob(BaseModel):
     error: str | None = None
     #: The parameters of ``error_code`` (e.g. ``size`` and ``limit`` of ``export.server_too_large``), for its text.
     error_params: dict[str, Any] = Field(default_factory=dict)
+    #: On a server: the job waits for a worker to take it (``state`` is ``running``; API-048). A worker builds one
+    #: package at a time on the whole server, so a job may wait while another tenant's package is built.
+    queued: bool = False
     export_id: str | None = None
     created_at: datetime = Field(default_factory=now)
     finished_at: datetime | None = None
@@ -294,7 +302,11 @@ class ExportJob(BaseModel):
 
 
 class JobRunner:
-    """The export jobs of one installation: at most one at a time, cancellable."""
+    """The export jobs of one installation: at most one at a time, cancellable.
+
+    With a job queue (``ctx.export_queue``, a :class:`nodestro_api.export_jobs.QueuedExports` attached by a server's
+    API process, API-048) a job is queued for a worker instead of built here; this process never marks it failed on
+    its own, because another process may be building it (the worker's reaper does, once its lease expired)."""
 
     def __init__(self, ctx: Nodestro) -> None:
         self.ctx = ctx
@@ -302,8 +314,16 @@ class JobRunner:
         self._cancel: dict[str, threading.Event] = {}
         self._thread: threading.Thread | None = None
 
+    @property
+    def queue(self) -> Any | None:
+        """The server's export queue of this tenant (``None``: built in this process)."""
+        return getattr(self.ctx, "export_queue", None)
+
     def recover(self) -> None:
-        """Jobs left ``running`` by a stop are failed (their work folders are removed)."""
+        """Jobs left ``running`` by a stop are failed (their work folders are removed). Not with a job queue: there
+        the jobs and work folders may belong to a worker that is building them now."""
+        if self.queue is not None:
+            return
         for job in self.ctx.store.list(JOBS, ExportJob):
             if job.state == "running":
                 job.state, job.error_code = "failed", "export.interrupted"
@@ -316,13 +336,24 @@ class JobRunner:
         job = self.ctx.store.get(JOBS, job_id, ExportJob)
         if job is None:
             raise KeyError(job_id)
-        return job
+        return self._settled(job)
 
     def for_publication(self, publication_id: str) -> list[ExportJob]:
         found = [job for job in self.ctx.store.list(JOBS, ExportJob) if job.publication_id == publication_id]
-        return sorted(found, key=lambda job: job.created_at, reverse=True)[:20]
+        return [self._settled(job) for job in sorted(found, key=lambda job: job.created_at, reverse=True)[:20]]
+
+    def _settled(self, job: ExportJob) -> ExportJob:
+        """With a queue: a job stored as running whose queue job ended without a worker storing the end (reaped
+        after its worker died, withdrawn, refused) is stored with that end now."""
+        queue = self.queue
+        if queue is None or job.state != "running":
+            return job
+        settled: ExportJob | None = queue.settle(self.ctx, job)
+        return settled if settled is not None else job
 
     def start(self, publication: Publication, release: Release, options: ExportOptions) -> ExportJob:
+        if self.queue is not None:
+            return self._enqueue(publication, release, options)
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 raise NodestroError("export.busy", "Another export is being built; wait for it or cancel it")
@@ -352,8 +383,35 @@ class JobRunner:
                 raise
         return job
 
+    def _enqueue(self, publication: Publication, release: Release, options: ExportOptions) -> ExportJob:
+        """Store the job and queue it for a worker: one active job per tenant (``export.busy``); jobs of several
+        tenants wait in the queue while a worker builds one package at a time on the whole server."""
+        with self._lock:
+            if any(item.state == "running" for item in map(self._settled, self.ctx.store.list(JOBS, ExportJob))):
+                raise NodestroError(
+                    "export.busy", "Another export of this workspace is being built or waits; wait for it or cancel it"
+                )
+            job = ExportJob(
+                publication_id=publication.id,
+                release_number=release.number,
+                options=options.model_dump(mode="json"),
+                steps=steps_of(options),
+                queued=True,
+            )
+            self.ctx.store.put(JOBS, job.id, job)
+            try:
+                self.queue.enqueue(job)  # type: ignore[union-attr]
+            except BaseException:
+                self.ctx.store.delete(JOBS, job.id)
+                raise
+        return job
+
     def cancel(self, job_id: str) -> ExportJob:
         job = self.get(job_id)
+        if self.queue is not None:
+            if job.state == "running":
+                return self.queue.cancel(self.ctx, job)  # type: ignore[no-any-return]
+            return job
         event = self._cancel.get(job_id)
         if job.state == "running" and event is not None:
             event.set()
@@ -378,30 +436,51 @@ class JobRunner:
         cancel: threading.Event,
         server: bool = False,
     ) -> None:
-        from .serving import ApiError
-
-        progress = Progress(self.ctx, job, cancel)
         try:
-            record = build(self.ctx, publication, release, options, progress)
-            job.export_id, job.state, job.progress, job.step = record.id, "done", 1.0, "done"
-            job.message = record.file_name
-        except Cancelled:
-            job.state, job.error_code, job.error = "cancelled", "export.cancelled", "The export was cancelled"
-        except NodestroError as exc:
-            job.state, job.error_code, job.error = "failed", exc.code, str(exc)
-            job.error_params = dict(exc.params)
-        except ApiError as exc:
-            job.state, job.error_code, job.error = "failed", exc.code, exc.message
-            job.error_params = dict(exc.params)
-        except Exception as exc:  # reported on the job, with the details in the log
-            logger.exception("Building a portable export failed")
-            job.state, job.error_code, job.error = "failed", "export.failed", f"{type(exc).__name__}: {exc}"[:2000]
+            execute(self.ctx, job, publication, release, options, cancel)
         finally:
-            job.finished_at = now()
             self.ctx.store.put(JOBS, job.id, job)
             self._cancel.pop(job.id, None)
             if server:
                 _SERVER_SLOT.release()
+
+
+def execute(
+    ctx: Nodestro,
+    job: ExportJob,
+    publication: Publication,
+    release: Release,
+    options: ExportOptions,
+    cancel: threading.Event,
+) -> ExportJob:
+    """Build ``job`` to its end and set its outcome (``done``, ``cancelled`` or ``failed`` with the error's code and
+    parameters) and ``finished_at``; the caller stores it. Progress is stored while it builds."""
+    from .serving import ApiError
+
+    progress = Progress(ctx, job, cancel)
+    try:
+        record = build(ctx, publication, release, options, progress)
+        job.export_id, job.state, job.progress, job.step = record.id, "done", 1.0, "done"
+        job.message = record.file_name
+    except Cancelled:
+        job.state, job.error_code, job.error = "cancelled", "export.cancelled", "The export was cancelled"
+    except NodestroError as exc:
+        job.state, job.error_code, job.error = "failed", exc.code, str(exc)
+        job.error_params = dict(exc.params)
+    except ApiError as exc:
+        job.state, job.error_code, job.error = "failed", exc.code, exc.message
+        job.error_params = dict(exc.params)
+    except Exception as exc:  # reported on the job, with the details in the log
+        logger.exception("Building a portable export failed")
+        job.state, job.error_code, job.error = "failed", "export.failed", f"{type(exc).__name__}: {exc}"[:2000]
+    finally:
+        job.finished_at = now()
+    return job
+
+
+def work_folder(ctx: Nodestro, job_id: str) -> Path:
+    """The work folder of one job (its staged files and the archive being written)."""
+    return _work_root(ctx) / job_id
 
 
 def runner(ctx: Nodestro) -> JobRunner:
@@ -1035,7 +1114,7 @@ def build(
             needed=needed,
             free=free,
         )
-    work = _work_root(ctx) / progress.job.id
+    work = work_folder(ctx, progress.job.id)
     stage = work / "package"
     shutil.rmtree(work, ignore_errors=True)
     stage.mkdir(parents=True)
@@ -1162,7 +1241,11 @@ def _assemble(
     target_dir.mkdir(parents=True, exist_ok=True)
     root = f"{exporter.project_name(publication)}-v{release.number}-{platform.id}"
     target = target_dir / f"{record_id}.zip"
-    size = write_zip(stage, root, target, progress, posix=not platform.windows)
+    # Written in the work folder and moved into place when complete: a build that dies while it writes leaves no
+    # partial file in the exports folder (its work folder is removed by recovery or the server's reaper).
+    written = work / "package.zip"
+    size = write_zip(stage, root, written, progress, posix=not platform.windows)
+    os.replace(written, target)
     keep_within_server_limits(ctx, target, size)
     record = exporter.ExportRecord(
         id=record_id,

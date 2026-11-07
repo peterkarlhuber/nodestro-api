@@ -114,6 +114,8 @@ deste computador). `examples/client.py` mostra tudo em Python.
 - Ferramentas escritas por uma pessoa são executadas como processos separados. Ferramentas geradas por IA são executadas somente em um contêiner
   Docker isolado (`[tools] sandbox = "docker"`, requer Docker); sem Docker, as execuções que precisam delas são recusadas e
   nada é executado sem proteção.
+- O modo offline não é um firewall: as ferramentas que uma pessoa escreveu rodam com o acesso à rede da sua conta de
+  usuário, e nada neste pacote o bloqueia. Onde nenhum tráfego pode sair do computador, execute o pacote sem rede.
 - O servidor de modelos local escuta somente em `127.0.0.1`, em uma porta própria.
 
 ## Solução de problemas

@@ -20,7 +20,7 @@ is [PLATFORM.md](https://github.com/peterkarlhuber/nodestro-studio/blob/master/d
 | Application | `app` (`create_app`), `context` (`AppConfig`; `Nodestro` extends the runtime `Workspace`), `cli` (`nodestro-api`), `local_access` (Host/Origin guard) |
 | Studio REST API `/api` | `api`, `api_data`, `api_inputs`, `api_examples`, `api_python`, `api_architect`, `api_assistant`, `api_automation`, `api_guide`, `api_publish`, `api_pricing` (model prices, reconciliation), `api_mcp` (connected MCP services), `api_local_models` (local models and the semantic knowledge index), `model_readiness` (missing local models: refusal and readiness), `api_budget`, `api_run_chat`, `api_tool_approvals`, `api_notifications`, `api_reference` (the API reference page) |
 | Published APIs `/api/published/{slug}` | `serving` (shared with exports), `publishing`, `release_gate` (opt-in release gate), `api_keys`, `network` (separate listener for the local network) |
-| Export | `exporter` (ZIP with runtime, lock file, tests; orkexa from Git or bundled), `standalone`, `export_models`; portable packages: `portable_build`, `portable` (the launcher), `portable_secrets`, `webui_server` (see [docs/portable-export.md](docs/portable-export.md)) |
+| Export | `exporter` (ZIP with runtime, lock file, tests; orkexa from Git or bundled), `standalone`, `export_models`; portable packages: `portable_build`, `export_jobs` (builds on a server's workers), `portable` (the launcher), `portable_secrets`, `webui_server` (see [docs/portable-export.md](docs/portable-export.md)) |
 | Services | `pricing_setup` (price sync on desktop and server), `assistants`, `architect`, `assistant`, `assistant_context`, `docs_index`, `batches`, `benchmarks`, `schedules`, `backup`, `organize`, `search`, `diagnostics` |
 | Contract | `openapi` and `openapi/nodestro-api.json` |
 
@@ -154,6 +154,9 @@ user login and does not lift the loopback-only rule. Without the variable (the `
   runs and write their events to the database, where every API process streams them from. A worker that dies
   leaves its run `run.interrupted` (found by the reaper of another worker); it is never executed again by itself.
   The worker that holds the scheduler lock fires the tenants' schedules, and each slot fires once.
+- Portable export builds (with `NODESTRO_SERVER_EXPORT_JOBS=1`) are jobs of the same queue: a worker builds one
+  package at a time on the whole server, with a lease; a build whose worker died fails with `export.interrupted`
+  (see [docs/portable-export.md](docs/portable-export.md), "On a server").
 - A tenant's provider keys are stored encrypted with the server's secret key (per-tenant key, AES-256-GCM); the
   server's own environment variables such as `ANTHROPIC_API_KEY` are never used for any tenant.
 - Not part of it yet: published workflow APIs with tenant-bound keys, the network listener and backups in the studio
@@ -228,6 +231,7 @@ unsafe value is listed at once (`profile.invalid`), and nothing has a default th
 | `NODESTRO_BEDROCK_TENANT_ROLES` (or `_FILE`) | Amazon Bedrock per tenant: JSON `{"<tenant id>": {"role_arn": "arn:aws:iam::<account>:role/<name>", "external_id": "…"}}`. The API and worker processes assume a tenant's role with STS (the server's own AWS credentials as base, `ExternalId`, `RoleSessionName=nodestro-<tenant>`, regional STS endpoint, 30 minutes); the server's own AWS chain is never used for a tenant, and a tenant sees only `operator_role: true`. A tenant without an entry cannot use Bedrock (`provider.bedrock_not_available`) |
 | `NODESTRO_BEDROCK_DATA_RESIDENCY`, `NODESTRO_BEDROCK_ALLOWED_REGIONS` | `eu_only` forces EU-only data residency for every tenant (they cannot relax it); a comma-separated list limits the regions tenants may choose (with `eu_only` only EU regions) |
 | `NODESTRO_WORKER_LEASE_SECONDS`, `…_POLL_SECONDS`, `…_REAP_SECONDS` | worker timing (defaults 60, 1, 15) |
+| `NODESTRO_WORKER_HEARTBEAT_FILE` | a path in the worker's own container (e.g. `/tmp/nodestro-worker.json`, not the shared data volume): the worker writes its heartbeat there every 10 s (state, database reachable, which duties run; no tenant data), and `nodestro-server worker-health` checks it for the container's health check (exit 0 alive; 1 when the file is older than `--max-age`, default 60 s, the database was unreachable or a duty ended; 2 without a file). Unset: no heartbeat |
 | `NODESTRO_WORKER_MAX_RUNS`, `NODESTRO_WORKER_MAX_WAITING` | runs one worker holds at once, and how many of them may wait for a person's tool approval (defaults 2 and 1; waiting must stay below the runs, so one slot always executes) |
 | `NODESTRO_MAX_RUN_BUDGET_USD` | The highest limit a budget decision may set for one run (BUDGET-1), on top of the tenant setting `max_run_budget_usd`; the lower one applies. Empty: no operator maximum |
 | `NODESTRO_TOOL_APPROVALS` | `1` asks a person before tool calls that change or reach out. Off by default. Order: first `POST /api/tool-approvals/legacy` (once; stamps existing bindings of workflows, versions and published releases, whose digest changes once), review the report, then set this and restart, only after the security acceptance |
@@ -253,6 +257,8 @@ Commands:
   TLS-terminating reverse proxy in front of it; the session cookie is `Secure`.
 - `nodestro-server worker`: executes queued runs, reaps runs of dead workers and fires schedules. SIGTERM lets a
   running run finish first.
+- `nodestro-server worker-health [--file PATH] [--max-age SECONDS]`: the worker's liveness check (see
+  `NODESTRO_WORKER_HEARTBEAT_FILE`); it reads only the heartbeat file and needs no database.
 - `nodestro-server create-tenant ID NAME` and `nodestro-server setup-link TENANT`: create a tenant and print a
   one-time link (24 hours) that makes the person who logs in with it the tenant's first owner. The id
   `nodestro-price-reference` is reserved (the server's reference prices).

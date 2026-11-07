@@ -47,20 +47,39 @@ Both carry `openapi.json` (the same document the running application serves) and
 ### On a server
 
 On the server profile (`NODESTRO_PROFILE=server`) export jobs are **off**: `POST /publications/{id}/export-jobs`
-answers `403 export.server_unsupported` for every tenant role. A build downloads Python and libraries, writes
-hundreds of megabytes (gigabytes with models) and runs in the API process, so only the server's operator can switch
-it on, for every tenant at once:
+answers `403 export.server_unsupported` for every tenant role. A build downloads Python and libraries and writes
+hundreds of megabytes (gigabytes with models), so only the server's operator can switch it on, for every tenant at
+once. Set the variables for the API processes and the workers alike:
 
 | Variable | Effect |
 |---|---|
-| `NODESTRO_SERVER_EXPORT_JOBS=1` | export jobs are allowed (any other value: refused) |
+| `NODESTRO_SERVER_EXPORT_JOBS=1` | export jobs are allowed (any other value: refused; a worker without it fails a queued job with `export.server_unsupported`) |
 | `NODESTRO_SERVER_EXPORT_MAX_BYTES` | size limit of one package in bytes (default 2 GiB): a larger estimate answers `403 export.server_too_large`, a finished ZIP above it is deleted and the job fails with that code |
 | `NODESTRO_SERVER_EXPORT_TENANT_QUOTA_BYTES` | bytes of stored exports one tenant may keep (default 8 GiB; the sum of its export records, packages and source projects): a build whose estimate would exceed it answers `403 export.server_quota` (the export check says so first), a finished ZIP that would exceed it is deleted and the job fails with that code. An invalid or non-positive value is the default, never unlimited |
 
-With the opt-in, one package is built at a time on the whole server, across all tenants (`400 export.busy`
-otherwise). Packages stay in the tenant's `exports` folder until a member deletes them (`DELETE /api/exports/{id}`,
-permission `edit`, which frees quota); there is no automatic retention yet (it waits for the retention policy,
-API-009). The standard export (`POST /publications/{id}/exports`) is not affected.
+With the opt-in, a build is a job of the server's job queue (API-048, `nodestro_api.export_jobs`):
+
+- The API process stores the export job (`queued: true`, `state: running`) and queues it; it never builds a package
+  itself. A tenant has one active export job at a time (`400 export.busy`); jobs of other tenants wait in the queue.
+- A worker (`nodestro-server worker`) builds one package at a time **on the whole server**: it claims an export job
+  only while it holds the server's export lock (a PostgreSQL advisory lock) and keeps the lock while it builds.
+  The job's progress is stored as it goes, so every API process shows the same job.
+- The worker renews the job's lease while it builds. A worker that dies loses the lease and the lock; the reaper of
+  another worker fails the job with `export.interrupted` and removes its work folder (`export-work/<job>`, where the
+  archive is written before it is moved into `exports`). The job never starts again by itself; a member starts a new
+  one. An API process that opens the tenant no longer fails a build that a worker is running.
+- Cancelling withdraws a queued job at once (`export.cancelled`); a running build stops at the worker's next
+  heartbeat. A worker that stops (SIGTERM) stops its build (`export.interrupted`), and a suspended tenant's build
+  does not start or stops (`identity.tenant_suspended`).
+- Builds write into the tenant's data folder, which the API processes and the workers share (nodestro-server
+  RUNBOOK); the API process serves the finished package from there.
+
+Without a job queue (tests that compose the server app without one), the build runs in a thread of the API process,
+one at a time per process, as before.
+
+Packages stay in the tenant's `exports` folder until a member deletes them (`DELETE /api/exports/{id}`, permission
+`edit`, which frees quota); there is no automatic retention yet (it waits for the retention policy, API-009). The
+standard export (`POST /publications/{id}/exports`) is not affected.
 
 ## Security model
 
@@ -79,6 +98,15 @@ API-009). The standard export (`POST /publications/{id}/exports`) is not affecte
 - **Tools.** Unchanged Docker-first rule: person-written tools run as subprocesses; AI-generated tools only in the
   Docker sandbox (`[tools] sandbox = "docker"`), never as a fallback without it. An offline package refuses
   AI-generated tools at export time.
+- **What offline mode restricts, and what not (API3-11).** An offline package is checked when it is exported: every
+  agent uses a bundled local model, the models are in the package, and the release has no AI-generated tool and
+  nothing else that needs a network (`export.offline_network`, `export.offline_models_excluded`,
+  `export.offline_untrusted_tools`). At run time the model server gets no proxy and downloads nothing. Offline mode
+  is not a firewall: tools that a person wrote run as processes of the user account, with that account's network
+  access, and nothing in the package blocks it. A package without offline mode uses the network its README lists
+  ("Network and offline operation"); the default export restricts the network of person-written tools no more than
+  the offline one. Where no traffic may leave the computer, run the package on a machine or in a container without
+  network (the Linux package runs unchanged in `docker run --network none`). Both READMEs say so.
 - **Local files.** On Linux and macOS the launcher keeps `data/` and `logs/` owner-only (`0700`, the log file
   `0600`): created that way, and narrowed on start when they are inside the package (older packages). A data or log
   folder configured outside the package keeps the modes its owner gave it once it exists. Key files and the
