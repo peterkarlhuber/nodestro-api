@@ -5,6 +5,7 @@ on:
     branches: [master]
   pull_request:
   workflow_dispatch:
+  workflow_call:
   # Daily: the tenant SQL check of runtime master against this API, also without a new API change (MUP-ONA A11).
   schedule:
     - cron: "17 4 * * *"
