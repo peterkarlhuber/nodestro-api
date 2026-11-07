@@ -120,6 +120,9 @@ Fehler haben die Form `{"error": {"status", "code", "message", "params"}}`. Die 
 - Tools, die ein Mensch geschrieben hat, laufen als eigene Prozesse. KI-generierte Tools laufen nur in einem
   isolierten Docker-Container (`[tools] sandbox = "docker"`, Docker nötig); ohne Docker werden Läufe, die sie
   brauchen, abgelehnt, und nichts läuft ungeschützt.
+- Der Offline-Modus ist keine Firewall: Tools, die ein Mensch geschrieben hat, laufen mit dem Netzwerkzugang deines
+  Benutzerkontos, und nichts in diesem Paket sperrt ihn. Wo kein Verkehr den Rechner verlassen darf, starte das Paket
+  ohne Netzwerk.
 - Der lokale Modellserver lauscht nur auf `127.0.0.1`, auf einem eigenen Port.
 
 ## Fehlerbehebung

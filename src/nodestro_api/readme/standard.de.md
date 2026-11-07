@@ -47,6 +47,7 @@ Alle Einstellungen kommen aus Umgebungsvariablen oder `.env` (siehe `app/config.
 | `API_DOCS` | `local` (Standard: `/docs` nur von diesem Rechner), `on` oder `off`. |
 | `RUN_RETENTION_DAYS` | Läufe, die älter sind, werden beim Start gelöscht (0 behält alles). |
 | `TOOL_SANDBOX` | `subprocess` (Standard) oder `docker`, siehe unten. |
+| `OUTPUT_DIR` | Ein Ordner, der zusätzlich eine Kopie jeder Ergebnisdatei erhält (leer: Ergebnisdateien bleiben in `DATA_DIR`). |
 
 `TOOL_SANDBOX=subprocess` führt nur Tools aus, die eine Person im Tool-Editor geschrieben hat, als Prozess
 dieses Servers. `TOOL_SANDBOX=docker` führt jedes eigene Tool in einem isolierten Container aus. Dafür braucht es
@@ -90,6 +91,18 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000
 Die API antwortet dann nur auf diesem Rechner. Für andere Rechner lauschst du auf `0.0.0.0` **hinter HTTPS**
 (z. B. ein Reverse Proxy oder `--ssl-certfile`/`--ssl-keyfile`): Schlüssel dürfen nicht unverschlüsselt
 übertragen werden. Interaktive Dokumentation: http://127.0.0.1:8000/docs
+
+Im Container: Das mitgelieferte `Dockerfile` baut ein Image (sein Python-Basis-Image ist per Digest festgelegt; der
+Bau braucht Netzwerkzugang für `requirements.lock`). Binde den Datenordner ein und, wenn du die Ergebnisdateien auf
+dem Host haben möchtest, einen Ergebnisordner. Setze dazu in `.env` `DATA_DIR=/data` und `OUTPUT_DIR=/results`.
+
+```bash
+docker build -t workflow-api .
+docker run --rm -p 127.0.0.1:8000:8000 --env-file .env \
+  -v "$PWD/data:/data" -v "$PWD/results:/results" workflow-api
+```
+
+Ohne die zweite Einbindung bleiben die nach `OUTPUT_DIR` kopierten Dateien im Container und gehen mit ihm verloren.
 
 ## Verwenden
 

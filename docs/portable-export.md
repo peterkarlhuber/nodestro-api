@@ -98,6 +98,15 @@ standard export (`POST /publications/{id}/exports`) is not affected.
 - **Tools.** Unchanged Docker-first rule: person-written tools run as subprocesses; AI-generated tools only in the
   Docker sandbox (`[tools] sandbox = "docker"`), never as a fallback without it. An offline package refuses
   AI-generated tools at export time.
+- **What offline mode restricts, and what not (API3-11).** An offline package is checked when it is exported: every
+  agent uses a bundled local model, the models are in the package, and the release has no AI-generated tool and
+  nothing else that needs a network (`export.offline_network`, `export.offline_models_excluded`,
+  `export.offline_untrusted_tools`). At run time the model server gets no proxy and downloads nothing. Offline mode
+  is not a firewall: tools that a person wrote run as processes of the user account, with that account's network
+  access, and nothing in the package blocks it. A package without offline mode uses the network its README lists
+  ("Network and offline operation"); the default export restricts the network of person-written tools no more than
+  the offline one. Where no traffic may leave the computer, run the package on a machine or in a container without
+  network (the Linux package runs unchanged in `docker run --network none`). Both READMEs say so.
 - **Local files.** On Linux and macOS the launcher keeps `data/` and `logs/` owner-only (`0700`, the log file
   `0600`): created that way, and narrowed on start when they are inside the package (older packages). A data or log
   folder configured outside the package keeps the modes its owner gave it once it exists. Key files and the

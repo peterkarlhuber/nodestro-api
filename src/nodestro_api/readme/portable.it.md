@@ -115,6 +115,9 @@ questo computer). `examples/client.py` mostra tutto in Python.
 - Gli strumenti scritti da una persona vengono eseguiti come processi separati. Gli strumenti generati dall'IA vengono eseguiti solo in un container
   Docker isolato (`[tools] sandbox = "docker"`, Docker necessario); senza Docker le esecuzioni che li richiedono vengono rifiutate e
   nulla viene eseguito senza protezione.
+- La modalità offline non è un firewall: gli strumenti scritti da una persona vengono eseguiti con l'accesso alla rete
+  del tuo account utente, e nulla in questo pacchetto lo blocca. Dove nessun traffico deve lasciare il computer, avvia
+  il pacchetto senza rete.
 - Il server dei modelli locale è in ascolto solo su `127.0.0.1`, su una porta dedicata.
 
 ## Risoluzione dei problemi
