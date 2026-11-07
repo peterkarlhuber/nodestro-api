@@ -242,7 +242,8 @@ unsafe value is listed at once (`profile.invalid`), and nothing has a default th
 
 Commands:
 
-- `nodestro-server check`: settings, database (reachable, schema current, runtime role), Docker and the identity
+- `nodestro-server check`: settings, database (reachable, schema current, the knowledge and memory tables as Orkexa's
+  PostgreSQL backend reads them, runtime role), Docker and the identity
   provider (its discovery document at `NODESTRO_OIDC_ISSUER` answers, names that issuer and https endpoints, else
   `identity.provider`); exit code 0 when ready. A superuser or `BYPASSRLS` runtime role is refused
   (`storage.role_unsafe`) with Axentra or a separate migration role and printed as `warning:` otherwise (row-level
@@ -251,6 +252,10 @@ Commands:
   When pgvector does not rank the knowledge vectors of the server's schema, `warning: knowledge.pgvector_<state>`
   names the state (`installable`, `other_schema`, `unavailable`) and the SQL a superuser runs to fix it; semantic
   search works either way (the runtime then ranks the vectors itself, slower for large knowledge bases).
+  The knowledge and memory tables are checked read-only with Orkexa's `verify_schema` (MUP-ONA B6) after the
+  migration checksums, at `check` and at every start of `api` and `worker`: a table changed by hand (an index dropped,
+  a column type changed) stops the start with `storage.schema_mismatch` and lists every difference; nothing is
+  changed (restore the tables of migrations 0001-0010).
 - `nodestro-server migrate`: applies the database migrations under an advisory lock. A database that already has
   tables needs a backup first: `--backup-dir DIR` runs `pg_dump` (custom format; the password is passed in the
   environment, never on the command line), `--backup-taken` states that the operator made one.
