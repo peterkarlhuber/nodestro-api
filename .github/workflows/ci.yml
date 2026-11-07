@@ -141,9 +141,11 @@ jobs:
           repository=https://github.com/peterkarlhuber/nodestro-runtime.git
           python -m venv "$RUNNER_TEMP/runtime-master"
           # The checker needs only the standard library and pglast (the range of the dev extra).
-          "$RUNNER_TEMP/runtime-master/bin/pip" install --no-deps "nodestro-runtime @ git+$repository@master"
+          "$RUNNER_TEMP/runtime-master/bin/pip" install --no-deps "nodestro-runtime @ git+$repository@da9e9092d903ea880310960d146966fbaae0b141"
           "$RUNNER_TEMP/runtime-master/bin/pip" install "pglast>=7,<9"
-          master="$(git ls-remote "$repository" refs/heads/master | cut -f1)"
+          # PROBE: the B6 checker uses orkexa.testing.sqlcheck (orkexa #66).
+          "$RUNNER_TEMP/runtime-master/bin/pip" install --no-deps "orkexa @ git+https://github.com/peterkarlhuber/orkexa.git@792a041883c74d613c3af491db51210881d2a453"
+          master=da9e9092d903ea880310960d146966fbaae0b141  # PROBE: MUP-ONA B6 runtime branch (runtime #140); never merge
           test -n "$master" || { echo "::error::runtime master not found with git ls-remote"; exit 1; }
           echo "runtime master: $master"
           # Prints the installed runtime's commit and fails unless it is master (T-CHK-6).
