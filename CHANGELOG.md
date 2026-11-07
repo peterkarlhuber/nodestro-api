@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- MUP-ONA A8 (shared security test vectors, VB-7):
+  - Security: the OIDC client checks ID tokens as Axentra does. A token issued more than
+    `OidcSettings.id_token_max_age` (default 600 s, plus 120 s clock skew) ago is refused (`iat`), as is a token
+    whose `azp` names another client (also with a single audience) and one whose `sub` is empty, not a string or
+    longer than 255 characters (OpenID Connect Core 1.0, section 2). A `kid` whose key does not fit the header's
+    algorithm ends the login with `identity.login_failed` instead of an unhandled error.
 - TODO abatement round 4 (2026-11-06):
   - Server exports: a portable export job is queued (`export` job of the job queue, `ExportJob.queued`) and a worker
     builds it with a lease, one package at a time on the whole server (session advisory lock); a workspace has one
