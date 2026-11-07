@@ -66,7 +66,7 @@ def api_codes() -> dict[str, set[str]]:
 
     found = runtime_codes.scan(_PACKAGE, exclude=NOT_CODES, builders=_BUILDERS, pattern=_CODE)
     for name in runtime_codes.orkexa_errors():
-        found.setdefault(f"agent.{name}", set()).add("type")
+        found.setdefault(f"agent.{name}", set()).update({"type", "request_id"})  # request_id: MUP-ONA A2
     for kind in _NOT_FOUND_KINDS.values():  # the not-found answer of a route's own record (api.install_error_handlers)
         found.setdefault(f"{kind}.not_found", set()).update({"name", "id", "kind"})
     for kind in REFERENCE_KINDS:  # a referenced record that is gone, with the name the reference knew (API-053)

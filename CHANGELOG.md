@@ -20,6 +20,22 @@
     `DELETE /api/exports/{export_id}` (edit) removes an export and its package (API-048).
   - Pins nodestro-runtime b29b738 (runtime #121: `jobs.ReindexWorker`, `Workspace.background_work`) and
     nodestro-examples 4b947c4 (examples #79: the same runtime pin).
+- MUP-ONA security hardening (A2, A3, A5):
+  - Security (A2, PS-2): error answers name no file system path, input value, credential or library text. An
+    exception without an error code of its own (`bad_request`, a `not_found` for a key the request did not name,
+    `provider_api`, `agent.<error>` except `agent.RetrievalError`) answers with a fixed `detail` and
+    `params.request_id`; its original text is logged with the same id (logger `nodestro_api.errors`, credentials
+    redacted). Coded texts keep their wording with `[path]` for absolute paths; validation messages show `[input]`
+    instead of the input. Statuses and codes are unchanged; clients that read `detail` of these answers get the
+    fixed text.
+  - Security (A3, PS-3): `nodestro-server check` warns and `api` logs `proxy.client_address_unknown` when
+    `NODESTRO_BEHIND_PROXY=1` is set without `FORWARDED_ALLOW_IPS`; `NODESTRO_REQUIRE_CLIENT_ADDRESS=1` makes both
+    refuse. Failed published API keys are counted per key id prefix (8 characters, never the secret), with a ten
+    times higher limit per address, so one client's wrong key does not throttle other keys behind the same proxy.
+  - Security (A5, PS-5): the network listener and exported projects check every route's protection when they are
+    built, like the studio and the server (`check_routes`; deny by default): `/health` and an export's API reference
+    are declared `PUBLIC`, the export's web interface routes are listed in `WEB_UI_ROUTES`. Exports now contain
+    `nodestro_api.permissions`.
 - MUP-ONA A11: CI job `tenant-sql` checks every PostgreSQL statement of the API with the runtime's tenant SQL check
   twice, with the pinned runtime and with the current runtime `master` (installed over the same public `git+https`
   route as the pin, no secret), on every change and daily. `NODESTRO_REQUIRE_TENANT_SCAN=1`: a checker that cannot
