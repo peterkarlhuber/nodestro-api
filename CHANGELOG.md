@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- MUP-ONA A8 (shared security test vectors, VB-7):
+  - Security: the OIDC client checks ID tokens as Axentra does. A token issued more than
+    `OidcSettings.id_token_max_age` (default 600 s, plus 120 s clock skew) ago is refused (`iat`), as is a token
+    whose `azp` names another client (also with a single audience) and one whose `sub` is empty, not a string or
+    longer than 255 characters (OpenID Connect Core 1.0, section 2). A `kid` whose key does not fit the header's
+    algorithm ends the login with `identity.login_failed` instead of an unhandled error.
+  - Tests: `tests/test_security_vectors_jwt.py` runs the ID token vectors of the shared security test vectors
+    against the OIDC client, with keys generated in the test (T-VEC-3). It reads a pinned copy of nodestro-runtime's
+    canonical corpus (`tests/vectors/security-vectors.json`, version 1; origin and SHA-256 in
+    `tests/vectors/SOURCE.md`, checked by the test).
 - TODO abatement round 4 (2026-11-06):
   - Pins nodestro-runtime f26dac4 (runtime #126: a busy sandbox image build stays `checking` (LD-020), Bedrock
     region in usage, registry facts before a download, `pgvector_status()`; includes the price-table date fix of

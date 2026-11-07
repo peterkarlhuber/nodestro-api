@@ -301,6 +301,71 @@ def test_forged_and_unsigned_tokens_are_refused(server: Server) -> None:
         client.verify(unsigned, nonce="x")
 
 
+def _vector_client(provider: stub_oidc.StubProvider) -> OidcClient:
+    return OidcClient(
+        OidcSettings(stub_oidc.ISSUER, stub_oidc.CLIENT_ID, stub_oidc.CLIENT_SECRET, stub_oidc.REDIRECT_URI),
+        http=httpx.Client(transport=provider.transport()),
+    )
+
+
+# MUP-ONA T-VEC-3: the deviations from Axentra's OIDC client that the shared JWT vectors found (fixed in MUP-ONA A8).
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        {"iat": -86400},
+        {"iat": -(600 + 120 + 30)},
+        {"azp": "another-client"},
+        {"sub": ""},
+        {"sub": "s" * 256},
+    ],
+    ids=["a-day-old", "just-too-old", "azp", "empty-subject", "long-subject"],
+)
+def test_id_tokens_checked_like_axentra_are_refused(tamper: dict[str, Any]) -> None:
+    import jwt
+
+    from nodestro_api.identity import LoginError
+
+    provider = stub_oidc.StubProvider()
+    now = int(time.time())
+    claims: dict[str, Any] = {
+        "iss": stub_oidc.ISSUER,
+        "aud": stub_oidc.CLIENT_ID,
+        "sub": "alice",
+        "nonce": "n",
+        "iat": now,
+        "exp": now + 300,
+    }
+    claims.update({**tamper, "iat": now + tamper["iat"]} if "iat" in tamper else tamper)
+    token = jwt.encode(claims, provider.key, "RS256", {"kid": provider.kid})
+    with pytest.raises(LoginError) as caught:
+        _vector_client(provider).verify(token, nonce="n")
+    assert caught.value.code == "identity.login_failed"
+    # The same token without the change passes, so the check above refused it for that change.
+    claims.update({"iat": now, "sub": "alice"})
+    claims.pop("azp", None)
+    good = jwt.encode(claims, provider.key, "RS256", {"kid": provider.kid})
+    assert _vector_client(provider).verify(good, nonce="n")["sub"] == "alice"
+
+
+# MUP-ONA T-VEC-3
+def test_a_key_that_does_not_fit_the_algorithm_is_a_failed_login() -> None:
+    """The header names ES256 and the kid of the provider's RSA key: a refused login, not an unhandled TypeError."""
+    from cryptography.hazmat.primitives.asymmetric import ec
+    import jwt
+
+    from nodestro_api.identity import LoginError
+
+    provider = stub_oidc.StubProvider()
+    now = int(time.time())
+    claims = {"iss": stub_oidc.ISSUER, "aud": stub_oidc.CLIENT_ID, "sub": "alice", "nonce": "n", "iat": now}
+    token = jwt.encode(
+        {**claims, "exp": now + 300}, ec.generate_private_key(ec.SECP256R1()), "ES256", {"kid": provider.kid}
+    )
+    with pytest.raises(LoginError) as caught:
+        _vector_client(provider).verify(token, nonce="n")
+    assert caught.value.code == "identity.login_failed"
+
+
 def test_a_wrong_pkce_verifier_is_refused_by_the_provider(server: Server) -> None:
     server.member("acme", "alice", "owner")
     browser = server.browser()
