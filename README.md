@@ -248,6 +248,9 @@ Commands:
   (`storage.role_unsafe`) with Axentra or a separate migration role and printed as `warning:` otherwise (row-level
   security does not protect the tenants then). Entries of `NODESTRO_BEDROCK_TENANT_ROLES` for tenants that do not
   exist are printed as `warning: bedrock.tenant_unknown` with their tenant ids (a typo leaves a tenant without Bedrock).
+  When pgvector does not rank the knowledge vectors of the server's schema, `warning: knowledge.pgvector_<state>`
+  names the state (`installable`, `other_schema`, `unavailable`) and the SQL a superuser runs to fix it; semantic
+  search works either way (the runtime then ranks the vectors itself, slower for large knowledge bases).
 - `nodestro-server migrate`: applies the database migrations under an advisory lock. A database that already has
   tables needs a backup first: `--backup-dir DIR` runs `pg_dump` (custom format; the password is passed in the
   environment, never on the command line), `--backup-taken` states that the operator made one.
@@ -320,7 +323,9 @@ review decisions answer 403 for them. Offline the last valid prices stay; prices
 `stale`, after seven days critical. The desktop never stores billing admin keys (it has no encrypted store): set
 `NODESTRO_OPENAI_ADMIN_KEY` / `NODESTRO_ANTHROPIC_ADMIN_KEY` or send the key with one `POST /reconciliation`.
 `GET /api/usage` separates known, partial and unknown costs (`cost_state`) and names the price versions, sources
-and the lowest quality used.
+and the lowest quality used. `by_region` splits the usage by provider region (Amazon Bedrock: each run step and
+operation goes to the region it was sent to; usage without a known region, such as other providers or usage recorded
+before regions were recorded, is in no region bucket), and every bucket lists its `regions`.
 
 ## Connected MCP services
 

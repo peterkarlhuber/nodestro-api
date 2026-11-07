@@ -730,6 +730,26 @@ def _superuser_role(server: ServerEnvironment, database: Any) -> str | None:
     )
 
 
+def _pgvector_warning(database: Any) -> str | None:
+    """A warning when pgvector does not rank the knowledge vectors of the server's schema (RT-048), ``None`` when it
+    does. Not a problem: semantic search works without pgvector (the runtime ranks the vectors, slower for large
+    knowledge bases). The runtime's message names the state and the SQL that fixes it, never a tenant's data or the
+    database host."""
+    from nodestro_runtime.storage_postgres import pgvector_status
+
+    try:
+        status = pgvector_status(database)
+    except Exception as exc:  # never fail the check over it; the error text could name the host
+        logger.debug("pgvector state not readable: %s", type(exc).__name__)
+        return (
+            "knowledge.pgvector_unknown: The pgvector state could not be read; semantic search works either way "
+            "(without pgvector the runtime ranks the knowledge vectors itself)"
+        )
+    if status.get("state") == "active":
+        return None
+    return f"knowledge.pgvector_{status.get('state')}: {status.get('message')}"
+
+
 def _unknown_bedrock_tenants(server: ServerEnvironment) -> list[str]:
     """Tenant ids of ``NODESTRO_BEDROCK_TENANT_ROLES`` without a tenant (a typo leaves the meant tenant without
     Bedrock); only ids, never a role ARN or external id."""
@@ -752,8 +772,9 @@ def check(
     identity_provider: bool = True,
 ) -> list[str]:
     """What keeps this server from starting (empty: ready). ``warnings`` receives what does not keep it from starting
-    but is unsafe (a superuser or ``BYPASSRLS`` runtime role in Nodestro's own mode) or likely a mistake (Bedrock
-    roles for tenants that do not exist). ``http``: the client for the
+    but is unsafe (a superuser or ``BYPASSRLS`` runtime role in Nodestro's own mode), likely a mistake (Bedrock
+    roles for tenants that do not exist) or slower than it could be (pgvector does not rank the knowledge vectors,
+    RT-048). ``http``: the client for the
     identity provider's discovery document. ``identity_provider=False`` skips that request: a worker's periodic health
     check must not depend on (or poll) the identity provider, which only the API process uses."""
     problems: list[str] = []
@@ -784,6 +805,10 @@ def check(
                 _require_readable_secrets(server, database)
             except NodestroError as error:
                 problems.append(f"{error.code}: {error}")
+        if not problems and warnings is not None:
+            vectors = _pgvector_warning(database)
+            if vectors is not None:
+                warnings.append(vectors)
     finally:
         database.close()
     if not problems and server.settings.axentra.identity_backend != "nodestro":

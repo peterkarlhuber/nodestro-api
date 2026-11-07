@@ -415,6 +415,7 @@ def test_check_warns_about_a_superuser_runtime_role(
     """DX-31: in Nodestro's own mode (one role) a superuser or BYPASSRLS runtime role is reported as a warning (api and
     worker accept it); with Axentra or a separate migration role it is refused (tests/test_server_roles.py)."""
     monkeypatch.setattr(command, "_require_containers", lambda _server: None)
+    monkeypatch.setattr(command, "_pgvector_warning", lambda _database: None)  # its own tests below
     loaded = command.load(_environment(tmp_path))
     command.migrate(loaded, backup_dir=None, backup_taken=False)
     warnings: list[str] = []
@@ -430,6 +431,7 @@ def test_check_warns_about_bedrock_roles_for_unknown_tenants(
 
     monkeypatch.setattr(command, "_require_containers", lambda _server: None)
     monkeypatch.setattr(command, "_superuser_role", lambda _server, _database: None)
+    monkeypatch.setattr(command, "_pgvector_warning", lambda _database: None)  # its own tests below
     role = {"role_arn": "arn:aws:iam::123456789012:role/nodestro-alpha", "external_id": "external-alpha-0001"}
     roles = json.dumps({"alpha": role, "aplha": role})
     loaded = command.load(_environment(tmp_path, NODESTRO_BEDROCK_TENANT_ROLES=roles))
@@ -443,6 +445,82 @@ def test_check_warns_about_bedrock_roles_for_unknown_tenants(
     command.create_tenant(loaded, "aplha", "Typo")
     warnings.clear()
     assert command.check(loaded, warnings=warnings) == [] and warnings == []
+
+
+def test_check_warns_when_pgvector_does_not_rank_the_knowledge_vectors(
+    schema: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """RT-048: the real state of the test server's database: a warning naming the state, never a problem; nothing
+    when pgvector is active. The test server of this suite usually has no pgvector (``unavailable``)."""
+    from nodestro_runtime.storage_postgres import pgvector_status
+
+    monkeypatch.setattr(command, "_require_containers", lambda _server: None)
+    monkeypatch.setattr(command, "_superuser_role", lambda _server, _database: None)
+    loaded = command.load(_environment(tmp_path))
+    command.migrate(loaded, backup_dir=None, backup_taken=False)
+    database = PostgresDatabase(DSN, schema=schema)
+    try:
+        status = pgvector_status(database)
+    finally:
+        database.close()
+    warnings: list[str] = []
+    assert command.check(loaded, warnings=warnings, identity_provider=False) == []
+    found = [item for item in warnings if item.startswith("knowledge.pgvector_")]
+    if status["state"] == "active":
+        assert found == []
+    else:
+        assert found == [f"knowledge.pgvector_{status['state']}: {status['message']}"]
+        assert "the runtime ranks the vectors itself" in found[0]
+    if status["available_version"] is None:  # no pgvector on this server: the path is tested for real
+        assert found and found[0].startswith("knowledge.pgvector_unavailable: The PostgreSQL server has no pgvector")
+        assert "Install the pgvector package" in found[0]
+    host = DSN.split("@")[-1].split("/")[0] if "@" in DSN else ""
+    assert all(host not in item for item in found if host)
+    # The command prints it as a warning and the server is still ready.
+    for key, value in _environment(tmp_path).items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setattr(command, "check_identity_provider", lambda _server, _http=None: None)
+    command.main(["check"])
+    printed = capsys.readouterr()
+    assert printed.out.strip() == "ready"
+    assert ("warning: knowledge.pgvector_" in printed.err) is (status["state"] != "active")
+
+
+@pytest.mark.parametrize(
+    ("state", "command_sql"),
+    [
+        ("installable", 'CREATE EXTENSION vector SCHEMA "tenant_x";'),
+        ("other_schema", 'ALTER EXTENSION vector SET SCHEMA "tenant_x";'),
+        ("unavailable", None),
+    ],
+)
+def test_the_pgvector_warning_names_the_state_and_the_fix(
+    state: str, command_sql: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RT-048 with a stand-in for the runtime's ``pgvector_status`` (the states a server without pgvector cannot
+    show): the runtime's message as it is, under ``knowledge.pgvector_<state>``."""
+    message = f"pgvector state {state}" + (f": run {command_sql}" if command_sql else "")
+    monkeypatch.setattr(
+        "nodestro_runtime.storage_postgres.pgvector_status",
+        lambda _database: {"state": state, "command": command_sql, "message": message},
+    )
+    assert command._pgvector_warning(object()) == f"knowledge.pgvector_{state}: {message}"
+
+
+def test_no_pgvector_warning_when_it_is_active_or_unreadable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "nodestro_runtime.storage_postgres.pgvector_status",
+        lambda _database: {"state": "active", "message": "pgvector 0.8.0 ranks the knowledge vectors"},
+    )
+    assert command._pgvector_warning(object()) is None
+
+    def broken(_database: object) -> dict[str, str]:
+        raise RuntimeError("connection to server at db.internal.example (10.1.2.3) failed")
+
+    monkeypatch.setattr("nodestro_runtime.storage_postgres.pgvector_status", broken)
+    found = command._pgvector_warning(object())
+    assert found is not None and found.startswith("knowledge.pgvector_unknown: ")
+    assert "db.internal" not in found and "10.1.2.3" not in found
 
 
 @pytest.mark.real_identity_check
