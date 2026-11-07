@@ -11,6 +11,8 @@
   nodestro-runtime `mup/b6-orkexa-postgres`; orkexa 792a041 (orkexa #66 merged). New tests: T-UPG-7 in
   `tests/test_server_command.py`, T-NOD-HTTP in `tests/test_identity.py` (the same document id, source, memory space
   and path, and search term in two tenants).
+- Pins nodestro-runtime df4aeb3 (runtime #139: the B4 SQL rendering tests skip without psycopg) and
+  nodestro-examples c9ef422. No API change.
 - MUP-ONA B4 cascade (2026-11-07): pins nodestro-runtime 76f9cb2 (runtime #137 the tenant SQL rule engine as
   `sqlcheck_rules`, #138 the generic PostgreSQL part with a statement catalog and a partition guard) and
   nodestro-examples 647f501. New catalog code `partition.missing` (runtime): a knowledge or memory statement not bound
