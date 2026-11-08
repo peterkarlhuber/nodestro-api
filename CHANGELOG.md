@@ -5,13 +5,14 @@
 - TABRION JQ-4 (runtime JQ-3, RT2-03): an export whose enqueue reply is lost after the queue row was committed is no
   longer refused with `export.busy`, and its export document is no longer deleted (`JobRunner._enqueue`) while the
   queue row stays. The fix is in nodestro-runtime (#143: writes are never repeated after a lost connection; `enqueue`
-  then returns the job it queued, found by a client token in the payload once the lost statement's server process has
-  ended); `portable_build.py` is unchanged. Reproduced under fault injection, not observed in operation. New test
+  then returns the job it queued, found by a client token in the payload once the lost statement's server process
+  has ended); `portable_build.py` is unchanged. Reproduced under fault injection, not observed in operation. New test
   `test_an_export_whose_enqueue_reply_is_lost_keeps_its_document_and_is_built` (`tests/test_export_jobs.py`) with the
-  fault proxy `tests/fault_proxy.py` (the same fault model as the runtime's `fault_proxy`). **Temporary pin:**
-  nodestro-runtime 61eb9fc (the head of runtime #143 with its review fixes), for the tenant SQL check that runtime's
-  CONTRIBUTING asks for, and nodestro-examples a393065 (examples #91, the same runtime pin, also temporary); both move
-  to merge commits in the pin wave.
+  fault proxy `tests/fault_proxy.py` (the same fault model as the runtime's `fault_proxy`). Pins nodestro-runtime
+  f5da80d (the merge of runtime #143, which also brings Axentra 9c4666f with the B-06-1 log redaction, axentra #61)
+  and nodestro-examples 4d46e22 (examples #91, the same runtime); pin wave W7. The JQ-4 TODO entry
+  is done and removed (during this PR it was listed as API-065 by mistake; that ID belongs to the assistant chat item
+  below).
 
 - MUP-ONA B6: the server checks the knowledge and memory tables at start. `nodestro-server check`, `api` and `worker`
   call `nodestro_runtime.postgres_tables.require_knowledge_schema` (Orkexa's read-only `verify_schema` with
