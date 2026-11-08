@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Tests (TABRION QA-18): blocked-module tests per optional edge (AC-3). `tests/test_optional_edges.py` starts the
+  desktop path (`nodestro_api.cli`, `nodestro_api.local_container`, the app of `create_app`, `GET /api/health`) in a
+  fresh `python -I` once with `axentra` blocked and once with psycopg blocked (`sys.modules[name] = None`); a meta test
+  keeps the edges equal to AC-3 and to the `server` extra, and a mutation probe per edge adds a top-level import to a
+  copy of the package and expects red. Tests only; no new skip.
+
 - TABRION JQ-4 (runtime JQ-3, RT2-03): an export whose enqueue reply is lost after the queue row was committed is no
   longer refused with `export.busy`, and its export document is no longer deleted (`JobRunner._enqueue`) while the
   queue row stays. The fix is in nodestro-runtime (#143: writes are never repeated after a lost connection; `enqueue`
