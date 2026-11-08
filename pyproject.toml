@@ -12,11 +12,11 @@ license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [{ name = "Peter Karlhuber" }]
 dependencies = [
-    "nodestro-runtime @ git+https://github.com/peterkarlhuber/nodestro-runtime.git@166d9fe7e64ad2896da04d3ec02e99c3ff9e797f",
+    "nodestro-runtime @ git+https://github.com/peterkarlhuber/nodestro-runtime.git@61eb9fc68fcbeaa795921a8ab20eb45cc6197b62",
     # The API imports orkexa itself (providers, pricing, usage, errors), so it declares it: always the commit the
     # runtime pin above pins, never another one (MUP-ONA B0).
     "orkexa @ git+https://github.com/peterkarlhuber/orkexa.git@792a041883c74d613c3af491db51210881d2a453",
-    "nodestro-examples @ git+https://github.com/peterkarlhuber/nodestro-examples.git@ee0dd127e3ada81f562ee3ef31a5288770743502",
+    "nodestro-examples @ git+https://github.com/peterkarlhuber/nodestro-examples.git@a393065412d7395a971f88d02c03ad8a666d5e1c",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "python-multipart>=0.0.9",
@@ -27,13 +27,13 @@ dependencies = [
 # The multi-tenant studio API with logins (nodestro_api.server_app): PostgreSQL and OpenID Connect.
 server = [
     # The runtime's PostgreSQL store and Axentra (off unless NODESTRO_AXENTRA=on).
-    "nodestro-runtime[postgres] @ git+https://github.com/peterkarlhuber/nodestro-runtime.git@166d9fe7e64ad2896da04d3ec02e99c3ff9e797f",
+    "nodestro-runtime[postgres] @ git+https://github.com/peterkarlhuber/nodestro-runtime.git@61eb9fc68fcbeaa795921a8ab20eb45cc6197b62",
     "psycopg[binary,pool]>=3.2",
     "PyJWT[crypto]>=2.9",
     "httpx>=0.27",
 ]
 dev = [
-    "nodestro-runtime[postgres] @ git+https://github.com/peterkarlhuber/nodestro-runtime.git@166d9fe7e64ad2896da04d3ec02e99c3ff9e797f",
+    "nodestro-runtime[postgres] @ git+https://github.com/peterkarlhuber/nodestro-runtime.git@61eb9fc68fcbeaa795921a8ab20eb45cc6197b62",
     "httpx>=0.27",
     "psycopg[binary,pool]>=3.2",
     "PyJWT[crypto]>=2.9",

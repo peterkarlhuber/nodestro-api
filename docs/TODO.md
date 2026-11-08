@@ -73,10 +73,10 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
   after the commit, got "already queued" back, so `QueuedExports.enqueue` raised `export.busy` and
   `JobRunner._enqueue` deleted the export document while its queue row stayed; the worker ended that row with
   `export.failed: the export job is gone`. Fixed in the runtime (#143); `portable_build.py` needs no change.
-- **TABRION JQ-4 here:** regression test
-  `test_an_export_whose_enqueue_reply_is_lost_keeps_its_document_and_is_built` (`tests/test_export_jobs.py`, fault
-  proxy `tests/fault_proxy.py`): done in PR #113 (fails with `export.busy` on runtime 81b0f55, passes on 166d9fe).
-  The pins are temporary: runtime #143's head 166d9fe and nodestro-examples ee0dd12 (examples #91, same runtime).
+- **TABRION JQ-4 here:** regression test `test_an_export_whose_enqueue_reply_is_lost_keeps_its_document_and_is_built`
+  (`tests/test_export_jobs.py`, fault proxy `tests/fault_proxy.py`): done in PR #113 (fails with `export.busy` on
+  runtime 81b0f55, passes on 166d9fe and 61eb9fc). The pins are temporary: runtime #143's head 61eb9fc and
+  nodestro-examples a393065 (examples #91, same runtime).
 - **Next step:** after runtime #143 merges, pin its merge commit (pin wave W7: runtime → api → sdk → studio, the
   same SHA everywhere, with nodestro-examples on that runtime too), then delete this entry.
 
