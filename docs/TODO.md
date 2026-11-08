@@ -67,7 +67,7 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
 
 ### API-065 · Export document deleted after a lost enqueue reply (TABRION JQ-4)
 
-- **Priority:** P2 Medium · **Status:** In progress (PR __PR__, runtime #143) · **Refs:** TABRION JQ-4 (JQ-1..JQ-3
+- **Priority:** P2 Medium · **Status:** In progress (PR #113, runtime #143) · **Refs:** TABRION JQ-4 (JQ-1..JQ-3
   in nodestro-runtime RT-070), runtime `docs/reports/jq-write-retry.md`, `portable_build.py` `JobRunner._enqueue`
 - **What:** Under fault injection (not observed in operation), the runtime repeated an enqueue whose reply was lost
   after the commit, got "already queued" back, so `QueuedExports.enqueue` raised `export.busy` and
@@ -75,7 +75,7 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
   `export.failed: the export job is gone`. Fixed in the runtime (#143); `portable_build.py` needs no change.
 - **TABRION JQ-4 here:** regression test
   `test_an_export_whose_enqueue_reply_is_lost_keeps_its_document_and_is_built` (`tests/test_export_jobs.py`, fault
-  proxy `tests/fault_proxy.py`): done in PR __PR__ (fails with `export.busy` on runtime 81b0f55, passes on 166d9fe).
+  proxy `tests/fault_proxy.py`): done in PR #113 (fails with `export.busy` on runtime 81b0f55, passes on 166d9fe).
   The runtime pin is temporary (runtime #143's head 166d9fe).
 - **Next step:** after runtime #143 merges, pin its merge commit (pin wave W7: runtime → api → sdk → studio, the
   same SHA everywhere, with nodestro-examples on that runtime too), then delete this entry.
