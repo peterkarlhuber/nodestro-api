@@ -21,9 +21,10 @@ import pytest
 pytest.importorskip("psycopg")
 pytest.importorskip("jwt")
 
+from fault_proxy import FaultProxy, fault_proxy  # noqa: F401  (fixture)
 from nodestro_runtime.jobs import JobQueue
 from nodestro_runtime.storage_postgres import PostgresDatabase
-from test_identity import Server
+from test_identity import DSN, Server
 from test_server_exports import OPTIONS, _published
 from test_worker import Background, connect, make_worker, schema, server  # noqa: F401  (fixtures)
 
@@ -429,3 +430,49 @@ def test_reaping_skips_a_tenant_it_cannot_open(tmp_path: Path) -> None:
     job = Job(id=1, tenant_id="acme", kind=EXPORT_JOB, ref="xjob_1", status="interrupted", created_at=now())
     run = Job(id=2, tenant_id="acme", kind="run", ref="run_1", status="interrupted", created_at=now())
     assert interrupt_reaped(broken, [job, run]) == []
+
+
+def test_an_export_whose_enqueue_reply_is_lost_keeps_its_document_and_is_built(
+    server: Server,  # noqa: F811
+    make_worker: Callable[..., Background],  # noqa: F811
+    builds: Builds,
+    connect: Callable[[], PostgresDatabase],  # noqa: F811
+    schema: str,  # noqa: F811
+    fault_proxy: FaultProxy,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    """JQ-4 (runtime JQ-3, RT2-03): the queue row of an export is committed but the reply to the enqueue is lost.
+
+    Before the runtime fix the runtime repeated the INSERT, got "already queued" back, the API answered
+    ``export.busy`` and ``JobRunner._enqueue`` (``portable_build.py``) deleted the export document while its queue row
+    stayed; the worker then ended that row with ``export.failed: the export job is gone``. Now the enqueue returns the
+    queued job: the request succeeds, the document stays, and a worker finds and builds it."""
+    from fastapi.testclient import TestClient
+    import stub_oidc
+
+    alice = server.member("acme", "alice", "owner")
+    publication = _published(alice)
+    # Another API process of the server whose database connection goes through the fault proxy, with alice's session.
+    proxied = PostgresDatabase(fault_proxy.dsn(DSN), schema=schema, pool_size=2)
+    try:
+        with TestClient(_api_process(proxied, tmp_path), base_url=stub_oidc.ORIGIN, follow_redirects=False) as other:
+            other.headers["Origin"] = stub_oidc.ORIGIN
+            other.cookies = alice.cookies
+            fault_proxy.arm(b"INSERT INTO nodestro_jobs")
+            answer = other.post(f"/api/publications/{publication}/export-jobs", json={"options": OPTIONS})
+            assert (fault_proxy.fired, fault_proxy.replies_lost) == (1, 1)  # committed, then the reply was lost
+            assert answer.status_code == 202, answer.text
+            job = answer.json()
+    finally:
+        proxied.close()
+    stored = _job(alice, job["id"])
+    assert stored["state"] == "running" and stored["queued"] is True, stored
+    assert _queue_row(connect(), job["id"])[0] == "queued"
+
+    worker = make_worker()
+    claimed = worker.call(worker.worker.exporter.run_once())
+    assert claimed is not None and claimed.ref == job["id"]
+    assert builds.calls == [job["id"]]
+    done = _job(alice, job["id"])
+    assert done["state"] == "done", done
+    assert _queue_row(connect(), job["id"])[:2] == ("done", None)
