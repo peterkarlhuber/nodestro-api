@@ -11,7 +11,7 @@
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 0 |
-| P2 Medium | 5 |
+| P2 Medium | 6 |
 | P3 Low | 9 |
 | P4 Optional | 5 |
 
@@ -64,6 +64,21 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
 - **Depends on:** nodestro-runtime RT-010 (`SecretBox` support for an old key)
 
 ## Bugs and reliability
+
+### API-065 · Export document deleted after a lost enqueue reply (TABRION JQ-4)
+
+- **Priority:** P2 Medium · **Status:** In progress (PR __PR__, runtime #143) · **Refs:** TABRION JQ-4 (JQ-1..JQ-3
+  in nodestro-runtime RT-070), runtime `docs/reports/jq-write-retry.md`, `portable_build.py` `JobRunner._enqueue`
+- **What:** Under fault injection (not observed in operation), the runtime repeated an enqueue whose reply was lost
+  after the commit, got "already queued" back, so `QueuedExports.enqueue` raised `export.busy` and
+  `JobRunner._enqueue` deleted the export document while its queue row stayed; the worker ended that row with
+  `export.failed: the export job is gone`. Fixed in the runtime (#143); `portable_build.py` needs no change.
+- **TABRION JQ-4 here:** regression test
+  `test_an_export_whose_enqueue_reply_is_lost_keeps_its_document_and_is_built` (`tests/test_export_jobs.py`, fault
+  proxy `tests/fault_proxy.py`): done in PR __PR__ (fails with `export.busy` on runtime 81b0f55, passes on 166d9fe).
+  The runtime pin is temporary (runtime #143's head 166d9fe).
+- **Next step:** after runtime #143 merges, pin its merge commit (pin wave W7: runtime → api → sdk → studio, the
+  same SHA everywhere, with nodestro-examples on that runtime too), then delete this entry.
 
 ### API-009 · Retention for runs, usage log, versions and safety backups
 
@@ -316,6 +331,7 @@ removed by the change that completes its package here.
 | (pointer) | nodestro-runtime | RT-001 (independent S-2 review, covers the approval routes here) | full entry in runtime |
 | API-005 | nodestro-runtime | RT-010 | runtime adds old-key decryption; the operator command lives here |
 | API-009 | nodestro-runtime | RT-014 | runtime provides deletes |
+| API-065 | nodestro-runtime | RT-070 (TABRION JQ-1..JQ-4, runtime #143) | runtime fixes the repeated write; the export test and the pin live here |
 | API-011 | nodestro-server | SRV-007 (RUNBOOK monitoring section) | server documents the heartbeat file and `worker-health` |
 | (pointer) | nodestro-sdk | SDK-005 | the server contract `openapi/nodestro-api-server.json` exists now (API-012 done); the SDK contract tests can use it |
 | API-054 | nodestro-studio | portable export dialog (studio #121, ST-047) | one independent review covers both; full entry here |
