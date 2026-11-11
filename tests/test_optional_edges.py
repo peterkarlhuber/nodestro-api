@@ -1,6 +1,6 @@
 """AC-3 (TABRION QA-18): one blocked-module test per optional edge of nodestro-api's desktop path (K-33, document 13).
 
-Document 07 (AC-3): "nodestro-api Desktop-Pfad ohne axentra/psycopg". The ``server`` extra brings
+Document 07 (AC-3): "the nodestro-api desktop path without axentra/psycopg". The ``server`` extra brings
 ``nodestro-runtime[postgres]`` (with Axentra) and psycopg for ``nodestro-server``; the desktop and Nodestro Local
 Docker never install it. So the desktop path (``nodestro_api.cli``, ``nodestro_api.local_container`` and the app of
 ``nodestro_api.app.create_app``, started and asked for ``/api/health``) must work with either module blocked:
@@ -104,5 +104,5 @@ def test_a_top_level_import_turns_the_edge_red(tmp_path: Path, edge: str) -> Non
     path.write_text(text.replace(anchor, anchor + "\n" + line + "\n", 1), encoding="utf-8")
     result = run_python(check_source(EDGES[edge]), target)
     assert result.returncode != 0, f"the probe {line!r} went unnoticed"
-    assert "ImportError" in result.stderr or "ModuleNotFoundError" in result.stderr
+    assert "halted; None in sys.modules" in result.stderr  # failed on the block itself, not for another reason
     assert str(target) in result.stderr  # the copy was imported (the edge test on SRC is the positive control)
