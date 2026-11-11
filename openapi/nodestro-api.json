@@ -12987,6 +12987,17 @@
             "title": "Iteration",
             "type": "array"
           },
+          "limits_handled": {
+            "items": {
+              "enum": [
+                "reasoning",
+                "tool_rounds"
+              ],
+              "type": "string"
+            },
+            "title": "Limits Handled",
+            "type": "array"
+          },
           "memory": {
             "anyOf": [
               {

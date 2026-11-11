@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Pins nodestro-runtime 2b8690e (runtime #148, RT-067), orkexa 840add4 (orkexa #71) and nodestro-examples 30da3a1
+  (#92). Agent steps answer at the tool-round limit and after a thinking overflow instead of failing; on Ollama only
+  the latest thinking is sent back (the cause of the local `max_tokens` and tool-loop failures since 2026-11-06). The
+  OpenAPI documents gain `NodeRun.limits_handled`; `run.agent.IncompleteResponseError` params gain `cause`,
+  `max_tokens` and `output_tokens`.
 - TABRION JQ-4 (runtime JQ-3, RT2-03): an export whose enqueue reply is lost after the queue row was committed is no
   longer refused with `export.busy`, and its export document is no longer deleted (`JobRunner._enqueue`) while the
   queue row stays. The fix is in nodestro-runtime (#143: writes are never repeated after a lost connection; `enqueue`
