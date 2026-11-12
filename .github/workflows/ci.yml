@@ -58,13 +58,23 @@ jobs:
       - name: Install
         run: |
           pip install -e ".[dev]"
+          # CI-FAST AP6: the suite runs on every CPU of the runner (pytest-xdist), not on one.
+          pip install pytest-xdist==3.8.0
       - run: ruff check .
       - run: ruff format --check .
       - run: mypy
-      - run: pytest -rs --junitxml=junit-test-${{ matrix.python }}.xml
+      # CI-FAST AP6: the test IDs this run must report, each exactly once (checked after the run).
+      - name: Collect the test IDs
+        run: pytest --collect-only -q -p no:cacheprovider > "$RUNNER_TEMP/test-ids-collected.txt"
+        env:
+          NODESTRO_NETWORK_TESTS: ${{ matrix.python == '3.13' && '1' || '' }}
+      - run: pytest -n auto -rs --junitxml=junit-test-${{ matrix.python }}.xml
         env:
           # One test installs a real package from PyPI with uv (needs the network).
           NODESTRO_NETWORK_TESTS: ${{ matrix.python == '3.13' && '1' || '' }}
+      # A test lost (or run twice) by the parallel run fails the job (CI-FAST AP6: test-ID sum against the collection).
+      - name: Every collected test ran exactly once
+        run: python scripts/check_test_ids.py "$RUNNER_TEMP/test-ids-collected.txt" junit-test-${{ matrix.python }}.xml
       # The skipped tests must be exactly the expected ones, each with its reason (MUP-ONA A0, T-SKIP-1): a test that
       # starts to skip (a missing service, a lost variable) fails the job. A changed expectation needs a reason in the PR.
       - name: Skipped tests are the expected ones
