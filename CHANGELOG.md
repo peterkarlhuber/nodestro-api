@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Pins nodestro-runtime 979c11c and nodestro-examples 6ef36f3 (#93): the runtime change is tests only (#150 fixes the
+  Bedrock test for botocore 1.44's default retry mode, #145 adds rollback snapshot tools), so the platform components
+  job in nodestro-studio is green again.
 - Pins nodestro-runtime 2b8690e (runtime #148, RT-067), orkexa 840add4 (orkexa #71) and nodestro-examples 30da3a1
   (#92). Agent steps answer at the tool-round limit and after a thinking overflow instead of failing; on Ollama only
   the latest thinking is sent back (the cause of the local `max_tokens` and tool-loop failures since 2026-11-06). The
