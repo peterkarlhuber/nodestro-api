@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import os
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,47 @@ from nodestro_api.context import AppConfig
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "real_docker_status: use the computer's real Docker status (background check)")
     config.addinivalue_line("markers", "real_identity_check: nodestro-server check reads the identity provider")
+    _own_postgres_database_per_xdist_worker()
+
+
+#: The database this pytest-xdist worker created for itself (dropped again when the worker ends).
+_XDIST_DATABASE: dict[str, str] = {}
+
+
+def _own_postgres_database_per_xdist_worker() -> None:
+    """Under pytest-xdist every worker process gets its own PostgreSQL database (CI-FAST AP6).
+
+    Each test already migrates into its own schema, but PostgreSQL advisory locks belong to the whole database: the
+    scheduler leader lock, the export lock and the price-sync lock. Two workers sharing one database would take each
+    other's locks (a test that expects to lead would see "another worker leads"). A worker's own database keeps the
+    locks apart, exactly as in a serial run. ``NODESTRO_TEST_POSTGRES`` is rewritten before any test module reads it,
+    so tests and the child processes they start use the worker's database.
+    """
+    worker = os.environ.get("PYTEST_XDIST_WORKER")
+    dsn = os.environ.get("NODESTRO_TEST_POSTGRES")
+    if not worker or not dsn:
+        return
+    import psycopg
+    from psycopg import sql
+    from psycopg.conninfo import conninfo_to_dict, make_conninfo
+
+    name = f"{conninfo_to_dict(dsn).get('dbname') or 'postgres'}_xdist_{worker}"
+    with psycopg.connect(dsn, autocommit=True) as conn:
+        conn.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(name)))
+        conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+    _XDIST_DATABASE.update(admin=dsn, name=name)
+    os.environ["NODESTRO_TEST_POSTGRES"] = make_conninfo(dsn, dbname=name)
+
+
+def pytest_unconfigure(config: pytest.Config) -> None:
+    if not _XDIST_DATABASE:
+        return
+    import psycopg
+    from psycopg import sql
+
+    os.environ["NODESTRO_TEST_POSTGRES"] = _XDIST_DATABASE["admin"]
+    with psycopg.connect(_XDIST_DATABASE["admin"], autocommit=True) as conn:
+        conn.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(_XDIST_DATABASE["name"])))
 
 
 @pytest.fixture(autouse=True)
