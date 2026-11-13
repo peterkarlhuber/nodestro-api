@@ -17,6 +17,7 @@ from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 import httpx
+import postgres_support
 import pytest
 
 from nodestro_api.frontend import CACHE_HASHED, CACHE_REVALIDATE, mount_frontend
@@ -148,10 +149,7 @@ def test_event_streams_are_never_compressed(client: TestClient) -> None:
 
 def test_the_server_profile_serves_the_studio_compressed_behind_its_login(tmp_path: Path, static_dir: Path) -> None:
     """``create_tenant_app``: the same headers; logins, the JSON 404 and the same-origin check stay as they were."""
-    if not DSN:
-        if os.environ.get("NODESTRO_REQUIRE_POSTGRES") == "1":
-            pytest.fail("NODESTRO_REQUIRE_POSTGRES=1 but NODESTRO_TEST_POSTGRES names no database")
-        pytest.skip("NODESTRO_TEST_POSTGRES is not set")
+    postgres_support.require_postgres()
     pytest.importorskip("psycopg")
     pytest.importorskip("jwt")
     from nodestro_runtime.identity_store import IdentityStore

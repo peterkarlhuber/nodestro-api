@@ -323,6 +323,7 @@ removed by the change that completes its package here.
 | This repo item | Other repo | Other item | Relation |
 |---|---|---|---|
 | (done 2026-11-08) | tabrion, nodestro-runtime | TABRION QA-18 (AC-3) | `tests/test_optional_edges.py`: the desktop path (`nodestro_api.cli`, `local_container`, the app of `create_app` started and asked for `/api/health`) works with `axentra` blocked and with psycopg blocked, one test per edge with a mutation probe each; a runtime pin that makes either a base dependency fails it |
+| (done, TABRION MIG-NOD-1) | nodestro-runtime, tabrion | runtime RT-074, TABRION VER-1 (RC-2) | `tests/postgres_support.py` runs the PostgreSQL skip/require rule on `tabrion.testing`; the `dev` extra pins `tabrion[testing,postgres]` at the commit nodestro-runtime's `dev` extra pins (v0.1.0 final `d5821fa`). A Tabrion pin bump moves runtime first, then this pin; nodestro-studio's `check_versions.py` checks both |
 | (pointer) | nodestro-studio | ST-052 (Dependabot policy: weekly groups, cooldown, manual merge; auto-merge prerequisites) | Full entry in studio |
 | (pointer) | nodestro-runtime | RT-001 (independent S-2 review, covers the approval routes here) | full entry in runtime |
 | API-005 | nodestro-runtime | RT-010 | runtime adds old-key decryption; the operator command lives here |

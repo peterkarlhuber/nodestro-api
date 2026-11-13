@@ -18,6 +18,7 @@ from typing import Any
 import uuid
 
 from fastapi.testclient import TestClient
+import postgres_support
 import pytest
 from test_inputs import upload
 
@@ -75,10 +76,7 @@ def _url(name: str) -> str:
 @pytest.fixture
 def databases(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[], str]]:
     """``new()`` -> the URL of a fresh, empty database (dropped afterwards)."""
-    if not DSN:
-        if os.environ.get("NODESTRO_REQUIRE_POSTGRES") == "1":
-            pytest.fail("NODESTRO_REQUIRE_POSTGRES=1 but NODESTRO_TEST_POSTGRES names no database")
-        pytest.skip("NODESTRO_TEST_POSTGRES is not set")
+    postgres_support.require_postgres()
     pytest.importorskip("axentra", reason="needs the axentra package (the server extra)")
     import psycopg
     from psycopg import sql

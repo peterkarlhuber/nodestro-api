@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from nodestro_runtime.pricing_sync import PricingSyncService, SnapshotFileSource
 from orkexa import UsageRecord
 from orkexa.pricing import BUILTIN_VERSION, ModelPrice, PriceSnapshot, TokenRates
+import postgres_support
 import pytest
 
 from nodestro_api.app import create_app
@@ -290,14 +291,11 @@ def test_reconciliation_needs_a_key_and_a_sensible_period(make_app: MakeApp) -> 
 
 @pytest.fixture
 def database() -> Iterator[Any]:
-    import os
     import uuid
 
     from nodestro_runtime.storage_postgres import PostgresDatabase
 
-    dsn = os.environ.get("NODESTRO_TEST_POSTGRES", "")
-    if not dsn:
-        pytest.skip("NODESTRO_TEST_POSTGRES is not set")
+    dsn = postgres_support.require_postgres()
     import psycopg
     from psycopg import sql
 

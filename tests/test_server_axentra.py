@@ -15,6 +15,7 @@ import shutil
 from typing import Any
 import uuid
 
+import postgres_support
 import pytest
 
 pytest.importorskip("psycopg")
@@ -56,10 +57,7 @@ def _environment(tmp_path: Path, **changes: str) -> dict[str, str]:
 
 @pytest.fixture
 def schema(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
-    if not DSN:
-        if os.environ.get("NODESTRO_REQUIRE_POSTGRES") == "1":
-            pytest.fail("NODESTRO_REQUIRE_POSTGRES=1 but NODESTRO_TEST_POSTGRES names no database")
-        pytest.skip("NODESTRO_TEST_POSTGRES is not set")
+    postgres_support.require_postgres()
     import psycopg
     from psycopg import sql
 
