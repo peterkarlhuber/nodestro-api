@@ -55,11 +55,15 @@ def load(data_dir: Path) -> dict[str, dict[str, str]]:
 
 def save(data_dir: Path, values: dict[str, dict[str, str]]) -> None:
     """Write the file atomically with owner-only permissions."""
-    target = path_of(data_dir)
+    write_private(path_of(data_dir), values)
+
+
+def write_private(target: Path, values: Any) -> None:
+    """Write ``values`` as JSON to ``target`` atomically, owner-only (``0600`` in a ``0700`` folder on POSIX)."""
     target.parent.mkdir(parents=True, exist_ok=True)
     if os.name == "posix":
         target.parent.chmod(stat.S_IRWXU)
-    handle, temporary = tempfile.mkstemp(dir=target.parent, prefix=".providers-", suffix=".json")
+    handle, temporary = tempfile.mkstemp(dir=target.parent, prefix=f".{target.stem}-", suffix=".json")
     try:
         if os.name == "posix":
             os.fchmod(handle, stat.S_IRUSR | stat.S_IWUSR)

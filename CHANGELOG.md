@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- NAL-A1 (nodestro-runtime ADR-0001): service connections and the built-in tool catalog.
+  - New routes (`api_connections.py`): `GET /api/connections/status|types`, `GET/POST /api/connections`,
+    `GET/PATCH/DELETE /api/connections/{id}`, `PUT /api/connections/{id}/secret` (write-only; answers only
+    `secret_set`), `POST /api/connections/{id}/check`, `GET /api/connections/events` and `GET /api/tools/builtin`
+    (specs: network, offline, connection type, limits, cost unit, origin). Reads need `read`; changes, secrets,
+    checks and events need `admin`.
+  - Publishing records `builtin_versions` and `required_connections` (`{connection_id: "type:provider"}`; never
+    settings or secrets) in the release.
+  - Exports list the required connections in the manifest (`connections_required`), README, `.env.example` and the
+    network needs (an offline package refuses them); `configure` asks for them and stores them in
+    `DATA_DIR/secrets/connections.json` (owner-only); `NODESTRO_CONNECTION_<ID>_SECRET` wins. A release whose
+    connections are missing answers 503 `connection.missing` when a run starts. Launcher and README texts in all six
+    languages. Follow-up: API-067 (setup page).
+
 - Pins nodestro-runtime 979c11c and nodestro-examples 6ef36f3 (#93): the runtime change is tests only (#150 fixes the
   Bedrock test for botocore 1.44's default retry mode, #145 adds rollback snapshot tools), so the platform components
   job in nodestro-studio is green again.

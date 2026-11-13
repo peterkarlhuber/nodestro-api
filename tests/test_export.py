@@ -122,7 +122,19 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     # + nodestro_api.permissions: the exported application checks every route's protection when it is built
     # (MUP-ONA A5, PS-5).
     expected.add("nodestro_api.permissions")
-    assert len(modules) == 58 and expected | {"nodestro_runtime.local_models"} <= set(modules)
+    # + the service connections and tool specs of NAL-A1 (ADR-0001): nodestro_runtime.connections, .tool_spec and
+    # .net_address (the address rules shared with MCP, so no MCP module comes along), nodestro_api.portable_connections
+    # (the connections entered on the target computer) and nodestro_api.portable_secrets (its owner-only file writer).
+    added = {
+        "nodestro_runtime.connections",
+        "nodestro_runtime.tool_spec",
+        "nodestro_runtime.net_address",
+        "nodestro_api.portable_connections",
+        "nodestro_api.portable_secrets",
+    }
+    expected |= added
+    assert not any(module.startswith("nodestro_runtime.mcp.") for module in modules)
+    assert len(modules) == 63 and expected | {"nodestro_runtime.local_models"} <= set(modules)
     assert "nodestro_runtime.local_service" not in modules
     # The audit/usage hook protocol is exported (tool approvals and the usage log import it); the Axentra
     # integration itself is server-only and never part of an export.

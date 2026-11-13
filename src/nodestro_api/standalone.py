@@ -52,6 +52,7 @@ from orkexa import StoredFile
 from orkexa.dynamic import DockerSandbox, Sandbox, SubprocessSandbox
 from pydantic import BaseModel, Field
 
+from . import portable_connections
 from .body_limit import BodyLimitMiddleware, BodyLimits
 from .permissions import PUBLIC, check_routes
 from .serving import (
@@ -213,6 +214,10 @@ class StandaloneHost:
         )
         self.builtin = set(tools.builtin)
         builder = AgentBuilder(tools, self.knowledge, self.memory)
+        # Service connections are entered on this computer, never exported (ADR-0001); read once at the start.
+        self.connections = portable_connections.static(data_dir)
+        builder.resolve_connection = self.connections.resolve
+        builder.find_connection = self.connections.find
         builder.declared = lambda provider: dict(self.manifest.capabilities.get(provider) or {})
         # Local models: what the model server reports for each model (``/api/show``), as in the studio.
         self._reported: dict[str, tuple[float, dict[str, Any]]] = {}
@@ -458,6 +463,14 @@ class StandaloneHost:
         return sorted(found)
 
     async def prepare_start(self, release: ServedRelease) -> None:
+        missing = self.connections.missing(self.bundle.required_connections)
+        if missing:
+            raise ApiError(
+                503,
+                "connection.missing",
+                f"{len(missing)} service connections are not configured; run 'configure', then restart",
+                count=len(missing),
+            )
         try:
             # An Ollama connection asks the model server (/api/ps): never on the event loop (RT3-04 pattern).
             for provider in self.providers():
