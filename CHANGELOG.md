@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Added (TABRION DC-NA-1, dependency confusion): new CI job `tabrion source (poisoned index)`, reported by ci-ok, runs
+  the install with `scripts/check_tabrion_source.py` (an unchanged, checksummed copy from nodestro-studio): a poisoned
+  index must get no request for `tabrion`, which proves that the lock's direct-URL pin keeps a foreign `tabrion` out.
+  `tests/test_tabrion_pin.py` requires the installed Tabrion's `direct_url.json` to name a git commit, the studio
+  lock's when `NODESTRO_STUDIO_LOCK` names the lock (CI sets it): it detects an accidental index install, but it is
+  no proof of origin (a wheel can forge the file).
 - Changed (runtime #161, NAL-A1 hardening): the error code catalog lists `connection.id_invalid`, and both OpenAPI
   documents describe `required_connections` with its id pattern `conn_<12 hex>` and `type:provider` values. Needs
   nodestro-runtime at or after 27dd8d5.

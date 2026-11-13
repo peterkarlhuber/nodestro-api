@@ -12,7 +12,7 @@
 | P0 Critical | 0 |
 | P1 High | 0 |
 | P2 Medium | 5 |
-| P3 Low | 10 |
+| P3 Low | 11 |
 | P4 Optional | 5 |
 
 **Release blockers:** None for this repository; every entry below is not a release blocker. The next desktop
@@ -216,6 +216,18 @@ None known.
   then request `display: summarized` only while it is on.
 
 ## Tests and quality assurance
+
+### API-068 · Dependency confusion: the poisoned-index job and the studio origin commit (TABRION DC-NA-1)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** TABRION DC-NA-1, `scripts/check_tabrion_source.py` (checksummed
+  copy from nodestro-studio, `tests/test_tabrion_source_check.py`), `tests/test_tabrion_pin.py`, CI job
+  `tabrion source (poisoned index)`
+- **What:** the CI install runs under a poisoned index that serves `tabrion` and must get no request for it (the
+  proof that the lock pin works); `tests/test_tabrion_pin.py` checks that the installed Tabrion's `direct_url.json`
+  names the studio lock's commit (`NODESTRO_STUDIO_LOCK`), which only detects an accidental index install. The job is
+  in `.github/ci-manifest.json` and reported by ci-ok. Open: the copy names an unmerged studio commit as its origin
+  until nodestro-studio's DC-NS-2 branch is merged.
+- **Next step:** after the studio merge, update the origin commit; close this entry.
 
 ### API-040 · Run budget decisions: browser and server image checks
 
