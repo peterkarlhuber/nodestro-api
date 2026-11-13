@@ -12,7 +12,7 @@
 | P0 Critical | 0 |
 | P1 High | 0 |
 | P2 Medium | 5 |
-| P3 Low | 9 |
+| P3 Low | 10 |
 | P4 Optional | 5 |
 
 **Release blockers:** None for this repository; every entry below is not a release blocker. The next desktop
@@ -129,6 +129,16 @@ None known.
   was evaluated and deferred. The Linux portable package already runs unchanged in a container.
 - **Next step:** Assemble an OCI layout from a pinned base image digest plus the package, sign it, and test `docker
   load` + `docker run --network none` in CI.
+
+### API-067 · Service connections on the portable setup page
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** NAL-A1, nodestro-runtime ADR-0001, `portable_connections.py`
+- **What:** An exported package asks for the service connections its built-in tools are bound to only in the
+  terminal (`configure`) or through `NODESTRO_CONNECTION_<ID>_SECRET` and `DATA_DIR/secrets/connections.json`. The
+  setup page of the web interface shows provider keys but not connections yet. No built-in tool needs a connection
+  before NAL-A2, so no export is affected today.
+- **Next step:** Add a connections section to the local-operator setup page (write-only secret, `secret_set` only),
+  together with the first tool that needs a connection.
 
 ### API-046 · Portable packages are not code-signed
 

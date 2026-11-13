@@ -49,7 +49,7 @@ from nodestro_runtime.release import (
     materialize_tools,
     tool_record,
 )
-from nodestro_runtime.schemas import RunSummary, Workflow, new_id, now
+from nodestro_runtime.schemas import AgentConfig, RunSummary, Workflow, new_id, now
 from nodestro_runtime.tool_legacy import LegacyBinding, VersionOf, stamp_workflow
 from nodestro_runtime.tool_library import ToolLibrary, make_sandbox
 from nodestro_runtime.tool_preflight import unattended_tool_issues
@@ -619,6 +619,7 @@ class Publications:
         tools: dict[str, dict[str, Any]] = {}
         mcp_tools: dict[str, McpToolRef] = {}
         builtin: set[str] = set()
+        connections: dict[str, str] = {}
         server_tools: set[str] = set()
         models: set[str] = set()
         for item in everything:
@@ -635,6 +636,7 @@ class Publications:
                         mcp_tools.setdefault(name, self.ctx.mcp.pin(name))
                     elif name in self.ctx.tools.builtin:
                         builtin.add(name)
+                        connections.update(self._required_connection(node.agent, name))
                     elif name not in tools:
                         tools[name] = tool_record(self.ctx.tools.registry.record(name))
         python: list[PythonLock] = []
@@ -659,6 +661,10 @@ class Publications:
             tools=tools,
             tool_trust={name: self.ctx.tools.trust(name) for name in tools},
             builtin_tools=sorted(builtin),
+            builtin_versions={
+                name: spec.version for name in sorted(builtin) if (spec := self.ctx.tools.specs.get(name)) is not None
+            },
+            required_connections=dict(sorted(connections.items())),
             server_tools=sorted(server_tools),
             mcp_tools=mcp_tools,
             models=sorted(models),
@@ -669,6 +675,17 @@ class Publications:
             runtime={"nodestro": runtime_version, "orkexa": library_version},
         )
         return bundle, check
+
+    def _required_connection(self, agent: AgentConfig, name: str) -> dict[str, str]:
+        """``{connection_id: "type:provider"}`` of the connection ``agent`` binds to the built-in tool ``name``
+        (ADR-0001: never settings, an address or a secret). The check refuses a tool whose connection is missing."""
+        spec = self.ctx.tools.specs.get(name)
+        bound = agent.tool_settings.get(name)
+        if spec is None or spec.connection_type is None or bound is None or not bound.connection_id:
+            return {}
+        stored = self.ctx.connections.find(bound.connection_id)
+        provider = stored.provider if stored is not None else "generic"
+        return {bound.connection_id: f"{spec.connection_type}:{provider}"}
 
     def gate_report(self, workflow_id: str, version: int | None, gate: ReleaseGate | None = None) -> GateReport:
         """The release gate's verdict for a saved version: ``gate``, or else the publication's own gate."""

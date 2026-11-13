@@ -153,7 +153,8 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # read: + the list of every problem code (API-016)
         # read: + the retention of assistant conversation files (API-056)
         # read: + a tool's version history (ST-036)
-        "read": 125,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
+        # read: + service connections: status, types, list, one; the built-in tool catalog (NAL-A1)
+        "read": 130,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
         # MCP status, servers, server, tools (WP-3); tool approval inbox, run questions, pre-grants, state (S-2b)
         # edit: + starting and cancelling a portable export job (like the synchronous export)
         # edit: + uploading and removing a conversation's files (assistant files)
@@ -167,7 +168,8 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # admin: + adopting an AI-generated tool as one's own (R-4, desktop only)
         # admin: + the access audit trail (API-004)
         # admin: + setting the retention of assistant conversation files (API-056)
-        "admin": 47,  # + price sync, reviews, overrides, billing keys and reconciliation (PRICING-1); gate (Q-3);
+        # admin: + service connections: create, change, delete, secret, check, events (NAL-A1)
+        "admin": 53,  # + price sync, reviews, overrides, billing keys and reconciliation (PRICING-1); gate (Q-3);
         # MCP add, change, remove, discover, decision, events (WP-3); pre-grants, audit, activation (S-2b);
         # MCP OAuth start, callback, sign-out (WP-6); MCP stdio package plan (WP-8); MCP stats (WP-7);
         # Amazon Bedrock verification (a settings action)

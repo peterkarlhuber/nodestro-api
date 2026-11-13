@@ -52,6 +52,8 @@ def _release_bundle(nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) ->
             self.mcp_tools: dict[str, Any] = {}
             self.tools: dict[str, Any] = {}
             self.tool_trust: dict[str, str] = {}
+            self.builtin_tools: list[str] = []
+            self.required_connections: dict[str, str] = {}
 
         def all_workflows(self) -> list[Any]:
             return [workflow]

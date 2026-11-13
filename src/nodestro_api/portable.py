@@ -708,7 +708,6 @@ def configure(settings: Settings) -> int:
     providers = [item for item in store.status() if item["id"] != "ollama" or item["required"]]
     if not providers:
         console.say("configure_nothing")
-        return 0
     for item in providers:
         provider = PROVIDERS[item["id"]]
         state = "configure_set" if item["configured"] else "configure_missing"
@@ -736,7 +735,71 @@ def configure(settings: Settings) -> int:
                 print(f"  {getattr(exc, 'message', exc)}", flush=True)
                 continue
             console.say("configure_saved", provider=provider.label)
+    configure_connections(settings, console)
     return 0
+
+
+def configure_connections(
+    settings: Settings,
+    console: Console,
+    *,
+    ask: Callable[[str], str] = input,
+    ask_secret: Callable[[str], str] = getpass.getpass,
+) -> None:
+    """Ask for the service connections the release's built-in tools are bound to (ADR-0001) and store them in
+    ``<DATA_DIR>/secrets/connections.json``. A secret set in the environment is left there."""
+    from nodestro_runtime.connections import connection_type
+    from nodestro_runtime.problems import NodestroError
+    from nodestro_runtime.release import ReleaseBundle
+
+    from . import portable_connections
+
+    release = settings.root / "workflow" / "release.json"
+    if not release.is_file():
+        return
+    required = ReleaseBundle.model_validate_json(release.read_text("utf-8")).required_connections
+    if not required:
+        return
+    entries = portable_connections.load(settings.data_dir)
+    current = portable_connections.static(settings.data_dir)
+    for connection_id, wanted in required.items():
+        kind_name, _, provider = wanted.partition(":")
+        try:
+            kind = connection_type(kind_name)
+        except NodestroError:
+            console.say("configure_connection_unknown", connection=connection_id, type=wanted)
+            continue
+        missing = bool(current.missing({connection_id: wanted}))
+        console.say(
+            "configure_connection_missing" if missing else "configure_connection_set",
+            connection=connection_id,
+            type=wanted,
+        )
+        entry = dict(entries.get(connection_id) or {})
+        values = dict(entry.get("settings") or {})
+        for field, info in kind.settings.model_fields.items():
+            shown = values.get(field, info.default if info.default is not None else "")
+            answer = ask(f"  {field} (Enter: {shown if shown != '' else '-'}): ").strip()
+            if answer:
+                values[field] = answer
+        variable = portable_connections.secret_variable(connection_id)
+        secret = entry.get("secret")
+        if os.environ.get(variable):
+            console.say("configure_environment", variables=variable)
+        else:
+            label = kind.secret_label or "Secret"
+            typed = ask_secret(f"  {label} (Enter: keep): ").strip()
+            secret = typed or secret
+        candidate = {"type": kind.name, "provider": provider or "generic", "settings": values}
+        if secret:
+            candidate["secret"] = secret
+        check = portable_connections.StaticConnections({connection_id: candidate}, environ=os.environ, mode="server")
+        if connection_id in check.problems:
+            console.say("configure_connection_invalid", connection=connection_id, code=check.problems[connection_id])
+            continue
+        entries[connection_id] = candidate
+        portable_connections.save(settings.data_dir, entries)
+        console.say("configure_connection_saved", connection=connection_id)
 
 
 def keys(args: argparse.Namespace, settings: Settings) -> int:

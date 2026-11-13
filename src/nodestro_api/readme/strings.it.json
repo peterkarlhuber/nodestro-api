@@ -9,6 +9,8 @@
   "key": "La chiave per {label}. Senza, l'avvio di un'esecuzione risponde 503.",
   "base_url": "L'URL di base di {label}{shown}.",
   "endpoint_key": "Una chiave per {label}, se il server ne richiede una.",
+  "connection_secret": "Segreto della connessione di servizio {connection} ({type}); le sue impostazioni vanno in `DATA_DIR/secrets/connections.json` ({configure}).",
+  "connection_configure": "o con `configure` in un pacchetto portatile",
   "portable.local_models_line": ", i modelli locali ({models}) con il server dei modelli Ollama",
   "portable.models_check": " e, una sola volta, ogni file di modello tramite SHA-256 (può richiedere qualche minuto)",
   "portable.ui_on": " con l'interfaccia web",

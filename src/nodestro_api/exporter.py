@@ -46,6 +46,7 @@ import zipfile
 
 from nodestro_runtime import __version__ as runtime_version
 from nodestro_runtime.builtin_tools import BUILTIN_TOOLS
+from nodestro_runtime.connections import secret_variable
 from nodestro_runtime.engine import start_fields
 from nodestro_runtime.problems import CheckIssue, NodestroError
 from nodestro_runtime.providers import PROVIDERS, base_url_variable, exported_settings, has_credentials, provider_of
@@ -1072,6 +1073,9 @@ TOOL_TIMEOUT_SECONDS  Time limit of one tool call (default 60).
 TOOL_SANDBOX          subprocess (default): only tools written by a person in the tool editor run, as a
                       process of this server. docker: every own tool runs in an isolated container
                       (needs Docker); AI-generated tools run only with docker.
+NODESTRO_CONNECTION_<ID>_SECRET
+                      The secret of a service connection the built-in tools use (see the README); its
+                      settings are in DATA_DIR/secrets/connections.json. Without them, starting a run answers 503.
 LIMIT_<NAME>          Override a limit published with the release, e.g. LIMIT_DAILY_BUDGET_USD=10,
                       LIMIT_MAX_CONCURRENT_RUNS=4, LIMIT_RUN_BUDGET_USD=0.5, LIMIT_SYNC_ENABLED=true.
 """
@@ -1574,7 +1578,14 @@ def _readme(
         "{memory}": ", ".join(memory) or none,
         "{guide}": ("\n- [docs/AI_GUIDE.md](docs/AI_GUIDE.md)" if options.guide_id else ""),
         "{providers}": ", ".join(PROVIDERS[item].label for item in providers if item in PROVIDERS) or none,
-        "{provider_rows}": _provider_rows(providers, strings, base_urls, provider_settings),
+        "{provider_rows}": "\n".join(
+            row
+            for row in (
+                _provider_rows(providers, strings, base_urls, provider_settings),
+                _connection_rows(bundle.required_connections, strings),
+            )
+            if row
+        ),
         "{port}": str(PORTABLE_PORT),
     }
     for key, value in replacements.items():
@@ -1673,11 +1684,27 @@ def _provider_rows(
     return "\n".join(rows)
 
 
+def _connection_rows(required: dict[str, str], strings: dict[str, str]) -> str:
+    """README rows of the service connections the built-in tools are bound to (ADR-0001; never exported)."""
+    rows: list[str] = []
+    for connection_id, wanted in sorted(required.items()):
+        text = (
+            strings["connection_secret"]
+            .replace("{connection}", f"`{connection_id}`")
+            .replace("{type}", f"`{wanted}`")
+            .replace("{configure}", strings["connection_configure"])
+        )
+        rows.append(f"| `{secret_variable(connection_id)}` | {text} |")
+    return "\n".join(rows)
+
+
 def _env_example(
     publication: Publication,
     providers: list[str],
     base_urls: dict[str, str],
     settings: dict[str, dict[str, Any]] | None = None,
+    *,
+    connections: dict[str, str] | None = None,
 ) -> str:
     lines: list[str] = []
     for provider in providers:
@@ -1695,6 +1722,9 @@ def _env_example(
         else:
             lines.append(f"{base_url_variable(provider)}={base_urls.get(provider) or info.default_base_url or ''}")
             lines.append(f"# {provider.upper()}_API_KEY=")
+    for connection_id, wanted in sorted((connections or {}).items()):
+        lines.append(f"# Service connection {connection_id} ({wanted}); settings in DATA_DIR/secrets/connections.json")
+        lines.append(f"{secret_variable(connection_id)}=")
     keys = "\n".join(lines)
     return f"""# Configuration of {project_name(publication)} (see README). Never commit real keys.
 {keys}
@@ -1959,6 +1989,8 @@ def _project_files(
         "knowledge_excluded": [ref.id for ref in bundle.knowledge if ref.name in knowledge_out],
         "memory_included": memory_in,
         "secrets_included": False,
+        # The connections the built-in tools are bound to (ADR-0001): entered with ``configure``, never exported.
+        "connections_required": dict(sorted(bundle.required_connections.items())),
     }
     add("workflow/manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
     # Dependencies.
@@ -2018,7 +2050,10 @@ def _project_files(
         + "\n\n".join(sample.curl.values())
         + "\n",
     )
-    add(".env.example", _env_example(publication, providers, base_urls, provider_settings))
+    add(
+        ".env.example",
+        _env_example(publication, providers, base_urls, provider_settings, connections=bundle.required_connections),
+    )
     add(".gitignore", ".env\ndata/\n.venv/\n__pycache__/\n")
     add("Dockerfile", _dockerfile(options.orkexa == "git"))
     add("tests/conftest.py", _CONFTEST)

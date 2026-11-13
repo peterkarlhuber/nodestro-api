@@ -23,6 +23,7 @@ from .api_architect import router as architect_router
 from .api_assistant import router as assistant_router
 from .api_automation import router as automation_router
 from .api_budget import router as budget_router
+from .api_connections import router as connections_router
 from .api_data import router as data_router
 from .api_inputs import router as inputs_router
 from .api_local_models import router as local_models_router
@@ -206,6 +207,7 @@ def create_app(
     app.include_router(inputs_router)
     app.include_router(pricing_router)
     app.include_router(local_models_router)
+    app.include_router(connections_router)
     app.include_router(mcp_router)
     app.include_router(budget_router)
     app.include_router(tool_approvals_router)
