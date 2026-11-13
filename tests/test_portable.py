@@ -458,6 +458,44 @@ def test_launcher_keys_are_stored_as_hashes(tmp_path: Path, capsys: pytest.Captu
     assert parse_keys(stored.strip())[0].scopes == ["run", "read"]
 
 
+def test_stop_finds_the_instance_as_soon_as_its_server_can_answer(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The instance file exists before the server listens: a "stop" right after the first answer stops the
+    application instead of reporting "not running" (nightly 2026-11-13, macOS Intel and Windows x64)."""
+    import argparse
+
+    from fastapi import FastAPI
+    import uvicorn
+
+    from nodestro_api import standalone
+
+    settings = portable.Settings(tmp_path, {"data": {"data_dir": "data"}, "web": {"language": "en"}})
+    console = portable.Console("en")
+    monkeypatch.setattr(standalone, "create_app", lambda *args, **kwargs: FastAPI())
+    controlled: list[tuple[dict[str, Any], str]] = []
+    monkeypatch.setattr(portable, "_responding", lambda port: True)
+    monkeypatch.setattr(portable, "_health", lambda port, timeout=2.0: False)
+    monkeypatch.setattr(portable, "_control", lambda state, path, timeout=5.0: controlled.append((state, path)) or {})
+    seen: dict[str, Any] = {}
+
+    def serve(server: uvicorn.Server, *args: Any, **kwargs: Any) -> None:
+        # The moment the server would bind its port and answer: a stop from another process comes now.
+        seen["state"] = portable._read_state(settings.data_dir)
+        seen["stop"] = portable.stop(settings)
+        server.should_exit = True  # ends the announcing thread
+
+    monkeypatch.setattr(uvicorn.Server, "run", serve)
+    args = argparse.Namespace(no_browser=True)
+    models = portable.LocalModels(tmp_path, settings, console)
+    assert portable._serve(args, settings, console, "127.0.0.1", 18800, None, models, tmp_path / "logs") == 0
+    state = seen["state"]
+    assert state is not None and state["pid"] == os.getpid() and state["port"] == 18800 and state["control"]
+    assert seen["stop"] == 0
+    assert controlled == [(state, "/ui/control/stop")]
+    assert "The application is not running." not in capsys.readouterr().out
+
+
 def test_zip_of_a_standard_export_is_unchanged_by_portable_options(
     published: Callable[..., tuple[TestClient, dict[str, Any]]],
 ) -> None:
