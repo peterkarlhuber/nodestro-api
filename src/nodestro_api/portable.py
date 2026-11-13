@@ -599,7 +599,6 @@ def _serve(
         deadline = time.monotonic() + 120
         while time.monotonic() < deadline and not server.should_exit:
             if server.started and _health(port):
-                _write_state(settings.data_dir, state)
                 console.say("ready", url=url, logs=str(log_dir))
                 if host not in LOOPBACK:
                     console.say("network_on", host=host)
@@ -611,6 +610,11 @@ def _serve(
                 return
             time.sleep(0.2)
 
+    # The instance file is written before the server listens, so that "stop", "status" and "open" find every instance
+    # that already answers. Written only once it answered (as before), a "stop" right after the first answer could find
+    # no file, report "not running" and leave the application running. Until the server answers, these commands still
+    # report "not running" (they check /health); start() removes the file when the server ends.
+    _write_state(settings.data_dir, state)
     threading.Thread(target=announce, name="nodestro-announce", daemon=True).start()
     console.say("starting", name=package_info(settings.root).get("name", ""), port=port)
     server.run()
