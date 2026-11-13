@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Pins nodestro-runtime 64d3ab1 (runtime MIG-NOD-1: its PostgreSQL test helpers on `tabrion.testing`, the VER-1 pin
+- Pins nodestro-runtime d772568 (runtime MIG-NOD-1: its PostgreSQL test helpers on `tabrion.testing`, the VER-1 pin
   guard, and the tests-only changes since 979c11c: CI-FAST AP6 per-worker test databases, the `--surface` check fix).
   No runtime source change since 979c11c.
 - Tests (TABRION MIG-NOD-1): the PostgreSQL test cases decide skip or failure through `tabrion.testing`. The new
@@ -11,7 +11,8 @@
   `require_postgres()` resolves the session fixture `tabrion_postgres_url`; the 15 local copies of the rule (14 test
   files and `tests/fault_proxy.py`) call it. Without `NODESTRO_TEST_POSTGRES` the cases skip as before; under
   `NODESTRO_REQUIRE_POSTGRES=1` they fail, now also in `test_pricing_api.py` and `test_server_obs.py`, which skipped
-  there before. Collected tests and CI skip lists are unchanged. The `dev` extra pins `tabrion[testing,postgres]` at
+  there before. `NODESTRO_REQUIRE_POSTGRES` now counts when set to anything but empty or `0` (Tabrion's rule;
+  before, only `1` counted, so `true` skipped silently and now fails closed); CI sets `1`. Collected tests and CI skip lists are unchanged. The `dev` extra pins `tabrion[testing,postgres]` at
   Tabrion v0.1.0 final (`d5821fa`), the commit nodestro-runtime's `dev` extra pins. Without the dev extra (the `portable` workflow) the plugin is not
   loaded and `require_postgres()` skips (fails under `NODESTRO_REQUIRE_POSTGRES=1`) by itself. Tests only.
 - Pins nodestro-runtime 979c11c and nodestro-examples 6ef36f3 (#93): the runtime change is tests only (#150 fixes the
