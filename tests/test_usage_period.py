@@ -19,6 +19,7 @@ import uuid
 from fastapi.testclient import TestClient
 from nodestro_runtime.schemas import Run, Usage, now
 from nodestro_runtime.storage import SQLiteStore
+import postgres_support
 import pytest
 from test_reliability import _run
 
@@ -67,10 +68,7 @@ def store(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[Any]:
         yield opened
         opened.close()
         return
-    if not DSN:
-        if os.environ.get("NODESTRO_REQUIRE_POSTGRES") == "1":
-            pytest.fail("NODESTRO_REQUIRE_POSTGRES=1 but NODESTRO_TEST_POSTGRES names no database")
-        pytest.skip("NODESTRO_TEST_POSTGRES is not set")
+    postgres_support.require_postgres()
     pytest.importorskip("psycopg")
     from nodestro_runtime.storage_postgres import PostgresDatabase
     import psycopg

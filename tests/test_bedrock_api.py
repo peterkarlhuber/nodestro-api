@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 from nodestro_runtime import bedrock as bedrock_auth
 from nodestro_runtime.bedrock import BedrockOperatorConfig, TenantRole
 from nodestro_runtime.problems import NodestroError
+import postgres_support
 import pytest
 from test_published_api import publish
 
@@ -432,10 +433,7 @@ DSN = os.environ.get("NODESTRO_TEST_POSTGRES", "")
 
 @pytest.fixture
 def database() -> Iterator[Any]:
-    if not DSN:
-        if os.environ.get("NODESTRO_REQUIRE_POSTGRES") == "1":
-            pytest.fail("NODESTRO_REQUIRE_POSTGRES=1 but NODESTRO_TEST_POSTGRES names no database")
-        pytest.skip("NODESTRO_TEST_POSTGRES is not set")
+    postgres_support.require_postgres()
     pytest.importorskip("psycopg")
     from nodestro_runtime.storage_postgres import PostgresDatabase
     import psycopg

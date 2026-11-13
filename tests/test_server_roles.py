@@ -17,6 +17,7 @@ import secrets
 import shutil
 import subprocess
 
+import postgres_support
 import pytest
 
 pytest.importorskip("psycopg")
@@ -53,10 +54,7 @@ def _url(user: str, password: str) -> str:
 def roles(monkeypatch: pytest.MonkeyPatch) -> Iterator[Setup]:
     """An owner role (owns the schema; BYPASSRLS so that pg_dump can read Axentra's forced-RLS tables) and a runtime
     role (no privileges yet), as the RUNBOOK sets them up."""
-    if not DSN:
-        if os.environ.get("NODESTRO_REQUIRE_POSTGRES") == "1":
-            pytest.fail("NODESTRO_REQUIRE_POSTGRES=1 but NODESTRO_TEST_POSTGRES names no database")
-        pytest.skip("NODESTRO_TEST_POSTGRES is not set")
+    postgres_support.require_postgres()
     suffix = secrets.token_hex(4)
     password = secrets.token_hex(16)
     found = Setup(
