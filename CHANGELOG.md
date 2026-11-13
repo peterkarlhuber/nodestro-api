@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Changed (TABRION VER-1 after the CI-FAST pin switch): the `dev` extra requires `tabrion[testing,postgres]>=0.1,<0.2`
+  instead of a direct URL, the same range as nodestro-runtime; the exact commit (v0.1.0 final, `d5821fa`) comes from
+  the studio lock like every internal package.
 - Tests (TABRION MIG-NOD-1): the PostgreSQL test cases decide skip or failure through `tabrion.testing`. The new
   `tests/postgres_support.py` (the same helper names as nodestro-runtime's) loads the plugin from `tests/conftest.py`,
   points it at Nodestro's variables (`configure(env_prefix="NODESTRO", schema_prefix="nodestro_test_")`), and
