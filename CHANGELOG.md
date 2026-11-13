@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Changed (TABRION VER-1 after the CI-FAST pin switch): the `dev` extra requires `tabrion[testing,postgres]>=0.1,<0.2`
+  instead of a direct URL, the same range as nodestro-runtime; the exact commit (v0.1.0 final, `d5821fa`) comes from
+  the studio lock like every internal package.
 - Needs nodestro-runtime at or after 2455aa9 (runtime #157, NAL-A1; the studio lock carries it).
 - NAL-A1 (nodestro-runtime ADR-0001): service connections and the built-in tool catalog.
   - New routes (`api_connections.py`): `GET /api/connections/status|types`, `GET/POST /api/connections`,
