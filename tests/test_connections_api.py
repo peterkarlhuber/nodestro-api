@@ -87,7 +87,13 @@ def test_secrets_are_write_only_and_never_in_answers_or_logs(
 ) -> None:
     client = make_app()
     caplog.set_level(logging.DEBUG)
-    made = _create(client, type="smtp", provider="generic", name="Mail", settings={"host": "smtp.example.com", "from_address": "bot@example.com"})
+    made = _create(
+        client,
+        type="smtp",
+        provider="generic",
+        name="Mail",
+        settings={"host": "smtp.example.com", "from_address": "bot@example.com"},
+    )
     cid = made["id"]
     stored = client.put(f"/api/connections/{cid}/secret", json={"secret": MARKER})
     assert stored.status_code == 200 and stored.json()["secret_set"] is True
@@ -114,10 +120,9 @@ def test_a_bound_connection_is_published_as_a_reference_only(make_app: MakeApp, 
     client.put(f"/api/connections/{made['id']}/secret", json={"secret": MARKER})
     from nodestro_runtime.release import ReleaseBundle
     from nodestro_runtime.schemas import AgentConfig, Node, ToolSettings, Workflow
+    from nodestro_runtime.tool_spec import builtin_spec
 
     from nodestro_api.publishing import Publications
-
-    from nodestro_runtime.tool_spec import builtin_spec
 
     spec = builtin_spec("calculator")
     assert spec is not None
