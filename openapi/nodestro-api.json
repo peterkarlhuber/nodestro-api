@@ -660,6 +660,13 @@
             "title": "Tool Policies",
             "type": "object"
           },
+          "tool_settings": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ToolSettings"
+            },
+            "title": "Tool Settings",
+            "type": "object"
+          },
           "tools": {
             "items": {
               "type": "string"
@@ -4493,6 +4500,46 @@
         "title": "BuiltinSandboxStatus",
         "type": "object"
       },
+      "BuiltinToolInfo": {
+        "description": "A built-in tool's catalog entry (its spec) with the description the model reads.",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "origin": {
+            "enum": [
+              "nodestro",
+              "integration"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "spec": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spec"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "origin"
+        ],
+        "title": "BuiltinToolInfo",
+        "type": "object"
+      },
       "CaseComparison": {
         "properties": {
           "a": {
@@ -5568,6 +5615,408 @@
           "message"
         ],
         "title": "ConfigIssue",
+        "type": "object"
+      },
+      "ConnectionCheck": {
+        "properties": {
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "configuration",
+                  "service"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "status": {
+            "default": "unchecked",
+            "enum": [
+              "unchecked",
+              "ok",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "ConnectionCheck",
+        "type": "object"
+      },
+      "ConnectionEvent": {
+        "description": "An administration event (who changed which connection); never secrets or settings values.",
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "connection_id": {
+            "title": "Connection Id",
+            "type": "string"
+          },
+          "connection_type": {
+            "title": "Connection Type",
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "created",
+              "updated",
+              "deleted",
+              "secret_set",
+              "secret_cleared",
+              "checked"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "connection_id",
+          "connection_type"
+        ],
+        "title": "ConnectionEvent",
+        "type": "object"
+      },
+      "ConnectionIn": {
+        "additionalProperties": false,
+        "description": "A new connection. The secret is set separately (:meth:`ConnectionService.set_secret`).",
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "provider": {
+            "default": "generic",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Provider",
+            "type": "string"
+          },
+          "settings": {
+            "additionalProperties": true,
+            "title": "Settings",
+            "type": "object"
+          },
+          "type": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "name"
+        ],
+        "title": "ConnectionIn",
+        "type": "object"
+      },
+      "ConnectionPatch": {
+        "additionalProperties": false,
+        "description": "A change of a connection; the type cannot change.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings"
+          }
+        },
+        "title": "ConnectionPatch",
+        "type": "object"
+      },
+      "ConnectionStatus": {
+        "properties": {
+          "contract": {
+            "title": "Contract",
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "desktop",
+              "local-container",
+              "server"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "secret_vault": {
+            "title": "Secret Vault",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "secret_vault",
+          "mode",
+          "contract"
+        ],
+        "title": "ConnectionStatus",
+        "type": "object"
+      },
+      "ConnectionTypeInfo": {
+        "properties": {
+          "checkable": {
+            "title": "Checkable",
+            "type": "boolean"
+          },
+          "modes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Modes",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "providers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Providers",
+            "type": "array"
+          },
+          "secret_label": {
+            "title": "Secret Label",
+            "type": "string"
+          },
+          "secret_required": {
+            "title": "Secret Required",
+            "type": "boolean"
+          },
+          "settings_schema": {
+            "additionalProperties": true,
+            "title": "Settings Schema",
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "providers",
+          "secret_required",
+          "secret_label",
+          "settings_schema",
+          "modes",
+          "checkable"
+        ],
+        "title": "ConnectionTypeInfo",
+        "type": "object"
+      },
+      "ConnectionView": {
+        "description": "What every read returns: the connection without its secret, with ``secret_set``.",
+        "properties": {
+          "check": {
+            "$ref": "#/components/schemas/ConnectionCheck"
+          },
+          "contract": {
+            "title": "Contract",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "egress": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Egress",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "secret_set": {
+            "title": "Secret Set",
+            "type": "boolean"
+          },
+          "secret_storage": {
+            "enum": [
+              "none",
+              "vault",
+              "session"
+            ],
+            "title": "Secret Storage",
+            "type": "string"
+          },
+          "settings": {
+            "additionalProperties": true,
+            "title": "Settings",
+            "type": "object"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "used_by": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Used By",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "contract",
+          "type",
+          "name",
+          "provider",
+          "description",
+          "settings",
+          "egress",
+          "secret_set",
+          "secret_storage",
+          "check",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ConnectionView",
         "type": "object"
       },
       "ContextPreview": {
@@ -12594,7 +13043,9 @@
               "server_tool",
               "mcp",
               "docker_sandbox",
-              "ollama_cloud"
+              "ollama_cloud",
+              "builtin_tool",
+              "connection"
             ],
             "title": "Kind",
             "type": "string"
@@ -16932,6 +17383,13 @@
             "title": "Builtin Tools",
             "type": "array"
           },
+          "builtin_versions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Builtin Versions",
+            "type": "object"
+          },
           "created_at": {
             "title": "Created At",
             "type": "string"
@@ -16985,6 +17443,13 @@
             },
             "title": "Python",
             "type": "array"
+          },
+          "required_connections": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Required Connections",
+            "type": "object"
           },
           "runtime": {
             "additionalProperties": {
@@ -19999,6 +20464,21 @@
           "title"
         ],
         "title": "SearchResult",
+        "type": "object"
+      },
+      "SecretIn": {
+        "description": "The new secret; ``\"\"`` removes it. Never returned by any route.",
+        "properties": {
+          "secret": {
+            "maxLength": 8192,
+            "title": "Secret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "secret"
+        ],
+        "title": "SecretIn",
         "type": "object"
       },
       "SendRequest": {
@@ -23360,6 +23840,16 @@
             ],
             "title": "Server Name"
           },
+          "spec": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "tests": {
             "anyOf": [
               {
@@ -23682,6 +24172,30 @@
         "title": "ToolRunResult",
         "type": "object"
       },
+      "ToolSettings": {
+        "description": "How an agent binds one built-in tool (NAL-A1, ADR-0001): the service connection it uses and its binding\nparameters (validated against the tool's ``params_schema``). Never visible to the model.",
+        "properties": {
+          "connection_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Id"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          }
+        },
+        "title": "ToolSettings",
+        "type": "object"
+      },
       "ToolSource": {
         "properties": {
           "code": {
@@ -23704,6 +24218,129 @@
           "tests"
         ],
         "title": "ToolSource",
+        "type": "object"
+      },
+      "ToolSpec": {
+        "additionalProperties": false,
+        "description": "The catalog entry of one built-in tool (see the module documentation).",
+        "properties": {
+          "capability": {
+            "$ref": "#/components/schemas/ToolCapability"
+          },
+          "category": {
+            "enum": [
+              "compute",
+              "data",
+              "files",
+              "web",
+              "communication"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "connection_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Type"
+          },
+          "cost_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Unit"
+          },
+          "i18n_key": {
+            "default": "",
+            "title": "I18N Key",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "max_calls_per_run": {
+            "anyOf": [
+              {
+                "maximum": 10000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Calls Per Run"
+          },
+          "modes": {
+            "default": [
+              "desktop",
+              "export",
+              "local-container",
+              "server"
+            ],
+            "items": {
+              "enum": [
+                "desktop",
+                "local-container",
+                "server",
+                "export"
+              ],
+              "type": "string"
+            },
+            "title": "Modes",
+            "type": "array",
+            "uniqueItems": true
+          },
+          "network": {
+            "default": "none",
+            "enum": [
+              "none",
+              "external"
+            ],
+            "title": "Network",
+            "type": "string"
+          },
+          "offline": {
+            "default": true,
+            "title": "Offline",
+            "type": "boolean"
+          },
+          "params_schema": {
+            "additionalProperties": true,
+            "title": "Params Schema",
+            "type": "object"
+          },
+          "timeout_seconds": {
+            "default": 30.0,
+            "exclusiveMinimum": 0.0,
+            "maximum": 600.0,
+            "title": "Timeout Seconds",
+            "type": "number"
+          },
+          "version": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "category",
+          "capability"
+        ],
+        "title": "ToolSpec",
         "type": "object"
       },
       "ToolVersion": {
@@ -28571,6 +29208,448 @@
         "summary": "Budget Requests",
         "tags": [
           "runs"
+        ]
+      }
+    },
+    "/api/connections": {
+      "get": {
+        "operationId": "list_connections_api_connections_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConnectionView"
+                  },
+                  "title": "Response List Connections Api Connections Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Connections",
+        "tags": [
+          "tools"
+        ]
+      },
+      "post": {
+        "operationId": "create_connection_api_connections_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Create Connection",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/connections/events": {
+      "get": {
+        "description": "Administration events, newest first (who changed which connection; never secrets or settings values).",
+        "operationId": "list_connection_events_api_connections_events_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConnectionEvent"
+                  },
+                  "title": "Response List Connection Events Api Connections Events Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Connection Events",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/connections/status": {
+      "get": {
+        "operationId": "connection_status_api_connections_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Connection Status",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/connections/types": {
+      "get": {
+        "description": "The connection types this installation offers (``database`` appears once CR-DB registers it).",
+        "operationId": "list_connection_types_api_connections_types_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConnectionTypeInfo"
+                  },
+                  "title": "Response List Connection Types Api Connections Types Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Connection Types",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/connections/{connection_id}": {
+      "delete": {
+        "description": "Delete a connection; one that agents still bind is refused (``connection.in_use``) unless ``force``.",
+        "operationId": "delete_connection_api_connections__connection_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Force",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Delete Connection",
+        "tags": [
+          "tools"
+        ]
+      },
+      "get": {
+        "operationId": "get_connection_api_connections__connection_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Connection",
+        "tags": [
+          "tools"
+        ]
+      },
+      "patch": {
+        "operationId": "update_connection_api_connections__connection_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectionPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Update Connection",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/connections/{connection_id}/check": {
+      "post": {
+        "description": "Check the connection; the result is stored as status and error code (never the service's own message).",
+        "operationId": "check_connection_api_connections__connection_id__check_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Check Connection",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/connections/{connection_id}/secret": {
+      "put": {
+        "description": "Store or replace the secret (``\"\"`` removes it). The answer only says ``secret_set``.",
+        "operationId": "set_connection_secret_api_connections__connection_id__secret_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecretIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Set Connection Secret",
+        "tags": [
+          "tools"
         ]
       }
     },
@@ -37723,6 +38802,42 @@
           }
         },
         "summary": "Save Tool",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/tools/builtin": {
+      "get": {
+        "description": "The built-in tools with their specs: network, offline, connection type, limits, cost unit (NAL-A1).",
+        "operationId": "list_builtin_tools_api_tools_builtin_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BuiltinToolInfo"
+                  },
+                  "title": "Response List Builtin Tools Api Tools Builtin Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Builtin Tools",
         "tags": [
           "tools"
         ]
