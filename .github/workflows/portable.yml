@@ -63,11 +63,9 @@ jobs:
         shell: bash
         run: |
           python -m pip install "pip>=26.1"
-          # A pull request reads the lock of the studio branch with its own name when there is one (a change that needs
-          # newer components and the studio bump that moves them land as a pair), else the studio master's.
-          lock=https://raw.githubusercontent.com/peterkarlhuber/nodestro-studio
-          curl -fsSL "$lock/${GITHUB_HEAD_REF:-master}/platform/internal-server.txt" > "$RUNNER_TEMP/lock-all.txt" ||
-            curl -fsSL "$lock/master/platform/internal-server.txt" > "$RUNNER_TEMP/lock-all.txt"
+          # A pull request reads the lock of the studio branch with its own name when there is one, else the
+          # studio master's; a paired lock is shown as a warning and diffed in the job summary (scripts/studio_lock.sh).
+          bash scripts/studio_lock.sh "$RUNNER_TEMP/lock-all.txt"
           grep -v '^nodestro-api ' "$RUNNER_TEMP/lock-all.txt" > "$RUNNER_TEMP/lock.txt"
           echo "lock: $(grep '^nodestro-runtime ' "$RUNNER_TEMP/lock.txt")"
           cat "$RUNNER_TEMP/lock.txt"

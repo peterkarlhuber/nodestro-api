@@ -123,7 +123,7 @@ user login and does not lift the loopback-only rule. Without the variable (the `
 
 **Server logins.** `nodestro_api.server_app.create_tenant_app` builds the studio API for many tenants with logins;
 `nodestro-server api` starts it (see [The server](#the-server-nodestro-server)). What it does
-(`nodestro_api.identity`, needs `pip install "nodestro-api[server]"`):
+(`nodestro_api.identity`, needs the `server` extra, see [The server](#the-server-nodestro-server)):
 
 - Login with OpenID Connect at the operator's identity provider: authorization code flow with PKCE (`S256`),
   `state` (stored hashed, used once, expires after 10 minutes) and `nonce`. The ID token must be signed with an
@@ -215,8 +215,9 @@ higher limit per address, so one client's wrong key does not lock out other keys
 
 ## The server (`nodestro-server`)
 
-`pip install "nodestro-api[server]"` adds the command `nodestro-server`, which runs the processes of the server
-profile. Its configuration comes only from the environment and is checked before anything starts; every missing or
+The `server` extra adds the command `nodestro-server`, which runs the processes of the server profile; install it
+with the studio lock (pip 26.1 or later): `pip install -c <lock URL> "nodestro-api[server]"` (the lock URL as in
+[Installation and start](#installation-and-start)). Its configuration comes only from the environment and is checked before anything starts; every missing or
 unsafe value is listed at once (`profile.invalid`), and nothing has a default that would weaken it:
 
 | Variable | Meaning |
@@ -473,7 +474,9 @@ purpose keep their wording, with absolute paths replaced by `[path]` and credent
 ## Development
 
 ```bash
-pip install -e ".[dev]"
+python -m pip install "pip>=26.1"
+curl -fsSL https://raw.githubusercontent.com/peterkarlhuber/nodestro-studio/master/platform/internal-server.txt | grep -v '^nodestro-api ' > lock.txt
+pip install -c lock.txt -e ".[dev]"
 ruff check . && ruff format --check . && mypy && pytest
 ```
 
