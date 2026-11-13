@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Pins nodestro-runtime 25c1445 (runtime MIG-NOD-1: its PostgreSQL test helpers on `tabrion.testing`, the VER-1 pin
+- Pins nodestro-runtime 64d3ab1 (runtime MIG-NOD-1: its PostgreSQL test helpers on `tabrion.testing`, the VER-1 pin
   guard, and the tests-only changes since 979c11c: CI-FAST AP6 per-worker test databases, the `--surface` check fix).
   No runtime source change since 979c11c.
 - Tests (TABRION MIG-NOD-1): the PostgreSQL test cases decide skip or failure through `tabrion.testing`. The new
