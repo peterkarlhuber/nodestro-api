@@ -470,20 +470,40 @@ def test_studio_and_export_give_the_same_results(make_app: Callable[..., TestCli
     assert studio_calls == export_calls
 
 
-def test_a_local_orkexa_installation_exports_the_pinned_commit(monkeypatch: pytest.MonkeyPatch) -> None:
-    # orkexa has no release tags: without a Git installation the export uses the revision Nodestro pins.
+def _fake_orkexa(monkeypatch: pytest.MonkeyPatch, direct_url: dict[str, Any] | None) -> None:
     original = exporter.metadata.distribution
 
-    class Local:
+    class Fake:
         def read_text(self, name: str) -> str | None:
-            return (
-                json.dumps({"url": "file:///home/user/orkexa", "dir_info": {}}) if name == "direct_url.json" else None
-            )
+            return json.dumps(direct_url) if name == "direct_url.json" and direct_url is not None else None
 
-    monkeypatch.setattr(exporter.metadata, "distribution", lambda name: Local() if name == "orkexa" else original(name))
-    pinned = next(line for line in exporter.metadata.requires("nodestro-runtime") or [] if line.startswith("orkexa"))
-    line = exporter._orkexa_git()
-    assert line.endswith(pinned.split(" @ ", 1)[1]) and "@v" not in line
+    monkeypatch.setattr(exporter.metadata, "distribution", lambda name: Fake() if name == "orkexa" else original(name))
+
+
+def test_a_git_orkexa_installation_exports_its_commit(monkeypatch: pytest.MonkeyPatch) -> None:
+    # orkexa has no release tags: the export names the exact commit the installation came from (PEP 610).
+    commit = "0123456789abcdef0123456789abcdef01234567"
+    url = "https://github.com/peterkarlhuber/orkexa.git"
+    _fake_orkexa(monkeypatch, {"url": url, "vcs_info": {"vcs": "git", "commit_id": commit}})
+    assert exporter._orkexa_git() == f"{exporter._LIBRARY} @ git+{url}@{commit}"
+
+
+@pytest.mark.parametrize(
+    "direct_url",
+    [
+        None,  # installed from an index or a wheel: no direct_url.json
+        {"url": "file:///home/user/orkexa", "dir_info": {}},  # a local checkout
+        {"url": "file:///home/user/orkexa", "vcs_info": {"vcs": "git", "commit_id": "0" * 40}},  # not on GitHub
+    ],
+)
+def test_an_orkexa_without_a_github_commit_cannot_be_exported_by_reference(
+    monkeypatch: pytest.MonkeyPatch, direct_url: dict[str, Any] | None
+) -> None:
+    # The runtime only declares a version range for orkexa; the exact commit lives in the studio lock. There is no
+    # fallback to guess one: the export refuses with an explanation instead of naming a tag that does not exist.
+    _fake_orkexa(monkeypatch, direct_url)
+    with pytest.raises(RuntimeError, match="studio lock"):
+        exporter._orkexa_git()
 
 
 def test_the_exported_api_chooses_its_tool_sandbox_from_the_environment() -> None:

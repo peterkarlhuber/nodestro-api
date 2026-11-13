@@ -26,11 +26,13 @@ is [PLATFORM.md](https://github.com/peterkarlhuber/nodestro-studio/blob/master/d
 
 ## Installation and start
 
-The Nodestro components are pinned by commit (see `pyproject.toml`; the tested combination of all components is
-`nodestro-studio/platform/versions.json`).
+`pyproject.toml` declares only version ranges for the Nodestro components and orkexa; their exact commits live in the
+studio lock (`nodestro-studio/platform/internal-server.txt`; the tested combination of all components is
+`nodestro-studio/platform/versions.json`). The names are not registered on PyPI, so a plain `pip install nodestro-api`
+without the lock cannot work.
 
 ```bash
-pip install "nodestro-api @ git+https://github.com/peterkarlhuber/nodestro-api.git@<commit>"
+pip install -r https://raw.githubusercontent.com/peterkarlhuber/nodestro-studio/master/platform/internal-server.txt nodestro-api
 nodestro-api                       # http://localhost:8000/api, reference under /api/docs
 ```
 
