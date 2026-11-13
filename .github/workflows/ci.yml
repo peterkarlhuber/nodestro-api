@@ -67,6 +67,8 @@ jobs:
           grep -v '^nodestro-api ' "$RUNNER_TEMP/lock-all.txt" > "$RUNNER_TEMP/lock.txt"
           echo "lock: $(grep '^nodestro-runtime ' "$RUNNER_TEMP/lock.txt")"
           cat "$RUNNER_TEMP/lock.txt"
+          # DC-NA-1: tests/test_tabrion_pin.py compares the installed tabrion's commit with this lock's.
+          echo "NODESTRO_STUDIO_LOCK=$RUNNER_TEMP/lock.txt" >> "$GITHUB_ENV"
       - name: Install
         run: |
           pip install -c "$RUNNER_TEMP/lock.txt" -e ".[dev]"
@@ -101,6 +103,38 @@ jobs:
           pip install pip-audit==2.10.1
           args=(); for id in $PIP_AUDIT_IGNORE; do args+=(--ignore-vuln "$id"); done
           pip-audit --skip-editable --progress-spinner off "${args[@]}"
+
+  # DC-NA-1 (dependency confusion): the test job's install with every installer's index replaced by a poisoned one
+  # (scripts/check_tabrion_source.py, a checksummed copy from nodestro-studio). It serves tabrion 0.1.99 (a wheel and
+  # an sdist that run code) and redirects every other name to PyPI. Red when pip asks that index for tabrion at all,
+  # when poisoned code ran, or when the installed tabrion is not the studio lock's commit; its positive control first
+  # shows that a plain "pip install tabrion" would take the poisoned release. No pip cache: every request is seen.
+  tabrion-source:
+    name: tabrion source (poisoned index)
+    if: github.event_name != 'schedule' || github.workflow == 'Nightly'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: Studio lock
+        shell: bash
+        run: |
+          python -m pip install "pip>=26.1"
+          bash scripts/studio_lock.sh "$RUNNER_TEMP/lock-all.txt"
+          grep -v '^nodestro-api ' "$RUNNER_TEMP/lock-all.txt" > "$RUNNER_TEMP/lock.txt"
+          cat "$RUNNER_TEMP/lock.txt"
+          echo "NODESTRO_STUDIO_LOCK=$RUNNER_TEMP/lock.txt" >> "$GITHUB_ENV"
+      - name: Install with a poisoned index
+        run: >-
+          python -I scripts/check_tabrion_source.py --lock "$RUNNER_TEMP/lock.txt" --
+          python -m pip install --no-cache-dir -c "$RUNNER_TEMP/lock.txt" -e ".[dev]"
+      - name: The installed tabrion is the locked commit
+        run: python -m pytest -p no:cacheprovider tests/test_tabrion_pin.py tests/test_tabrion_source_check.py
 
   package:
     # The wheel installs on its own and contains what the package needs at run time.
@@ -184,6 +218,8 @@ jobs:
           grep -v '^nodestro-api ' "$RUNNER_TEMP/lock-all.txt" > "$RUNNER_TEMP/lock.txt"
           echo "lock: $(grep '^nodestro-runtime ' "$RUNNER_TEMP/lock.txt")"
           cat "$RUNNER_TEMP/lock.txt"
+          # DC-NA-1: tests/test_tabrion_pin.py compares the installed tabrion's commit with this lock's.
+          echo "NODESTRO_STUDIO_LOCK=$RUNNER_TEMP/lock.txt" >> "$GITHUB_ENV"
       - name: Install
         run: pip install -c "$RUNNER_TEMP/lock.txt" -e ".[dev]"
       - name: tenant-sql (pinned)
