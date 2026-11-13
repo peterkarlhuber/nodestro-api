@@ -9,11 +9,11 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import suppress
-import os
 import socket
 import threading
 from typing import Any
 
+import postgres_support
 import pytest
 
 
@@ -270,11 +270,7 @@ def fault_proxy() -> Iterator[FaultProxy]:
     """A :class:`FaultProxy` in front of ``NODESTRO_TEST_POSTGRES`` (skips without a test server)."""
     from psycopg.conninfo import conninfo_to_dict
 
-    dsn = os.environ.get("NODESTRO_TEST_POSTGRES", "")
-    if not dsn:
-        if os.environ.get("NODESTRO_REQUIRE_POSTGRES") == "1":
-            pytest.fail("NODESTRO_REQUIRE_POSTGRES=1 but NODESTRO_TEST_POSTGRES names no database")
-        pytest.skip("NODESTRO_TEST_POSTGRES is not set")
+    dsn = postgres_support.require_postgres()
     parts = conninfo_to_dict(dsn)
     proxy = FaultProxy(str(parts.get("hostaddr") or parts.get("host") or "127.0.0.1"), int(parts.get("port") or 5432))
     try:

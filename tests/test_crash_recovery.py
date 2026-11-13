@@ -33,6 +33,7 @@ from typing import Any
 import uuid
 
 from nodestro_runtime.schemas import Run, WorkflowIn, now
+import postgres_support
 import pytest
 
 from nodestro_api.benchmarks import RUNS as BENCHMARK_RUNS
@@ -158,10 +159,7 @@ def test_a_desktop_killed_while_it_deletes_a_workflow_keeps_the_whole_workflow(
 
 @pytest.fixture
 def pg_schema() -> Iterator[str]:
-    if not DSN:
-        if os.environ.get("NODESTRO_REQUIRE_POSTGRES") == "1":
-            pytest.fail("NODESTRO_REQUIRE_POSTGRES=1 but NODESTRO_TEST_POSTGRES names no database")
-        pytest.skip("NODESTRO_TEST_POSTGRES is not set")
+    postgres_support.require_postgres()
     psycopg = pytest.importorskip("psycopg")
     from nodestro_runtime.storage_postgres import PostgresDatabase
     from psycopg import sql

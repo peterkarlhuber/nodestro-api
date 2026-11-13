@@ -25,6 +25,7 @@ import zipfile
 
 from fastapi.testclient import TestClient
 from nodestro_runtime.schemas import Run, Usage, Workflow, now
+import postgres_support
 import pytest
 
 from nodestro_api.batches import COLLECTION as BATCHES
@@ -192,10 +193,7 @@ DSN = os.environ.get("NODESTRO_TEST_POSTGRES", "")
 
 @pytest.fixture
 def pg_schema() -> Iterator[str]:
-    if not DSN:
-        if os.environ.get("NODESTRO_REQUIRE_POSTGRES") == "1":
-            pytest.fail("NODESTRO_REQUIRE_POSTGRES=1 but NODESTRO_TEST_POSTGRES names no database")
-        pytest.skip("NODESTRO_TEST_POSTGRES is not set")
+    postgres_support.require_postgres()
     psycopg = pytest.importorskip("psycopg")
     from nodestro_runtime.storage_postgres import PostgresDatabase
     from psycopg import sql

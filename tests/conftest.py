@@ -21,16 +21,24 @@ from nodestro_runtime.testing import (
     text,
     tool_use,
 )
+from postgres_support import TABRION_TESTING, tabrion_session  # noqa: F401  # the session request for require_postgres
 import pytest
 
 from nodestro_api.app import create_app
 from nodestro_api.context import AppConfig
+
+# The PostgreSQL skip/require rule of the tests (TABRION MIG-NOD-1, tests/postgres_support.py);
+# postgres_support.configure_tabrion names Nodestro's variables in pytest_configure.
+pytest_plugins = ["tabrion.testing"] if TABRION_TESTING else []
 
 
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "real_docker_status: use the computer's real Docker status (background check)")
     config.addinivalue_line("markers", "real_identity_check: nodestro-server check reads the identity provider")
     _own_postgres_database_per_xdist_worker()
+    import postgres_support
+
+    postgres_support.configure_tabrion()
 
 
 #: The database this pytest-xdist worker created for itself (dropped again when the worker ends).
