@@ -2,11 +2,12 @@
 
 ## Unreleased
 
-- Added (TABRION DC-NA-1, dependency confusion): `tests/test_tabrion_pin.py` requires the installed Tabrion to come from
-  a git commit, and from the studio lock's commit when `NODESTRO_STUDIO_LOCK` names the lock (CI sets it); a version
-  check alone passed a foreign `tabrion 0.1.99` from an index. New CI job `tabrion source (poisoned index)` runs the
-  install with `scripts/check_tabrion_source.py` (an unchanged, checksummed copy from nodestro-studio): a poisoned
-  index must get no request for `tabrion`.
+- Added (TABRION DC-NA-1, dependency confusion): new CI job `tabrion source (poisoned index)`, reported by ci-ok, runs
+  the install with `scripts/check_tabrion_source.py` (an unchanged, checksummed copy from nodestro-studio): a poisoned
+  index must get no request for `tabrion`, which proves that the lock's direct-URL pin keeps a foreign `tabrion` out.
+  `tests/test_tabrion_pin.py` requires the installed Tabrion's `direct_url.json` to name a git commit, the studio
+  lock's when `NODESTRO_STUDIO_LOCK` names the lock (CI sets it): it detects an accidental index install, but it is
+  no proof of origin (a wheel can forge the file).
 - Changed (TABRION VER-1 after the CI-FAST pin switch): the `dev` extra requires `tabrion[testing,postgres]>=0.1,<0.2`
   instead of a direct URL, the same range as nodestro-runtime; the exact commit (v0.1.0 final, `d5821fa`) comes from
   the studio lock like every internal package.
