@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Security (TABRION MIG-NOD-3, finding B-06-2): server error texts and logs without database values. A failed
+  `pg_dump` gives `storage.backup_failed` with its exit code, a fixed reason and a SQLSTATE, never its output; a
+  missing Axentra storage directory is no longer named in the error text (the log names it); `nodestro-server` and
+  `create_server_app` install Tabrion's `DbErrorRedactionFilter` for every log record (uvicorn's loggers included),
+  and the JSON log format keeps the redacted traceback. Needs nodestro-runtime at or after 9e0a73d.
 - Changed (runtime #161, NAL-A1 hardening): the error code catalog lists `connection.id_invalid`, and both OpenAPI
   documents describe `required_connections` with its id pattern `conn_<12 hex>` and `type:provider` values. Needs
   nodestro-runtime at or after 27dd8d5.
