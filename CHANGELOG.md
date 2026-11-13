@@ -5,6 +5,21 @@
 - Changed (TABRION VER-1 after the CI-FAST pin switch): the `dev` extra requires `tabrion[testing,postgres]>=0.1,<0.2`
   instead of a direct URL, the same range as nodestro-runtime; the exact commit (v0.1.0 final, `d5821fa`) comes from
   the studio lock like every internal package.
+- Needs nodestro-runtime at or after 2455aa9 (runtime #157, NAL-A1; the studio lock carries it).
+- NAL-A1 (nodestro-runtime ADR-0001): service connections and the built-in tool catalog.
+  - New routes (`api_connections.py`): `GET /api/connections/status|types`, `GET/POST /api/connections`,
+    `GET/PATCH/DELETE /api/connections/{id}`, `PUT /api/connections/{id}/secret` (write-only; answers only
+    `secret_set`), `POST /api/connections/{id}/check`, `GET /api/connections/events` and `GET /api/tools/builtin`
+    (specs: network, offline, connection type, limits, cost unit, origin). Reads need `read`; changes, secrets,
+    checks and events need `admin`.
+  - Publishing records `builtin_versions` and `required_connections` (`{connection_id: "type:provider"}`; never
+    settings or secrets) in the release.
+  - Exports list the required connections in the manifest (`connections_required`), README, `.env.example` and the
+    network needs (an offline package refuses them); `configure` asks for them and stores them in
+    `DATA_DIR/secrets/connections.json` (owner-only); `NODESTRO_CONNECTION_<ID>_SECRET` wins. A release whose
+    connections are missing answers 503 `connection.missing` when a run starts. Launcher and README texts in all six
+    languages. Follow-up: API-067 (setup page).
+
 - Tests (TABRION MIG-NOD-1): the PostgreSQL test cases decide skip or failure through `tabrion.testing`. The new
   `tests/postgres_support.py` (the same helper names as nodestro-runtime's) loads the plugin from `tests/conftest.py`,
   points it at Nodestro's variables (`configure(env_prefix="NODESTRO", schema_prefix="nodestro_test_")`), and

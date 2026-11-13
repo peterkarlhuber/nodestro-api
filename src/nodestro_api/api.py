@@ -333,6 +333,7 @@ PATH_TAGS: dict[str, str] = {
     "pricing": "pricing",
     "usage": "pricing",
     "tools": "tools",
+    "connections": "tools",
     "tool-approvals": "tool approvals",
     "tool-pre-grants": "tool approvals",
     "python": "Python environments",

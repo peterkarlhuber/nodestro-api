@@ -24,6 +24,7 @@ from nodestro_runtime.local_models import catalog_model
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.providers import PROVIDERS, model_id, provider_of
 from nodestro_runtime.release import ReleaseBundle
+from nodestro_runtime.tool_spec import builtin_spec
 from orkexa.local import is_cloud_model
 from pydantic import BaseModel, Field
 
@@ -79,7 +80,9 @@ class LocalModelInfo(BaseModel):
 class NetworkNeed(BaseModel):
     """Something the release needs a network connection or an outside service for."""
 
-    kind: Literal["cloud_model", "endpoint", "server_tool", "mcp", "docker_sandbox", "ollama_cloud"]
+    kind: Literal[
+        "cloud_model", "endpoint", "server_tool", "mcp", "docker_sandbox", "ollama_cloud", "builtin_tool", "connection"
+    ]
     name: str
     detail: str = ""
     used_by: list[str] = Field(default_factory=list)
@@ -237,6 +240,12 @@ def network_needs(bundle: ReleaseBundle, uses: Iterable[ModelUse]) -> list[Netwo
     for name in sorted(bundle.mcp_tools):
         ref = bundle.mcp_tools[name]
         needs.append(NetworkNeed(kind="mcp", name=name, detail=ref.server_slug))
+    for name in bundle.builtin_tools:
+        spec = builtin_spec(name)
+        if spec is not None and spec.network == "external":
+            needs.append(NetworkNeed(kind="builtin_tool", name=name, detail=spec.connection_type or ""))
+    for connection_id, wanted in sorted(bundle.required_connections.items()):
+        needs.append(NetworkNeed(kind="connection", name=connection_id, detail=wanted))
     untrusted = sorted(name for name in bundle.tools if bundle.tool_trust.get(name) != "user-authored")
     for name in untrusted:
         needs.append(NetworkNeed(kind="docker_sandbox", name=name))
