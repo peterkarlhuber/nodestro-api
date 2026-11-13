@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Pins nodestro-runtime 2455aa9 (runtime #157, NAL-A1: tool specs, service connections, ADR-0001).
+- Needs nodestro-runtime at or after 2455aa9 (runtime #157, NAL-A1; the studio lock carries it).
 - NAL-A1 (nodestro-runtime ADR-0001): service connections and the built-in tool catalog.
   - New routes (`api_connections.py`): `GET /api/connections/status|types`, `GET/POST /api/connections`,
     `GET/PATCH/DELETE /api/connections/{id}`, `PUT /api/connections/{id}/secret` (write-only; answers only

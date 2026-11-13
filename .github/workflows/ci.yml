@@ -55,9 +55,17 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           cache: pip
+      # pyproject.toml declares version ranges for the internal packages; their exact commits live in the
+      # studio lock (nodestro-studio platform/internal-server.txt), minus this package itself.
+      - name: Studio lock
+        shell: bash
+        run: |
+          python -m pip install "pip>=26.1"
+          curl -fsSL https://raw.githubusercontent.com/peterkarlhuber/nodestro-studio/master/platform/internal-server.txt | grep -v '^nodestro-api ' > "$RUNNER_TEMP/lock.txt"
+          cat "$RUNNER_TEMP/lock.txt"
       - name: Install
         run: |
-          pip install -e ".[dev]"
+          pip install -c "$RUNNER_TEMP/lock.txt" -e ".[dev]"
           # CI-FAST AP6: the suite runs on every CPU of the runner (pytest-xdist), not on one.
           pip install pytest-xdist==3.8.0
       - run: ruff check .
@@ -107,9 +115,13 @@ jobs:
       - run: pip install build==1.6.1
       - run: python -m build
       - name: Install the wheel into a fresh environment
+        shell: bash
         run: |
           python -m venv "$RUNNER_TEMP/wheel"
-          "$RUNNER_TEMP/wheel/bin/pip" install dist/*.whl
+          "$RUNNER_TEMP/wheel/bin/python" -m pip install "pip>=26.1"
+          # The internal packages at the commits of the studio lock (pyproject.toml declares only version ranges).
+          curl -fsSL https://raw.githubusercontent.com/peterkarlhuber/nodestro-studio/master/platform/internal-server.txt | grep -v '^nodestro-api ' > "$RUNNER_TEMP/lock.txt"
+          "$RUNNER_TEMP/wheel/bin/pip" install -c "$RUNNER_TEMP/lock.txt" dist/*.whl
       - name: Check the installed wheel
         run: |
           cd "$RUNNER_TEMP"
@@ -152,8 +164,16 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
+      # pyproject.toml declares version ranges for the internal packages; their exact commits live in the
+      # studio lock (nodestro-studio platform/internal-server.txt), minus this package itself.
+      - name: Studio lock
+        shell: bash
+        run: |
+          python -m pip install "pip>=26.1"
+          curl -fsSL https://raw.githubusercontent.com/peterkarlhuber/nodestro-studio/master/platform/internal-server.txt | grep -v '^nodestro-api ' > "$RUNNER_TEMP/lock.txt"
+          cat "$RUNNER_TEMP/lock.txt"
       - name: Install
-        run: pip install -e ".[dev]"
+        run: pip install -c "$RUNNER_TEMP/lock.txt" -e ".[dev]"
       - name: tenant-sql (pinned)
         run: |
           pytest -rs --junitxml=junit-tenant-sql.xml tests/test_tenant_filters.py tests/test_tenant_sql_scan.py
@@ -165,13 +185,14 @@ jobs:
           repository=https://github.com/peterkarlhuber/nodestro-runtime.git
           python -m venv "$RUNNER_TEMP/runtime-master"
           # The checker needs the standard library, pglast (the range of the dev extra) and, since MUP-ONA B6, its rule
-          # engine orkexa.testing.sqlcheck: orkexa with its own dependencies and the sqlcheck extra, at the commit this
-          # runtime pins.
+          # engine orkexa.testing.sqlcheck: orkexa with its own dependencies and the sqlcheck extra, at the commit of
+          # the studio lock (the runtime only declares a version range for it).
+          "$RUNNER_TEMP/runtime-master/bin/python" -m pip install "pip>=26.1"
           "$RUNNER_TEMP/runtime-master/bin/pip" install --no-deps "nodestro-runtime @ git+$repository@master"
           "$RUNNER_TEMP/runtime-master/bin/pip" install "pglast>=7,<9"
-          orkexa_url="$("$RUNNER_TEMP/runtime-master/bin/python" -I -c 'import importlib.metadata as m; print(next(r for r in m.requires("nodestro-runtime") if r.startswith("orkexa") and "extra ==" not in r).split("@", 1)[1].strip())')"
-          echo "orkexa pinned by the runtime: $orkexa_url"
-          "$RUNNER_TEMP/runtime-master/bin/pip" install "orkexa[sqlcheck] @ $orkexa_url"
+          grep '^orkexa ' "$RUNNER_TEMP/lock.txt" > "$RUNNER_TEMP/orkexa-lock.txt"
+          echo "orkexa of the studio lock: $(cat "$RUNNER_TEMP/orkexa-lock.txt")"
+          "$RUNNER_TEMP/runtime-master/bin/pip" install -c "$RUNNER_TEMP/orkexa-lock.txt" "orkexa[sqlcheck]"
           master="$(git ls-remote "$repository" refs/heads/master | cut -f1)"
           test -n "$master" || { echo "::error::runtime master not found with git ls-remote"; exit 1; }
           echo "runtime master: $master"

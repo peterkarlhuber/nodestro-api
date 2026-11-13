@@ -438,10 +438,11 @@ def _closure_cached(names: tuple[str, ...], _versions: tuple[str, ...]) -> tuple
 
 
 def _orkexa_git() -> str:
-    """The commit this installation's orkexa came from (PEP 610), else the commit Nodestro pins.
+    """The commit this installation's orkexa came from (PEP 610).
 
-    orkexa has no release tags, so a local or editable installation falls back to the exact
-    revision in nodestro-runtime's requirements instead of a tag that does not exist.
+    orkexa has no release tags and is not on PyPI, and nodestro-runtime only declares a version range for it; the
+    exact commit lives in the studio lock (nodestro-studio ``platform/internal-server.txt``). An export therefore
+    needs orkexa installed from a GitHub commit, as the lock installs it.
     """
     try:
         direct = metadata.distribution("orkexa").read_text("direct_url.json")
@@ -452,11 +453,11 @@ def _orkexa_git() -> str:
         commit = (data.get("vcs_info") or {}).get("commit_id")
         if commit and "github.com" in str(data.get("url", "")):
             return f"{_LIBRARY} @ git+{data['url']}@{commit}"
-    for line in metadata.requires("nodestro-runtime") or []:
-        requirement = Requirement(line)
-        if requirement.name == "orkexa" and requirement.url:
-            return f"{_LIBRARY} @ {requirement.url}"
-    raise RuntimeError("nodestro-runtime's requirements do not pin orkexa")
+    raise RuntimeError(
+        "cannot name the orkexa commit for the export: orkexa is not installed from a GitHub commit. Install it from "
+        "the studio lock (pip install -r https://raw.githubusercontent.com/peterkarlhuber/nodestro-studio/master/"
+        "platform/internal-server.txt), or export with the bundled orkexa."
+    )
 
 
 def tool_libraries(bundle: ReleaseBundle) -> list[str]:
