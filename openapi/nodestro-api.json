@@ -17445,8 +17445,12 @@
             "type": "array"
           },
           "required_connections": {
-            "additionalProperties": {
-              "type": "string"
+            "patternProperties": {
+              "^conn_[0-9a-f]{12}$": {
+                "maxLength": 100,
+                "pattern": "^[a-z0-9_-]+:[a-z0-9_.-]+$",
+                "type": "string"
+              }
             },
             "title": "Required Connections",
             "type": "object"
