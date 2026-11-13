@@ -8,6 +8,9 @@
   `tests/test_tabrion_pin.py` requires the installed Tabrion's `direct_url.json` to name a git commit, the studio
   lock's when `NODESTRO_STUDIO_LOCK` names the lock (CI sets it): it detects an accidental index install, but it is
   no proof of origin (a wheel can forge the file).
+- Changed (runtime #161, NAL-A1 hardening): the error code catalog lists `connection.id_invalid`, and both OpenAPI
+  documents describe `required_connections` with its id pattern `conn_<12 hex>` and `type:provider` values. Needs
+  nodestro-runtime at or after 27dd8d5.
 - Changed (TABRION VER-1 after the CI-FAST pin switch): the `dev` extra requires `tabrion[testing,postgres]>=0.1,<0.2`
   instead of a direct URL, the same range as nodestro-runtime; the exact commit (v0.1.0 final, `d5821fa`) comes from
   the studio lock like every internal package.

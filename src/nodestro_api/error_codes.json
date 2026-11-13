@@ -314,6 +314,7 @@
   "connection.address_invalid": {"params": ["problems", "type"], "source": "runtime"},
   "connection.check_failed": {"params": [], "source": "runtime"},
   "connection.check_unavailable": {"params": [], "source": "runtime"},
+  "connection.id_invalid": {"params": [], "source": "runtime"},
   "connection.in_use": {"params": ["count", "names"], "source": "runtime"},
   "connection.missing": {"params": ["count"], "source": "api"},
   "connection.mode_unsupported": {"params": ["type"], "source": "runtime"},
