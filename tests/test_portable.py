@@ -611,7 +611,7 @@ def test_tabrion_is_never_resolved_by_name_for_a_portable_package(monkeypatch: p
 
     def requires(name: str) -> list[str] | None:
         found = real(name) or []
-        return [*found, "tabrion>=0.1,<0.2"] if name == "orkexa" else found
+        return [*found, "tabrion>=0.2,<0.3"] if name == "orkexa" else found
 
     monkeypatch.setattr(portable_build.metadata, "requires", requires)
     bundle = _release_bundle(

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Changed (TABRION 0.2.1 switch): the `dev` extra requires `tabrion[testing,postgres]>=0.2,<0.3`, and
+  `portable_locks/tabrion.txt` pins the source archive of Tabrion 0.2.1 final `af0458d` (no API change).
+
 - Fixed (MIG-ORK-3): a portable package no longer asks the package index for `tabrion`. orkexa's core requires it
   now, and the library lock took it over from orkexa's requirements; it is built from the pinned archive by
   `install_tabrion` only (DC-1).

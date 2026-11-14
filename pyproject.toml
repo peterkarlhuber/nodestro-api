@@ -41,7 +41,7 @@ dev = [
     "mypy>=1.13",
     # The PostgreSQL skip/require rule of the tests (tests/postgres_support.py, TABRION MIG-NOD-1): the same minor range
     # as nodestro-runtime's dev extra (VER-1, RC-8); the exact commit, a final release, lives in the studio lock.
-    "tabrion[testing,postgres]>=0.1,<0.2",
+    "tabrion[testing,postgres]>=0.2,<0.3",
     # PostgreSQL's own parser, for the static tenant-isolation check (tests/test_tenant_filters.py).
     "pglast>=7,<9",
     "pytest>=8",
