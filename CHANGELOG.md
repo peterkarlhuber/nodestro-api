@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- Added (TABRION MIG-NOD-9, decision E-NOD-PERM option B): recovery mode for a desktop database that other users may
+  change. When the runtime refuses `nodestro.db` with `storage.unsafe_file` and `fixable: true`, `create_app` no longer
+  stops: it starts the recovery app (`recovery.py`) with the same guards as the studio API (host and strict origin
+  check, launch session, security headers, body limits, contract header) and only three routes:
+  `GET /api/health` (`"mode": "recovery"`), `GET /api/recovery/database-permissions` (dry run: each file with
+  `status`, `old_mode`, `new_mode`, `reason` as the runtime reports them, `repairable`, the manual `chmod 600` command
+  and `plan`, a fingerprint of the files' device, inode, owner, mode and link count) and
+  `POST /api/recovery/database-permissions/repair` (`{"confirm": true, "plan": ...}`, `install` permission). No
+  workspace is opened and the data directory stays locked while it runs. The repair is refused without a JSON `true`
+  (`recovery.not_confirmed`), when the files differ from the dry run (`recovery.plan_changed`) or when a file is left
+  alone (symbolic link, hard link, another owner: `recovery.not_repairable`); the target is always
+  `<data dir>/nodestro.db` and its `-wal`, `-shm`, `-journal` files. After the repair the files are checked again (same
+  files, private, the database opens read-only); a failure answers `500 recovery.repair_failed` with the per-file
+  results and the manual command. On success the process ends with exit code 75 after the shutdown, and the desktop
+  shell starts the regular backend.
+- Added (TABRION MIG-NOD-9): the diagnosis reports `database_permissions` (`not_private` when group or others may
+  read the files, `not_repairable` when a file is left alone; never repairs). `POST
+  /api/diagnostics/database-permissions/recovery` (`{"confirm": true}`, `install`) stops the regular API cleanly and
+  ends the process with exit code 76; the desktop shell starts it again with `NODESTRO_RECOVERY=database-permissions`
+  (`AppConfig.recovery`), which starts recovery mode without opening the workspace. Refused while runs or other
+  background work are active (`recovery.busy`) and outside the desktop app (`recovery.unavailable`). New codes:
+  `recovery.*`. `nodestro_api.cli.serve` ends the process with the requested exit code once uvicorn stopped.
+  Needs nodestro-runtime with `repair_desktop_database_modes` (runtime #176).
+
 - Added (NAL-B2): `services` in the copy request of a library template (`POST /api/library/{id}/copy`) binds the
   service connection the copy's built-in tools need (kind such as `search` -> connection id; the kinds are `services`
   of `GET /api/library/{id}`). A kind the template does not need is refused with `library.service_unknown`, a

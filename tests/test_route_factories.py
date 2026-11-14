@@ -30,6 +30,7 @@ PACKAGE = Path(nodestro_api.__file__).resolve().parent
 #: Every function that builds an application that is served, and calls ``check_routes`` on it.
 FACTORIES = {
     "app.py:create_app": "the desktop studio API",
+    "app.py:_recovery_app": "the desktop's recovery mode (repair of the database's permissions only)",
     "server_app.py:create_tenant_app": "the server's studio API (logins, tenants)",
     "network.py:network_app": "the network listener of published APIs",
     "standalone.py:create_app": "an exported project (published API, optional web interface)",
