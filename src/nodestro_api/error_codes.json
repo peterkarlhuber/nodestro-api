@@ -993,7 +993,7 @@
   "skill.file_not_text": {"params": ["path"], "source": "api"},
   "skill.imported_with_write_tools": {"params": ["names"], "source": "runtime"},
   "skill.in_use": {"params": ["count"], "source": "api"},
-  "skill.inactive": {"params": ["name", "status"], "source": "runtime"},
+  "skill.inactive": {"params": ["name", "status"], "source": "both"},
   "skill.invalid": {"params": ["count", "reason"], "source": "runtime"},
   "skill.library_not_found": {"params": ["name"], "source": "api"},
   "skill.name_taken": {"params": ["name"], "source": "runtime"},
