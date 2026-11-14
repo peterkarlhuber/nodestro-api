@@ -3,9 +3,10 @@
 The repository passes the check and its exported list ``docs/api-consumers.md`` is current; every
 forbidden form is found (mutation probes), and the allowed forms are not. A stale or missing export fails.
 The ``__all__`` check runs against a fake ``tabrion`` package, so it is exercised before any repository
-installs Tabrion; experimental (``X``) names of the K10 snapshot are refused. The script is the same file in
-tabrion-studio, axentra, orkexa, nodestro-runtime and nodestro-api: its SHA-256 is pinned here, so a change to one
-copy fails until all tests are updated with the new copy.
+installs Tabrion; experimental (``X``) names of the K10 snapshot are refused. The script's source is
+tabrion-studio's ``scripts/check_tabrion_api.py``; axentra, orkexa, nodestro-runtime and nodestro-api hold
+byte-identical copies. Its SHA-256 is pinned here, so a change to one copy fails until every test is updated
+with the new copy.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "check_tabrion_api.py"
 EXPORT = ROOT / "docs" / "api-consumers.md"
 #: SHA-256 of ``scripts/check_tabrion_api.py``, the same in every repository that has a copy.
-SCRIPT_SHA256 = "6a0e66bb2c26c9190f7adfa2eac16a1f4ca29fe983e03c37be5020cb7e9d527a"
+SCRIPT_SHA256 = "e48cc7f230c1fa8ae677a98b8e70f93ec75212c61b7e424d939ff3c6c7730aa1"
 
 
 def _load() -> ModuleType:

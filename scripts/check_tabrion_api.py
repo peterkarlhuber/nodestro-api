@@ -39,9 +39,10 @@ A local name bound to Tabrion stays bound for the whole file, even after it is a
 ``from tabrion import errors`` followed by ``errors = {}`` and ``errors._x`` is reported (fails closed).
 
 The used names are written to ``docs/api-consumers.md`` (``--export``), the consumer side of Tabrion's
-``docs/api-consumers.md``. Standard library only; the same file is used in tabrion-studio, axentra, orkexa,
-nodestro-runtime and nodestro-api (keep the copies identical). Exit codes: 0 clean, 1 findings or a stale
-export, 2 usage errors.
+``docs/api-consumers.md``. Standard library only. The source of this file is tabrion-studio's
+``scripts/check_tabrion_api.py``; axentra, orkexa, nodestro-runtime and nodestro-api hold byte-identical
+copies (change the source, then copy it and the SHA-256 pinned in each repository's test). Exit codes:
+0 clean, 1 findings or a stale export, 2 usage errors.
 """
 
 from __future__ import annotations
