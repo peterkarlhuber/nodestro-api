@@ -22,7 +22,7 @@ is [PLATFORM.md](https://github.com/peterkarlhuber/nodestro-studio/blob/master/d
 | Published APIs `/api/published/{slug}` | `serving` (shared with exports), `publishing`, `release_gate` (opt-in release gate), `api_keys`, `network` (separate listener for the local network) |
 | Export | `exporter` (ZIP with runtime, lock file, tests; orkexa from Git or bundled), `standalone`, `export_models`; portable packages: `portable_build`, `export_jobs` (builds on a server's workers), `portable` (the launcher), `portable_secrets`, `webui_server` (see [docs/portable-export.md](docs/portable-export.md)) |
 | Services | `pricing_setup` (price sync on desktop and server), `assistants`, `architect`, `assistant`, `assistant_context`, `docs_index`, `batches`, `benchmarks`, `schedules`, `backup`, `organize`, `search`, `diagnostics` |
-| Contract | `openapi` and `openapi/nodestro-api.json` |
+| Contract | `openapi` and `openapi/nodestro-api.json`; the app API contract `nodestro-app/1` for interfaces: `app_contract`, `app_discovery` (`GET /api/app`), [docs/app-api/v1.md](docs/app-api/v1.md), `contracts/app-api/v1/*.schema.json` |
 
 ## Installation and start
 

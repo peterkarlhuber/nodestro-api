@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- NAL-C1: the app API contract `nodestro-app/1` (`docs/app-api/v1.md`, JSON Schemas in `contracts/app-api/v1`), what any
+  interface may rely on in every backend. Additions only; no new run endpoints, no path changes.
+  - `GET /api/app` (discovery) in the desktop studio, its network listener, exported projects and portable packages
+    (`app_discovery.py`). Without credentials only `contract` (`{"name": "nodestro-app", "versions": [1],
+    "current": 1}`), `backend` (`id`, `name`), `auth.methods` and `tls`; with an API key or an interface session also
+    the backend's versions, `capabilities` (`runs`, `runs.sync`, `events.sse`, `files.upload`, `files.download`,
+    `approvals`, `cancel`, `resume`, `history`, `usage`) and the `apps` that credential may use. A wrong key answers
+    `401`; rate-limited like the published API (120 per minute and key, 60 per minute and address without one).
+  - The backend id is random and kept in `<data dir>/instance.json`; the operator names the backend with
+    `NODESTRO_BACKEND_NAME` (desktop), `BACKEND_NAME` (export, portable) or `name` in that file (default: empty).
+  - `GET /api/published/{slug}` gains `form` (the input form in order: `name`, `type`, `label`, `help`, `required`,
+    `default`, `options`, `multiple`, `accept`, `accept_formats`, `max_mb`, `max_files`) and `form_version: 1`.
+    The embedded web interface's `/ui/api/config` builds its `fields` from the same mapping (`app_contract.py`);
+    field labels fall back to the field name, `select` options without text are left out, and `multiple` is `false`
+    for every field that is not a file field.
+  - Every answer of a contract route (`/api/app`, `/api/published/...`, `/ui/api/session`), errors included, carries
+    `Nodestro-App-Contract: 1`.
+  - The desktop's launch secret and its proxy rule let `/api/app` through like `/api/published`; the route is
+    `public` in the route check. Contract tests (`tests/contract/test_app_contract_v1.py`) run every route against
+    each backend kind; the portable smoke test checks the discovery and the stable id across restarts. Export and
+    portable READMEs (six languages) mention the discovery. `jsonschema` joins the `dev` extra.
+  - Contract (`openapi/nodestro-api.json`), additions only: the route, `AppDiscovery` and its parts, `FormField`,
+    `InfoOut.form` and `InfoOut.form_version`.
+
 - Changed (runtime #161, NAL-A1 hardening): the error code catalog lists `connection.id_invalid`, and both OpenAPI
   documents describe `required_connections` with its id pattern `conn_<12 hex>` and `type:provider` values. Needs
   nodestro-runtime at or after 27dd8d5.
