@@ -48,7 +48,6 @@ from nodestro_runtime.schemas import (
     DEFAULT_ASSISTANT_MODEL,
     AgentConfig,
     AgentTemplate,
-    AgentTemplateIn,
     Language,
     OrchestratorConfig,
     Run,
@@ -1147,7 +1146,7 @@ def _library_services(ctx: Ctx, template_id: str, chosen: dict[str, str]) -> dic
     """The service connections of a copy (kind -> connection id): each kind must be one the template needs and each
     connection must exist and be of that kind (404 for an unknown connection, like the connection routes)."""
     needed = set(library.services(template_id))
-    for kind, connection_id in chosen.items():
+    for kind in chosen:
         if kind not in needed:
             raise ApiError(
                 422,
@@ -1155,6 +1154,13 @@ def _library_services(ctx: Ctx, template_id: str, chosen: dict[str, str]) -> dic
                 f"The template {template_id} needs no service connection of kind {kind}",
                 service=kind,
             )
+    return service_connections(ctx, chosen)
+
+
+def service_connections(ctx: Nodestro, chosen: dict[str, str]) -> dict[str, str]:
+    """``chosen`` (kind -> connection id) if every connection exists (404 like the connection routes) and is of its
+    kind (422 ``library.service_type``); shared by example and agent template copies."""
+    for kind, connection_id in chosen.items():
         try:
             connection = ctx.connections.get(connection_id)
         except NodestroError as exc:
@@ -2128,36 +2134,6 @@ def _check_agent_test(ctx: Nodestro, body: AgentTestIn) -> None:
     if body.agent.quality.enabled:
         models.add(body.agent.quality.judge_model)
     ctx.require_providers(models)  # fail fast: agent and judge need their providers
-
-
-@router.get("/agents/templates", dependencies=READ)
-def list_templates(ctx: Ctx) -> list[AgentTemplate]:
-    return ctx.store.list("templates", AgentTemplate)
-
-
-@router.post("/agents/templates", status_code=201, dependencies=EDIT)
-def create_template(body: AgentTemplateIn, ctx: Ctx) -> AgentTemplate:
-    template = AgentTemplate(agent=body.agent)
-    ctx.store.put("templates", template.id, template)
-    return template
-
-
-@router.put("/agents/templates/{template_id}", dependencies=EDIT)
-def update_template(template_id: str, body: AgentTemplateIn, ctx: Ctx) -> AgentTemplate:
-    current = ctx.store.get("templates", template_id, AgentTemplate)
-    if current is None:
-        raise KeyError(template_id)
-    template = AgentTemplate(agent=body.agent, id=template_id, created_at=current.created_at, updated_at=now())
-    ctx.store.put("templates", template_id, template)
-    return template
-
-
-@router.delete("/agents/templates/{template_id}", status_code=204, dependencies=EDIT)
-def delete_template(template_id: str, ctx: Ctx) -> Response:
-    if not ctx.store.delete("templates", template_id):
-        raise KeyError(template_id)
-    ctx.organize.forget("template", template_id)
-    return Response(status_code=204)
 
 
 # ---- tools ----------------------------------------------------------------------
