@@ -10768,6 +10768,31 @@
         "title": "LibraryModelPlan",
         "type": "object"
       },
+      "LibraryPartCopy": {
+        "properties": {
+          "language": {
+            "anyOf": [
+              {
+                "enum": [
+                  "de",
+                  "en",
+                  "es",
+                  "fr",
+                  "pt-BR",
+                  "it"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          }
+        },
+        "title": "LibraryPartCopy",
+        "type": "object"
+      },
       "LibrarySkill": {
         "properties": {
           "description": {
@@ -14825,6 +14850,125 @@
           "mapping"
         ],
         "title": "ParsedRows",
+        "type": "object"
+      },
+      "PartDetail": {
+        "properties": {
+          "agents": {
+            "title": "Agents",
+            "type": "integer"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "language": {
+            "title": "Language",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Parts",
+            "type": "array"
+          },
+          "templates": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Templates",
+            "type": "array"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/WorkflowIn"
+          }
+        },
+        "required": [
+          "id",
+          "language",
+          "name",
+          "description",
+          "capabilities",
+          "agents",
+          "parts",
+          "templates",
+          "workflow"
+        ],
+        "title": "PartDetail",
+        "type": "object"
+      },
+      "PartSummary": {
+        "description": "A building block as the gallery lists it: a small workflow that templates run as a team or sub-workflow.",
+        "properties": {
+          "agents": {
+            "title": "Agents",
+            "type": "integer"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "language": {
+            "title": "Language",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Parts",
+            "type": "array"
+          },
+          "templates": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Templates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "language",
+          "name",
+          "description",
+          "capabilities",
+          "agents",
+          "parts",
+          "templates"
+        ],
+        "title": "PartSummary",
         "type": "object"
       },
       "PendingApproval": {
@@ -33176,6 +33320,188 @@
           }
         },
         "summary": "Copy Library Agent",
+        "tags": [
+          "examples"
+        ]
+      }
+    },
+    "/api/library/parts": {
+      "get": {
+        "description": "The building blocks templates run as teams or sub-workflows, in one language; nothing is stored.",
+        "operationId": "list_library_parts_api_library_parts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "language",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "de",
+                    "en",
+                    "es",
+                    "fr",
+                    "pt-BR",
+                    "it"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Language"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PartSummary"
+                  },
+                  "title": "Response List Library Parts Api Library Parts Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Library Parts",
+        "tags": [
+          "examples"
+        ]
+      }
+    },
+    "/api/library/parts/{part_id}": {
+      "get": {
+        "description": "One building block with the workflow a copy would get (a preview, never a run).",
+        "operationId": "get_library_part_api_library_parts__part_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "part_id",
+            "required": true,
+            "schema": {
+              "title": "Part Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "language",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "de",
+                    "en",
+                    "es",
+                    "fr",
+                    "pt-BR",
+                    "it"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Language"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Library Part",
+        "tags": [
+          "examples"
+        ]
+      }
+    },
+    "/api/library/parts/{part_id}/copy": {
+      "post": {
+        "description": "Create an ordinary, independent workflow from a building block; agents get the workspace's model tiers.\n\nThe parts it runs are saved first, as workflows of their own, and pinned to their first version; a copy that\nfails half-way leaves nothing behind. The copy can serve as a team in the editor's palette right away.",
+        "operationId": "copy_library_part_api_library_parts__part_id__copy_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "part_id",
+            "required": true,
+            "schema": {
+              "title": "Part Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryPartCopy"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workflow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Copy Library Part",
         "tags": [
           "examples"
         ]

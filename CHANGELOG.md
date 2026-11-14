@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Added building blocks to the library (NAL-B3, for the shared gallery filter "Examples · Building blocks · Agents
+  · Skills"): `GET /api/library/parts` (every part: name, description, capability tags, agent steps, the parts it runs,
+  the templates that use it), `GET /api/library/parts/{id}` (plus the workflow a copy gets) and
+  `POST /api/library/parts/{id}/copy` (`{language}`; an ordinary workflow with the workspace's model tiers, inner
+  parts saved first and pinned; nothing is left behind when a copy fails). Template routes are unchanged.
 - Added (NAL-B3, skill library; `api_skills.py`, tag `skills`): skills in the Agent Skills format.
   - **Routes:**
     - `GET /api/skills`, `GET /api/skills/{id}` (with `version`: instructions, files, findings), `.../versions`,
