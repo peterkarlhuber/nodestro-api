@@ -600,3 +600,23 @@ def test_every_network_need_has_a_readme_text(language: str) -> None:
     strings = json.loads((exporter.README_DIR / f"strings.{language}.json").read_text(encoding="utf-8"))
     kinds = typing.get_args(NetworkNeed.model_fields["kind"].annotation)
     assert kinds and all(f"portable.need.{kind}" in strings for kind in kinds), language
+
+
+def test_tabrion_is_never_resolved_by_name_for_a_portable_package(monkeypatch: pytest.MonkeyPatch) -> None:
+    """orkexa's core requires tabrion (MIG-ORK-3), which is on no package index: the library lock must neither ask
+    for it nor constrain it; install_tabrion builds it from the pinned archive (DC-1)."""
+    from importlib import metadata
+
+    real = metadata.requires
+
+    def requires(name: str) -> list[str] | None:
+        found = real(name) or []
+        return [*found, "tabrion>=0.1,<0.2"] if name == "orkexa" else found
+
+    monkeypatch.setattr(portable_build.metadata, "requires", requires)
+    bundle = _release_bundle(
+        [{"id": "start", "type": "start"}, {"id": "out", "type": "output"}], [edge("start", "out")]
+    )
+    bundle.python = []
+    direct, constraints = portable_build.requirements(exporter.ExportOptions(kind="portable"), bundle)
+    assert not [item for item in [*direct, *constraints] if item.lower().startswith("tabrion")]
