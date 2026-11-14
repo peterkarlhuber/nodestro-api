@@ -581,6 +581,8 @@
   "library.agent_unknown": {"params": [], "source": "api"},
   "library.integration_unavailable": {"params": ["integration", "missing", "not_read_only", "server"], "source": "api"},
   "library.integration_unknown": {"params": ["integration"], "source": "api"},
+  "library.service_type": {"params": ["connection", "service", "type"], "source": "api"},
+  "library.service_unknown": {"params": ["service"], "source": "api"},
   "library.tests_need_offline": {"params": [], "source": "api"},
   "limit.concurrent": {"params": ["headers", "limit"], "source": "api"},
   "limit.daily_budget": {"params": ["headers", "limit_usd", "spent_usd"], "source": "api"},

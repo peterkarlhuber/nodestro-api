@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Added (NAL-B2): `services` in the copy request of a library template (`POST /api/library/{id}/copy`) binds the
+  service connection the copy's built-in tools need (kind such as `search` -> connection id; the kinds are `services`
+  of `GET /api/library/{id}`). A kind the template does not need is refused with `library.service_unknown`, a
+  connection of another type with `library.service_type`, an unknown connection with 404; nothing is stored then. A
+  kind left out stays open and the copy's workflow check names it.
 - NAL-C1: the app API contract `nodestro-app/1` (`docs/app-api/v1.md`, JSON Schemas in `contracts/app-api/v1`), what any
   interface may rely on in every backend. Additions only; no new run endpoints, no path changes.
   - `GET /api/app` (discovery) in the desktop studio, its network listener, exported projects and portable packages

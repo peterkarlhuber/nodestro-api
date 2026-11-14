@@ -1035,6 +1035,10 @@ class LibraryCopy(BaseModel):
     #: rule: letters, digits, spaces, ``_ . -``, 1 to 64). Empty or missing: the template's space, which every copy
     #: of the template shares. Refused with ``memory.space_name`` before anything is created.
     memory_space: str | None = Field(default=None, max_length=200)
+    #: The service connection for each kind the template's built-in tools need (kind from ``services`` of
+    #: ``GET /api/library/{id}`` such as ``search`` -> connection id, NAL-B2). A kind left out stays open: the
+    #: workflow check of the copy names it until a connection is chosen in the agent.
+    services: dict[str, str] = Field(default_factory=dict, max_length=20)
 
 
 #: Metadata of a knowledge file stored by a copy: the SHA-256 of the file as the library rendered it, so a second
@@ -1139,6 +1143,36 @@ def _library_connections(ctx: Nodestro, template_id: str, chosen: dict[str, str]
     return connections
 
 
+def _library_services(ctx: Ctx, template_id: str, chosen: dict[str, str]) -> dict[str, str]:
+    """The service connections of a copy (kind -> connection id): each kind must be one the template needs and each
+    connection must exist and be of that kind (404 for an unknown connection, like the connection routes)."""
+    needed = set(library.services(template_id))
+    for kind, connection_id in chosen.items():
+        if kind not in needed:
+            raise ApiError(
+                422,
+                "library.service_unknown",
+                f"The template {template_id} needs no service connection of kind {kind}",
+                service=kind,
+            )
+        try:
+            connection = ctx.connections.get(connection_id)
+        except NodestroError as exc:
+            if exc.code == "connection.not_found":
+                raise KeyError(connection_id) from None
+            raise
+        if connection.type != kind:
+            raise ApiError(
+                422,
+                "library.service_type",
+                f"The connection {connection_id} is a {connection.type} connection, not {kind}",
+                service=kind,
+                connection=connection_id,
+                type=connection.type,
+            )
+    return dict(chosen)
+
+
 @router.get("/library/{template_id}/models", dependencies=READ)
 def library_template_models(
     template_id: str, request: Request, ctx: Ctx, language: Language | None = None
@@ -1173,6 +1207,7 @@ def copy_library_template(template_id: str, body: LibraryCopy, request: Request,
             "take over its test cases",
         )
     connections = _library_connections(ctx, template_id, body.integrations)
+    services = _library_services(ctx, template_id, body.services)
     chosen = {key: check_model(model) for key, model in body.models.items()}
     try:
         models = library_models.choice(ctx, template_id, language, chosen)
@@ -1181,7 +1216,13 @@ def copy_library_template(template_id: str, body: LibraryCopy, request: Request,
     host = _LibraryHost(ctx)
     try:
         made = library.instantiate(
-            template_id, language, host, models=models, connections=connections, memory_space=space
+            template_id,
+            language,
+            host,
+            models=models,
+            connections=connections,
+            memory_space=space,
+            services=services,
         )
         # The copy remembers its origin (runtime RT-055), read-only: example, version, language and which
         # integrations run on sample data.

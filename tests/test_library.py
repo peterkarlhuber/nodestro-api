@@ -18,6 +18,29 @@ import pytest
 from conftest import Parsed, text
 
 IDS = library.template_ids()
+
+
+def copy_template(client: TestClient, template_id: str, **body: Any) -> dict[str, Any]:
+    """A copy of a template; the service connections its built-in tools need (NAL-B2: a checked connection of the
+    offline test search provider) are created and chosen."""
+    services = {}
+    for kind in library.services(template_id):
+        found = client.get("/api/connections", params={"type": kind}).json()
+        if found:
+            services[kind] = found[0]["id"]
+            continue
+        made = client.post("/api/connections", json={"type": kind, "provider": "test", "name": f"Test {kind}"})
+        assert made.status_code == 201, made.text
+        made_id = made.json()["id"]
+        # The test provider takes a secret like a real one; a checked connection raises no warning.
+        assert client.put(f"/api/connections/{made_id}/secret", json={"secret": "test-key"}).status_code == 200
+        assert client.post(f"/api/connections/{made_id}/check").json()["check"]["status"] == "ok"
+        services[kind] = made_id
+    answer = client.post(f"/api/library/{template_id}/copy", json={**body, "services": services})
+    assert answer.status_code == 201, answer.text
+    return answer.json()  # type: ignore[no-any-return]
+
+
 #: The marker every prepared test input with sample data starts with.
 SYNTHETIC = {
     "de": "SYNTHETISCHE BEISPIELDATEN",
@@ -98,7 +121,7 @@ def test_templates_pass_the_check_before_a_run(make_app: Callable[..., TestClien
     client = make_app()
     for template_id in IDS:
         # A copy, so sub-workflow nodes point at the copied parts.
-        workflow = client.post(f"/api/library/{template_id}/copy", json={"language": language}).json()
+        workflow = copy_template(client, template_id, language=language)
         check = client.post(f"/api/workflows/check?workflow_id={workflow['id']}", json=workflow).json()
         codes = [problem["code"] for problem in check["problems"] if problem["level"] != "info"]
         # Without an API key the check reports exactly that; the template itself has nothing to fix.
@@ -113,7 +136,7 @@ def test_listing_and_preview_store_nothing_and_call_no_model(make_app: Callable[
     fake = AnswerAllClient()
     client = make_app(client=fake)
     listing = client.get("/api/library", headers={"Accept-Language": "fr"}).json()
-    assert len(listing) == 24 and {item["language"] for item in listing} == {"fr"}
+    assert len(listing) == len(IDS) and {item["language"] for item in listing} == {"fr"}
     assert listing[4]["id"] == "financial-analysis" and listing[4]["name"] == "Analyse financière"
     italian = client.get("/api/library?language=it", headers={"Accept-Language": "fr"}).json()
     assert italian[0]["language"] == "it"
@@ -206,7 +229,7 @@ def test_every_template_runs_end_to_end_with_a_fake_client(
     for language in ("de", LANGUAGES[1 + IDS.index(template_id) % (len(LANGUAGES) - 1)]):
         fake = TeamsClient()
         client = make_app(client=fake)
-        workflow = client.post(f"/api/library/{template_id}/copy", json={"language": language}).json()
+        workflow = copy_template(client, template_id, language=language)
         start = next(node for node in workflow["nodes"] if node["type"] == "start")
         run = client.post(f"/api/workflows/{workflow['id']}/runs", json={"input": start["start"]["default_input"]})
         assert run.status_code in (200, 201), run.text
@@ -219,7 +242,13 @@ def test_every_template_runs_end_to_end_with_a_fake_client(
                 )
                 assert decided.status_code == 200, decided.text
             result = wait_run(client, run.json()["id"])
-        assert result["status"] == "succeeded", (language, template_id, result.get("error"))
+        errors = [node.get("error") for node in result["nodes"].values() if node.get("error")]
+        if library.services(template_id):
+            # Research agents must cite the run's source ledger; the fake answers search nothing, so the runtime
+            # refuses them. nodestro-examples tests/test_web_research.py runs these with a scripted research model.
+            assert result["status"] == "failed" and any("source ledger" in error for error in errors), errors
+            continue
+        assert result["status"] == "succeeded", (language, template_id, result.get("error"), errors)
         agents = [node for node in workflow["nodes"] if node["type"] == "agent"]
         incoming: dict[str, list[Any]] = {}
         for edge in workflow["edges"]:
@@ -374,9 +403,9 @@ def test_a_copy_can_take_over_the_test_cases_with_their_sample_files(
 
     language = LANGUAGES[IDS.index(template_id) % len(LANGUAGES)]
     client = make_app(client=TeamsClient())
-    plain = client.post(f"/api/library/{template_id}/copy", json={"language": language}).json()
+    plain = copy_template(client, template_id, language=language)
     assert client.get(f"/api/benchmarks?workflow_id={plain['id']}").json() == []
-    copy = client.post(f"/api/library/{template_id}/copy", json={"language": language, "tests": True}).json()
+    copy = copy_template(client, template_id, language=language, tests=True)
     [suite] = client.get(f"/api/benchmarks?workflow_id={copy['id']}").json()
     spec = library.structure(template_id)
     assert len(suite["cases"]) == len(spec.tests) >= 1
@@ -390,6 +419,12 @@ def test_a_copy_can_take_over_the_test_cases_with_their_sample_files(
         run = client.post(f"/api/workflows/{copy['id']}/runs", json={"input": case["input"], "values": case["values"]})
         assert run.status_code in (200, 201), (template_id, case["name"], run.text)
         result = decide_approvals(client, run.json()["id"])
+        if library.services(template_id):
+            # The fake answers cite no source; see test_every_template_runs_end_to_end_with_a_fake_client.
+            errors = [node.get("error") or "" for node in result["nodes"].values()]
+            assert result["status"] == "failed" and any("source ledger" in error for error in errors), errors
+            alternative_paths += case_spec.input == "own" or bool(case_spec.values)
+            continue
         assert result["status"] == "succeeded", (template_id, case["name"], result.get("error"))
         for check in case["checks"]:
             verdict = evaluate(ConditionRule(**check), result["output"])
@@ -530,7 +565,7 @@ def test_every_example_can_be_checked_for_publishing_as_an_api(
 ) -> None:
     client = make_app()
     for template_id in IDS:
-        workflow = client.post(f"/api/library/{template_id}/copy", json={"language": language}).json()
+        workflow = copy_template(client, template_id, language=language)
         check = client.post(f"/api/workflows/{workflow['id']}/api/check", json={}).json()
         errors = [item for item in check["problems"] if item["level"] == "error"]
         assert check["ok"] and not errors, (template_id, errors)
