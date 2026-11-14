@@ -950,6 +950,7 @@ class Publications:
                 tools.mcp = PinnedMcp(self.ctx.mcp, bundle.mcp_tools)  # type: ignore[assignment]
             builder = AgentBuilder(tools, self.ctx.knowledge, self.ctx.memory)
             builder.declared = self.ctx.builder.declared
+            builder.mode = self.ctx.builder.mode  # the installation's mode decides which built-in tools run
             locks = {item.workflow_id for item in bundle.python}
 
             def sandbox(workflow_id: str) -> Sandbox | None:
