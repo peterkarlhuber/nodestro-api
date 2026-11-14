@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- NAL-A2 (portable connection proof): `tests/test_portable_smoke.py` now proves a service connection end to end on all
+  six platforms, without any outside service. A fake OpenAI-compatible endpoint on 127.0.0.1 (standard library, a
+  thread) asks for `search_web` first and answers with text once it gets the tool result; the agent uses
+  `compatible:proof-model` and `search_web` bound to a `search` connection with the deterministic `test` provider.
+  In the studio the connection is created and its secret set through the API (without a secret the tool reports
+  `connection.secret_missing`; with it the run's source ledger holds the provider's hits). The package gets the
+  connection from `DATA_DIR/secrets/connections.json` and its secret from `NODESTRO_CONNECTION_<ID>_SECRET`, the
+  endpoint from `COMPATIBLE_BASE_URL`; it runs the search, and after a restart without the secret it refuses new
+  runs with 503 `connection.missing`. Neither secret appears in run answers, events, exports, the backup, the
+  connection routes, the package, its logs or its data folder. The workflow passes only once the export check accepts
+  the web tools (`exporter.py` still names them `export.integration_tools`) and the package contains `tabrion`, which
+  nodestro-runtime imports since MIG-NOD-3.
+- Fixed (NAL-A2): a portable package now contains the libraries of the web tools (orkexa's extra `web`: httpx,
+  trafilatura with lxml, charset-normalizer); `portable_build.requirements` took only the extras `all`, `pdf` and
+  `local`, so `fetch_web_page` could not have run in a package. Needs nodestro-runtime with the web tools (NAL-A2).
+- Fixed (NAL-A1/A2): building a portable package of a release with a built-in network tool or a service connection
+  failed with `KeyError: 'portable.need.builtin_tool'`: the README texts `portable.need.builtin_tool` and
+  `portable.need.connection` were missing in all six languages; a test now requires a text for every network need.
+- Tests: `test_connections_api` accepts the search providers the runtime with the web tools adds (`test` is always
+  one of them).
+
 - Changed (runtime #161, NAL-A1 hardening): the error code catalog lists `connection.id_invalid`, and both OpenAPI
   documents describe `required_connections` with its id pattern `conn_<12 hex>` and `type:provider` values. Needs
   nodestro-runtime at or after 27dd8d5.
