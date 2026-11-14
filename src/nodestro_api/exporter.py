@@ -460,12 +460,54 @@ def _orkexa_git() -> str:
     )
 
 
+#: Tabrion's distribution: a base requirement of nodestro-runtime since TABRION MIG-NOD-3
+#: (``nodestro_runtime.error_texts`` imports ``tabrion.errors``), so the copied runtime modules need it. Not on PyPI.
+_TABRION = "tabrion"
+_FULL_COMMIT = re.compile(r"[0-9a-f]{40}")
+
+
+def _runtime_needs_tabrion() -> bool:
+    """Whether the installed nodestro-runtime requires Tabrion unconditionally (runtime 9e0a73d and later)."""
+    for raw in metadata.requires("nodestro-runtime") or []:
+        requirement = Requirement(raw)
+        if requirement.name == _TABRION and requirement.marker is None:
+            return True
+    return False
+
+
+def _tabrion_git() -> str | None:
+    """``tabrion @ git+<repository>@<full commit>`` when the exported runtime modules need Tabrion, else ``None``.
+
+    Like orkexa (:func:`_orkexa_git`), Tabrion is not on a package index the export may trust: a bare ``tabrion``
+    requirement could be answered by any index (dependency confusion, DC-1). The line names the exact commit this
+    installation came from (PEP 610); without a GitHub commit (full 40-hex SHA) the export is refused. There is no
+    bundled copy of Tabrion (no vendoring), so an export that needs it always needs network access to GitHub.
+    """
+    if not _runtime_needs_tabrion():
+        return None
+    try:
+        direct = metadata.distribution(_TABRION).read_text("direct_url.json")
+    except metadata.PackageNotFoundError:
+        direct = None
+    if direct:
+        data = json.loads(direct)
+        commit = str((data.get("vcs_info") or {}).get("commit_id") or "")
+        url = str(data.get("url", ""))
+        if _FULL_COMMIT.fullmatch(commit) and url.startswith("https://github.com/"):
+            return f"{_TABRION} @ git+{url}@{commit}"
+    raise RuntimeError(
+        "cannot name the tabrion commit for the export: tabrion is not installed from a GitHub commit. Install it "
+        "from the studio lock (pip install -r https://raw.githubusercontent.com/peterkarlhuber/nodestro-studio/master/"
+        "platform/internal-server.txt)."
+    )
+
+
 def tool_libraries(bundle: ReleaseBundle) -> list[str]:
     """Pinned packages of the release's approved tool libraries (from the locks)."""
     from nodestro_runtime.python_envs import parse_lock
 
     # Packages the runtime itself brings (pydantic, ...) keep the runtime's pinned version.
-    runtime = set(_closure([*_APP_PACKAGES, _LIBRARY]))
+    runtime = set(_closure([*_APP_PACKAGES, _LIBRARY])) | {_TABRION}  # Tabrion only by its Git line (DC-1)
     pins: dict[str, str] = {}
     for lock in bundle.python:
         for package in parse_lock(lock.lock):
@@ -481,9 +523,13 @@ def dependencies(options: ExportOptions, bundle: ReleaseBundle) -> tuple[list[st
     direct = [f"{Requirement(name).name}{_extras(name)}=={_version(Requirement(name).name)}" for name in _APP_PACKAGES]
     closure = _closure([*_APP_PACKAGES, _LIBRARY])
     closure.pop("orkexa", None)
+    # Never a bare ``tabrion==...`` (were orkexa to require it): only the Git line below names it (DC-1).
+    closure.pop(_TABRION, None)
     lock = [f"{name}=={version}" for name, version in sorted(closure.items())]
     tools = tool_libraries(bundle)
-    return direct + tools, sorted(set(lock) | set(tools)), agent_line
+    tabrion = _tabrion_git()
+    pinned = [tabrion] if tabrion is not None else []
+    return direct + tools + pinned, sorted(set(lock) | set(tools) | set(pinned)), agent_line
 
 
 def _extras(name: str) -> str:
@@ -1980,6 +2026,8 @@ def _project_files(
             "requirement": "vendor/orkexa" if options.orkexa == "bundle" else _orkexa_git(),
             "network_access_needed": options.orkexa == "git",
         },
+        # TABRION MIG-NOD-3: the runtime modules' Tabrion, always from its Git commit (no bundled copy).
+        "tabrion": {"requirement": _tabrion_git()},
         "providers": providers,
         "base_urls": base_urls,
         "capabilities": capabilities,

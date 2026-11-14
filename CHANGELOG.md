@@ -7,6 +7,10 @@
   missing Axentra storage directory is no longer named in the error text (the log names it); `nodestro-server` and
   `create_server_app` install Tabrion's `DbErrorRedactionFilter` for every log record (uvicorn's loggers included),
   and the JSON log format keeps the redacted traceback. Needs nodestro-runtime at or after 9e0a73d.
+- Fixed (TABRION MIG-NOD-3): with nodestro-runtime 9e0a73d and later the exported runtime modules import `tabrion`;
+  the export names it as `tabrion @ git+https://github.com/...@<full commit>` (from the installation, PEP 610) in
+  `pyproject.toml`, `requirements.lock` and the manifest, never by bare name (DC-1), and refuses when Tabrion is not a
+  GitHub install at a full commit. No bundled copy: the `bundle` mode also needs GitHub for Tabrion.
 - Changed (runtime #161, NAL-A1 hardening): the error code catalog lists `connection.id_invalid`, and both OpenAPI
   documents describe `required_connections` with its id pattern `conn_<12 hex>` and `type:provider` values. Needs
   nodestro-runtime at or after 27dd8d5.

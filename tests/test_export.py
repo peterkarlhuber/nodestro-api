@@ -134,7 +134,11 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     }
     expected |= added
     assert not any(module.startswith("nodestro_runtime.mcp.") for module in modules)
-    assert len(modules) == 63 and expected | {"nodestro_runtime.local_models"} <= set(modules)
+    # + nodestro_runtime.error_texts with nodestro-runtime 9e0a73d and later (TABRION MIG-NOD-3; it imports tabrion,
+    # which the export then names by its Git commit): counted from the installed runtime, before and after the bump.
+    with_error_texts = (Path(nodestro_runtime.__file__).parent / "error_texts.py").is_file()
+    assert ("nodestro_runtime.error_texts" in modules) is with_error_texts
+    assert len(modules) == 63 + with_error_texts and expected | {"nodestro_runtime.local_models"} <= set(modules)
     assert "nodestro_runtime.local_service" not in modules
     # The audit/usage hook protocol is exported (tool approvals and the usage log import it); the Axentra
     # integration itself is server-only and never part of an export.
@@ -205,6 +209,7 @@ def test_export_contains_no_secrets_and_is_reproducible(exported: Callable[..., 
         readme = archive.read(f"{root}/README.md").decode()
     assert manifest["secrets_included"] is False
     assert manifest["orkexa"]["network_access_needed"] is True
+    assert manifest["tabrion"] == {"requirement": exporter._tabrion_git()}
     assert "private_repository_access_needed" not in manifest["orkexa"]
     assert manifest["providers"] == ["anthropic"]
     assert "orkexa" in readme and "API_KEYS" in readme and "ANTHROPIC_API_KEY" in readme
@@ -322,8 +327,10 @@ def test_bundled_library_mode(exported: Callable[..., Any], tmp_path: Path) -> N
     assert (vendor / "LICENSE").is_file() and "MIT" in (vendor / "LICENSE").read_text()
     assert (vendor / "src" / "orkexa" / "__init__.py").is_file()
     assert 'orkexa = { path = "vendor/orkexa" }' in (project / "pyproject.toml").read_text()
-    assert [path.name for path in (project / "vendor").iterdir()] == ["orkexa"]
-    assert "git+" not in (project / "requirements.lock").read_text()
+    assert [path.name for path in (project / "vendor").iterdir()] == ["orkexa"]  # never a copy of tabrion
+    # The only Git line is Tabrion's (TABRION MIG-NOD-3: no vendoring), when the runtime needs it.
+    git_lines = [line for line in (project / "requirements.lock").read_text().splitlines() if "git+" in line]
+    assert git_lines == ([exporter._tabrion_git()] if exporter._runtime_needs_tabrion() else [])
 
 
 def _blocked_studio(tmp_path: Path) -> Path:
@@ -516,6 +523,68 @@ def test_an_orkexa_without_a_github_commit_cannot_be_exported_by_reference(
     _fake_orkexa(monkeypatch, direct_url)
     with pytest.raises(RuntimeError, match="studio lock"):
         exporter._orkexa_git()
+
+
+def _tabrion_lines(text: str) -> list[str]:
+    return [line.strip().strip('",') for line in text.splitlines() if re.match(r'\s*"?tabrion\b', line)]
+
+
+def test_the_export_names_tabrion_by_its_git_commit_never_by_name(exported: Callable[..., Any], tmp_path: Path) -> None:
+    """TABRION MIG-NOD-3 / DC-1: the copied runtime modules import tabrion (runtime 9e0a73d and later); the project
+    names it only as ``tabrion @ git+https://github.com/...@<full commit>`` in pyproject.toml and requirements.lock,
+    never as a bare name an index could answer."""
+    if not exporter._runtime_needs_tabrion():
+        pytest.skip("the installed nodestro-runtime does not require tabrion (before 9e0a73d)")
+    line = exporter._tabrion_git()
+    assert line is not None and re.fullmatch(r"tabrion @ git\+https://github\.com/\S+@[0-9a-f]{40}", line)
+    client, publication = exported()
+    check = client.post(f"/api/publications/{publication['id']}/export/check", json={"options": {}}).json()
+    assert line in check["dependencies"]
+    project = _extract(_download(client, _export(client, publication["id"])["id"]), tmp_path)
+    for name in ("pyproject.toml", "requirements.lock"):
+        assert _tabrion_lines((project / name).read_text()) == [line], name
+
+
+def _fake_tabrion(monkeypatch: pytest.MonkeyPatch, direct_url: dict[str, Any] | None) -> None:
+    original = exporter.metadata.distribution
+
+    class Fake:
+        def read_text(self, name: str) -> str | None:
+            return json.dumps(direct_url) if name == "direct_url.json" and direct_url is not None else None
+
+    monkeypatch.setattr(exporter, "_runtime_needs_tabrion", lambda: True)
+    monkeypatch.setattr(exporter.metadata, "distribution", lambda name: Fake() if name == "tabrion" else original(name))
+
+
+def test_a_git_tabrion_installation_exports_its_full_commit(monkeypatch: pytest.MonkeyPatch) -> None:
+    commit = "d5821faa8742dea012abda3b663549c038d76543"
+    url = "https://github.com/peterkarlhuber/tabrion.git"
+    _fake_tabrion(monkeypatch, {"url": url, "vcs_info": {"vcs": "git", "commit_id": commit}})
+    assert exporter._tabrion_git() == f"tabrion @ git+{url}@{commit}"
+
+
+@pytest.mark.parametrize(
+    "direct_url",
+    [
+        None,  # installed from an index or a wheel: a bare name, which an export must never repeat (DC-1)
+        {"url": "file:///home/user/tabrion", "dir_info": {"editable": True}},  # a local checkout
+        {"url": "file:///home/user/tabrion", "vcs_info": {"vcs": "git", "commit_id": "0" * 40}},  # not on GitHub
+        {"url": "https://github.com/peterkarlhuber/tabrion.git", "vcs_info": {"vcs": "git", "commit_id": "d5821fa"}},
+    ],
+)
+def test_a_tabrion_without_a_full_github_commit_refuses_the_export(
+    monkeypatch: pytest.MonkeyPatch, direct_url: dict[str, Any] | None
+) -> None:
+    _fake_tabrion(monkeypatch, direct_url)
+    with pytest.raises(RuntimeError, match="tabrion is not installed from a GitHub commit"):
+        exporter._tabrion_git()
+
+
+def test_an_older_runtime_needs_no_tabrion_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(exporter.metadata, "requires", lambda name: ["orkexa[all]>=0.2.0.dev0,<0.3"])
+    assert exporter._runtime_needs_tabrion() is False and exporter._tabrion_git() is None
+    monkeypatch.setattr(exporter.metadata, "requires", lambda name: ['tabrion[testing]>=0.1; extra == "dev"'])
+    assert exporter._runtime_needs_tabrion() is False
 
 
 def test_the_exported_api_chooses_its_tool_sandbox_from_the_environment() -> None:
