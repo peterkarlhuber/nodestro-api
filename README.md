@@ -525,4 +525,4 @@ Open work (known bugs, follow-ups and planned improvements) is listed in [docs/T
 ## Provenance and license
 
 Extracted from `nodestro` 0.1 (15e2076), see [PROVENANCE.md](PROVENANCE.md) and [CHANGELOG.md](CHANGELOG.md).
-MIT, see [LICENSE](LICENSE).
+Proprietary: Copyright (c) 2026 Levuvo. All rights reserved. See [LICENSE](LICENSE).

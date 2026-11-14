@@ -7,7 +7,8 @@ The result is a ZIP with one folder that runs on the chosen platform without ins
     target platform; uv knows each build's SHA-256 and checks it. The libraries are in its ``site-packages``: wheels
     for the target platform only (``--only-binary :all:``), resolved by uv with the exporting installation's versions
     as constraints and installed from a lock with SHA-256 hashes (``lib.lock``). orkexa (not on PyPI) is copied from
-    this installation, like the standard export's ``bundle`` mode.
+    this installation, like the standard export's ``bundle`` mode. Tabrion (not on PyPI either; TABRION MIG-NOD-3) is
+    built from the source archive of its pinned commit, checked by SHA-256 (:func:`install_tabrion`).
 the project
     The same files as the standard export (:func:`nodestro_api.exporter.project_files`): the release, the runtime
     modules copied byte for byte, the application shell, documentation, examples; plus the launcher
@@ -37,6 +38,7 @@ from dataclasses import dataclass
 from datetime import datetime
 import hashlib
 from importlib import metadata
+import io
 import json
 import logging
 import os
@@ -843,6 +845,166 @@ def install_orkexa(target: Path) -> list[str]:
     return copied
 
 
+#: Tabrion's pins for a portable package (TABRION MIG-NOD-3): the source archive of the commit and its SHA-256
+#: (``tabrion.txt``) and the hash-pinned build backend (``build.txt``).
+TABRION_LOCKS = Path(__file__).with_name("portable_locks")
+_TABRION_ARCHIVE = re.compile(
+    r"^tabrion @ (https://github\.com/peterkarlhuber/tabrion/archive/([0-9a-f]{40})\.tar\.gz)\s*\\?\s*"
+    r"--hash=sha256:([0-9a-f]{64})\s*$",
+    re.MULTILINE,
+)
+
+
+@dataclass(frozen=True)
+class TabrionPin:
+    url: str
+    commit: str
+    sha256: str
+
+
+def tabrion_pin(text: str | None = None) -> TabrionPin:
+    """The archive pin of ``portable_locks/tabrion.txt`` (exactly one ``tabrion @ <archive URL> --hash=sha256:``)."""
+    if text is None:
+        text = (TABRION_LOCKS / "tabrion.txt").read_text(encoding="utf-8")
+    body = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    found = _TABRION_ARCHIVE.findall(body.replace("\\\n", " "))
+    if len(found) != 1:
+        raise NodestroError("export.failed", "portable_locks/tabrion.txt does not pin exactly one Tabrion archive")
+    url, commit, digest = found[0]
+    return TabrionPin(url=url, commit=commit, sha256=digest)
+
+
+def _tabrion_archive(ctx: Nodestro, pin: TabrionPin, progress: Progress, *, allow_downloads: bool) -> bytes:
+    """The bytes of the pinned source archive from the cache (downloaded once); their SHA-256 is checked on every use.
+
+    The bytes that were checked are the bytes that get unpacked: the file is read once, so it cannot be swapped
+    between the check and the extraction."""
+    archive = cache_root(ctx) / "tabrion" / f"{pin.commit}.tar.gz"
+    if not archive.is_file():
+        if not allow_downloads:
+            raise NodestroError(
+                "export.download_needed",
+                "Tabrion's source archive is not in the cache; allow downloads",
+                what="tabrion",
+            )
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        partial = archive.with_name(archive.name + ".partial")
+        try:
+            with urllib.request.urlopen(pin.url, timeout=60) as response, partial.open("wb") as out:
+                while chunk := response.read(1 << 16):
+                    progress.check()
+                    out.write(chunk)
+            partial.replace(archive)
+        finally:
+            partial.unlink(missing_ok=True)
+    data = archive.read_bytes()
+    if hashlib.sha256(data).hexdigest() != pin.sha256:
+        archive.unlink(missing_ok=True)
+        raise NodestroError(
+            "export.failed", "Tabrion's source archive does not match the SHA-256 of portable_locks/tabrion.txt"
+        )
+    return data
+
+
+def install_tabrion(
+    ctx: Nodestro, target: Path, work: Path, progress: Progress, *, allow_downloads: bool
+) -> TabrionPin | None:
+    """Tabrion (TABRION MIG-NOD-3) into ``target`` when the runtime requires it, else ``None``.
+
+    Not on a package index and never copied from this installation: the wheel is built from the source archive of
+    the pinned commit (SHA-256 checked), offline with the hash-pinned hatchling of ``portable_locks/build.txt`` (no
+    build isolation), and installed with ``--no-index``. The pin must name the commit this installation's tabrion
+    came from (the studio lock), else the build fails."""
+    from . import exporter
+
+    installed = exporter._tabrion_git()  # also refuses a tabrion that is not a GitHub install at a full commit
+    if installed is None:
+        return None
+    pin = tabrion_pin()
+    if installed.rpartition("@")[2] != pin.commit:
+        raise NodestroError(
+            "export.failed",
+            "portable_locks/tabrion.txt pins another Tabrion commit than the installed one (the studio lock)",
+        )
+    archive = _tabrion_archive(ctx, pin, progress, allow_downloads=allow_downloads)
+    import tarfile
+
+    source_root = work / "tabrion-source"
+    shutil.rmtree(source_root, ignore_errors=True)
+    source_root.mkdir(parents=True)
+    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as unpacked:
+        unpacked.extractall(source_root, filter="data")
+    tops = [item for item in source_root.iterdir() if item.is_dir()]
+    if len(tops) != 1 or not (tops[0] / "pyproject.toml").is_file():
+        raise NodestroError("export.failed", "Tabrion's source archive does not hold one project folder")
+    source = tops[0]
+    backend = work / "tabrion-build"
+    wheels = work / "tabrion-wheel"
+    shutil.rmtree(wheels, ignore_errors=True)
+    wheels.mkdir(parents=True)
+    env = _uv_env(ctx, offline=not allow_downloads)
+    _run(
+        [
+            _uv(),
+            "pip",
+            "install",
+            "--target",
+            str(backend),
+            "--require-hashes",
+            "--no-deps",
+            "--quiet",
+            "--python",
+            sys.executable,
+            "-r",
+            str(TABRION_LOCKS / "build.txt"),
+        ],
+        env,
+        progress,
+        cwd=work,
+    )
+    # PEP 517 without build isolation: this Python with only the hash-pinned backend on its path (``-S``: not even
+    # the site-packages of the exporting environment, which hatchling's plugin discovery would search).
+    build = (
+        "import sys; sys.path.insert(0, sys.argv[1]); from hatchling.build import build_wheel; "
+        "print(build_wheel(sys.argv[2]))"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-I", "-S", "-c", build, str(backend), str(wheels)],
+        cwd=source,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={key: os.environ[key] for key in ("PATH", "SYSTEMROOT", "TEMP", "TMP") if key in os.environ},
+    )
+    built = sorted(wheels.glob("tabrion-*-py3-none-any.whl"))
+    if completed.returncode != 0 or len(built) != 1:
+        raise NodestroError("export.failed", "Tabrion's wheel could not be built from its source archive")
+    progress.check()
+    _run(
+        [
+            _uv(),
+            "pip",
+            "install",
+            "--target",
+            str(target),
+            "--no-index",
+            "--no-deps",
+            "--no-compile",
+            "--quiet",
+            "--python",
+            sys.executable,
+            str(built[0]),
+        ],
+        env,
+        progress,
+        cwd=work,
+    )
+    license_file = source / "LICENSE"
+    if license_file.is_file():
+        shutil.copyfile(license_file, work / "tabrion-LICENSE")
+    return pin
+
+
 def install_ollama(
     ctx: Nodestro, platform: Platform, target: Path, progress: Progress, *, allow_downloads: bool
 ) -> str:
@@ -1154,6 +1316,7 @@ def _assemble(
     progress.step("libraries", platform.wheel_platform)
     lock = install_libraries(ctx, platform, site, work, options, release.bundle, progress, allow_downloads=allow)
     install_orkexa(site)
+    tabrion = install_tabrion(ctx, site, work, progress, allow_downloads=allow)
     # The project folder is on the path of the bundled Python (the launcher runs with -I: nothing else is).
     depth = len(Path("python", platform.site_packages(python_minor())).parts)
     (site / "nodestro-app.pth").write_text("/".join([".."] * depth) + "\n", encoding="utf-8")
@@ -1181,6 +1344,8 @@ def _assemble(
     licenses.mkdir(exist_ok=True)
     (licenses / "nodestro.txt").write_text(exporter.NODESTRO_LICENSE, encoding="utf-8")
     (licenses / "orkexa.txt").write_text(exporter._library_license(), encoding="utf-8")
+    if tabrion is not None and (work / "tabrion-LICENSE").is_file():
+        shutil.copyfile(work / "tabrion-LICENSE", licenses / "tabrion.txt")
     # 4. The local model server and the models.
     local_info: dict[str, Any] = {}
     models = [item for item in found.portable.local_models if item.name in found.portable.bundled_models]
@@ -1232,6 +1397,8 @@ def _assemble(
         "providers": found.portable.providers,
         "network_needs": [item.model_dump(mode="json") for item in found.portable.network_needs],
         "local_models": local_info,
+        # TABRION MIG-NOD-3: built from the source archive of this commit, checked by this SHA-256.
+        "tabrion": None if tabrion is None else {"commit": tabrion.commit, "archive_sha256": tabrion.sha256},
         "secrets_included": False,
     }
     (stage / "PORTABLE.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

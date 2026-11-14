@@ -3,7 +3,7 @@
   "approval_one": "{count} étape d’approbation",
   "approval_many": "{count} étapes d’approbation",
   "agent_git": "`orkexa` n’est pas sur PyPI ; il est installé depuis son dépôt GitHub public au commit exact utilisé par\nNodestro (voir `pyproject.toml`) : l’installation nécessite donc un accès à github.com, sans compte ni token.\nExportez à nouveau avec « inclure la bibliothèque » si le projet doit s’installer sans accès à github.com.",
-  "agent_bundle": "`orkexa` est inclus sous forme de code source dans `vendor/orkexa` (licence MIT, voir son `LICENSE`) et\ninstallé depuis cet emplacement ; aucun accès à son dépôt n’est nécessaire. La personne qui a exporté ce projet\na confirmé avoir le droit de redistribuer la bibliothèque. Gardez-le à l’esprit avant de partager le projet.",
+  "agent_bundle": "`orkexa` est inclus sous forme de code source dans `vendor/orkexa` (licence propriétaire de Levuvo, voir son `LICENSE`) et\ninstallé depuis cet emplacement ; aucun accès à son dépôt n’est nécessaire. La personne qui a exporté ce projet\na confirmé avoir le droit de redistribuer la bibliothèque. Gardez-le à l’esprit avant de partager le projet.",
   "aws_region": "La région AWS pour {label} ; à défaut, la région exportée s’applique{shown}.",
   "aws_signin": "Connexion AWS via la chaîne d’identifiants par défaut de cette machine (environnement, `~/.aws`, rôle IAM) ; le projet ne contient aucun identifiant AWS.",
   "key": "La clé pour {label}. Sans elle, le démarrage d’une exécution répond 503.",

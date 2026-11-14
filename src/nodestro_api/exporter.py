@@ -19,7 +19,7 @@ The project is generated deterministically, without any AI request:
 The agent library ``orkexa`` is not on PyPI. The user chooses how the export gets it: ``git``
 names the exact commit of its public repository (installing needs access to github.com),
 ``bundle`` copies the library's source into ``vendor/`` (only after confirming the right to pass
-it on; the MIT license text travels with it). Both are stated in the README and the manifest.
+it on; its license text travels with it). Both are stated in the README and the manifest.
 
 The agents' providers (Anthropic, OpenAI, Gemini, OpenAI-compatible endpoints) are configured
 with environment variables in the export; the manifest names the providers, the capabilities
@@ -101,27 +101,20 @@ STUDIO_ONLY = frozenset(
     }
 )
 _FIXED_TIME = (2026, 1, 1, 0, 0, 0)
-NODESTRO_LICENSE = """MIT License
+NODESTRO_LICENSE = """Nodestro
+Copyright (c) 2026 Levuvo. All rights reserved.
 
-Copyright (c) 2026 Peter Karlhuber
+This software, including source code, graphics and documentation, is protected by
+copyright. Use, reproduction, modification or distribution is permitted only with the
+express written consent of Levuvo.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+The software is provided without warranty, to the extent permitted by law. Liability for
+slight negligence is excluded, except for injury to life, body or health.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Included open-source components are subject to their own licenses. Their license texts
+are shipped with those components.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Contact: office@levuvo.com
 """
 
 
@@ -460,12 +453,58 @@ def _orkexa_git() -> str:
     )
 
 
+#: Tabrion's distribution: a base requirement of nodestro-runtime since TABRION MIG-NOD-3
+#: (``nodestro_runtime.error_texts`` imports ``tabrion.errors``), so the copied runtime modules need it. Not on PyPI.
+_TABRION = "tabrion"
+_FULL_COMMIT = re.compile(r"[0-9a-f]{40}")
+
+
+def _runtime_needs_tabrion() -> bool:
+    """Whether the installed nodestro-runtime requires Tabrion unconditionally (runtime 9e0a73d and later)."""
+    for raw in metadata.requires("nodestro-runtime") or []:
+        requirement = Requirement(raw)
+        if requirement.name == _TABRION and requirement.marker is None:
+            return True
+    return False
+
+
+#: A GitHub repository URL as it may go into a requirement line and a TOML string: no quote, blank or ``@``.
+_GITHUB_REPOSITORY = re.compile(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+
+
+def _tabrion_git() -> str | None:
+    """``tabrion @ git+<repository>@<full commit>`` when the exported runtime modules need Tabrion, else ``None``.
+
+    Like orkexa (:func:`_orkexa_git`), Tabrion is not on a package index the export may trust: a bare ``tabrion``
+    requirement could be answered by any index (dependency confusion, DC-1). The line names the exact commit this
+    installation came from (PEP 610); without a GitHub commit (full 40-hex SHA) the export is refused. There is no
+    bundled copy of Tabrion (no vendoring), so an export that needs it always needs network access to GitHub.
+    """
+    if not _runtime_needs_tabrion():
+        return None
+    try:
+        direct = metadata.distribution(_TABRION).read_text("direct_url.json")
+    except metadata.PackageNotFoundError:
+        direct = None
+    if direct:
+        data = json.loads(direct)
+        commit = str((data.get("vcs_info") or {}).get("commit_id") or "")
+        url = str(data.get("url", ""))
+        if _FULL_COMMIT.fullmatch(commit) and _GITHUB_REPOSITORY.fullmatch(url):
+            return f"{_TABRION} @ git+{url}@{commit}"
+    raise RuntimeError(
+        "cannot name the tabrion commit for the export: tabrion is not installed from a GitHub commit. Install it "
+        "from the studio lock (pip install -r https://raw.githubusercontent.com/peterkarlhuber/nodestro-studio/master/"
+        "platform/internal-server.txt)."
+    )
+
+
 def tool_libraries(bundle: ReleaseBundle) -> list[str]:
     """Pinned packages of the release's approved tool libraries (from the locks)."""
     from nodestro_runtime.python_envs import parse_lock
 
     # Packages the runtime itself brings (pydantic, ...) keep the runtime's pinned version.
-    runtime = set(_closure([*_APP_PACKAGES, _LIBRARY]))
+    runtime = set(_closure([*_APP_PACKAGES, _LIBRARY])) | {_TABRION}  # Tabrion only by its Git line (DC-1)
     pins: dict[str, str] = {}
     for lock in bundle.python:
         for package in parse_lock(lock.lock):
@@ -481,9 +520,13 @@ def dependencies(options: ExportOptions, bundle: ReleaseBundle) -> tuple[list[st
     direct = [f"{Requirement(name).name}{_extras(name)}=={_version(Requirement(name).name)}" for name in _APP_PACKAGES]
     closure = _closure([*_APP_PACKAGES, _LIBRARY])
     closure.pop("orkexa", None)
+    # Never a bare ``tabrion==...`` (were orkexa to require it): only the Git line below names it (DC-1).
+    closure.pop(_TABRION, None)
     lock = [f"{name}=={version}" for name, version in sorted(closure.items())]
     tools = tool_libraries(bundle)
-    return direct + tools, sorted(set(lock) | set(tools)), agent_line
+    tabrion = _tabrion_git()
+    pinned = [tabrion] if tabrion is not None else []
+    return direct + tools + pinned, sorted(set(lock) | set(tools) | set(pinned)), agent_line
 
 
 def _extras(name: str) -> str:
@@ -645,7 +688,7 @@ def check(ctx: Nodestro, publication: Publication, release: Release, options: Ex
         problems.append(
             _issue(
                 "export.bundled_library",
-                "The source code of orkexa is copied into the project (MIT license included)",
+                "The source code of orkexa is copied into the project (license included)",
                 level="info",
             )
         )
@@ -1808,7 +1851,7 @@ build-backend = "hatchling.build"
 name = "orkexa"
 version = "{library_version}"
 description = "Provider-independent agents (included in this exported project)."
-license = "MIT"
+license = "LicenseRef-Proprietary"
 requires-python = ">=3.11"
 dependencies = [
 {deps}
@@ -1980,6 +2023,8 @@ def _project_files(
             "requirement": "vendor/orkexa" if options.orkexa == "bundle" else _orkexa_git(),
             "network_access_needed": options.orkexa == "git",
         },
+        # TABRION MIG-NOD-3: the runtime modules' Tabrion, always from its Git commit (no bundled copy).
+        "tabrion": {"requirement": _tabrion_git()},
         "providers": providers,
         "base_urls": base_urls,
         "capabilities": capabilities,
