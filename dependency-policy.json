@@ -1,0 +1,107 @@
+{
+  "comment": "Copy of nodestro-studio platform/dependency-policy.json for nodestro-api (TABRION K-33, QA-17): only its outgoing edges. Never edit by hand; regenerate with python scripts/check_dependency_policy.py --copy nodestro-api in nodestro-studio.",
+  "component": "nodestro-api",
+  "schema": 1,
+  "namespaces": [
+    "tabrion",
+    "axentra",
+    "orkexa",
+    "nodestro",
+    "levuvo"
+  ],
+  "components": {
+    "tabrion": {
+      "kind": "foundation",
+      "no_direct_url": true,
+      "comment": "RC-1: every component requires it by one version range; the studio lock holds its commit (RC-2)"
+    },
+    "axentra": {
+      "kind": "library"
+    },
+    "orkexa": {
+      "kind": "library"
+    },
+    "nodestro-runtime": {
+      "kind": "platform"
+    },
+    "nodestro-examples": {
+      "kind": "platform"
+    },
+    "nodestro-integrations": {
+      "kind": "platform"
+    },
+    "nodestro-api": {
+      "kind": "platform"
+    },
+    "nodestro-sdk": {
+      "kind": "platform",
+      "distribution": "nodestro-client"
+    },
+    "nodestro-studio": {
+      "kind": "studio",
+      "distribution": "nodestro",
+      "studio_of": [
+        "nodestro-api",
+        "nodestro-runtime",
+        "nodestro-examples",
+        "nodestro-integrations"
+      ]
+    },
+    "tabrion-studio": {
+      "kind": "studio",
+      "studio_of": [
+        "tabrion"
+      ]
+    },
+    "axentra-studio": {
+      "kind": "studio",
+      "studio_of": [
+        "axentra"
+      ]
+    }
+  },
+  "edges": [
+    {
+      "from": "nodestro-api",
+      "to": "nodestro-runtime",
+      "kind": "required",
+      "extra": null,
+      "status": "active"
+    },
+    {
+      "from": "nodestro-api",
+      "to": "orkexa",
+      "kind": "required",
+      "extra": null,
+      "status": "active"
+    },
+    {
+      "from": "nodestro-api",
+      "to": "nodestro-examples",
+      "kind": "required",
+      "extra": null,
+      "status": "active"
+    },
+    {
+      "from": "nodestro-api",
+      "to": "nodestro-runtime[postgres]",
+      "kind": "optional",
+      "extra": "server",
+      "status": "active"
+    },
+    {
+      "from": "nodestro-api",
+      "to": "nodestro-runtime[postgres]",
+      "kind": "dev",
+      "extra": "dev",
+      "status": "active"
+    },
+    {
+      "from": "nodestro-api",
+      "to": "tabrion[testing,postgres]",
+      "kind": "dev",
+      "extra": "dev",
+      "status": "active"
+    }
+  ]
+}
