@@ -129,6 +129,10 @@ same `Idempotency-Key` again returns the run that already started, so retries ne
 The events are Server-Sent Events; after a lost connection, reconnect with `Last-Event-ID`; the first event is
 always the complete current status. `examples/client.py` does all of this in Python.
 
+Every client can first ask what this backend serves: `GET /api/app` names the app contract (`nodestro-app/1`), the
+backend's id and how to sign in; with a key it also lists this workflow and the capabilities. `BACKEND_NAME` gives
+the backend a name that clients show. The contract is described in `docs/app-api/v1.md` of nodestro-api.
+
 ## Approvals
 
 This workflow has {approvals}. A run that reaches one pauses with the status

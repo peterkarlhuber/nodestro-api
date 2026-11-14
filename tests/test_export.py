@@ -133,12 +133,18 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
         "nodestro_api.portable_secrets",
     }
     expected |= added
+    # + the app API contract of NAL-C1: nodestro_api.app_contract (models, form mapping, backend id, header) and
+    # nodestro_api.app_discovery (GET /api/app).
+    expected |= {"nodestro_api.app_contract", "nodestro_api.app_discovery"}
     assert not any(module.startswith("nodestro_runtime.mcp.") for module in modules)
     # + nodestro_runtime.error_texts with nodestro-runtime 9e0a73d and later (TABRION MIG-NOD-3; it imports tabrion,
     # which the export then names by its Git commit): counted from the installed runtime, before and after the bump.
     with_error_texts = (Path(nodestro_runtime.__file__).parent / "error_texts.py").is_file()
     assert ("nodestro_runtime.error_texts" in modules) is with_error_texts
-    assert len(modules) == 63 + with_error_texts and expected | {"nodestro_runtime.local_models"} <= set(modules)
+    # + the built-in web tools of NAL-A2: nodestro_runtime.web_tools and the source ledger it records in
+    # (nodestro_runtime.source_ledger); orkexa's web layer comes with orkexa itself.
+    expected |= {"nodestro_runtime.web_tools", "nodestro_runtime.source_ledger"}
+    assert len(modules) == 67 + with_error_texts and expected | {"nodestro_runtime.local_models"} <= set(modules)
     assert "nodestro_runtime.local_service" not in modules
     # The audit/usage hook protocol is exported (tool approvals and the usage log import it); the Axentra
     # integration itself is server-only and never part of an export.

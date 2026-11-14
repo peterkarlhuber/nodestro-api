@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/peterkarlhuber/nodestro-api/master/contracts/app-api/v1/session.schema.json",
+  "title": "UiSession",
+  "description": "POST /ui/api/session (sign in with an API key; the answer sets the session cookie) and DELETE /ui/api/session (sign out) of the embedded interface. Both need the header X-Nodestro-UI: 1 and the backend's own origin.",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "scopes",
+        "operator",
+        "name"
+      ],
+      "properties": {
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "operator": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "signed_out"
+      ],
+      "properties": {
+        "signed_out": {
+          "const": true
+        }
+      }
+    }
+  ]
+}

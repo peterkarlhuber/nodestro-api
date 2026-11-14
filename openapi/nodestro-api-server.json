@@ -13756,7 +13756,8 @@
             "default": "model",
             "enum": [
               "model",
-              "tool"
+              "tool",
+              "ledger"
             ],
             "title": "Source",
             "type": "string"
@@ -18279,6 +18280,13 @@
             ],
             "title": "Source Run Id"
           },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/SourceEntry"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
           "started_at": {
             "anyOf": [
               {
@@ -21174,6 +21182,88 @@
           "data"
         ],
         "title": "Snapshot",
+        "type": "object"
+      },
+      "SourceEntry": {
+        "description": "One web source a run's tools saw (:mod:`nodestro_runtime.source_ledger`): a search hit or a page that was read.\nThe ledger holds addresses and metadata only, never the page text, and it lives in its run: nothing carries it to\nanother run (search providers' terms forbid storing results).",
+        "properties": {
+          "final_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Url"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Id"
+          },
+          "origin": {
+            "default": "search",
+            "enum": [
+              "search",
+              "fetched"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "retrieved_at": {
+            "format": "date-time",
+            "title": "Retrieved At",
+            "type": "string"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha256"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "url"
+        ],
+        "title": "SourceEntry",
         "type": "object"
       },
       "SourceReport": {

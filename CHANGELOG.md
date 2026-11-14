@@ -2,6 +2,60 @@
 
 ## Unreleased
 
+- NAL-C1: the app API contract `nodestro-app/1` (`docs/app-api/v1.md`, JSON Schemas in `contracts/app-api/v1`), what any
+  interface may rely on in every backend. Additions only; no new run endpoints, no path changes.
+  - `GET /api/app` (discovery) in the desktop studio, its network listener, exported projects and portable packages
+    (`app_discovery.py`). Without credentials only `contract` (`{"name": "nodestro-app", "versions": [1],
+    "current": 1}`), `backend` (`id`, `name`), `auth.methods` and `tls`; with an API key or an interface session also
+    the backend's versions, `capabilities` (`runs`, `runs.sync`, `events.sse`, `files.upload`, `files.download`,
+    `approvals`, `cancel`, `resume`, `history`, `usage`) and the `apps` that credential may use (only with the
+    `read` scope, which `GET /api/published/{slug}` needs too). A wrong key answers
+    `401`; rate-limited like the published API (120 per minute and key, 60 per minute and address without one).
+  - The backend id is random and kept in `<data dir>/instance.json` (written to a temporary file and linked into
+    place, so a second process never reads it half-written); the operator names the backend with
+    `NODESTRO_BACKEND_NAME` (desktop), `BACKEND_NAME` (export, portable) or `name` in that file (default: empty).
+  - `GET /api/published/{slug}` gains `form` (the input form in order: `name`, `type`, `label`, `help`, `required`,
+    `default`, `options`, `multiple`, `accept`, `accept_formats`, `max_mb`, `max_files`) and `form_version: 1`.
+    The embedded web interface's `/ui/api/config` builds its `fields` from the same mapping (`app_contract.py`);
+    field labels fall back to the field name, `select` options without text are left out, and `multiple` is `false`
+    for every field that is not a file field.
+  - Every answer of a contract route (`/api/app`, `/api/published/...`, `/ui/api/session`), errors included, carries
+    `Nodestro-App-Contract: 1`.
+  - The desktop's launch secret and its proxy rule let `/api/app` through like `/api/published`; the route is
+    `public` in the route check. The error code list leaves out every capability name. Contract tests (`tests/contract/test_app_contract_v1.py`) run every route against
+    each backend kind; the portable smoke test checks the discovery and the stable id across restarts. Export and
+    portable READMEs (six languages) mention the discovery. `jsonschema` joins the `dev` extra.
+  - Contract (`openapi/nodestro-api.json`), additions only: the route, `AppDiscovery` and its parts, `FormField`,
+    `InfoOut.form` and `InfoOut.form_version`.
+
+
+- Error code list: the `agent.<error class>` codes of orkexa's web layer (`EgressError`, `FetchError`, `SearchError`,
+  `SearchAuthFailed`, `SearchBadRequest`, `SearchRateLimited`, `SearchUnavailable`; orkexa e59f199, NAL-A2) are listed.
+  Needs the studio lock with orkexa e59f199 (studio #184).
+- NAL-A2 (portable connection proof): `tests/test_portable_smoke.py` now proves a service connection end to end on all
+  six platforms, without any outside service. A fake OpenAI-compatible endpoint on 127.0.0.1 (standard library, a
+  thread) asks for `search_web` first and answers with text once it gets the tool result; the agent uses
+  `compatible:proof-model` and `search_web` bound to a `search` connection with the deterministic `test` provider.
+  In the studio the connection is created and its secret set through the API (without a secret the tool reports
+  `connection.secret_missing`; with it the run's source ledger holds the provider's hits). The package gets the
+  connection from `DATA_DIR/secrets/connections.json` and its secret from `NODESTRO_CONNECTION_<ID>_SECRET`, the
+  endpoint from `COMPATIBLE_BASE_URL`; it runs the search, and after a restart without the secret it refuses new
+  runs with 503 `connection.missing`. Neither secret appears in run answers, events, exports, the backup, the
+  connection routes, the package, its logs or its data folder.
+- Fixed (NAL-A2): the export check refused the built-in web tools (`search_web`, `fetch_web_page`) as
+  `export.integration_tools`; it now accepts them like the other built-in tools. Standalone and Git exports install
+  `orkexa[all,pdf,web]` so the tools can run there too. Publishing and the standalone app set the agent builder's
+  mode (a published release runs in the installation's mode, an exported project in `export`), which decides whether SearXNG may
+  reach private addresses.
+- Fixed (NAL-A2): a portable package now contains the libraries of the web tools (orkexa's extra `web`: httpx,
+  trafilatura with lxml, charset-normalizer); `portable_build.requirements` took only the extras `all`, `pdf` and
+  `local`, so `fetch_web_page` could not have run in a package. Needs nodestro-runtime with the web tools (NAL-A2).
+- Fixed (NAL-A1/A2): building a portable package of a release with a built-in network tool or a service connection
+  failed with `KeyError: 'portable.need.builtin_tool'`: the README texts `portable.need.builtin_tool` and
+  `portable.need.connection` were missing in all six languages; a test now requires a text for every network need.
+- Tests: `test_connections_api` accepts the search providers the runtime with the web tools adds (`test` is always
+  one of them).
+
 - Security (TABRION MIG-NOD-3, finding B-06-2): server error texts and logs without database values. A failed
   `pg_dump` gives `storage.backup_failed` with its exit code, a fixed reason and a SQLSTATE, never its output; a
   missing Axentra storage directory is no longer named in the error text (the log names it); `nodestro-server` and

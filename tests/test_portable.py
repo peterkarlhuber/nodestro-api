@@ -567,3 +567,36 @@ def test_the_portable_check_has_no_git_reference_and_names_downloads_by_code(
     # The source project still asks before copying orkexa.
     standard = studio.post(url, json={"options": {"orkexa": "bundle"}}).json()["problems"]
     assert "export.distribution_unconfirmed" in {item["code"] for item in standard}
+
+
+def test_the_web_tools_libraries_are_packaged() -> None:
+    """NAL-A2: search_web and fetch_web_page need orkexa's extra "web" (httpx, trafilatura, charset-normalizer)."""
+    from importlib import metadata
+
+    from packaging.requirements import Requirement
+
+    bundle = _release_bundle(
+        [{"id": "start", "type": "start"}, {"id": "out", "type": "output"}], [edge("start", "out")]
+    )
+    bundle.python = []
+    direct, _ = portable_build.requirements(exporter.ExportOptions(kind="portable"), bundle)
+    names = {Requirement(item).name for item in direct}
+    web = {
+        Requirement(item).name
+        for item in metadata.requires("orkexa") or []
+        if (marker := Requirement(item).marker) is not None and marker.evaluate({"extra": "web"})
+    }
+    assert web <= names, sorted(web - names)
+
+
+@pytest.mark.parametrize("language", ["en", "de", "es", "fr", "it", "pt-BR"])
+def test_every_network_need_has_a_readme_text(language: str) -> None:
+    """A portable README names every network need; a kind without a text failed the build (``builtin_tool`` and
+    ``connection`` of the web tools, NAL-A2)."""
+    import typing
+
+    from nodestro_api.export_models import NetworkNeed
+
+    strings = json.loads((exporter.README_DIR / f"strings.{language}.json").read_text(encoding="utf-8"))
+    kinds = typing.get_args(NetworkNeed.model_fields["kind"].annotation)
+    assert kinds and all(f"portable.need.{kind}" in strings for kind in kinds), language

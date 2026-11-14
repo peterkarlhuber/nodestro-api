@@ -30,7 +30,8 @@ def test_types_status_and_the_tool_catalog(make_app: MakeApp) -> None:
     client = make_app()
     types = {item["name"]: item for item in client.get("/api/connections/types").json()}
     assert {"search", "smtp", "webhook"} <= set(types) and "database" not in types
-    assert types["search"]["providers"] == ["test"] and types["smtp"]["secret_required"] is True
+    # The runtime with the web tools (NAL-A2) adds real search providers; "test" is always there.
+    assert "test" in types["search"]["providers"] and types["smtp"]["secret_required"] is True
     status = client.get("/api/connections/status").json()
     assert status["contract"] == 1 and status["mode"] == "desktop"
     catalog = client.get("/api/tools/builtin").json()

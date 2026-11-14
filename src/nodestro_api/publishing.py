@@ -56,6 +56,7 @@ from nodestro_runtime.tool_preflight import unattended_tool_issues
 from orkexa import __version__ as library_version
 from pydantic import BaseModel, Field
 
+from .app_contract import Instance, load_instance
 from .release_gate import GateOverride, GateRecord, GateReport, ReleaseGate, enforce, evaluate
 from .release_gate import validate as validate_gate
 from .serving import (
@@ -950,6 +951,7 @@ class Publications:
                 tools.mcp = PinnedMcp(self.ctx.mcp, bundle.mcp_tools)  # type: ignore[assignment]
             builder = AgentBuilder(tools, self.ctx.knowledge, self.ctx.memory)
             builder.declared = self.ctx.builder.declared
+            builder.mode = self.ctx.builder.mode  # the installation's mode decides which built-in tools run
             locks = {item.workflow_id for item in bundle.python}
 
             def sandbox(workflow_id: str) -> Sandbox | None:
@@ -996,6 +998,7 @@ class StudioHost:
         self.runs = ctx.runs
         self.store = ctx.store
         self.files = ctx.files
+        self._instance: Instance | None = None
 
     def release(self, slug: str, number: int | None, *, channel: str) -> ServedRelease:
         publication = self.ctx.publications.by_slug(slug)
@@ -1014,6 +1017,29 @@ class StudioHost:
     def versions(self, slug: str) -> list[int]:
         publication = self.ctx.publications.by_slug(slug)
         return [item.number for item in self.ctx.publications.releases(publication.id)] if publication else []
+
+    def instance(self) -> Instance:
+        """This installation's identity for the app contract (``<data dir>/instance.json``)."""
+        if self._instance is None:
+            self._instance = load_instance(self.ctx.config.data_dir)
+        return self._instance
+
+    def visible_releases(self, identity: KeyIdentity, *, channel: str) -> list[ServedRelease]:
+        """The active releases of the publications ``identity`` may use (``network``: only those reachable there)."""
+        found = []
+        for publication_id in identity.publications:
+            try:
+                publication = self.ctx.publications.get(publication_id)
+            except KeyError:
+                continue
+            if publication.active_release is None or (channel == "network" and not publication.network):
+                continue
+            try:
+                release = self.ctx.publications.release(publication.id, publication.active_release)
+            except KeyError:
+                continue
+            found.append(self.ctx.publications.served(publication, release))
+        return found
 
     def release_of_run(self, run: Run) -> ServedRelease | None:
         if not run.release_id or not run.trigger_ref:

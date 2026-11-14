@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/peterkarlhuber/nodestro-api/master/contracts/app-api/v1/info.schema.json",
+  "title": "AppInfo",
+  "description": "GET /api/published/{slug}: what the app expects and returns, with its form.",
+  "type": "object",
+  "required": [
+    "publication",
+    "name",
+    "version",
+    "versions",
+    "published_at",
+    "input_schema",
+    "output_schema",
+    "example_request",
+    "approvals",
+    "sync",
+    "limits",
+    "form",
+    "form_version"
+  ],
+  "properties": {
+    "publication": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "versions": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "published_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "input_schema": {
+      "type": "object"
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "example_request": {
+      "type": "object"
+    },
+    "approvals": {
+      "type": "boolean"
+    },
+    "sync": {
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "timeout_seconds": {
+          "type": "integer"
+        }
+      }
+    },
+    "limits": {
+      "type": "object"
+    },
+    "missing_resources": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "file_inputs": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "uploads": {
+      "type": "object"
+    },
+    "form": {
+      "type": "array",
+      "items": {
+        "$ref": "form-field.schema.json"
+      },
+      "description": "Empty: the app takes free text in input"
+    },
+    "form_version": {
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}

@@ -1548,6 +1548,114 @@
         "title": "ApiOverview",
         "type": "object"
       },
+      "AppDiscovery": {
+        "description": "The answer of ``GET /api/app``. Without credentials only ``contract``, ``backend`` (id, name), ``auth`` and\n``tls``; with an API key or a session also ``capabilities`` and the ``apps`` that credential may use.",
+        "properties": {
+          "apps": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AppSummary"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Apps"
+          },
+          "auth": {
+            "$ref": "#/components/schemas/AuthInfo"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/BackendInfo"
+          },
+          "capabilities": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capabilities"
+          },
+          "contract": {
+            "$ref": "#/components/schemas/ContractInfo"
+          },
+          "tls": {
+            "$ref": "#/components/schemas/TlsInfo"
+          }
+        },
+        "required": [
+          "backend"
+        ],
+        "title": "AppDiscovery",
+        "type": "object"
+      },
+      "AppLinks": {
+        "properties": {
+          "info": {
+            "title": "Info",
+            "type": "string"
+          },
+          "openapi": {
+            "title": "Openapi",
+            "type": "string"
+          }
+        },
+        "required": [
+          "info",
+          "openapi"
+        ],
+        "title": "AppLinks",
+        "type": "object"
+      },
+      "AppSummary": {
+        "description": "A published workflow the signed-in client may use.",
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "languages": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Languages",
+            "type": "array"
+          },
+          "links": {
+            "$ref": "#/components/schemas/AppLinks"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "release": {
+            "title": "Release",
+            "type": "integer"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "release",
+          "links"
+        ],
+        "title": "AppSummary",
+        "type": "object"
+      },
       "ApprovalConfig": {
         "description": "A pause for a person who approves or rejects the results that arrive here.",
         "properties": {
@@ -2626,6 +2734,26 @@
         "title": "AttachmentView",
         "type": "object"
       },
+      "AuthInfo": {
+        "description": "How a client can sign in to this backend.",
+        "properties": {
+          "methods": {
+            "items": {
+              "enum": [
+                "api_key",
+                "session",
+                "launch_link",
+                "pairing"
+              ],
+              "type": "string"
+            },
+            "title": "Methods",
+            "type": "array"
+          }
+        },
+        "title": "AuthInfo",
+        "type": "object"
+      },
       "AutostartIn": {
         "properties": {
           "enabled": {
@@ -2637,6 +2765,47 @@
           "enabled"
         ],
         "title": "AutostartIn",
+        "type": "object"
+      },
+      "BackendInfo": {
+        "description": "The backend: a stable id per installation or package, the operator's name for it and (signed in) its versions.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "default": "",
+            "title": "Name",
+            "type": "string"
+          },
+          "runtime_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime Version"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "BackendInfo",
         "type": "object"
       },
       "BackupContents": {
@@ -6325,6 +6494,30 @@
         "title": "ContractFieldSummary",
         "type": "object"
       },
+      "ContractInfo": {
+        "description": "Which contract and versions the backend serves.",
+        "properties": {
+          "current": {
+            "title": "Current",
+            "type": "integer"
+          },
+          "name": {
+            "const": "nodestro-app",
+            "default": "nodestro-app",
+            "title": "Name",
+            "type": "string"
+          },
+          "versions": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "title": "ContractInfo",
+        "type": "object"
+      },
       "ConversationDetail": {
         "properties": {
           "attachment_states": {
@@ -8230,6 +8423,91 @@
         "title": "FileView",
         "type": "object"
       },
+      "FormField": {
+        "description": "One field of an app's input form, in the order the form shows them (``InfoOut.form``, form version 1).\n\n``type`` is one of :data:`FORM_FIELD_TYPES`; a later form version may add types, which a client that does not know\nthem renders as JSON input. A field's value goes into ``values.<name>`` of a run request.",
+        "properties": {
+          "accept": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Accept",
+            "type": "array"
+          },
+          "accept_formats": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Accept Formats",
+            "type": "array"
+          },
+          "default": {
+            "title": "Default"
+          },
+          "help": {
+            "default": "",
+            "title": "Help",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "max_files": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Files"
+          },
+          "max_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Mb"
+          },
+          "multiple": {
+            "default": false,
+            "title": "Multiple",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "label"
+        ],
+        "title": "FormField",
+        "type": "object"
+      },
       "FormatsInfo": {
         "properties": {
           "formats": {
@@ -8841,6 +9119,18 @@
             },
             "title": "File Inputs",
             "type": "array"
+          },
+          "form": {
+            "items": {
+              "$ref": "#/components/schemas/FormField"
+            },
+            "title": "Form",
+            "type": "array"
+          },
+          "form_version": {
+            "default": 1,
+            "title": "Form Version",
+            "type": "integer"
           },
           "input_schema": {
             "additionalProperties": true,
@@ -13876,7 +14166,8 @@
             "default": "model",
             "enum": [
               "model",
-              "tool"
+              "tool",
+              "ledger"
             ],
             "title": "Source",
             "type": "string"
@@ -18438,6 +18729,13 @@
             ],
             "title": "Source Run Id"
           },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/SourceEntry"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
           "started_at": {
             "anyOf": [
               {
@@ -21513,6 +21811,88 @@
         "title": "Snapshot",
         "type": "object"
       },
+      "SourceEntry": {
+        "description": "One web source a run's tools saw (:mod:`nodestro_runtime.source_ledger`): a search hit or a page that was read.\nThe ledger holds addresses and metadata only, never the page text, and it lives in its run: nothing carries it to\nanother run (search providers' terms forbid storing results).",
+        "properties": {
+          "final_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Url"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Id"
+          },
+          "origin": {
+            "default": "search",
+            "enum": [
+              "search",
+              "fetched"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "retrieved_at": {
+            "format": "date-time",
+            "title": "Retrieved At",
+            "type": "string"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha256"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "url"
+        ],
+        "title": "SourceEntry",
+        "type": "object"
+      },
       "SourceReport": {
         "properties": {
           "changes": {
@@ -22776,6 +23156,18 @@
           "ok"
         ],
         "title": "TestResult",
+        "type": "object"
+      },
+      "TlsInfo": {
+        "description": "Whether the request reached the backend over HTTPS.",
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "title": "TlsInfo",
         "type": "object"
       },
       "ToolAdoptRequest": {
@@ -26571,6 +26963,68 @@
         "summary": "Configure Network",
         "tags": [
           "publications"
+        ]
+      }
+    },
+    "/api/app": {
+      "get": {
+        "description": "Without credentials: contract, backend id and name, sign-in methods, TLS. With an API key or a session: also versions, capabilities and the apps this credential may use (docs/app-api/v1.md).",
+        "operationId": "discover_api_app_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppDiscovery"
+                }
+              }
+            },
+            "description": "The discovery"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "An unknown, revoked or expired API key (auth.invalid)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "This port answers only this computer (lan.not_enabled)"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedError"
+                }
+              }
+            },
+            "description": "Too many requests or failed authentications (Retry-After)"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Discover the app contract, the backend and (signed in) its apps",
+        "tags": [
+          "app contract"
         ]
       }
     },
