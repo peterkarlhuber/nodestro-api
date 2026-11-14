@@ -349,7 +349,11 @@ class _Repairer:
 
     def leave(self) -> RepairResult:
         """Cancel from the diagnosis: nothing changes and the regular studio starts again. After a refused start the
-        database must be repaired first, so Nodestro stays locked."""
+        database must be repaired first, so Nodestro stays locked.
+
+        Unlike the repair, ``action: return`` does not need the launch session (:attr:`protected`): without a launch
+        secret any local caller that passes the guards can only end this process with :data:`RESTART_EXIT_CODE` (a
+        restart into the regular studio, which a backend started by hand does not even do); it never changes a file."""
         if self.origin != "requested":
             raise ApiError(
                 409,
