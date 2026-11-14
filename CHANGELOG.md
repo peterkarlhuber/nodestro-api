@@ -8,7 +8,8 @@
   `NODESTRO_AXENTRA_NOTIFY=1` the Axentra inbox serves them as before. Same answers in both: `Notification` gains
   `level`, `params`, `run_id`, `workflow_id` and `workflow_name` (the Axentra inbox leaves them empty). A member sees
   the tenant's messages for everyone and their own; read state is per member. Workflows carry `notifications`
-  (rules). Permission counts: read 151. The export closure adds `nodestro_runtime.notifications`. OpenAPI documents
+  (rules); the export accepts `notify_user` (an exported app has no inbox: it answers `notify.unavailable`).
+  Permission counts: read 151. The export closure adds `nodestro_runtime.notifications`. OpenAPI documents
   regenerated.
 
 - Added (NAL-B4, skill groups, usage and script drafts; needs nodestro-runtime with `skills_select`):

@@ -14,6 +14,7 @@ import json
 
 from fastapi import APIRouter, Query, Request
 from nodestro_runtime.notifications import Notification as Stored
+from nodestro_runtime.notifications import ReadState
 
 from .api import Ctx, actor_id
 from .api_notifications import MarkReadIn, MarkReadOut, Notification, NotificationPage, check_cursor
@@ -32,14 +33,14 @@ def _after(cursor: str) -> tuple[datetime, str]:
     return datetime.fromisoformat(value[0]), str(value[1])
 
 
-def _out(item: Stored, user: str) -> Notification:
+def _out(item: Stored, state: ReadState) -> Notification:
     return Notification(
         id=item.id,
         kind=item.kind,
         subject=item.title or None,
         text=item.text or None,
         created_at=item.created_at,
-        read_at=item.read_at(user),
+        read_at=state.read_at(item),
         level=item.level,
         params=item.params,
         run_id=item.run_id,
@@ -62,17 +63,18 @@ def list_notifications(
     if inbox is None:
         return NotificationPage(items=[], unread=0)
     user = actor_id(request)
-    items = sorted(inbox.for_user(user), key=lambda item: (item.created_at, item.id), reverse=True)
-    unread = sum(1 for item in items if item.read_at(user) is None)
+    state = inbox.read_state(user)
+    items = inbox.for_user(user)  # the newest messages, newest first
+    unread = sum(1 for item in items if state.read_at(item) is None)
     if unread_only:
-        items = [item for item in items if item.read_at(user) is None]
+        items = [item for item in items if state.read_at(item) is None]
     if cursor:
         moment, last = _after(cursor)
         items = [item for item in items if (item.created_at, item.id) < (moment, last)]
     page = items[:limit]
     more = len(items) > limit
     return NotificationPage(
-        items=[_out(item, user) for item in page],
+        items=[_out(item, state) for item in page],
         unread=unread,
         next_cursor=_cursor(page[-1]) if more and page else None,
     )
