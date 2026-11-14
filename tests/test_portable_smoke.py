@@ -168,6 +168,7 @@ def test_a_portable_package_runs_on_this_computer(make_app: Callable[..., TestCl
     token = created.stdout.splitlines()[1].strip()
     base = f"http://127.0.0.1:{port}"
     slug = publication["slug"]
+    backend_ids: set[str] = set()
     for attempt in (1, 2):  # start, run, stop; then the same again: data survives the restart
         log = (tmp_path / f"start{attempt}.log").open("w")
         process = subprocess.Popen(
@@ -179,6 +180,13 @@ def test_a_portable_package_runs_on_this_computer(make_app: Callable[..., TestCl
             assert status == 200 and b"/ui/assets/app.js" in page
             assert _get(f"{base}/ui/assets/i18n/pt-BR.json")[0] == 200
             assert _get(f"{base}/api/published/{slug}/runs")[0] == 401
+            # The app contract's discovery (NAL-C1): minimal without a key, this app with one; the same id each start.
+            anonymous = json.loads(_get(f"{base}/api/app")[1])
+            assert set(anonymous) == {"contract", "backend", "auth", "tls"}
+            assert anonymous["contract"]["versions"] == [1]
+            backend_ids.add(anonymous["backend"]["id"])
+            signed_in = json.loads(_get(f"{base}/api/app", token)[1])
+            assert [app["slug"] for app in signed_in["apps"]] == [slug] and "runs" in signed_in["capabilities"]
             code, run_answer = _post(f"{base}/api/published/{slug}/runs", {"values": {"topic": "Smoke"}}, token)
             assert code == 202, run_answer
             run_id = str(run_answer["run_id"])
@@ -203,6 +211,7 @@ def test_a_portable_package_runs_on_this_computer(make_app: Callable[..., TestCl
             log.close()  # an exception from the try block above is not replaced by one from here
         assert not stuck, stuck
         assert not _port_open(port), "the port is still in use after stop"
+    assert len(backend_ids) == 1, backend_ids  # the package keeps its backend id across restarts
 
 
 def _port_open(port: int) -> bool:
