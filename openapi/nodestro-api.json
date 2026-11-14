@@ -609,7 +609,7 @@
             "items": {
               "$ref": "#/components/schemas/SkillBinding"
             },
-            "maxItems": 20,
+            "maxItems": 100,
             "title": "Skills",
             "type": "array"
           },
@@ -14220,6 +14220,16 @@
             ],
             "title": "Reused From"
           },
+          "skill_selection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SkillSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "skills": {
             "items": {
               "$ref": "#/components/schemas/SkillUse"
@@ -19236,6 +19246,14 @@
             ],
             "title": "Parent Run Id"
           },
+          "recommended_skills": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Recommended Skills",
+            "type": "array"
+          },
           "release_id": {
             "anyOf": [
               {
@@ -21192,6 +21210,27 @@
         "title": "ScheduleState",
         "type": "object"
       },
+      "ScriptDraftIn": {
+        "properties": {
+          "note": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Note",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "ScriptDraftIn",
+        "type": "object"
+      },
       "SearchHit": {
         "properties": {
           "file_id": {
@@ -22336,6 +22375,18 @@
       "SkillBinding": {
         "description": "A skill assigned to an agent in one fixed version (NAL-B3). A newer version is never used automatically.",
         "properties": {
+          "group_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
+          },
           "mode": {
             "default": "on_demand",
             "enum": [
@@ -22362,6 +22413,30 @@
           "version"
         ],
         "title": "SkillBinding",
+        "type": "object"
+      },
+      "SkillCandidate": {
+        "description": "One skill a preselection scored (NAL-B4).",
+        "properties": {
+          "chosen": {
+            "default": false,
+            "title": "Chosen",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "score"
+        ],
+        "title": "SkillCandidate",
         "type": "object"
       },
       "SkillCheck": {
@@ -22632,6 +22707,81 @@
         "title": "SkillFileText",
         "type": "object"
       },
+      "SkillGroup": {
+        "description": "A named set of skills of the library (NAL-B4), e.g. \"Quality methods\". Assigning a group to an agent adds\neach member as an ordinary binding in its version at that moment; the group itself is never resolved at run\ntime, so a change of the group never changes an agent or a release.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "skill_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Skill Ids",
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "SkillGroup",
+        "type": "object"
+      },
+      "SkillGroupIn": {
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "skill_ids": {
+            "items": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Skill Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "SkillGroupIn",
+        "type": "object"
+      },
       "SkillImportResult": {
         "properties": {
           "check": {
@@ -22742,6 +22892,55 @@
         "title": "SkillIssue",
         "type": "object"
       },
+      "SkillSelection": {
+        "description": "How a step chose the skills it offered (NAL-B4): deterministic, recorded so the choice can be explained.\n\n``method`` ``all``: every assigned skill was offered (at most :data:`SKILL_SELECTION_THRESHOLD` on demand);\n``bm25``: the ``on_demand`` skills were ranked by name and description against the step's prompt and the best\n:data:`SKILL_SELECTION_SIZE` offered, plus the ``always`` and recommended ones.",
+        "properties": {
+          "assigned": {
+            "default": 0,
+            "title": "Assigned",
+            "type": "integer"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/SkillCandidate"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "ignored": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ignored",
+            "type": "array"
+          },
+          "method": {
+            "default": "all",
+            "enum": [
+              "all",
+              "bm25"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "offered": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Offered",
+            "type": "array"
+          },
+          "recommended": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Recommended",
+            "type": "array"
+          }
+        },
+        "title": "SkillSelection",
+        "type": "object"
+      },
       "SkillSnapshot": {
         "description": "A skill frozen in a release bundle (NAL-B3): one version with every file, base64-encoded, and its digest.",
         "properties": {
@@ -22781,6 +22980,84 @@
           "digest"
         ],
         "title": "SkillSnapshot",
+        "type": "object"
+      },
+      "SkillStats": {
+        "description": "The use of one skill (by name) in the runs looked at.",
+        "properties": {
+          "checks": {
+            "default": 0,
+            "title": "Checks",
+            "type": "integer"
+          },
+          "checks_passed": {
+            "default": 0,
+            "title": "Checks Passed",
+            "type": "integer"
+          },
+          "failed": {
+            "default": 0,
+            "title": "Failed",
+            "type": "integer"
+          },
+          "files_read": {
+            "default": 0,
+            "title": "Files Read",
+            "type": "integer"
+          },
+          "last_used": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used"
+          },
+          "loaded": {
+            "default": 0,
+            "title": "Loaded",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "offered": {
+            "default": 0,
+            "title": "Offered",
+            "type": "integer"
+          },
+          "recommended": {
+            "default": 0,
+            "title": "Recommended",
+            "type": "integer"
+          },
+          "runs": {
+            "default": 0,
+            "title": "Runs",
+            "type": "integer"
+          },
+          "succeeded": {
+            "default": 0,
+            "title": "Succeeded",
+            "type": "integer"
+          },
+          "versions": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "SkillStats",
         "type": "object"
       },
       "SkillStatusIn": {
@@ -25661,6 +25938,17 @@
             "title": "Name",
             "type": "string"
           },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin"
+          },
           "requirement": {
             "anyOf": [
               {
@@ -25870,6 +26158,17 @@
             "additionalProperties": true,
             "title": "Message Params",
             "type": "object"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin"
           },
           "requirement": {
             "title": "Requirement",
@@ -41135,6 +41434,218 @@
         ]
       }
     },
+    "/api/skill-groups": {
+      "get": {
+        "operationId": "list_skill_groups_api_skill_groups_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SkillGroup"
+                  },
+                  "title": "Response List Skill Groups Api Skill Groups Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Skill Groups",
+        "tags": [
+          "skills"
+        ]
+      },
+      "post": {
+        "description": "A named set of skills of the library; assigning it to an agent adds its skills one by one (the editor does\nthat, each in its current version). Names are unique (``skill.group_name_taken``).",
+        "operationId": "create_skill_group_api_skill_groups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillGroupIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillGroup"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Create Skill Group",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/skill-groups/{group_id}": {
+      "delete": {
+        "description": "Delete a group; no skill and no agent changes.",
+        "operationId": "delete_skill_group_api_skill_groups__group_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Delete Skill Group",
+        "tags": [
+          "skills"
+        ]
+      },
+      "put": {
+        "description": "Change a group. Agents keep the skills they were given with it.",
+        "operationId": "update_skill_group_api_skill_groups__group_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillGroupIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillGroup"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Update Skill Group",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/skill-stats": {
+      "get": {
+        "description": "How skills were used in the runs of the last ``days`` days (at most the newest 2000 runs): offered, loaded,\nfiles read, runs, outcomes of the steps that loaded them and quality checks passed.",
+        "operationId": "get_skill_stats_api_skill_stats_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SkillStats"
+                  },
+                  "title": "Response Get Skill Stats Api Skill Stats Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Skill Stats",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
     "/api/skills": {
       "get": {
         "description": "Every skill in its latest version, by name.",
@@ -41813,6 +42324,68 @@
           }
         },
         "summary": "Read Skill File",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/skills/{skill_id}/versions/{version}/script-draft": {
+      "post": {
+        "description": "Start a tool job that turns one script of a skill version into a tool draft (NAL-B4).\n\nThe Coding Agent writes a tool from the script's text (a description, never instructions), and the draft goes\nthrough the unchanged tool chain: static check, tests in the isolating sandbox (without one:\n``sandbox.isolation_required``), and a person's approval in the job. Until then the script is text that is\nnever run. The job's ``origin`` is ``skill:<name>@<version>/<path>``. Same permission and model as any tool job.",
+        "operationId": "draft_tool_from_script_api_skills__skill_id__versions__version__script_draft_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScriptDraftIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolJob"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Draft Tool From Script",
         "tags": [
           "skills"
         ]
