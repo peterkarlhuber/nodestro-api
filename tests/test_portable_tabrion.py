@@ -23,7 +23,7 @@ import pytest
 
 from nodestro_api import exporter, portable_build
 
-COMMIT = "d5821faa8742dea012abda3b663549c038d76543"
+COMMIT = "af0458d54467571abfc1afdd44d76e1f4d727c06"
 ARCHIVE = f"https://github.com/peterkarlhuber/tabrion/archive/{COMMIT}.tar.gz"
 
 
@@ -162,7 +162,7 @@ def test_the_wheel_is_built_from_the_pinned_archive_and_imports(tmp_path: Path) 
         text=True,
         check=True,
     )
-    assert probe.stdout.startswith(str(site)) and " 0.1." in probe.stdout
+    assert probe.stdout.startswith(str(site)) and " 0.2." in probe.stdout
     # The cached archive is reused offline, checked again.
     again = portable_build.install_tabrion(_ctx(tmp_path), tmp_path / "site2", work, _progress(), allow_downloads=False)
     assert again == pin
