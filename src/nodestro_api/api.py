@@ -338,6 +338,7 @@ PATH_TAGS: dict[str, str] = {
     "python": "Python environments",
     "sandbox": "tools",
     "agents": "agents",
+    "skills": "skills",
     "models": "agents",
     "architect": "architect",
     "assistant": "assistant",

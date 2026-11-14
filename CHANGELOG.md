@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- Added (NAL-B3, skill library; `api_skills.py`, tag `skills`): skills in the Agent Skills format.
+  - **Routes:**
+    - `GET /api/skills`, `GET /api/skills/{id}` (with `version`: instructions, files, findings), `.../versions`,
+      `.../versions/{n}/file?path=` (text only), `.../usage` and `.../export` (a standard ZIP with the exact bytes).
+    - `POST /api/skills/import` (multipart ZIP or `SKILL.md`): with `dry_run`, only the validation report and
+      preview; otherwise a new skill with origin `import:<sha256>`, or with `skill_id` the next version of that skill.
+    - `POST /api/skills` and `PUT /api/skills/{id}`: editor files as text, base64 or `keep`.
+    - `POST /api/skills/check` (the editor's live check), `.../copy` (under another name), `.../status`
+      (`active`/`disabled`), `.../archive` (admin) and `DELETE` (admin, refused with `409 skill.in_use` while an
+      agent uses it).
+    - Shipped skills: `GET /api/library/skills?language=`, `GET /api/library/skills/{name}` and
+      `POST /api/library/skills/{name}/copy` (origin `builtin:nodestro-examples@<version>/<name>`).
+  - **Import is untrusted content.** The limits of `orkexa.skills` apply: 10 MB ZIP, 30 MB unpacked, 500 files, no
+    unsafe paths, links or ZIP bombs (`413`/`422` with the package's code). The specification's errors refuse an
+    import (`skill.invalid`); warnings are reported and do not.
+  - **Body limits:** import and editing use the `large` limit.
+  - **Releases** freeze the skill versions their agents use (`bundle.skills`). Published APIs and exported projects
+    resolve skills only from their bundle.
+  - **Backup** holds `skills` and `skill_versions` (blobs as raw documents).
+  - Permission counts are read 145, edit 64, admin 55. The OpenAPI documents and the error catalog are regenerated.
 - Added (TABRION MIG-NOD-9, decision E-NOD-PERM option B): recovery mode for a desktop database that other users may
   change. When the runtime refuses `nodestro.db` with `storage.unsafe_file` and `fixable: true`, `create_app` no longer
   stops: it starts the recovery app (`recovery.py`) with the same guards as the studio API (host and strict origin

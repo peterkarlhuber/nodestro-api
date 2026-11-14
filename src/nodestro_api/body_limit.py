@@ -8,7 +8,8 @@ refused at once, without reading.
 Limits per kind of route (:data:`ROUTE_LIMITS`), configurable through the environment (whole bytes):
 
 - ``json``, every route not listed below: ``NODESTRO_MAX_REQUEST_BYTES``, default 2 MiB;
-- ``large``, workflow import, batch plan and start, creating and changing a test series:
+- ``large``, workflow import, batch plan and start, creating and changing a test series, skill import and
+  editing (a skill ZIP has at most 10 MB):
   ``NODESTRO_MAX_LARGE_REQUEST_BYTES``, default 16 MiB;
 - ``upload``, knowledge and input file uploads, files attached to an assistant conversation (one file has at most
   50 MB, a request may carry several) and batch files: ``NODESTRO_MAX_UPLOAD_BYTES``, default 256 MiB;
@@ -50,6 +51,8 @@ ROUTE_LIMITS: tuple[tuple[frozenset[str], re.Pattern[str], str], ...] = tuple(
         ({"POST"}, r"^/api/backup/inspect$", "backup"),
         ({"POST"}, r"^/api/runs/import$", "trace"),
         ({"POST"}, r"^/api/workflows/import$", "large"),
+        ({"POST"}, r"^/api/skills(/import|/check)?$", "large"),
+        ({"PUT"}, r"^/api/skills/[^/]+$", "large"),
         ({"POST"}, r"^/api/batches(/plan)?$", "large"),
         ({"POST"}, r"^/api/benchmarks$", "large"),
         ({"PUT"}, r"^/api/benchmarks/[^/]+$", "large"),

@@ -75,6 +75,7 @@ from .api_publish import router as publish_router
 from .api_python import router as python_router
 from .api_reference import install_api_reference
 from .api_run_chat import router as run_chat_router
+from .api_skills import router as skills_router
 from .api_tool_approvals import router as tool_approvals_router
 from .body_limit import BodyLimitMiddleware, BodyLimits
 from .context import AppConfig, Nodestro
@@ -378,6 +379,7 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
     app.include_router(pricing_router)
     app.include_router(local_models_router)
     app.include_router(agent_templates_router)  # before the main router (/api/library/agents)
+    app.include_router(skills_router)  # before the main router (/api/library/skills)
     app.include_router(connections_router)
     app.include_router(mcp_router)
     app.include_router(budget_router)

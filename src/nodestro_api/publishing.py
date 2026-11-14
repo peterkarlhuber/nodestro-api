@@ -46,7 +46,9 @@ from nodestro_runtime.release import (
     ReleaseBundle,
     SubworkflowSnapshot,
     current_runtime,
+    freeze_skill,
     materialize_tools,
+    skill_bindings,
     tool_record,
 )
 from nodestro_runtime.schemas import AgentConfig, RunSummary, Workflow, new_id, now
@@ -654,6 +656,12 @@ class Publications:
                         python_version=env.python_version,
                     )
                 )
+        # The skills of its agents, frozen in the assigned versions with all their files (NAL-B3).
+        resolve = self.ctx.skills.resolver()
+        skills = []
+        for skill_id, skill_version in skill_bindings(everything):
+            skill, package = resolve(skill_id, skill_version)
+            skills.append(freeze_skill(skill_id, skill_version, skill.origin, package))
         bundle = ReleaseBundle(
             workflow_id=workflow_id,
             workflow_version=number,
@@ -668,6 +676,7 @@ class Publications:
             required_connections=dict(sorted(connections.items())),
             server_tools=sorted(server_tools),
             mcp_tools=mcp_tools,
+            skills=skills,
             models=sorted(models),
             python=python,
             knowledge=check.knowledge,
@@ -951,6 +960,7 @@ class Publications:
                 tools.mcp = PinnedMcp(self.ctx.mcp, bundle.mcp_tools)  # type: ignore[assignment]
             builder = AgentBuilder(tools, self.ctx.knowledge, self.ctx.memory)
             builder.declared = self.ctx.builder.declared
+            builder.skill_source = bundle.skill_source()  # only the release's frozen skills (NAL-B3)
             builder.mode = self.ctx.builder.mode  # the installation's mode decides which built-in tools run
             locks = {item.workflow_id for item in bundle.python}
 
