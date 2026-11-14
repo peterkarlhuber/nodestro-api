@@ -11,6 +11,10 @@
   the export names it as `tabrion @ git+https://github.com/...@<full commit>` (from the installation, PEP 610) in
   `pyproject.toml`, `requirements.lock` and the manifest, never by bare name (DC-1), and refuses when Tabrion is not a
   GitHub install at a full commit. No bundled copy: the `bundle` mode also needs GitHub for Tabrion.
+- Portable packages (TABRION MIG-NOD-3): Tabrion is built from the source archive of its pinned commit, checked
+  against the SHA-256 in `src/nodestro_api/portable_locks/tabrion.txt`, with the hash-pinned hatchling of
+  `portable_locks/build.txt` (no build isolation) and installed with `--no-index`; the build fails when the pin names
+  another commit than the installed tabrion. `PORTABLE.json` records the commit and hash; `licenses/tabrion.txt`.
 - Changed (runtime #161, NAL-A1 hardening): the error code catalog lists `connection.id_invalid`, and both OpenAPI
   documents describe `required_connections` with its id pattern `conn_<12 hex>` and `type:provider` values. Needs
   nodestro-runtime at or after 27dd8d5.
