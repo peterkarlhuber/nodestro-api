@@ -53,6 +53,8 @@ from orkexa.dynamic import DockerSandbox, Sandbox, SubprocessSandbox
 from pydantic import BaseModel, Field
 
 from . import portable_connections
+from .app_contract import ContractHeaderMiddleware, Instance, load_instance
+from .app_discovery import build_app_router
 from .body_limit import BodyLimitMiddleware, BodyLimits
 from .permissions import PUBLIC, check_routes
 from .serving import (
@@ -123,6 +125,8 @@ class StandaloneSettings(BaseModel):
     web_ui: Literal["on", "off"] = "on"
     #: The language the web interface starts in.
     ui_language: str = "en"
+    #: The name of this backend that the app contract's discovery shows (``GET /api/app``; empty: none).
+    backend_name: str = ""
 
     @classmethod
     def from_env(cls, environ: dict[str, str] | None = None) -> StandaloneSettings:
@@ -144,6 +148,7 @@ class StandaloneSettings(BaseModel):
             output_dir=env.get("OUTPUT_DIR") or "",
             web_ui="off" if (env.get("WEB_UI") or "on").lower() in ("off", "0", "false", "no") else "on",
             ui_language=env.get("UI_LANGUAGE") or "en",
+            backend_name=(env.get("BACKEND_NAME") or "").strip(),
         )
 
 
@@ -198,6 +203,8 @@ class StandaloneHost:
             raise RuntimeError("workflow/release.json does not match its manifest (digest differs)")
         data_dir = settings.data_dir if settings.data_dir.is_absolute() else project_dir / settings.data_dir
         data_dir.mkdir(parents=True, exist_ok=True)
+        self.data_dir = data_dir
+        self._instance: Instance | None = None
         database = data_dir / "runtime.db"
         self.store = Store(database)
         self.knowledge = KnowledgeBase(database)
@@ -419,6 +426,25 @@ class StandaloneHost:
 
     def versions(self, _slug: str) -> list[int]:
         return [self.served.number]
+
+    def instance(self) -> Instance:
+        """This project's identity for the app contract (``DATA_DIR/instance.json``; ``BACKEND_NAME`` names it)."""
+        if self._instance is None:
+            self._instance = load_instance(self.data_dir, name=self.settings.backend_name or None)
+        return self._instance
+
+    def visible_releases(self, identity: KeyIdentity, *, channel: str) -> list[ServedRelease]:
+        return [self.served] if self.served.publication_id in identity.publications else []
+
+    def auth_methods(self) -> list[str]:
+        """API keys always; with the web interface its sessions, and the operator's launch link from a launcher."""
+        ui = self.web_ui
+        if ui is None:
+            return ["api_key"]
+        methods = ["api_key", "session"]
+        if getattr(ui.options, "control_token", None):
+            methods.append("launch_link")
+        return methods
 
     def release_of_run(self, run: Run) -> ServedRelease | None:
         return self.served
@@ -719,10 +745,13 @@ def create_app(
         openapi_url=None if settings.api_docs == "off" else "/openapi.json",
     )
     app.state.host = host
+    app.include_router(build_app_router(core, channel="network"))
     app.include_router(build_router(core, channel="network", release=host.served))
     # Request bodies are limited like the studio's (API3-02): the published routes that FastAPI parses before the
     # key check and the web interface's own endpoints; starting a run keeps the published APIs' own limit.
     app.add_middleware(BodyLimitMiddleware, limits=BodyLimits.from_env())
+    # Every answer of a route of the app contract names its version (NAL-C1), refusals included.
+    app.add_middleware(ContractHeaderMiddleware)
     if settings.api_docs != "off" and (_DOCS_DIR / "swagger-ui-bundle.js").is_file():
         _install_docs(app)
 

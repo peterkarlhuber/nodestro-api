@@ -1001,20 +1001,34 @@ class ServingCore:
                 headers={"Retry-After": str(int(wait))},
             )
 
+    def identify(self, request: Request) -> KeyIdentity | None:
+        """The caller's identity like :meth:`authenticate`, but ``None`` when the request carries no credential at all
+        (a wrong or revoked one still answers ``401``: a backend never silently ignores a credential)."""
+        try:
+            return self.authenticate(request)
+        except ApiError as exc:
+            if exc.code == "auth.missing":
+                return None
+            raise
+
     def authorize(self, identity: KeyIdentity, release: ServedRelease, scope: Scope) -> None:
         if release.publication_id not in identity.publications:
             # Same answer as for an unknown publication: a key learns nothing about other APIs.
             raise ApiError(404, "publication.not_found", "No published workflow with this name")
         if scope not in identity.scopes:
             raise ApiError(403, "auth.scope", f"This key may not {scope}", scope=scope)
-        wait = self._requests.allow(f"req:{identity.id}", release.limits.requests_per_minute)
+        self.throttle(f"req:{identity.id}", release.limits.requests_per_minute)
+
+    def throttle(self, bucket: str, limit: int) -> None:
+        """Count a request in ``bucket``; ``429 limit.requests`` beyond ``limit`` requests per minute."""
+        wait = self._requests.allow(bucket, limit)
         if wait is not None:
             raise ApiError(
                 429,
                 "limit.requests",
                 "Too many requests; slow down",
                 headers={"Retry-After": str(int(wait))},
-                limit=release.limits.requests_per_minute,
+                limit=limit,
             )
 
     def access(

@@ -133,8 +133,11 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
         "nodestro_api.portable_secrets",
     }
     expected |= added
+    # + the app API contract of NAL-C1: nodestro_api.app_contract (models, form mapping, backend id, header) and
+    # nodestro_api.app_discovery (GET /api/app).
+    expected |= {"nodestro_api.app_contract", "nodestro_api.app_discovery"}
     assert not any(module.startswith("nodestro_runtime.mcp.") for module in modules)
-    assert len(modules) == 63 and expected | {"nodestro_runtime.local_models"} <= set(modules)
+    assert len(modules) == 65 and expected | {"nodestro_runtime.local_models"} <= set(modules)
     assert "nodestro_runtime.local_service" not in modules
     # The audit/usage hook protocol is exported (tool approvals and the usage log import it); the Axentra
     # integration itself is server-only and never part of an export.

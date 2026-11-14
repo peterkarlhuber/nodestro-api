@@ -178,11 +178,12 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # install: + measuring a local model's speed (RT-050; loads the model on the shared server)
         # install: + setting up the local model server step by step (setup)
         "install": 21,
-        "public": 1,
+        "public": 2,  # + the app contract's discovery GET /api/app (NAL-C1)
     }
     assert all(item.path.startswith("/api/") for item in found if item.access != "generated")
-    # Explicit exceptions: the health check, the key-protected published APIs, FastAPI's OpenAPI document.
-    assert {item.path for item in found if item.access == "public"} == {"/api/health"}
+    # Explicit exceptions: the health check, the app contract's discovery, the key-protected published APIs, FastAPI's
+    # OpenAPI document.
+    assert {item.path for item in found if item.access == "public"} == {"/api/health", "/api/app"}
     assert {item.path for item in found if item.access == "api_key"} and all(
         item.path.startswith("/api/published/") for item in found if item.access == "api_key"
     )

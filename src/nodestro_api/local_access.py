@@ -24,8 +24,9 @@ As long as the studio API has no login, it is never offered to the network
   ``X-Real-IP``) is refused with ``request.forwarded_not_allowed``. This catches common proxy setups;
   a proxy that strips these headers is not detectable, which is why the configuration is refused too.
 
-Published workflow APIs (``/api/published``) are protected by their keys: forwarded requests to them are
-accepted, and the network listener (:mod:`nodestro_api.network`) serves them to other devices.
+Published workflow APIs (``/api/published``) are protected by their keys: forwarded requests to them (and to the app
+contract's discovery ``/api/app``) are accepted, and the network listener (:mod:`nodestro_api.network`) serves them to
+other devices.
 
 Nodestro Local Docker (:mod:`nodestro_api.local_container`) listens on every interface *of its container* and is
 reached through a port the host publishes on its own loopback. There the checks are strict
@@ -54,6 +55,8 @@ _WILDCARD_HOSTS = frozenset({"", "0.0.0.0", "::", "*"})
 FORWARDING_HEADERS = ("forwarded", "x-forwarded-for", "x-forwarded-host", "x-real-ip")
 #: Key-protected routes that may be reached through a proxy (published workflow APIs).
 _KEY_PROTECTED_PREFIX = "/api/published"
+#: The app contract's discovery (public, more with a published API's key) may be reached through a proxy too.
+_DISCOVERY_PATH = "/api/app"
 
 
 def is_loopback(host: str) -> bool:
@@ -220,7 +223,8 @@ class LocalAccessMiddleware:
             return
         path = scope.get("path", "")
         forwarded = [name for name in FORWARDING_HEADERS if name in headers]
-        if forwarded and path != _KEY_PROTECTED_PREFIX and not path.startswith(_KEY_PROTECTED_PREFIX + "/"):
+        keyed = path in (_KEY_PROTECTED_PREFIX, _DISCOVERY_PATH) or path.startswith(_KEY_PROTECTED_PREFIX + "/")
+        if forwarded and not keyed:
             await _refuse(
                 scope,
                 send,

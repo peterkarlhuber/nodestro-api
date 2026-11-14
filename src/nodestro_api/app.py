@@ -34,6 +34,8 @@ from .api_python import router as python_router
 from .api_reference import install_api_reference
 from .api_run_chat import router as run_chat_router
 from .api_tool_approvals import router as tool_approvals_router
+from .app_contract import ContractHeaderMiddleware
+from .app_discovery import build_app_router
 from .body_limit import BodyLimitMiddleware, BodyLimits
 from .context import AppConfig, Nodestro
 from .error_codes import router as error_codes_router
@@ -190,6 +192,8 @@ def create_app(
         # The published port, and the container's own port for the launcher's and health check's calls (D3).
         ports=frozenset({config.host_port, CONTAINER_PORT}) if local else None,
     )
+    # Every answer of a route of the app contract names its version (NAL-C1), the guards' refusals included.
+    app.add_middleware(ContractHeaderMiddleware)
     # Outside everything: refusals get the security headers too (API2-02).
     app.add_middleware(SecurityHeadersMiddleware)
     install_error_handlers(app)
@@ -199,6 +203,8 @@ def create_app(
     # Nodestro's MCP server (WP-11, off by default) before ``/{slug}``, which would also match ``_mcp``.
     app.include_router(build_mcp_router(nodestro.mcp_server))
     app.include_router(build_router(nodestro.serving, channel="local"))
+    # The app contract's discovery (NAL-C1, docs/app-api/v1.md): public, more with a published API's key.
+    app.include_router(build_app_router(nodestro.serving, channel="local"))
     app.include_router(publish_router)
     app.include_router(architect_router)
     app.include_router(python_router)

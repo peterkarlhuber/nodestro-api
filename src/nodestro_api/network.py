@@ -2,8 +2,8 @@
 
 Nodestro itself listens on ``127.0.0.1`` only. When the user explicitly enables network
 access, a second HTTP server starts in the same process on its own port. Its application
-contains the published API endpoints and ``/health`` and nothing more: no studio, no
-settings, no internal endpoints, no documentation page. Each publication additionally
+contains the published API endpoints, the app contract's discovery (``/api/app``) and ``/health``
+and nothing more: no studio, no settings, no internal endpoints, no documentation page. Each publication additionally
 needs its own "reachable in the network" switch.
 
 The listener speaks HTTP unless a TLS certificate and key are configured. Without TLS the
@@ -25,6 +25,8 @@ from fastapi import FastAPI
 from nodestro_runtime.problems import NodestroError
 from pydantic import BaseModel, Field
 
+from .app_contract import ContractHeaderMiddleware
+from .app_discovery import build_app_router
 from .body_limit import BodyLimitMiddleware, BodyLimits
 from .permissions import PUBLIC, check_routes
 from .serving import ServingCore, build_router
@@ -67,9 +69,12 @@ class NetworkStatus(BaseModel):
 def network_app(core: ServingCore) -> FastAPI:
     """The whole application of the network listener: published endpoints and a health check."""
     app = FastAPI(title="Nodestro published workflows", docs_url=None, redoc_url=None, openapi_url=None)
+    app.include_router(build_app_router(core, channel="network"))
     app.include_router(build_router(core, channel="network"))
     # Bodies that FastAPI reads before the key check (approve, resume) are limited like the studio's (API3-02).
     app.add_middleware(BodyLimitMiddleware, limits=BodyLimits.from_env())
+    # Every answer of a route of the app contract names its version (NAL-C1), refusals included.
+    app.add_middleware(ContractHeaderMiddleware)
 
     @app.get("/health", include_in_schema=False, dependencies=PUBLIC)
     def health() -> dict[str, str]:
