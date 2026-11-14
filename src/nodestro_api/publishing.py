@@ -51,7 +51,7 @@ from nodestro_runtime.release import (
     skill_bindings,
     tool_record,
 )
-from nodestro_runtime.schemas import AgentConfig, RunSummary, Workflow, new_id, now
+from nodestro_runtime.schemas import AgentConfig, RunSummary, SkillStatus, Workflow, new_id, now
 from nodestro_runtime.tool_legacy import LegacyBinding, VersionOf, stamp_workflow
 from nodestro_runtime.tool_library import ToolLibrary, make_sandbox
 from nodestro_runtime.tool_preflight import unattended_tool_issues
@@ -661,6 +661,11 @@ class Publications:
         skills = []
         for skill_id, skill_version in skill_bindings(everything):
             skill, package = resolve(skill_id, skill_version)
+            if skill.status != "active":
+                # A disabled or archived skill is never frozen into a new release (internal review M3).
+                raise NodestroError(
+                    "skill.inactive", f"The skill {skill.name} is {skill.status}; activate it first", name=skill.name
+                )
             skills.append(freeze_skill(skill_id, skill_version, skill.origin, package))
         bundle = ReleaseBundle(
             workflow_id=workflow_id,
@@ -924,6 +929,11 @@ class Publications:
 
     # ---- execution environment ----------------------------------------------------
 
+    def _skill_status(self, skill_id: str) -> SkillStatus | None:
+        """The workspace's current status of a skill a release froze (``None``: no longer in the workspace)."""
+        skill = self.ctx.skills.get(skill_id)
+        return skill.status if skill is not None else None
+
     def _release_dir(self, release_id: str) -> Any:
         return self.ctx.config.data_dir / "releases" / release_id
 
@@ -960,7 +970,8 @@ class Publications:
                 tools.mcp = PinnedMcp(self.ctx.mcp, bundle.mcp_tools)  # type: ignore[assignment]
             builder = AgentBuilder(tools, self.ctx.knowledge, self.ctx.memory)
             builder.declared = self.ctx.builder.declared
-            builder.skill_source = bundle.skill_source()  # only the release's frozen skills (NAL-B3)
+            # Only the release's frozen skills (NAL-B3); one disabled or archived in the workspace stops (M3).
+            builder.skill_source = bundle.skill_source(status=self._skill_status)
             builder.mode = self.ctx.builder.mode  # the installation's mode decides which built-in tools run
             locks = {item.workflow_id for item in bundle.python}
 

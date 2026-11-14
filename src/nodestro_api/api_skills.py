@@ -15,10 +15,12 @@ from __future__ import annotations
 
 import base64
 import binascii
+from functools import partial
 import hashlib
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from nodestro_examples import __version__ as EXAMPLES_VERSION
 from nodestro_examples import skills as skill_library
 from nodestro_runtime.schemas import AgentTemplate, Skill, SkillVersion, Workflow
@@ -65,7 +67,12 @@ def _get(ctx: Ctx, skill_id: str) -> Skill:
 
 def _package_error(error: SkillPackageError) -> ApiError:
     status = 413 if error.code in ("skill.too_large", "skill.too_many_files", "skill.zip_bomb") else 422
-    params: dict[str, Any] = {key: value for key, value in error.params.items() if isinstance(value, str | int)}
+    # Parameters can carry text of the upload (a rejected path): only a short, bounded part is returned.
+    params: dict[str, Any] = {
+        key: value[:200] if isinstance(value, str) else value
+        for key, value in error.params.items()
+        if isinstance(value, str | int)
+    }
     return ApiError(status, error.code, str(error), **params)
 
 
@@ -266,10 +273,15 @@ async def _read_upload(file: UploadFile) -> tuple[SkillPackage, str]:
         raise ApiError(413, "skill.too_large", "A skill file may have at most 10 MB", limit=LIMITS.max_zip_bytes)
     digest = hashlib.sha256(data).hexdigest()
     name = (file.filename or "").lower()
-    try:
+
+    def parse() -> SkillPackage:
         if data[:4] == b"PK\x03\x04" or name.endswith(".zip"):
-            return read_zip(data, limits=LIMITS), digest
-        return parse_skill({SKILL_FILE: data}, limits=LIMITS), digest
+            return read_zip(data, limits=LIMITS)
+        return parse_skill({SKILL_FILE: data}, limits=LIMITS)
+
+    try:
+        # Unpacking and parsing take CPU time: off the event loop, so one import never stalls the server (L1).
+        return await run_in_threadpool(parse), digest
     except SkillPackageError as error:
         raise _package_error(error) from None
 
@@ -286,16 +298,18 @@ async def import_skill(
     preview. Otherwise the package becomes a new skill (origin ``import:<sha256>``) or, with ``skill_id``, the next
     version of that skill. Errors refuse it (``skill.invalid``); warnings do not."""
     package, digest = await _read_upload(file)
-    checked = _checked(ctx, package)
+    checked = await run_in_threadpool(_checked, ctx, package)
     if dry_run:
         return SkillImportResult(check=checked)
     skills = _skills(ctx)
+    origin = f"import:{digest}"
     if skill_id:
         _get(ctx, skill_id)
-        skill = skills.save(skill_id, package, note="import", created_by=_actor(request))
+        # Imported content marks the skill as imported, whatever its origin was (internal review M2).
+        save = partial(skills.save, skill_id, package, origin=origin, note="import", created_by=_actor(request))
     else:
-        skill = skills.create(package, origin=f"import:{digest}", note="import", created_by=_actor(request))
-    return SkillImportResult(skill=skill, check=checked)
+        save = partial(skills.create, package, origin=origin, note="import", created_by=_actor(request))
+    return SkillImportResult(skill=await run_in_threadpool(save), check=checked)
 
 
 class SkillFileIn(BaseModel):
@@ -383,7 +397,9 @@ def copy_skill(skill_id: str, body: SkillCopyIn, request: Request, ctx: Ctx) -> 
     """A new skill from the latest version under another name (e.g. a copy in another language to translate)."""
     skill = _get(ctx, skill_id)
     package = _renamed(_skills(ctx).package(skill_id, skill.version), body.name)
-    return _skills(ctx).create(package, note=f"Copied from {skill.name}", created_by=_actor(request))
+    # The copy keeps the source's origin: an imported skill stays marked as imported (internal review M2).
+    note = f"Copied from {skill.name}"
+    return _skills(ctx).create(package, origin=skill.origin, note=note, created_by=_actor(request))
 
 
 class SkillStatusIn(BaseModel):

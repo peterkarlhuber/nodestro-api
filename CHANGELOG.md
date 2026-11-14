@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Hardened the skill routes after the internal security review (NAL-B3): unpacking, parsing and checking an upload
+  run off the event loop; importing a file as the next version of a skill marks it as imported, and a copy keeps
+  the source's origin; publishing refuses a disabled or archived skill, and a release run stops a frozen skill that
+  is disabled or archived in the workspace now; text of a rejected upload in error parameters is cut to 200
+  characters.
 - Added building blocks to the library (NAL-B3, for the shared gallery filter "Examples · Building blocks · Agents
   · Skills"): `GET /api/library/parts` (every part: name, description, capability tags, agent steps, the parts it runs,
   the templates that use it), `GET /api/library/parts/{id}` (plus the workflow a copy gets) and
