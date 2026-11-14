@@ -2,3 +2,4 @@
 # Checked by scripts/check_skips.py (MUP-ONA A0, T-SKIP-1). A change needs a reason in its PR.
 tests.test_portable_smoke::test_a_portable_package_runs_on_this_computer  # builds a real portable package; runs in the "Portable packages" workflow (NODESTRO_PORTABLE_SMOKE=1)
 tests.test_python_deps::test_real_uv_installs_a_package_from_pypi  # needs PyPI; CI sets NODESTRO_NETWORK_TESTS=1 on Python 3.13 only
+tests.test_portable_tabrion::test_the_wheel_is_built_from_the_pinned_archive_and_imports  # needs GitHub and PyPI; CI sets NODESTRO_NETWORK_TESTS=1 on Python 3.13 only
