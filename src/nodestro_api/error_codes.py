@@ -34,8 +34,8 @@ router = APIRouter(prefix="/api")
 _BUILDERS = re.compile(r"(?:Error|_error|problem|Problem|issue|Issue)$")
 #: The API also answers with a few codes without a namespace (``not_found``, ``bad_request``).
 _CODE = re.compile(r"[a-z][a-z0-9_]*(?:\.[A-Za-z0-9_]+)*")
-#: Constants in a code namespace that are not codes.
-NOT_CODES = frozenset({"release.json"})
+#: Constants in a code namespace that are not codes (the app contract's capability names, NAL-C1).
+NOT_CODES = frozenset({"release.json", "files.upload", "files.download"})
 #: Code families whose last part is filled in at run time.
 PATTERNS = ("http.<status>",)
 _PACKAGE = Path(__file__).resolve().parent
