@@ -15,6 +15,15 @@
     `skill.script_not_found` (404), `skill.file_not_text` and `skill.script_too_large` (422).
   - Permission counts: read 149, edit 68, run 35. The export closure adds `nodestro_runtime.skills_select`. The
     OpenAPI documents and the error catalog are regenerated.
+
+- Tests (TABRION QA-7, AC-7/QA-21): only public, stable Tabrion names. `scripts/check_tabrion_api.py` is the shared
+  check of axentra, orkexa, nodestro-runtime and tabrion-studio (axentra's newer copy, which checks `__x__` names
+  by their owner under `--surface`; `tests/test_tabrion_api_check.py` pins its SHA-256 and holds the probes). It
+  reads `src`, `tests` and `scripts` with `ast`, refuses private Tabrion names, checks used names against the
+  installed Tabrion's `__all__` and lists them in `docs/api-consumers.md` (`tabrion.errors.DbErrorRedactionFilter`,
+  `tabrion.testing.configure`). CI (test job) runs
+  `python scripts/check_tabrion_api.py --check-export docs/api-consumers.md --surface <surface.json>` against the
+  frozen API snapshot of the Tabrion commit in the studio lock. Tooling only; no dependency changes.
 - Hardened the skill routes after the internal security review (NAL-B3): unpacking, parsing and checking an upload
   run off the event loop; importing a file as the next version of a skill marks it as imported, and a copy keeps
   the source's origin; publishing refuses a disabled or archived skill, and a release run stops a frozen skill that
