@@ -17650,6 +17650,19 @@
         "title": "ReconciliationRow",
         "type": "object"
       },
+      "RecoveryRequest": {
+        "properties": {
+          "confirm": {
+            "title": "Confirm",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "title": "RecoveryRequest",
+        "type": "object"
+      },
       "Reference": {
         "description": "The users of one object.",
         "properties": {
@@ -30870,6 +30883,46 @@
           }
         },
         "summary": "Diagnostics Connection",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/api/diagnostics/database-permissions/recovery": {
+      "post": {
+        "description": "Restart into recovery mode, where the user confirms the repair of the database's permissions (TABRION\nMIG-NOD-9, :mod:`nodestro_api.recovery`); nothing is repaired here. Refused while runs are active.",
+        "operationId": "diagnostics_recovery_api_diagnostics_database_permissions_recovery_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Diagnostics Recovery",
         "tags": [
           "workspace"
         ]

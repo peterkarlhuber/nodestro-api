@@ -9,8 +9,8 @@ import tempfile
 from typing import Annotated
 
 from fastapi import APIRouter, File, Query, Request, UploadFile
-from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel, StrictBool
 from starlette.background import BackgroundTask
 
 from .api import Ctx, request_language
@@ -29,6 +29,7 @@ from .backup import (
 from .diagnostics import DiagnosticCheck, Diagnostics, check_connection, run_diagnostics
 from .organize import Kind, Organize, OrganizeState
 from .permissions import EDIT, INSTALL, READ
+from .recovery import restart_into_recovery
 from .search import SearchResult, search
 
 router = APIRouter(prefix="/api")
@@ -78,6 +79,18 @@ async def diagnostics_connection(ctx: Ctx, provider: str | None = None) -> Diagn
     Amazon Bedrock: runs the settings verification instead (free AWS calls) and, as a side effect, stores its result
     in the provider's ``verification`` (rate limit shared with ``POST /api/settings/providers/bedrock/verify``)."""
     return await asyncio.to_thread(check_connection, ctx, provider)
+
+
+class RecoveryRequest(BaseModel):
+    #: Must be true: the user confirmed that Nodestro restarts into the repair of the database's permissions.
+    confirm: StrictBool
+
+
+@router.post("/diagnostics/database-permissions/recovery", dependencies=INSTALL)
+def diagnostics_recovery(body: RecoveryRequest, ctx: Ctx) -> JSONResponse:
+    """Restart into recovery mode, where the user confirms the repair of the database's permissions (TABRION
+    MIG-NOD-9, :mod:`nodestro_api.recovery`); nothing is repaired here. Refused while runs are active."""
+    return restart_into_recovery(ctx, body.confirm)
 
 
 # ---- backups --------------------------------------------------------------------
