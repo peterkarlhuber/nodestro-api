@@ -36,6 +36,7 @@ from .api_publish import router as publish_router
 from .api_python import router as python_router
 from .api_reference import install_api_reference
 from .api_run_chat import router as run_chat_router
+from .api_skills import router as skills_router
 from .api_tool_approvals import router as tool_approvals_router
 from .app_contract import ContractHeaderMiddleware
 from .app_discovery import build_app_router
@@ -185,6 +186,7 @@ def create_app(
     app.include_router(local_models_router)
     # Before the main router: /api/library/agents must not be taken for an example named "agents".
     app.include_router(agent_templates_router)
+    app.include_router(skills_router)  # before the main router (/api/library/skills)
     app.include_router(connections_router)
     app.include_router(mcp_router)
     app.include_router(budget_router)

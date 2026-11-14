@@ -338,6 +338,7 @@ PATH_TAGS: dict[str, str] = {
     "python": "Python environments",
     "sandbox": "tools",
     "agents": "agents",
+    "skills": "skills",
     "models": "agents",
     "architect": "architect",
     "assistant": "assistant",
@@ -995,6 +996,46 @@ def duplicate_workflow(workflow_id: str, request: Request, ctx: Ctx) -> Workflow
 def list_library(request: Request, language: Language | None = None) -> list[library.TemplateSummary]:
     """The example templates in one language (default: the interface language); nothing is stored."""
     return library.summaries(language or request_language(request))
+
+
+# The building blocks (parts) as gallery entries of their own (NAL-B3); before ``/library/{template_id}``.
+
+
+@router.get("/library/parts", dependencies=READ)
+def list_library_parts(request: Request, language: Language | None = None) -> list[library.PartSummary]:
+    """The building blocks templates run as teams or sub-workflows, in one language; nothing is stored."""
+    return library.part_summaries(language or request_language(request))
+
+
+@router.get("/library/parts/{part_id}", dependencies=READ)
+def get_library_part(part_id: str, request: Request, language: Language | None = None) -> library.PartDetail:
+    """One building block with the workflow a copy would get (a preview, never a run)."""
+    return library.part_detail(part_id, language or request_language(request))
+
+
+class LibraryPartCopy(BaseModel):
+    #: The language of the copy; the interface language when empty.
+    language: Language | None = None
+
+
+@router.post("/library/parts/{part_id}/copy", status_code=201, dependencies=EDIT)
+def copy_library_part(part_id: str, body: LibraryPartCopy, request: Request, ctx: Ctx) -> Workflow:
+    """Create an ordinary, independent workflow from a building block; agents get the workspace's model tiers.
+
+    The parts it runs are saved first, as workflows of their own, and pinned to their first version; a copy that
+    fails half-way leaves nothing behind. The copy can serve as a team in the editor's palette right away."""
+    language = body.language or request_language(request)
+    library.part(part_id)  # an unknown part is 404
+    settings = ctx.settings()
+    models = library.model_choice(settings.default_model, settings.assistant_model)
+    host = _LibraryHost(ctx)
+    try:
+        made = library.instantiate_part(part_id, language, host, models=models)
+        copy = ctx.save_workflow(_checked(made.workflow))
+    except Exception:
+        host.undo()
+        raise
+    return copy
 
 
 @router.get("/library/{template_id}", dependencies=READ)

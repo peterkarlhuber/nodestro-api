@@ -221,6 +221,7 @@ class StandaloneHost:
         )
         self.builtin = set(tools.builtin)
         builder = AgentBuilder(tools, self.knowledge, self.memory)
+        builder.skill_source = self.bundle.skill_source()  # the package's frozen skills (NAL-B3)
         builder.mode = "export"  # an exported package: the tool specs' export mode (NAL-A2)
         # Service connections are entered on this computer, never exported (ADR-0001); read once at the start.
         self.connections = portable_connections.static(data_dir)

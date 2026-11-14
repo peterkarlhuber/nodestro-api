@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+- Hardened the skill routes after the internal security review (NAL-B3): unpacking, parsing and checking an upload
+  run off the event loop; importing a file as the next version of a skill marks it as imported, and a copy keeps
+  the source's origin; publishing refuses a disabled or archived skill, and a release run stops a frozen skill that
+  is disabled or archived in the workspace now; text of a rejected upload in error parameters is cut to 200
+  characters.
+- Added building blocks to the library (NAL-B3, for the shared gallery filter "Examples · Building blocks · Agents
+  · Skills"): `GET /api/library/parts` (every part: name, description, capability tags, agent steps, the parts it runs,
+  the templates that use it), `GET /api/library/parts/{id}` (plus the workflow a copy gets) and
+  `POST /api/library/parts/{id}/copy` (`{language}`; an ordinary workflow with the workspace's model tiers, inner
+  parts saved first and pinned; nothing is left behind when a copy fails). Template routes are unchanged.
+- Added (NAL-B3, skill library; `api_skills.py`, tag `skills`): skills in the Agent Skills format.
+  - **Routes:**
+    - `GET /api/skills`, `GET /api/skills/{id}` (with `version`: instructions, files, findings), `.../versions`,
+      `.../versions/{n}/file?path=` (text only), `.../usage` and `.../export` (a standard ZIP with the exact bytes).
+    - `POST /api/skills/import` (multipart ZIP or `SKILL.md`): with `dry_run`, only the validation report and
+      preview; otherwise a new skill with origin `import:<sha256>`, or with `skill_id` the next version of that skill.
+    - `POST /api/skills` and `PUT /api/skills/{id}`: editor files as text, base64 or `keep`.
+    - `POST /api/skills/check` (the editor's live check), `.../copy` (under another name), `.../status`
+      (`active`/`disabled`), `.../archive` (admin) and `DELETE` (admin, refused with `409 skill.in_use` while an
+      agent uses it).
+    - Shipped skills: `GET /api/library/skills?language=`, `GET /api/library/skills/{name}` and
+      `POST /api/library/skills/{name}/copy` (origin `builtin:nodestro-examples@<version>/<name>`).
+  - **Import is untrusted content.** The limits of `orkexa.skills` apply: 10 MB ZIP, 30 MB unpacked, 500 files, no
+    unsafe paths, links or ZIP bombs (`413`/`422` with the package's code). The specification's errors refuse an
+    import (`skill.invalid`); warnings are reported and do not.
+  - **Body limits:** import and editing use the `large` limit.
+  - **Releases** freeze the skill versions their agents use (`bundle.skills`). Published APIs and exported projects
+    resolve skills only from their bundle.
+  - **Backup** holds `skills` and `skill_versions` (blobs as raw documents).
+  - Permission counts are read 145, edit 64, admin 55. The OpenAPI documents and the error catalog are regenerated.
 - Added (QA-17 (AC-2): dependency policy check, 2026-11-14): `dependency-policy.json` is this repository's copy of the
   dependency policy K-33 from nodestro-studio (only its outgoing edges: `nodestro-runtime`, `orkexa` and
   `nodestro-examples` in the core, `nodestro-runtime[postgres]` in the extras `server` and `dev`, and
