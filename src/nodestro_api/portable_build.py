@@ -711,7 +711,9 @@ def requirements(options: ExportOptions, bundle: Any) -> tuple[list[str], list[s
     from .exporter import _APP_PACKAGES, _closure, _version, tool_libraries
 
     direct = [f"{Requirement(item).name}{_extras(item)}=={_version(Requirement(item).name)}" for item in _APP_PACKAGES]
-    extras = {"all", "pdf", "local"}
+    # "web": the libraries of the web tools search_web and fetch_web_page (NAL-A2; httpx, trafilatura with lxml,
+    # charset-normalizer), which nodestro-runtime requires through orkexa[...,web].
+    extras = {"all", "pdf", "local", "web"}
     # Google's SDK only for a release that uses Gemini: through google-auth it needs cryptography, which has no
     # ready-built package for macOS Intel or Windows ARM64 since 46.0.4 (the provider SDKs are imported lazily).
     gemini = any(use.provider == "gemini" for use in model_uses(bundle))
@@ -730,7 +732,7 @@ def requirements(options: ExportOptions, bundle: Any) -> tuple[list[str], list[s
     direct.append("sqlite-vec>=0.1.6; sys_platform != 'win32' or platform_machine != 'ARM64'")
     direct.append("tzdata>=2024.1; sys_platform == 'win32'")
     direct += tool_libraries(bundle)
-    closure = _closure([*_APP_PACKAGES, "orkexa[all,pdf,local]", "sqlite-vec"])
+    closure = _closure([*_APP_PACKAGES, "orkexa[all,pdf,local,web]", "sqlite-vec"])
     closure.pop("orkexa", None)
     constraints = [f"{name}=={version}" for name, version in sorted(closure.items())]
     return direct, constraints

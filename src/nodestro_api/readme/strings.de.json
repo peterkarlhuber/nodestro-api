@@ -31,6 +31,8 @@
   "portable.need.ollama_cloud": "das Ollama-Cloud-Modell `{name}`",
   "portable.need.server_tool": "das Server-Tool `{name}` ({detail})",
   "portable.need.mcp": "den MCP-Dienst `{name}` ({detail})",
+  "portable.need.builtin_tool": "das eingebaute Tool `{name}`",
+  "portable.need.connection": "die Dienstverbindung `{name}` ({detail})",
   "portable.need.docker_sandbox": "das KI-generierte Tool `{name}` (läuft nur in Docker; Docker muss installiert sein)",
   "portable.output_on": "Eine Kopie jeder Ergebnisdatei landet in `{folder}` (ein Ordner pro Lauf: `<Datum>_<Uhrzeit>_<Lauf>`). Ist der Ordner nicht anlegbar oder nicht beschreibbar, wird `results` in diesem Ordner verwendet; das Startfenster und die Einstellungsseite weisen darauf hin.",
   "portable.output_off": "Ergebnisdateien werden nicht in einen Ordner kopiert (`[data] output_dir` ist leer).",

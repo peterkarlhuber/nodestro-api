@@ -31,6 +31,8 @@
   "portable.need.ollama_cloud": "le modèle cloud Ollama `{name}`",
   "portable.need.server_tool": "l’outil serveur `{name}` ({detail})",
   "portable.need.mcp": "le service MCP `{name}` ({detail})",
+  "portable.need.builtin_tool": "l’outil intégré `{name}`",
+  "portable.need.connection": "la connexion de service `{name}` ({detail})",
   "portable.need.docker_sandbox": "l’outil généré par IA `{name}` (s’exécute uniquement dans Docker ; Docker doit être installé)",
   "portable.output_on": "Une copie de chaque fichier de résultats est placée dans `{folder}` (un dossier par exécution : `<date>_<time>_<run>`). Si ce dossier ne peut pas être créé ou n’est pas accessible en écriture, `results` dans ce dossier est utilisé à la place ; la fenêtre de démarrage et la page Paramètres le signalent.",
   "portable.output_off": "Les fichiers de résultats ne sont copiés dans aucun dossier (`[data] output_dir` est vide).",
