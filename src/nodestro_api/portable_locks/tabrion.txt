@@ -1,0 +1,7 @@
+# Tabrion for portable packages (TABRION MIG-NOD-3): not on a package index, so the build downloads the source archive
+# of the pinned commit, checks it against this SHA-256, builds the wheel offline with the hatchling of build.txt and
+# installs it with --no-index (the pattern of Axentra's container image, axentra deploy/locks/tabrion.txt).
+# The commit must be the one of the studio lock (tests/test_portable_tabrion.py ties it to the installed tabrion).
+# Update: set the commit, then: curl -fsSL <url> | sha256sum
+tabrion @ https://github.com/peterkarlhuber/tabrion/archive/d5821faa8742dea012abda3b663549c038d76543.tar.gz \
+    --hash=sha256:a17d3a291986dadc32485689a3a903e11ce4f2f141280a46252f236ae45e004a

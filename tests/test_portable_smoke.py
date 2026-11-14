@@ -143,6 +143,17 @@ def test_a_portable_package_runs_on_this_computer(make_app: Callable[..., TestCl
                 path.chmod(mode & 0o777)
     for name in ("README.md", "openapi.json", "SHA256SUMS", "PORTABLE.json", "config/settings.toml"):
         assert (folder / name).is_file(), name
+    # TABRION MIG-NOD-3: with a runtime that requires tabrion, it was built from the pinned, hash-checked archive.
+    from nodestro_api import exporter
+    from nodestro_api.portable_build import tabrion_pin
+
+    portable = json.loads((folder / "PORTABLE.json").read_text(encoding="utf-8"))
+    if exporter._runtime_needs_tabrion():
+        pin = tabrion_pin()
+        assert portable["tabrion"] == {"commit": pin.commit, "archive_sha256": pin.sha256}
+        assert (folder / "licenses" / "tabrion.txt").is_file()
+    else:
+        assert portable["tabrion"] is None
     starter = [str(folder / "start.cmd")] if windows else [str(folder / "start.sh")]
     # The package reads nothing of the studio's environment (its data folder, its keys) and of the test's Python.
     environment = {
