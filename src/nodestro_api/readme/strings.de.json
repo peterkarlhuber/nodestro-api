@@ -3,7 +3,7 @@
   "approval_one": "{count} Freigabeschritt",
   "approval_many": "{count} Freigabeschritte",
   "agent_git": "`orkexa` gibt es nicht auf PyPI; es wird aus seinem öffentlichen GitHub-Repository installiert, genau in dem\nCommit, den Nodestro verwendet hat (siehe `pyproject.toml`). Die Installation braucht deshalb Zugriff auf\ngithub.com, aber kein Konto und keinen Token. Exportiere erneut mit „Library mitliefern“, wenn das Projekt\nohne Zugriff auf github.com installierbar sein muss.",
-  "agent_bundle": "`orkexa` liegt als Quellcode in `vendor/orkexa` (MIT-Lizenz, siehe dortige `LICENSE`) und\nwird von dort installiert; ein Zugriff auf das Repository ist nicht nötig. Beim Export wurde bestätigt,\ndass die Library weitergegeben werden darf. Beachte das, bevor du das Projekt weitergibst.",
+  "agent_bundle": "`orkexa` liegt als Quellcode in `vendor/orkexa` (proprietäre Lizenz von Levuvo, siehe dortige `LICENSE`) und\nwird von dort installiert; ein Zugriff auf das Repository ist nicht nötig. Beim Export wurde bestätigt,\ndass die Library weitergegeben werden darf. Beachte das, bevor du das Projekt weitergibst.",
   "aws_region": "AWS-Region für {label}; ohne sie gilt die exportierte Region{shown}.",
   "aws_signin": "Anmeldung bei AWS über die Standard-Credential-Chain dieses Rechners (Umgebung, `~/.aws`, IAM-Rolle); das Projekt enthält keine AWS-Zugangsdaten.",
   "key": "Der Schlüssel für {label}. Ohne ihn antwortet ein Start mit 503.",
