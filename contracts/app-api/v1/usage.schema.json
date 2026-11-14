@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/peterkarlhuber/nodestro-api/master/contracts/app-api/v1/usage.schema.json",
+  "title": "UsageSummary",
+  "description": "GET /api/published/{slug}/usage.",
+  "type": "object",
+  "required": [
+    "days",
+    "runs",
+    "by_status",
+    "usage"
+  ],
+  "properties": {
+    "days": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "runs": {
+      "type": "integer"
+    },
+    "by_status": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer"
+      }
+    },
+    "usage": {
+      "$ref": "run-status.schema.json#/$defs/Usage"
+    },
+    "average_duration_seconds": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "last_24h_usd": {
+      "type": "number"
+    },
+    "daily_budget_usd": {
+      "type": [
+        "number",
+        "null"
+      ]
+    }
+  }
+}

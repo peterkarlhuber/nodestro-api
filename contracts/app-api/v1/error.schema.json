@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/peterkarlhuber/nodestro-api/master/contracts/app-api/v1/error.schema.json",
+  "title": "Error",
+  "description": "Every error answer of a contract route. Codes are stable; clients translate them, never the message. New codes may appear in any version.",
+  "type": "object",
+  "required": [
+    "error"
+  ],
+  "properties": {
+    "error": {
+      "type": "object",
+      "required": [
+        "status",
+        "code",
+        "message"
+      ],
+      "properties": {
+        "status": {
+          "type": "integer",
+          "minimum": 400,
+          "maximum": 599
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)*$"
+        },
+        "message": {
+          "type": "string",
+          "description": "English, for logs; not for display"
+        },
+        "params": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}

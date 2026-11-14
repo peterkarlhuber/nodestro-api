@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/peterkarlhuber/nodestro-api/master/contracts/app-api/v1/discovery.schema.json",
+  "title": "AppDiscovery",
+  "description": "GET /api/app. Without credentials only contract, backend (id, name), auth and tls; with an API key or a session also backend versions, capabilities and apps.",
+  "type": "object",
+  "required": [
+    "contract",
+    "backend",
+    "auth",
+    "tls"
+  ],
+  "properties": {
+    "contract": {
+      "type": "object",
+      "required": [
+        "name",
+        "versions",
+        "current"
+      ],
+      "properties": {
+        "name": {
+          "const": "nodestro-app"
+        },
+        "versions": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Every major version the backend serves; a client uses the highest one it shares with them, and reports an incompatible backend when there is none"
+        },
+        "current": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "backend": {
+      "type": "object",
+      "required": [
+        "id",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^bk_[a-z0-9]{20,64}$",
+          "description": "Random, stable per installation or package"
+        },
+        "name": {
+          "type": "string",
+          "description": "Set by the operator; may be empty"
+        },
+        "version": {
+          "type": "string",
+          "description": "Only for a signed-in client"
+        },
+        "runtime_version": {
+          "type": "string",
+          "description": "Only for a signed-in client"
+        }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "required": [
+        "methods"
+      ],
+      "properties": {
+        "methods": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "description": "api_key, session, launch_link or pairing; ignore unknown methods"
+          }
+        }
+      }
+    },
+    "tls": {
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "description": "runs, runs.sync, events.sse, files.upload, files.download, approvals, cancel, resume, history, usage, notifications, pairing; ignore unknown names"
+      }
+    },
+    "apps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/AppSummary"
+      }
+    }
+  },
+  "$defs": {
+    "AppSummary": {
+      "type": "object",
+      "required": [
+        "slug",
+        "name",
+        "description",
+        "release",
+        "languages",
+        "links"
+      ],
+      "properties": {
+        "slug": {
+          "type": "string",
+          "pattern": "^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "release": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "languages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "links": {
+          "type": "object",
+          "required": [
+            "info",
+            "openapi"
+          ],
+          "properties": {
+            "info": {
+              "type": "string"
+            },
+            "openapi": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

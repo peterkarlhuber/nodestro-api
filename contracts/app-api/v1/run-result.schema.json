@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/peterkarlhuber/nodestro-api/master/contracts/app-api/v1/run-result.schema.json",
+  "title": "RunResult",
+  "description": "GET …/runs/{id}/result of a finished run.",
+  "type": "object",
+  "required": [
+    "run_id",
+    "status",
+    "output",
+    "files",
+    "usage"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "queued",
+        "running",
+        "awaiting_approval",
+        "succeeded",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "output": {
+      "description": "The workflow's result exactly as the run produced it"
+    },
+    "error": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "params": {
+          "type": "object"
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "$ref": "files.schema.json#/$defs/File"
+      }
+    },
+    "usage": {
+      "$ref": "run-status.schema.json#/$defs/Usage"
+    }
+  }
+}
