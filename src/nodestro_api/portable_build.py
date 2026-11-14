@@ -57,6 +57,7 @@ import zipfile
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.schemas import new_id, now
 from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 from pydantic import BaseModel, Field
 
 from . import __version__
@@ -724,6 +725,10 @@ def requirements(options: ExportOptions, bundle: Any) -> tuple[list[str], list[s
         marker = requirement.marker
         if requirement.name == "google-genai" and not gemini:
             continue
+        if canonicalize_name(requirement.name) == "tabrion":
+            # orkexa's core requires it (MIG-ORK-3); not on a package index: built from its pinned archive by
+            # install_tabrion, never resolved by name (DC-1).
+            continue
         if marker is None:
             direct.append(str(requirement))
             continue
@@ -736,6 +741,7 @@ def requirements(options: ExportOptions, bundle: Any) -> tuple[list[str], list[s
     direct += tool_libraries(bundle)
     closure = _closure([*_APP_PACKAGES, "orkexa[all,pdf,local,web]", "sqlite-vec"])
     closure.pop("orkexa", None)
+    closure.pop("tabrion", None)  # install_tabrion builds it from the pinned archive (DC-1)
     constraints = [f"{name}=={version}" for name, version in sorted(closure.items())]
     return direct, constraints
 

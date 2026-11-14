@@ -52,7 +52,7 @@ def check_source(blocked: tuple[str, ...]) -> str:
         "from fastapi.testclient import TestClient\n"
         "from nodestro_api.app import create_app\n"
         "from nodestro_api.context import AppConfig\n"
-        "with tempfile.TemporaryDirectory() as _d:\n"
+        "with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as _d:\n"
         "    _app = create_app(AppConfig(data_dir=Path(_d)), integrations=[], scheduler=False)\n"
         "    with TestClient(_app, base_url='http://127.0.0.1') as _c:\n"
         "        assert _c.get('/api/health').json() == {'status': 'ok'}\n"
