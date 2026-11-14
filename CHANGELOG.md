@@ -25,6 +25,17 @@
   background work are active (`recovery.busy`) and outside the desktop app (`recovery.unavailable`). New codes:
   `recovery.*`. `nodestro_api.cli.serve` ends the process with the requested exit code once uvicorn stopped.
   Needs nodestro-runtime with `repair_desktop_database_modes` (runtime #176).
+- Changed (TABRION MIG-NOD-9, review): the confirmed repair passes the identities (device, inode) of the dry run the
+  user saw as `expected` (a plan this app never showed is `recovery.plan_changed`); the fingerprint also covers each
+  file's status change time and size. The runtime repairs all or nothing; when the check after the repair fails, the
+  changed modes are restored (`restore_desktop_database_modes`) and `recovery.repair_failed` names the files that could
+  not be set back (`not_restored`) and why (`reason`: `files_changed`, `not_changed`, `not_private`, `does_not_open`).
+  Files report the new statuses `rolled_back`, `rollback_failed` and `restored`. Already private files (a manual
+  `chmod`) only restart (`outcome: already_private`); `{"action": "return"}` leaves a recovery mode the diagnosis asked
+  for without a change (`returned`; `recovery.locked` after a refused start). The repair needs the desktop app's launch
+  session (`recovery.unprotected`), the data directory is locked before the recovery app serves, and the diagnosis
+  restarts into recovery mode only when a repair is possible (`recovery.nothing_to_repair`,
+  `recovery.not_repairable`).
 
 - Added (NAL-B2): `services` in the copy request of a library template (`POST /api/library/{id}/copy`) binds the
   service connection the copy's built-in tools need (kind such as `search` -> connection id; the kinds are `services`

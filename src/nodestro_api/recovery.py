@@ -77,7 +77,9 @@ PREFIX = "/api/recovery"
 PLAN_PATH = f"{PREFIX}/database-permissions"
 REPAIR_PATH = f"{PLAN_PATH}/repair"
 
-Status = Literal["changed", "unchanged", "not_confirmed", "skipped", "failed"]
+Status = Literal[
+    "changed", "unchanged", "not_confirmed", "skipped", "failed", "rolled_back", "rollback_failed", "restored"
+]
 
 
 class ExitRequest:
@@ -143,7 +145,7 @@ class FileMode(BaseModel):
     old_mode: str | None = None
     new_mode: str | None = None
     #: Why a file is ``skipped`` (``symlink``, ``hard_link``, ``other_owner``, ``not_a_file``,
-    #: ``changed_during_repair``) or ``failed``.
+    #: ``changed_during_repair``, ``other_file_refused``), ``failed`` or ``rollback_failed``.
     reason: str | None = None
 
 
@@ -155,6 +157,8 @@ class RepairPlan(BaseModel):
     files: list[FileMode]
     #: ``True`` when at least one file would change and none is left alone.
     repairable: bool
+    #: ``True`` when nothing is left for group or others (e.g. repaired by hand): confirming only restarts.
+    private: bool = False
     #: The fingerprint of the files shown; the repair is refused when it no longer matches.
     plan: str
     #: The manual alternative (``chmod 600 <files>``, quoted for a shell); ``None`` when nothing would change.
@@ -162,13 +166,19 @@ class RepairPlan(BaseModel):
 
 
 class RepairRequest(BaseModel):
-    #: Must be true: the user confirmed the repair in the dialog.
+    #: ``repair``: narrow the modes the dry run showed (``confirm`` must be true); ``return``: change nothing and start
+    #: the regular studio again, only when the user asked for recovery mode in the diagnosis (cancel).
+    action: Literal["repair", "return"] = "repair"
+    #: Must be true for ``repair``: the user confirmed the repair in the dialog.
     confirm: StrictBool = False
     #: ``plan`` of the dry run the user saw.
     plan: str = Field(default="", max_length=128)
 
 
 class RepairResult(BaseModel):
+    #: ``repaired``: modes narrowed and checked; ``already_private``: nothing to change (checked);
+    #: ``returned``: cancelled from the diagnosis, nothing changed.
+    outcome: Literal["repaired", "already_private", "returned"]
     repaired: bool
     files: list[FileMode]
     #: The process ends now and the desktop shell starts the regular backend.
@@ -198,9 +208,9 @@ def candidates(database: Path) -> list[Path]:
 
 
 def fingerprint(database: Path, *, modes: bool = True) -> str:
-    """The identity of every file of the database as it is now (never following a link): device, inode, owner, type
-    and mode (without ``modes``: the type only), link count; a missing file counts too. Equal fingerprints: the same
-    files (with the same modes)."""
+    """The identity of every file of the database as it is now (never following a link): device, inode, owner, type,
+    link count and, with ``modes``, the mode, the status change time and the size; a missing file counts too. Equal
+    fingerprints: the same files (in the same state). Without ``modes`` it survives a ``chmod``."""
     digest = hashlib.sha256()
     for path in candidates(database):
         try:
@@ -212,7 +222,10 @@ def fingerprint(database: Path, *, modes: bool = True) -> str:
             digest.update(f"{path.name}:error:{exc.errno}\n".encode())
             continue
         mode = info.st_mode if modes else stat.S_IFMT(info.st_mode)
-        digest.update(f"{path.name}:{info.st_dev}:{info.st_ino}:{info.st_uid}:{mode:o}:{info.st_nlink}\n".encode())
+        state = f":{info.st_ctime_ns}:{info.st_size}" if modes else ""
+        digest.update(
+            f"{path.name}:{info.st_dev}:{info.st_ino}:{info.st_uid}:{mode:o}:{info.st_nlink}{state}\n".encode()
+        )
     return digest.hexdigest()
 
 
@@ -234,18 +247,24 @@ def is_private(results: list[storage.ModeRepair]) -> bool:
 
 
 def dry_run(database: Path, origin: Literal["refused", "requested"]) -> RepairPlan:
+    return _dry_run(database, origin)[0]
+
+
+def _dry_run(database: Path, origin: Literal["refused", "requested"]) -> tuple[RepairPlan, list[storage.ModeRepair]]:
     plan = fingerprint(database)
     results = storage.repair_desktop_database_modes(database, confirmed=False)
     if fingerprint(database) != plan:  # changed while it was looked at: show it again
         plan = fingerprint(database)
         results = storage.repair_desktop_database_modes(database, confirmed=False)
-    return RepairPlan(
+    shown = RepairPlan(
         origin=origin,
         files=file_modes(results),
         repairable=is_repairable(results),
+        private=is_private(results),
         plan=plan,
         command=manual_command(results),
     )
+    return shown, results
 
 
 def opens(database: Path) -> str | None:
@@ -262,32 +281,51 @@ def opens(database: Path) -> str | None:
 class _Repairer:
     """Serializes repairs: one at a time, and none after a successful one (the process is about to end)."""
 
-    def __init__(self, database: Path, origin: Literal["refused", "requested"]) -> None:
+    def __init__(self, database: Path, origin: Literal["refused", "requested"], *, protected: bool) -> None:
         self.database = database
         self.origin = origin
+        #: The desktop app's launch session protects the studio API (a launch secret or the shell's handoff).
+        self.protected = protected
         self.lock = threading.Lock()
         self.done = False
+        #: The identities (``st_dev``, ``st_ino``) of the files of each plan shown, by its fingerprint: the confirmed
+        #: repair touches exactly the files the user saw.
+        self.shown: dict[str, dict[str | Path, storage.FileIdentity]] = {}
 
     def plan(self) -> RepairPlan:
         with self.lock:
-            return dry_run(self.database, self.origin)
+            shown, results = _dry_run(self.database, self.origin)
+            if len(self.shown) >= _PLANS_KEPT:
+                self.shown.pop(next(iter(self.shown)))
+            self.shown[shown.plan] = {str(item.path): item.identity for item in results if item.identity is not None}
+            return shown
 
-    def repair(self, body: RepairRequest) -> RepairResult:
+    def run(self, body: RepairRequest) -> RepairResult:
+        if body.action == "return":
+            return self.leave()
         if not body.confirm:
             raise ApiError(400, "recovery.not_confirmed", "Repairing the permissions of the database must be confirmed")
+        if not self.protected:
+            raise ApiError(
+                403,
+                "recovery.unprotected",
+                "The repair is offered only in the desktop app's protected window; restrict the permissions by hand",
+            )
         with self.lock:
-            if self.done:
-                raise ApiError(409, "recovery.restarting", "The permissions were repaired; Nodestro is restarting")
+            self._not_done()
             # Taken before the comparison: a file swapped after it is caught after the repair, one swapped before by
             # the comparison itself.
             files = fingerprint(self.database, modes=False)
-            if not body.plan or fingerprint(self.database) != body.plan:
+            expected = self.shown.get(body.plan)
+            if expected is None or fingerprint(self.database) != body.plan:
                 raise ApiError(
                     409,
                     "recovery.plan_changed",
                     "The database files changed since they were shown; nothing was changed. Look at them again",
                 )
             planned = storage.repair_desktop_database_modes(self.database, confirmed=False)
+            if is_private(planned):
+                return self._already_private(planned)
             if not is_repairable(planned):
                 raise ApiError(
                     409,
@@ -295,30 +333,100 @@ class _Repairer:
                     "These database files cannot be repaired here; nothing was changed",
                     files=[item.model_dump() for item in file_modes(planned)],
                 )
-            results = storage.repair_desktop_database_modes(self.database, confirmed=True)
+            results = _repair(self.database, expected)
             after = storage.repair_desktop_database_modes(self.database, confirmed=False)
             # The same files as before the repair (nothing was swapped in meanwhile), private now, and it opens.
             problem = None if fingerprint(self.database, modes=False) == files else "files_changed"
+            if problem is None and any(item.status not in ("changed", "unchanged") for item in results):
+                # All or nothing: the runtime already set back what it changed (``rolled_back``).
+                problem = "not_changed"
             problem = problem or (None if is_private(after) else "not_private")
-            problem = problem or opens(self.database)
-            if problem is not None or any(item.status not in ("changed", "unchanged") for item in results):
-                logger.warning("The permissions of %s could not be repaired completely (%s)", self.database, problem)
-                raise ApiError(
-                    500,
-                    "recovery.repair_failed",
-                    "The permissions of the database could not be repaired completely",
-                    files=[item.model_dump() for item in file_modes(results)],
-                    command=manual_command(after) or "",
-                )
+            problem = problem or (f"does_not_open:{opened}" if (opened := opens(self.database)) else None)
+            if problem is not None:
+                raise self._failed(problem, results, planned)
             self.done = True
-            return RepairResult(repaired=True, files=file_modes(results), restart=True)
+            return RepairResult(outcome="repaired", repaired=True, files=file_modes(results), restart=True)
+
+    def leave(self) -> RepairResult:
+        """Cancel from the diagnosis: nothing changes and the regular studio starts again. After a refused start the
+        database must be repaired first, so Nodestro stays locked."""
+        if self.origin != "requested":
+            raise ApiError(
+                409,
+                "recovery.locked",
+                "Nodestro opens only once the permissions of the database are repaired; nothing was changed",
+            )
+        with self.lock:
+            self._not_done()
+            self.done = True
+        return RepairResult(outcome="returned", repaired=False, files=[], restart=True)
+
+    def _not_done(self) -> None:
+        if self.done:
+            raise ApiError(409, "recovery.restarting", "Nodestro is restarting")
+
+    def _already_private(self, planned: list[storage.ModeRepair]) -> RepairResult:
+        """Nothing to change (e.g. repaired by hand): restart once the database opens."""
+        opened = opens(self.database)
+        if opened is not None:
+            raise self._failed(f"does_not_open:{opened}", [], planned)
+        self.done = True
+        return RepairResult(outcome="already_private", repaired=False, files=file_modes(planned), restart=True)
+
+    def _failed(self, problem: str, results: list[storage.ModeRepair], planned: list[storage.ModeRepair]) -> ApiError:
+        """The verification failed: the modes this repair changed are restored (the database stays as it was), and
+        the answer says what happened, with the manual alternative."""
+        changed = [item for item in results if item.status == "changed"]
+        restored = _restore(changed)
+        not_restored = [item.path.name for item in results if item.status == "rollback_failed"]
+        not_restored += [item.path.name for item in restored if item.status != "restored"]
+        reason, _, detail = problem.partition(":")
+        logger.warning(
+            "The permissions of %s could not be repaired (%s); restored: %s, not restored: %s",
+            self.database,
+            problem,
+            [item.path.name for item in restored if item.status == "restored"],
+            not_restored,
+        )
+        return ApiError(
+            500,
+            "recovery.repair_failed",
+            "The permissions of the database could not be repaired; the changed modes were restored"
+            if not not_restored
+            else "The permissions of the database could not be repaired, and some modes could not be restored",
+            reason=reason,
+            cause=detail,
+            files=[item.model_dump() for item in file_modes(_merged(results, restored))],
+            not_restored=not_restored,
+            command=manual_command(planned) or "",
+        )
+
+
+#: Plans kept for a confirmation (the dialog loads one; a few more for reloads).
+_PLANS_KEPT = 8
+
+
+def _repair(database: Path, expected: dict[str | Path, storage.FileIdentity]) -> list[storage.ModeRepair]:
+    """The runtime's confirmed repair (all or nothing) of exactly the files the user saw (their device and inode)."""
+    return storage.repair_desktop_database_modes(database, confirmed=True, expected=expected)
+
+
+def _restore(changed: list[storage.ModeRepair]) -> list[storage.ModeRepair]:
+    """Put back the modes a repair changed (the runtime's restore); one result per file, ``restored`` when done."""
+    return [] if not changed else storage.restore_desktop_database_modes(changed)
+
+
+def _merged(results: list[storage.ModeRepair], restored: list[storage.ModeRepair]) -> list[storage.ModeRepair]:
+    """The repair's results with the restore's result in place of each file it set back."""
+    by_path = {item.path: item for item in restored}
+    return [by_path.get(item.path, item) for item in results]
 
 
 # ---- the recovery app ----------------------------------------------------------------------------------------------
 
 
-def build_router(database: Path, origin: Literal["refused", "requested"]) -> APIRouter:
-    repairer = _Repairer(database, origin)
+def build_router(database: Path, origin: Literal["refused", "requested"], *, protected: bool) -> APIRouter:
+    repairer = _Repairer(database, origin, protected=protected)
     router = APIRouter()
 
     @router.get("/api/health", dependencies=PUBLIC)
@@ -333,20 +441,20 @@ def build_router(database: Path, origin: Literal["refused", "requested"]) -> API
 
     @router.post(REPAIR_PATH, dependencies=INSTALL)
     async def repair_database_permissions(body: Annotated[RepairRequest, Body()]) -> JSONResponse:
-        """Narrow the modes of the files the dry run showed (``confirm`` and its ``plan`` required); then the process
-        ends with :data:`RESTART_EXIT_CODE` and the desktop shell starts the regular backend."""
-        result = await asyncio.to_thread(repairer.repair, body)
+        """Narrow the modes of the files the dry run showed (``confirm`` and its ``plan`` required), or with
+        ``action: return`` leave a recovery mode the diagnosis asked for; then the process ends with
+        :data:`RESTART_EXIT_CODE` and the desktop shell starts the regular backend."""
+        result = await asyncio.to_thread(repairer.run, body)
         return JSONResponse(result.model_dump(), background=BackgroundTask(EXIT.request, RESTART_EXIT_CODE))
 
     return router
 
 
-def recovery_lifespan(config: AppConfig) -> Callable[[FastAPI], Any]:
-    """Holds the data directory lock while the recovery app runs: no other Nodestro process opens the database."""
+def recovery_lifespan(lock: DataDirectoryLock) -> Callable[[FastAPI], Any]:
+    """Releases the data directory lock, taken before the app was built, when the recovery app stops."""
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        lock = DataDirectoryLock(config.data_dir)
         try:
             yield
         finally:
@@ -383,6 +491,16 @@ def restart_into_recovery(nodestro: Nodestro, confirm: bool) -> JSONResponse:
             409,
             "recovery.unavailable",
             "Only the desktop app can restart into the repair; restrict the permissions by hand instead",
+        )
+    results = storage.repair_desktop_database_modes(database_path(nodestro.config), confirmed=False)
+    if is_private(results):
+        raise ApiError(409, "recovery.nothing_to_repair", "Only this user can access the database files already")
+    if not is_repairable(results):
+        raise ApiError(
+            409,
+            "recovery.not_repairable",
+            "These database files cannot be repaired here; restrict the permissions by hand",
+            files=[item.model_dump() for item in file_modes(results)],
         )
     busy = nodestro.background_work()
     if busy:

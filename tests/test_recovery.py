@@ -10,6 +10,7 @@ into recovery mode on request; it never repairs in its own process.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from contextlib import contextmanager
 import os
 from pathlib import Path
 import stat
@@ -57,9 +58,14 @@ def _data_dir(tmp_path: Path, mode: int | None = None) -> Path:
     return data
 
 
-def _client(data: Path, *, secret: str | None = None, **config: Any) -> TestClient:
+@contextmanager
+def _client(data: Path, *, secret: str | None = SECRET, launch: bool = True, **config: Any) -> Iterator[TestClient]:
+    """The app on ``data``; with ``secret`` the desktop's launch session, opened like the window does (``launch``)."""
     app = create_app(AppConfig(data_dir=data, launch_secret=secret, **config), integrations=[], scheduler=False)
-    return TestClient(app, base_url="http://127.0.0.1")
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        if secret is not None and launch:
+            assert client.get("/api/launch", params={"token": secret}, follow_redirects=False).status_code == 200
+        yield client
 
 
 def _repair(client: TestClient, **body: Any) -> Any:
@@ -115,7 +121,7 @@ def test_every_other_route_is_closed_in_recovery_mode(tmp_path: Path) -> None:
         assert client.post("/api/diagnostics/database-permissions/recovery", json={"confirm": True}).status_code == 404
         assert client.get(REPAIR).status_code == 405
         assert client.post(PLAN, json={"confirm": True}).status_code == 405
-    routes = recovery.build_router(data / "nodestro.db", "refused").routes
+    routes = recovery.build_router(data / "nodestro.db", "refused", protected=True).routes
     assert {getattr(route, "path", "") for route in routes} == {"/api/health", PLAN, REPAIR}
 
 
@@ -125,7 +131,7 @@ def test_a_database_that_cannot_be_repaired_still_stops_the_start(tmp_path: Path
     data.mkdir(mode=0o700)
     (data / "nodestro.db").symlink_to(target)
     with pytest.raises(NodestroError) as caught:
-        _client(data)
+        create_app(AppConfig(data_dir=data), integrations=[], scheduler=False)
     assert caught.value.params == {"reason": "symlink", "fixable": False}
     assert _mode(target) == 0o664
     DataDirectoryLock(data).release()  # the refused start left the directory unlocked
@@ -141,11 +147,14 @@ def test_recovery_mode_is_for_the_desktop_only(tmp_path: Path) -> None:
 
 def test_the_data_directory_stays_locked_while_recovery_mode_runs(tmp_path: Path) -> None:
     data = _data_dir(tmp_path, 0o664)
-    with _client(data):
-        with pytest.raises(NodestroError) as caught:
-            DataDirectoryLock(data)
-        assert caught.value.code == "workspace.in_use"
-    DataDirectoryLock(data).release()
+    app = create_app(AppConfig(data_dir=data, launch_secret=SECRET), integrations=[], scheduler=False)
+    # Locked as soon as the recovery app exists, before it serves anything.
+    with pytest.raises(NodestroError) as caught:
+        DataDirectoryLock(data)
+    assert caught.value.code == "workspace.in_use"
+    with TestClient(app, base_url="http://127.0.0.1"), pytest.raises(NodestroError):
+        DataDirectoryLock(data)
+    DataDirectoryLock(data).release()  # released when it stopped
 
 
 # ---- guards ---------------------------------------------------------------------------------------------------------
@@ -153,7 +162,7 @@ def test_the_data_directory_stays_locked_while_recovery_mode_runs(tmp_path: Path
 
 def test_recovery_mode_keeps_the_host_origin_and_launch_guards(tmp_path: Path) -> None:
     data = _data_dir(tmp_path, 0o664)
-    with _client(data, secret=SECRET) as client:
+    with _client(data, launch=False) as client:
         assert client.get("/api/health").status_code == 200  # the desktop shell waits for it
         for answer in (client.get(PLAN), _repair(client, confirm=True, plan="x" * 64)):
             assert answer.status_code == 401
@@ -304,7 +313,28 @@ def test_a_failed_repair_is_reported_with_the_manual_command(
         assert problem["code"] == "recovery.repair_failed"
         assert problem["params"]["command"] == f"chmod 600 {data / 'nodestro.db'}"
         assert problem["params"]["files"][0]["status"] == "failed"
+        assert problem["params"]["not_restored"] == []
     assert _mode(data / "nodestro.db") == 0o664
+    assert exit_request == []
+
+
+def test_a_failed_verification_restores_the_modes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, exit_request: list[int]
+) -> None:
+    """The database does not open after the repair: the narrowed modes are put back, nothing stays changed."""
+    data = _data_dir(tmp_path, 0o664)
+    (data / "nodestro.db-wal").write_bytes(b"")
+    os.chmod(data / "nodestro.db-wal", 0o644)
+    monkeypatch.setattr(recovery, "opens", lambda _database: "storage.damaged")
+    with _client(data) as client:
+        plan = client.get(PLAN).json()["plan"]
+        answer = _repair(client, confirm=True, plan=plan)
+        assert answer.status_code == 500
+        problem = answer.json()
+        assert problem["code"] == "recovery.repair_failed"
+        assert (problem["params"]["reason"], problem["params"]["cause"]) == ("does_not_open", "storage.damaged")
+        assert problem["params"]["not_restored"] == []
+    assert _mode(data / "nodestro.db") == 0o664 and _mode(data / "nodestro.db-wal") == 0o644
     assert exit_request == []
 
 
@@ -315,8 +345,8 @@ def test_a_swap_during_the_repair_is_not_reported_as_success(
     database = data / "nodestro.db"
     repair = storage.repair_desktop_database_modes
 
-    def swapping(path: Any, *, confirmed: bool) -> list[storage.ModeRepair]:
-        results = repair(path, confirmed=confirmed)
+    def swapping(path: Any, *, confirmed: bool, expected: Any = None) -> list[storage.ModeRepair]:
+        results = repair(path, confirmed=confirmed, expected=expected)
         if confirmed:  # another file of this user (another inode) takes the name right after the repair
             (data / "swapped").write_bytes(b"")
             os.chmod(data / "swapped", 0o600)
@@ -328,7 +358,114 @@ def test_a_swap_during_the_repair_is_not_reported_as_success(
         monkeypatch.setattr(storage, "repair_desktop_database_modes", swapping)
         answer = _repair(client, confirm=True, plan=plan)
         assert answer.status_code == 500 and answer.json()["code"] == "recovery.repair_failed"
+        params = answer.json()["params"]
+        # The file the repair narrowed is no longer under its name: it is not touched again, and the answer says so.
+        assert params["reason"] == "files_changed" and params["not_restored"] == ["nodestro.db"]
     assert exit_request == []
+
+
+def test_the_repair_touches_only_the_files_of_the_plan_shown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, exit_request: list[int]
+) -> None:
+    data = _data_dir(tmp_path, 0o664)
+    database = data / "nodestro.db"
+    repair = storage.repair_desktop_database_modes
+    seen: list[Any] = []
+
+    def spying(path: Any, *, confirmed: bool, expected: Any = None) -> list[storage.ModeRepair]:
+        if confirmed:
+            seen.append(expected)
+        return repair(path, confirmed=confirmed, expected=expected)
+
+    monkeypatch.setattr(storage, "repair_desktop_database_modes", spying)
+    with _client(data) as client:
+        plan = client.get(PLAN).json()["plan"]
+        info = os.lstat(database)
+        assert _repair(client, confirm=True, plan=plan).status_code == 200
+    assert seen == [{str(database): (info.st_dev, info.st_ino)}]
+    assert exit_request == [recovery.RESTART_EXIT_CODE]
+
+
+def test_a_plan_the_app_never_showed_is_refused(tmp_path: Path, exit_request: list[int]) -> None:
+    data = _data_dir(tmp_path, 0o664)
+    with _client(data) as client:
+        forged = recovery.fingerprint(data / "nodestro.db")  # the right fingerprint, but no dry run showed it
+        answer = _repair(client, confirm=True, plan=forged)
+        assert answer.status_code == 409 and answer.json()["code"] == "recovery.plan_changed"
+    assert _mode(data / "nodestro.db") == 0o664
+    assert exit_request == []
+
+
+def test_a_rollback_that_fails_is_named(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, exit_request: list[int]
+) -> None:
+    """The runtime stopped partway and could not set a file back: the answer names it, nothing claims success."""
+    data = _data_dir(tmp_path, 0o664)
+    database = data / "nodestro.db"
+    repair = storage.repair_desktop_database_modes
+
+    def stuck(path: Any, *, confirmed: bool, expected: Any = None) -> list[storage.ModeRepair]:
+        results = repair(path, confirmed=False, expected=expected)
+        if not confirmed:
+            return results
+        return [
+            storage.ModeRepair(
+                item.path, "rollback_failed", 0o664, 0o600, "Operation not permitted", item.dev, item.ino
+            )
+            for item in results
+        ]
+
+    monkeypatch.setattr(storage, "repair_desktop_database_modes", stuck)
+    with _client(data) as client:
+        plan = client.get(PLAN).json()["plan"]
+        answer = _repair(client, confirm=True, plan=plan)
+        assert answer.status_code == 500
+        params = answer.json()["params"]
+        assert (params["reason"], params["not_restored"]) == ("not_changed", ["nodestro.db"])
+        assert params["files"][0]["status"] == "rollback_failed"
+        assert params["command"] == f"chmod 600 {database}"
+    assert exit_request == []
+
+
+def test_the_repair_needs_the_desktop_apps_launch_session(tmp_path: Path, exit_request: list[int]) -> None:
+    data = _data_dir(tmp_path, 0o664)
+    with _client(data, secret=None) as client:  # a backend without a launch secret: any local process reaches it
+        plan = client.get(PLAN).json()["plan"]
+        answer = _repair(client, confirm=True, plan=plan)
+        assert answer.status_code == 403 and answer.json()["code"] == "recovery.unprotected"
+    assert _mode(data / "nodestro.db") == 0o664
+    assert exit_request == []
+
+
+def test_already_private_after_a_manual_fix_only_restarts(tmp_path: Path, exit_request: list[int]) -> None:
+    data = _data_dir(tmp_path, 0o664)
+    database = data / "nodestro.db"
+    with _client(data) as client:
+        stale = client.get(PLAN).json()["plan"]
+        os.chmod(database, 0o600)  # the user ran the chmod command in a terminal
+        assert _repair(client, confirm=True, plan=stale).json()["code"] == "recovery.plan_changed"
+        plan = client.get(PLAN).json()
+        assert (plan["private"], plan["repairable"], plan["command"]) == (True, False, None)
+        answer = _repair(client, confirm=True, plan=plan["plan"])
+        assert answer.status_code == 200
+        assert answer.json()["outcome"] == "already_private" and answer.json()["restart"] is True
+        assert exit_request == [recovery.RESTART_EXIT_CODE]
+    assert _mode(database) == 0o600
+
+
+def test_cancel_returns_to_the_studio_only_when_the_diagnosis_asked(tmp_path: Path, exit_request: list[int]) -> None:
+    data = _data_dir(tmp_path, 0o664)
+    with _client(data) as client:  # refused at start: the database must be repaired first
+        answer = _repair(client, action="return")
+        assert answer.status_code == 409 and answer.json()["code"] == "recovery.locked"
+    assert exit_request == []
+    os.chmod(data / "nodestro.db", 0o644)
+    with _client(data, recovery=True) as client:  # asked for in the diagnosis: cancel goes back
+        answer = _repair(client, action="return")
+        assert answer.status_code == 200 and answer.json()["outcome"] == "returned"
+        assert exit_request == [recovery.RESTART_EXIT_CODE]
+        assert _repair(client, confirm=True, plan="x").json()["code"] == "recovery.restarting"
+    assert _mode(data / "nodestro.db") == 0o644  # nothing changed
 
 
 # ---- the diagnosis --------------------------------------------------------------------------------------------------
@@ -363,7 +500,7 @@ def test_the_diagnosis_restarts_into_recovery_mode_only_when_confirmed_and_idle(
     with _client(data) as client:
         answer = client.post(path, json={"confirm": False})
         assert answer.status_code == 400 and answer.json()["code"] == "recovery.not_confirmed"
-        answer = client.post(path, json={"confirm": True})  # started from a terminal: no shell restarts it
+        answer = client.post(path, json={"confirm": True})  # no shell handoff: no shell restarts it
         assert answer.status_code == 409 and answer.json()["code"] == "recovery.unavailable"
         monkeypatch.setattr(recovery, "shell_restarts", lambda: True)
         nodestro = client.app.state.nodestro  # type: ignore[attr-defined]
@@ -433,3 +570,20 @@ def test_serve_ends_the_process_with_the_requested_exit_code(tmp_path: Path, mon
         cli.serve("nodestro_api.app:create_app", args, ready=lambda: None)
     assert caught.value.code == recovery.RESTART_EXIT_CODE
     assert recovery.EXIT.code is None  # unbound again
+
+
+def test_the_diagnosis_restarts_only_when_a_repair_is_needed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, exit_request: list[int]
+) -> None:
+    data = _data_dir(tmp_path, 0o600)
+    path = "/api/diagnostics/database-permissions/recovery"
+    monkeypatch.setattr(recovery, "shell_restarts", lambda: True)
+    with _client(data) as client:
+        answer = client.post(path, json={"confirm": True})
+        assert answer.status_code == 409 and answer.json()["code"] == "recovery.nothing_to_repair"
+    os.chmod(data / "nodestro.db", 0o644)
+    os.link(data / "nodestro.db", tmp_path / "other-name.db")
+    with _client(data) as client:
+        answer = client.post(path, json={"confirm": True})
+        assert answer.status_code == 409 and answer.json()["code"] == "recovery.not_repairable"
+    assert exit_request == []

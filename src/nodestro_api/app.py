@@ -17,6 +17,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from nodestro_runtime.extensions import Integration
 from nodestro_runtime.problems import NodestroError
+from nodestro_runtime.workspace import DataDirectoryLock
 
 from . import __version__, recovery
 from .api import install_error_handlers, router
@@ -248,11 +249,13 @@ def _install_guards(app: FastAPI, config: AppConfig) -> None:
 def _recovery_app(config: AppConfig, error: NodestroError | None) -> FastAPI:
     """Recovery mode (:mod:`nodestro_api.recovery`): the regular guards and only the repair of the database's
     permissions; no workspace is opened and nothing else is served (the studio adds the interface)."""
+    # Locked before anything is served (the refused workspace released its lock a moment ago), until the app stops.
+    lock = DataDirectoryLock(config.data_dir)
     recovery.log_start(error)
     app = FastAPI(
         title="Nodestro (recovery)",
         version=__version__,
-        lifespan=recovery.recovery_lifespan(config),
+        lifespan=recovery.recovery_lifespan(lock),
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
@@ -260,7 +263,14 @@ def _recovery_app(config: AppConfig, error: NodestroError | None) -> FastAPI:
     app.state.recovery = True
     app.state.principal_resolver = resolver_for(config.profile)
     _install_guards(app, config)
-    app.include_router(recovery.build_router(recovery.database_path(config), "refused" if error else "requested"))
+    app.include_router(
+        recovery.build_router(
+            recovery.database_path(config),
+            "refused" if error else "requested",
+            # The repair needs the desktop app's launch session (its secret, from the shell's handoff or the operator).
+            protected=config.launch_secret is not None,
+        )
+    )
     check_routes(app)
     return app
 
