@@ -64,6 +64,8 @@ from nodestro_runtime.schemas import NodeRun, Run, RunEvent, RunIn, RunSummary, 
 from nodestro_runtime.storage import DocumentStore
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
+from .app_contract import FORM_VERSION, FormField, form_fields
+
 logger = logging.getLogger(__name__)
 
 PREFIX = "/api/published"
@@ -702,6 +704,10 @@ class InfoOut(BaseModel):
     #: The file fields of the input form and how to send files (JSON with Base64 or multipart/form-data).
     file_inputs: list[dict[str, Any]] = Field(default_factory=list)
     uploads: dict[str, Any] = Field(default_factory=dict)
+    #: The input form in order, enough to render it (app contract, ``docs/app-api/v1.md``); empty: the workflow takes
+    #: free text in ``input``.
+    form: list[FormField] = Field(default_factory=list)
+    form_version: int = FORM_VERSION
 
 
 def multipart_schema(workflow: Workflow) -> dict[str, Any]:
@@ -1152,6 +1158,7 @@ class ServingCore:
                 "values as a JSON part 'values', free text as 'input'",
                 "max_upload_mb": release.limits.max_upload_mb,
             },
+            form=form_fields(release.workflow, release.limits.max_upload_mb),
         )
 
     # ---- runs -----------------------------------------------------------------------
