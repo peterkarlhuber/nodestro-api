@@ -96,6 +96,7 @@ def serve(factory: str, args: argparse.Namespace, ready: Callable[[], None] | No
     from nodestro_runtime.problems import NodestroError
     import uvicorn
 
+    from . import recovery
     from .context import AppConfig
     from .handoff import VAULT_KEY_ENV, received
     from .launch import check_secret
@@ -139,7 +140,17 @@ def serve(factory: str, args: argparse.Namespace, ready: Callable[[], None] | No
             ready()
 
     server.startup = started  # type: ignore[method-assign]
-    server.run()
+    # Recovery mode and the diagnosis may ask to be started again (TABRION MIG-NOD-9): the server stops as on Ctrl+C,
+    # the application's shutdown runs, and the process ends with the requested code for the desktop shell.
+    recovery.EXIT.bind(lambda: setattr(server, "should_exit", True))
+    try:
+        server.run()
+    finally:
+        code = recovery.EXIT.code
+        recovery.EXIT.bind(None)
+    if code is not None:
+        print(f"Nodestro stopped to start again (exit code {code})", flush=True)
+        raise SystemExit(code)
 
 
 def _receive_secrets(fd: int | None) -> None:

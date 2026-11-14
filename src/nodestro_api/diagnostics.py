@@ -19,6 +19,7 @@ import tempfile
 import time
 from typing import TYPE_CHECKING, Any, Literal
 
+from nodestro_runtime import storage
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.providers import PROVIDERS, MissingApiKeyError, provider_of
 from orkexa import AuthenticationError, ProviderConnectionError, ProviderError
@@ -135,6 +136,26 @@ def _database(nodestro: Nodestro) -> DiagnosticCheck:
     return _check("database", "ok", "ok", message, path=str(path), size=size)
 
 
+def _database_permissions(nodestro: Nodestro) -> list[DiagnosticCheck]:
+    """Database files that group or others may read (TABRION MIG-NOD-9): the desktop opens them, but they are not
+    private. The diagnosis only looks (a dry run); the repair is confirmed in recovery mode (:mod:`.recovery`)."""
+    from . import recovery
+
+    if nodestro.config.profile_kind != "desktop" or os.name != "posix" or nodestro.shared_storage:
+        return []
+    results = storage.repair_desktop_database_modes(recovery.database_path(nodestro.config), confirmed=False)
+    if recovery.is_private(results):
+        return [_check("database_permissions", "ok", "ok")]
+    files = [item.model_dump() for item in recovery.file_modes(results)]
+    message = ", ".join(f"{item['name']} {item['old_mode']}" for item in files)
+    params: dict[str, Any] = {"files": files, "command": recovery.manual_command(results) or ""}
+    if not recovery.is_repairable(results):
+        return [_check("database_permissions", "warning", "not_repairable", message, **params)]
+    params["restart"] = recovery.shell_restarts()
+    params["busy"] = bool(nodestro.background_work())
+    return [_check("database_permissions", "warning", "not_private", message, **params)]
+
+
 def _directories(nodestro: Nodestro) -> list[DiagnosticCheck]:
     data = nodestro.config.data_dir
     found = []
@@ -222,6 +243,7 @@ def run_diagnostics(nodestro: Nodestro) -> Diagnostics:
     checks = [
         _python(),
         _database(nodestro),
+        *_database_permissions(nodestro),
         *_directories(nodestro),
         _providers(nodestro),
         *_sandbox(nodestro),
