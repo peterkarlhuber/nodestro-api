@@ -572,6 +572,16 @@
             "title": "On Refusal",
             "type": "string"
           },
+          "origin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "output": {
             "$ref": "#/components/schemas/OutputConfig"
           },
@@ -599,6 +609,18 @@
             "default": "You are a helpful assistant.",
             "title": "System Prompt",
             "type": "string"
+          },
+          "task": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task"
           },
           "task_template": {
             "default": "{{input}}",
@@ -824,6 +846,7 @@
         "type": "object"
       },
       "AgentTemplate": {
+        "description": "A saved agent template in its latest version; every save that changes it makes a new version (NAL-B1).\n\nA template stored before versions existed has ``version`` 1 and ``meta`` with ``origin`` ``user``.",
         "properties": {
           "agent": {
             "$ref": "#/components/schemas/AgentConfig"
@@ -837,10 +860,19 @@
             "title": "Id",
             "type": "string"
           },
+          "meta": {
+            "$ref": "#/components/schemas/TemplateMeta"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
             "type": "string"
+          },
+          "version": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
           }
         },
         "required": [
@@ -853,12 +885,63 @@
         "properties": {
           "agent": {
             "$ref": "#/components/schemas/AgentConfig"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/TemplateMeta"
+          },
+          "note": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Note",
+            "type": "string"
           }
         },
         "required": [
           "agent"
         ],
         "title": "AgentTemplateIn",
+        "type": "object"
+      },
+      "AgentTemplateVersion": {
+        "description": "One version of an agent template; never changed once stored.",
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/AgentConfig"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "default": "",
+            "title": "Created By",
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/TemplateMeta"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "template_id": {
+            "title": "Template Id",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "template_id",
+          "version",
+          "agent"
+        ],
+        "title": "AgentTemplateVersion",
         "type": "object"
       },
       "AgentTestIn": {
@@ -9096,6 +9179,29 @@
         "title": "ImportIn",
         "type": "object"
       },
+      "ImportResult": {
+        "properties": {
+          "check": {
+            "$ref": "#/components/schemas/TemplateCheck"
+          },
+          "removed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Removed",
+            "type": "array"
+          },
+          "template": {
+            "$ref": "#/components/schemas/AgentTemplate"
+          }
+        },
+        "required": [
+          "template",
+          "check"
+        ],
+        "title": "ImportResult",
+        "type": "object"
+      },
       "InfoOut": {
         "properties": {
           "approvals": {
@@ -10377,6 +10483,154 @@
           }
         },
         "title": "LegacyReport",
+        "type": "object"
+      },
+      "LibraryAgentCopy": {
+        "properties": {
+          "language": {
+            "anyOf": [
+              {
+                "enum": [
+                  "de",
+                  "en",
+                  "es",
+                  "fr",
+                  "pt-BR",
+                  "it"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "services": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 20,
+            "title": "Services",
+            "type": "object"
+          }
+        },
+        "title": "LibraryAgentCopy",
+        "type": "object"
+      },
+      "LibraryAgentDetail": {
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/AgentConfig"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "help": {
+            "title": "Help",
+            "type": "string"
+          },
+          "icon": {
+            "title": "Icon",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/TemplateMeta"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "category",
+          "name",
+          "description",
+          "icon",
+          "version",
+          "meta",
+          "help",
+          "agent"
+        ],
+        "title": "LibraryAgentDetail",
+        "type": "object"
+      },
+      "LibraryAgentSummary": {
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "icon": {
+            "title": "Icon",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/TemplateMeta"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "category",
+          "name",
+          "description",
+          "icon",
+          "version",
+          "meta"
+        ],
+        "title": "LibraryAgentSummary",
         "type": "object"
       },
       "LibraryCopy": {
@@ -22596,6 +22850,20 @@
         "title": "TemplateAgent",
         "type": "object"
       },
+      "TemplateCheck": {
+        "description": "What a template needs that this workspace lacks; empty ``issues``: it can be used as it is.",
+        "properties": {
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigIssue"
+            },
+            "title": "Issues",
+            "type": "array"
+          }
+        },
+        "title": "TemplateCheck",
+        "type": "object"
+      },
       "TemplateDetail": {
         "properties": {
           "agent_details": {
@@ -22866,6 +23134,142 @@
         "title": "TemplateKnowledge",
         "type": "object"
       },
+      "TemplateMeta": {
+        "description": "The description of an agent template besides its agent (NAL-B1).",
+        "properties": {
+          "category": {
+            "default": "",
+            "maxLength": 60,
+            "title": "Category",
+            "type": "string"
+          },
+          "examples": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Examples",
+            "type": "array"
+          },
+          "locale": {
+            "anyOf": [
+              {
+                "maxLength": 10,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
+          "origin": {
+            "default": "user",
+            "pattern": "^(user|builtin:[a-z0-9_.-]+@[A-Za-z0-9_.+-]+/[a-z0-9-]+|import:[0-9a-f]{64})$",
+            "title": "Origin",
+            "type": "string"
+          },
+          "requirements": {
+            "$ref": "#/components/schemas/TemplateRequirements"
+          },
+          "summary": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Summary",
+            "type": "string"
+          },
+          "tests": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateTest"
+            },
+            "maxItems": 50,
+            "title": "Tests",
+            "type": "array"
+          }
+        },
+        "title": "TemplateMeta",
+        "type": "object"
+      },
+      "TemplateRef": {
+        "description": "An agent template in one of its versions (NAL-B1): where an agent of a workflow was copied from.",
+        "properties": {
+          "template_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Template Id",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "template_id",
+          "version"
+        ],
+        "title": "TemplateRef",
+        "type": "object"
+      },
+      "TemplateRequirements": {
+        "description": "What an agent template needs to work; checked before it is used, never enforced by the runtime.",
+        "properties": {
+          "capabilities": {
+            "items": {
+              "enum": [
+                "tools",
+                "vision",
+                "structured_output",
+                "long_context"
+              ],
+              "type": "string"
+            },
+            "maxItems": 4,
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "min_tier": {
+            "anyOf": [
+              {
+                "enum": [
+                  "fast",
+                  "standard",
+                  "strong"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Tier"
+          },
+          "offline_capable": {
+            "default": true,
+            "title": "Offline Capable",
+            "type": "boolean"
+          },
+          "services": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Services",
+            "type": "array"
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "title": "TemplateRequirements",
+        "type": "object"
+      },
       "TemplateSummary": {
         "properties": {
           "agents": {
@@ -23059,6 +23463,36 @@
           "parameters"
         ],
         "title": "TemplateTeam",
+        "type": "object"
+      },
+      "TemplateTest": {
+        "description": "A test case of an agent template: an input and what a good answer does (checked by a judge or a person).",
+        "properties": {
+          "expectations": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Expectations",
+            "type": "array"
+          },
+          "input": {
+            "maxLength": 20000,
+            "title": "Input",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "input"
+        ],
+        "title": "TemplateTest",
         "type": "object"
       },
       "TestCase": {
@@ -26416,6 +26850,7 @@
     },
     "/api/agents/templates": {
       "get": {
+        "description": "Every template in its latest version.",
         "operationId": "list_templates_api_agents_templates_get",
         "responses": {
           "200": {
@@ -26449,6 +26884,7 @@
         ]
       },
       "post": {
+        "description": "A new template (version 1); its origin is always ``user``: only copies and imports set another one.",
         "operationId": "create_template_api_agents_templates_post",
         "requestBody": {
           "content": {
@@ -26488,8 +26924,53 @@
         ]
       }
     },
+    "/api/agents/templates/import": {
+      "post": {
+        "description": "Store an exported template as a new template of this workspace (version 1, origin ``import:<sha256>``).",
+        "operationId": "import_template_api_agents_templates_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Import Template",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
     "/api/agents/templates/{template_id}": {
       "delete": {
+        "description": "Delete a template with all its versions; agents copied from it into workflows stay as they are.",
         "operationId": "delete_template_api_agents_templates__template_id__delete",
         "parameters": [
           {
@@ -26523,6 +27004,7 @@
         ]
       },
       "put": {
+        "description": "Store a change as the next version (an unchanged save makes none). A body without ``meta`` (an older client)\nkeeps the stored description; the origin never changes.",
         "operationId": "update_template_api_agents_templates__template_id__put",
         "parameters": [
           {
@@ -26568,6 +27050,188 @@
           }
         },
         "summary": "Update Template",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/api/agents/templates/{template_id}/check": {
+      "get": {
+        "description": "What the template's latest version needs in this workspace: tools, service connections, a usable model.",
+        "operationId": "check_template_api_agents_templates__template_id__check_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateCheck"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Check Template",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/api/agents/templates/{template_id}/export": {
+      "get": {
+        "description": "The latest version as a file to share; nothing of this workspace's secrets or connections is in it.",
+        "operationId": "export_template_api_agents_templates__template_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Export Template",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/api/agents/templates/{template_id}/versions": {
+      "get": {
+        "description": "Every version, newest first.",
+        "operationId": "list_template_versions_api_agents_templates__template_id__versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AgentTemplateVersion"
+                  },
+                  "title": "Response List Template Versions Api Agents Templates  Template Id  Versions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Template Versions",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/api/agents/templates/{template_id}/versions/{version}": {
+      "get": {
+        "operationId": "get_template_version_api_agents_templates__template_id__versions__version__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTemplateVersion"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Template Version",
         "tags": [
           "agents"
         ]
@@ -31428,6 +32092,188 @@
           }
         },
         "summary": "List Library",
+        "tags": [
+          "examples"
+        ]
+      }
+    },
+    "/api/library/agents": {
+      "get": {
+        "description": "The shipped agent templates in one language (default: the interface language); nothing is stored.",
+        "operationId": "list_library_agents_api_library_agents_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "language",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "de",
+                    "en",
+                    "es",
+                    "fr",
+                    "pt-BR",
+                    "it"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Language"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LibraryAgentSummary"
+                  },
+                  "title": "Response List Library Agents Api Library Agents Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Library Agents",
+        "tags": [
+          "examples"
+        ]
+      }
+    },
+    "/api/library/agents/{agent_id}": {
+      "get": {
+        "description": "One shipped template with its help, example requests, test cases and the agent a copy would get.",
+        "operationId": "get_library_agent_api_library_agents__agent_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "language",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "de",
+                    "en",
+                    "es",
+                    "fr",
+                    "pt-BR",
+                    "it"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Language"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryAgentDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Library Agent",
+        "tags": [
+          "examples"
+        ]
+      }
+    },
+    "/api/library/agents/{agent_id}/copy": {
+      "post": {
+        "description": "Store a shipped template as a template of the person's own (version 1, origin ``builtin:...``). The copy is\nindependent: a newer package never changes it.",
+        "operationId": "copy_library_agent_api_library_agents__agent_id__copy_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryAgentCopy"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTemplate"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Copy Library Agent",
         "tags": [
           "examples"
         ]

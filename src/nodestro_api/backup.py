@@ -48,7 +48,7 @@ import zlib
 
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.providers import has_credentials
-from nodestro_runtime.schemas import AgentTemplate, Run, Workflow, now
+from nodestro_runtime.schemas import AgentTemplate, AgentTemplateVersion, Run, Workflow, now
 from nodestro_runtime.storage import SCHEMA_VERSION
 from orkexa import __version__ as library_version
 from pydantic import BaseModel, Field, ValidationError
@@ -360,6 +360,7 @@ def _document_models() -> dict[str, type[BaseModel]]:
         "workflows": Workflow,
         "workflow_versions": WorkflowVersion,
         "templates": AgentTemplate,
+        "agent_template_versions": AgentTemplateVersion,
         "runs": Run,
         "schedules": Schedule,
         "batches": Batch,

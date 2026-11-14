@@ -14,7 +14,7 @@ from collections.abc import Mapping
 from typing import Any
 
 import nodestro_examples as library
-from nodestro_runtime.local_models import SelectionPreferences, recommend
+from nodestro_runtime.local_models import TASKS, SelectionPreferences, recommend
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.providers import provider_of
 from pydantic import BaseModel, Field
@@ -176,3 +176,42 @@ def choice(ctx: Any, template_id: str, language: str, overrides: Mapping[str, st
     found = plan(ctx, template_id, language, overrides)
     agents = {agent.key: agent.model for agent in found.agents if agent.model}
     return library.model_choice(settings.default_model, settings.assistant_model, agents=agents, judge=found.judge)
+
+
+def agent_models(ctx: Any, agent_id: str, model: str | None = None) -> Any:
+    """The :class:`nodestro_examples.ModelChoice` of a copy of a shipped agent template (NAL-B1): the workspace's
+    tiers; ``model`` (the person's choice) for the agent, else in a local workspace the model recommended for its
+    task among the installed ones (and one for the judge of its quality check)."""
+    from nodestro_examples import agents as agent_library
+
+    settings = ctx.settings()
+    default = settings.default_model
+    chosen: dict[str, str] = {"agent": model} if model else {}
+    judge = None
+    if bool(default) and provider_of(default) == "ollama":
+        node, _ = agent_library.agent_node(agent_id)
+        hardware = ctx.local_models.hardware()
+        installed, capabilities = _installed(ctx)
+        wishes = ctx.selection_preferences()
+        needs = sorted(set(TASKS[node.task or "write"].needs) | ({"tools"} if node.tools else set()))
+        if not model:
+            chosen["agent"] = _choose(
+                node.task or "write",
+                needs,
+                hardware=hardware,
+                installed=installed,
+                capabilities=capabilities,
+                preferences=wishes,
+                fallback=default,
+            )[0]
+        if node.criteria:
+            judge = _choose(
+                "judge",
+                [],
+                hardware=hardware,
+                installed=installed,
+                capabilities=capabilities,
+                preferences=wishes,
+                fallback=default,
+            )[0]
+    return library.model_choice(default, settings.assistant_model, agents=chosen, judge=judge)
