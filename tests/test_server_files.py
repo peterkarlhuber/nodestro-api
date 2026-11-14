@@ -306,6 +306,7 @@ def test_a_backup_before_the_first_upload(
     with pytest.raises(NodestroError) as caught:
         command.archive_files(loaded, tmp_path / "lost")
     assert caught.value.code == "storage.backup_failed" and "does not exist" in str(caught.value)
+    assert str(tmp_path) not in str(caught.value)  # no path in the error text (TABRION MIG-NOD-3)
 
 
 def test_files_cleanup_removes_what_verify_reports(

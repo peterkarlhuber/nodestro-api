@@ -12,8 +12,8 @@ web pages in the user's browser, reach the port too, but have neither the secret
 - every other request without the session cookie is refused with 401 ``access.launch_required``;
 - ``SameSite=Strict`` keeps the browser from sending the cookie with requests of other sites.
 
-Open without the cookie: the health check (``/api/health``, the app waits for it) and the published
-workflow APIs (``/api/published``, protected by their own keys).
+Open without the cookie: the health check (``/api/health``, the app waits for it), the published
+workflow APIs (``/api/published``, protected by their own keys) and the app contract's discovery (``/api/app``).
 
 An operator can set the secret in ``NODESTRO_LAUNCH_SECRET`` instead. Without either, nothing changes (the
 ``nodestro`` command in a terminal). This is the desktop's protection against other local processes; it is not a user
@@ -58,7 +58,8 @@ MIN_LENGTH = 32
 LOCAL_COOKIE = "nodestro_local_session"
 #: Browser sessions kept per process with a reusable key (the oldest is dropped beyond that).
 MAX_SESSIONS = 64
-_OPEN_PATHS = frozenset({"/api/health"})
+#: The health check, and the app contract's discovery (public; a published API's key adds more, NAL-C1).
+_OPEN_PATHS = frozenset({"/api/health", "/api/app"})
 _OPEN_PREFIX = "/api/published"
 
 _TOKEN = re.compile(r"([?&]token=)[^&\s\"]*")

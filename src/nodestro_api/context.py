@@ -100,6 +100,10 @@ class AppConfig:
     #: ``NODESTRO_DEV_CORS=1``: the frontend's development server (``npm run dev`` on port 5173) may read answers
     #: (CORS) and send changes; off unless set, never in Nodestro Local Docker (API2-10).
     dev_cors: bool = False
+    #: ``NODESTRO_RECOVERY=database-permissions``: start in recovery mode without opening the workspace; the desktop
+    #: shell sets it for one start after the diagnosis asked for the repair of the database's permissions
+    #: (:mod:`nodestro_api.recovery`). Desktop profile only.
+    recovery: bool = False
 
     @property
     def profile(self) -> RuntimeProfile:
@@ -135,6 +139,7 @@ class AppConfig:
             session_max_hours=longest,
             price_sync=PriceSyncConfig.from_env(),
             dev_cors=os.environ.get("NODESTRO_DEV_CORS", "").strip() == "1",
+            recovery=os.environ.get("NODESTRO_RECOVERY", "").strip() == "database-permissions",
         )
 
 

@@ -154,22 +154,31 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # read: + the retention of assistant conversation files (API-056)
         # read: + a tool's version history (ST-036)
         # read: + service connections: status, types, list, one; the built-in tool catalog (NAL-A1)
-        "read": 130,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
+        # read: + agent template versions, one version, check, export; library agents list and detail (NAL-B1)
+        # read: + skills list, one, versions, file, usage, export, check; library skills list and detail (NAL-B3)
+        # read: + skill groups list and skill usage statistics (NAL-B4)
+        # read: + the local inbox: notifications list and marking them read (NAL-A3; a member's own read state)
+        "read": 151,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
         # MCP status, servers, server, tools (WP-3); tool approval inbox, run questions, pre-grants, state (S-2b)
         # edit: + starting and cancelling a portable export job (like the synchronous export)
         # edit: + uploading and removing a conversation's files (assistant files)
         # edit: + deleting an export and its ZIP (API-048, like creating one)
-        "edit": 56,  # + the tool panel's test run (review H-1, was run); + semantic index rebuild, cancel, remove
+        # edit: + importing an agent template and copying a library agent (NAL-B1)
+        # edit: + skill import, create, change, copy, status; copying a library skill and a building block (NAL-B3)
+        # edit: + skill group create, change, delete (NAL-B4)
+        "edit": 68,  # + the tool panel's test run (review H-1, was run); + semantic index rebuild, cancel, remove
         # run: + sending a live run chat message (LRC-1)
         # run: + deciding a run's budget request (BUDGET-1; the route also checks starter or admin)
         # run: + the readiness check of a local model before an action (missing local models)
-        "run": 34,  # + deciding a tool call (S-2b); - the tool panel's test run (review H-1)
+        # run: + a tool draft from a skill script (NAL-B4; the same tool job as /tools/jobs)
+        "run": 35,  # + deciding a tool call (S-2b); - the tool panel's test run (review H-1)
         # admin: + the Docker sandbox's self-test (A1)
         # admin: + adopting an AI-generated tool as one's own (R-4, desktop only)
         # admin: + the access audit trail (API-004)
         # admin: + setting the retention of assistant conversation files (API-056)
         # admin: + service connections: create, change, delete, secret, check, events (NAL-A1)
-        "admin": 53,  # + price sync, reviews, overrides, billing keys and reconciliation (PRICING-1); gate (Q-3);
+        # admin: + archiving and deleting a skill (NAL-B3)
+        "admin": 55,  # + price sync, reviews, overrides, billing keys and reconciliation (PRICING-1); gate (Q-3);
         # MCP add, change, remove, discover, decision, events (WP-3); pre-grants, audit, activation (S-2b);
         # MCP OAuth start, callback, sign-out (WP-6); MCP stdio package plan (WP-8); MCP stats (WP-7);
         # Amazon Bedrock verification (a settings action)
@@ -177,12 +186,14 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # model folder move, job cancel (downloads and files on the computer, like package environments)
         # install: + measuring a local model's speed (RT-050; loads the model on the shared server)
         # install: + setting up the local model server step by step (setup)
-        "install": 21,
-        "public": 1,
+        # install: + restarting into the repair of the database's permissions (TABRION MIG-NOD-9)
+        "install": 22,
+        "public": 2,  # + the app contract's discovery GET /api/app (NAL-C1)
     }
     assert all(item.path.startswith("/api/") for item in found if item.access != "generated")
-    # Explicit exceptions: the health check, the key-protected published APIs, FastAPI's OpenAPI document.
-    assert {item.path for item in found if item.access == "public"} == {"/api/health"}
+    # Explicit exceptions: the health check, the app contract's discovery, the key-protected published APIs, FastAPI's
+    # OpenAPI document.
+    assert {item.path for item in found if item.access == "public"} == {"/api/health", "/api/app"}
     assert {item.path for item in found if item.access == "api_key"} and all(
         item.path.startswith("/api/published/") for item in found if item.access == "api_key"
     )

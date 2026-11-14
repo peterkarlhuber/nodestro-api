@@ -579,9 +579,12 @@ def create_server_app() -> Any:
     import httpx
     from nodestro_runtime.jobs import JobQueue
 
+    from .db_log_redaction import install_db_error_redaction
     from .identity import OidcClient, OidcSettings, axentra_login_flow
     from .server_app import TenantComposition, create_tenant_app
 
+    # Also when uvicorn runs this factory with its own log configuration (TABRION MIG-NOD-3).
+    install_db_error_redaction()
     server = load()
     require_client_address()
     database = _ready(server)
@@ -1212,7 +1215,12 @@ def archive_files(server: ServerEnvironment, directory: Path) -> Path | None:
     assert source is not None
     if not source.is_dir():
         if _stored_files(server):
-            raise NodestroError("storage.backup_failed", f"Axentra's storage directory {source} does not exist")
+            # The path goes to the operator's log only, never into the error text (TABRION MIG-NOD-3).
+            logger.error("Axentra's local storage directory %s does not exist although files are stored", source)
+            raise NodestroError(
+                "storage.backup_failed",
+                "Axentra's local storage directory does not exist although files are stored (its path is in the log)",
+            )
         source = None  # nothing was stored yet (a fresh installation): an empty archive
     import gzip
     import tarfile
@@ -1341,8 +1349,44 @@ def dump(server: ServerEnvironment, target: Path) -> Path:
                 "pg_dump cannot read tables with row-level security as this role: the backup needs "
                 "NODESTRO_DATABASE_MIGRATION_URL (the owner role)",
             )
-        raise NodestroError("storage.backup_failed", f"pg_dump failed: {completed.stderr.strip()[-500:]}")
+        raise NodestroError("storage.backup_failed", _pg_dump_failure(completed.returncode, completed.stderr))
     return target
+
+
+#: What a failed ``pg_dump`` reports, recognized in its error output: (lower-case sign, fixed reason). The first match
+#: wins, so authentication comes before the connection failure that wraps it, and the dump file before a
+#: permission problem.
+_PG_DUMP_REASONS = (
+    ("server version mismatch", "its version is older than the server's"),
+    ("authentication failed", "authentication failed"),
+    ("no pg_hba.conf entry", "authentication failed"),
+    ("could not translate host name", "the database server is not reachable"),
+    ("could not connect", "the database server is not reachable"),
+    ("connection to server", "the database server is not reachable"),
+    ("could not open output file", "the dump file cannot be written"),
+    ("could not write", "the dump file cannot be written"),
+    ("no space left on device", "the dump file cannot be written"),
+    ("permission denied", "permission denied"),
+    ("no matching schemas were found", "the schema does not exist"),
+)
+#: A SQLSTATE in pg_dump's output (only with libpq's verbose error format; Nodestro does not request it).
+_PG_DUMP_SQLSTATE = re.compile(r"\b(?:SQLSTATE|ERROR|FATAL):?\s+((?=[0-9A-Z]*[0-9])[0-9A-Z]{5})\b")
+
+
+def _pg_dump_failure(returncode: int, stderr: str) -> str:
+    """The value-free text of a failed ``pg_dump`` (TABRION MIG-NOD-3, finding B-06-2): its exit code, a fixed reason
+    when its output shows a known one, and a SQLSTATE when it shows one. pg_dump's own output never goes into the text
+    (nor into the log): it quotes server messages with data values, host names, roles and paths. To see it, the
+    operator runs ``pg_dump`` by hand with the same connection."""
+    lowered = stderr.lower()
+    parts = [f"exit code {returncode}"]
+    reason = next((text for sign, text in _PG_DUMP_REASONS if sign in lowered), None)
+    if reason is not None:
+        parts.append(reason)
+    found = _PG_DUMP_SQLSTATE.search(stderr)
+    if found is not None:
+        parts.append(f"SQLSTATE {found.group(1)}")
+    return f"pg_dump failed ({'; '.join(parts)}); run pg_dump by hand with the same connection to see its output"
 
 
 def _stamp() -> str:
@@ -1722,9 +1766,12 @@ def parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> None:
     args = parser().parse_args(argv)
+    from .db_log_redaction import install_db_error_redaction
     from .observability import configure_logging
 
-    configure_logging()  # request ids; NODESTRO_LOG_FORMAT=json for one JSON object per line (API-011)
+    install_db_error_redaction()  # first: no database values in any log record of the process (TABRION MIG-NOD-3)
+    # Request ids; NODESTRO_LOG_FORMAT=json for one JSON object per line (API-011).
+    install_db_error_redaction(configure_logging())
     if args.command == "worker-health":
         raise SystemExit(worker_health(args.file, args.max_age))
     try:

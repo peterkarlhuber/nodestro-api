@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/peterkarlhuber/nodestro-api/master/contracts/app-api/v1/run-list.schema.json",
+  "title": "RunList",
+  "description": "GET /api/published/{slug}/runs: the latest runs, newest first.",
+  "type": "array",
+  "items": {
+    "$ref": "run-status.schema.json"
+  }
+}

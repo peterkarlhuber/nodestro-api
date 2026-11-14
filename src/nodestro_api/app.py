@@ -16,15 +16,19 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from nodestro_runtime.extensions import Integration
+from nodestro_runtime.problems import NodestroError
+from nodestro_runtime.workspace import DataDirectoryLock
 
-from . import __version__
+from . import __version__, recovery
 from .api import install_error_handlers, router
+from .api_agent_templates import router as agent_templates_router
 from .api_architect import router as architect_router
 from .api_assistant import router as assistant_router
 from .api_automation import router as automation_router
 from .api_budget import router as budget_router
 from .api_connections import router as connections_router
 from .api_data import router as data_router
+from .api_inbox import router as inbox_router
 from .api_inputs import router as inputs_router
 from .api_local_models import router as local_models_router
 from .api_mcp import router as mcp_router
@@ -33,7 +37,10 @@ from .api_publish import router as publish_router
 from .api_python import router as python_router
 from .api_reference import install_api_reference
 from .api_run_chat import router as run_chat_router
+from .api_skills import router as skills_router
 from .api_tool_approvals import router as tool_approvals_router
+from .app_contract import ContractHeaderMiddleware
+from .app_discovery import build_app_router
 from .body_limit import BodyLimitMiddleware, BodyLimits
 from .context import AppConfig, Nodestro
 from .error_codes import router as error_codes_router
@@ -66,7 +73,11 @@ def create_app(
     ``nodestro-server``), the login-less studio API is only offered on this computer
     (``access.network_needs_login``), a local container needs its access key (``access.key_required``), and a
     launch secret or access key must be long enough (``access.launch_secret_weak``).
-    Every route must declare who may call it (:mod:`nodestro_api.permissions`)."""
+    Every route must declare who may call it (:mod:`nodestro_api.permissions`).
+
+    A desktop database that the runtime refuses but the user may repair (``storage.unsafe_file`` with ``fixable``),
+    or a start the desktop shell asked for with ``NODESTRO_RECOVERY``, gives the recovery app instead: the same guards
+    and only the confirmed repair of the database's permissions (:mod:`nodestro_api.recovery`, TABRION MIG-NOD-9)."""
     config = config or AppConfig.from_env()
     profile = config.profile.validate()
     if profile.kind == "desktop":
@@ -75,13 +86,21 @@ def create_app(
         require_safe_configuration(config.access_key, config.allowed_hosts, config.browser_host)
     check_secret(config.launch_secret)
     check_secret(config.access_key)
-    nodestro = Nodestro(
-        config,
-        client_factory=client_factory,
-        python_runner=python_runner,
-        ocr_runner=ocr_runner,
-        integrations=integrations,
-    )
+    if recovery.requested(config):
+        return _recovery_app(config, None)
+    try:
+        nodestro = Nodestro(
+            config,
+            client_factory=client_factory,
+            python_runner=python_runner,
+            ocr_runner=ocr_runner,
+            integrations=integrations,
+        )
+    except NodestroError as error:
+        # A database that only the user's confirmation can repair (TABRION MIG-NOD-9): recovery mode, nothing else.
+        if not recovery.recoverable(config, error):
+            raise
+        return _recovery_app(config, error)
 
     async def shutdown() -> None:
         # Every service is stopped even when one of them fails, and the database is closed last.
@@ -149,9 +168,46 @@ def create_app(
     app.state.nodestro = nodestro
     # Who sends a request: on the desktop always the local owner (every permission).
     app.state.principal_resolver = resolver_for(profile)
+    _install_guards(app, config)
+    # Before the main router: /api/tools/drafts must not be taken for a tool named "drafts".
+    # Published workflows (``/api/published``): key-protected, answered only on this computer here;
+    # the network listener (``nodestro_api.network``) serves them separately when switched on.
+    # Nodestro's MCP server (WP-11, off by default) before ``/{slug}``, which would also match ``_mcp``.
+    app.include_router(build_mcp_router(nodestro.mcp_server))
+    app.include_router(build_router(nodestro.serving, channel="local"))
+    # The app contract's discovery (NAL-C1, docs/app-api/v1.md): public, more with a published API's key.
+    app.include_router(build_app_router(nodestro.serving, channel="local"))
+    app.include_router(publish_router)
+    app.include_router(architect_router)
+    app.include_router(python_router)
+    app.include_router(automation_router)
+    app.include_router(assistant_router)
+    app.include_router(inputs_router)
+    app.include_router(pricing_router)
+    app.include_router(local_models_router)
+    # Before the main router: /api/library/agents must not be taken for an example named "agents".
+    app.include_router(agent_templates_router)
+    app.include_router(skills_router)  # before the main router (/api/library/skills)
+    app.include_router(inbox_router)
+    app.include_router(connections_router)
+    app.include_router(mcp_router)
+    app.include_router(budget_router)
+    app.include_router(tool_approvals_router)
+    app.include_router(run_chat_router)
+    app.include_router(error_codes_router)
+    app.include_router(router)
+    app.include_router(data_router)
+    install_api_reference(app, "/api/openapi.json")
+    # Fail closed: an application with a route that declares no access requirement is not built.
+    check_routes(app)
+    return app
+
+
+def _install_guards(app: FastAPI, config: AppConfig) -> None:
+    """The guards of every studio API app, the recovery app's included, and its error answers."""
     # Innermost of the guards: a request the host, origin or launch checks refuse is never read (API2-03).
     app.add_middleware(BodyLimitMiddleware, limits=BodyLimits.from_env())
-    local = profile.kind == "local-container"
+    local = config.profile_kind == "local-container"
     dev_origins = frozenset(DEV_SERVER_ORIGINS) if config.dev_cors and not local else frozenset()
     if dev_origins:  # the frontend's development server (npm run dev), only on request; never in a container
         app.add_middleware(
@@ -190,33 +246,38 @@ def create_app(
         # The published port, and the container's own port for the launcher's and health check's calls (D3).
         ports=frozenset({config.host_port, CONTAINER_PORT}) if local else None,
     )
+    # Every answer of a route of the app contract names its version (NAL-C1), the guards' refusals included.
+    app.add_middleware(ContractHeaderMiddleware)
     # Outside everything: refusals get the security headers too (API2-02).
     app.add_middleware(SecurityHeadersMiddleware)
     install_error_handlers(app)
-    # Before the main router: /api/tools/drafts must not be taken for a tool named "drafts".
-    # Published workflows (``/api/published``): key-protected, answered only on this computer here;
-    # the network listener (``nodestro_api.network``) serves them separately when switched on.
-    # Nodestro's MCP server (WP-11, off by default) before ``/{slug}``, which would also match ``_mcp``.
-    app.include_router(build_mcp_router(nodestro.mcp_server))
-    app.include_router(build_router(nodestro.serving, channel="local"))
-    app.include_router(publish_router)
-    app.include_router(architect_router)
-    app.include_router(python_router)
-    app.include_router(automation_router)
-    app.include_router(assistant_router)
-    app.include_router(inputs_router)
-    app.include_router(pricing_router)
-    app.include_router(local_models_router)
-    app.include_router(connections_router)
-    app.include_router(mcp_router)
-    app.include_router(budget_router)
-    app.include_router(tool_approvals_router)
-    app.include_router(run_chat_router)
-    app.include_router(error_codes_router)
-    app.include_router(router)
-    app.include_router(data_router)
-    install_api_reference(app, "/api/openapi.json")
-    # Fail closed: an application with a route that declares no access requirement is not built.
+
+
+def _recovery_app(config: AppConfig, error: NodestroError | None) -> FastAPI:
+    """Recovery mode (:mod:`nodestro_api.recovery`): the regular guards and only the repair of the database's
+    permissions; no workspace is opened and nothing else is served (the studio adds the interface)."""
+    # Locked before anything is served (the refused workspace released its lock a moment ago), until the app stops.
+    lock = DataDirectoryLock(config.data_dir)
+    recovery.log_start(error)
+    app = FastAPI(
+        title="Nodestro (recovery)",
+        version=__version__,
+        lifespan=recovery.recovery_lifespan(lock),
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
+    app.state.recovery = True
+    app.state.principal_resolver = resolver_for(config.profile)
+    _install_guards(app, config)
+    app.include_router(
+        recovery.build_router(
+            recovery.database_path(config),
+            "refused" if error else "requested",
+            # The repair needs the desktop app's launch session (its secret, from the shell's handoff or the operator).
+            protected=config.launch_secret is not None,
+        )
+    )
     check_routes(app)
     return app
 

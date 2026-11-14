@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/peterkarlhuber/nodestro-api/master/contracts/app-api/v1/form-field.schema.json",
+  "title": "FormField",
+  "description": "One field of an app's input form (form version 1). A client renders a type it does not know as JSON input.",
+  "type": "object",
+  "required": [
+    "name",
+    "type",
+    "label"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The key in values"
+    },
+    "type": {
+      "type": "string",
+      "description": "text, textarea, number, date, boolean, select or file in form version 1"
+    },
+    "label": {
+      "type": "string"
+    },
+    "help": {
+      "type": "string"
+    },
+    "required": {
+      "type": "boolean"
+    },
+    "default": {},
+    "options": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "multiple": {
+      "type": "boolean"
+    },
+    "accept": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "file: accepted extensions with their dot (.pdf), as an HTML accept attribute takes them"
+    },
+    "accept_formats": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "file: accepted formats and groups by name; empty: every supported format"
+    },
+    "max_mb": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "max_files": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    }
+  }
+}

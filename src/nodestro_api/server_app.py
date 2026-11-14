@@ -59,6 +59,7 @@ from nodestro_runtime.storage_postgres import PostgresDatabase
 
 from . import __version__
 from .api import install_error_handlers, router
+from .api_agent_templates import router as agent_templates_router
 from .api_architect import router as architect_router
 from .api_assistant import router as assistant_router
 from .api_automation import router as automation_router
@@ -74,6 +75,7 @@ from .api_publish import router as publish_router
 from .api_python import router as python_router
 from .api_reference import install_api_reference
 from .api_run_chat import router as run_chat_router
+from .api_skills import router as skills_router
 from .api_tool_approvals import router as tool_approvals_router
 from .body_limit import BodyLimitMiddleware, BodyLimits
 from .context import AppConfig, Nodestro
@@ -376,6 +378,8 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
     app.include_router(inputs_router)
     app.include_router(pricing_router)
     app.include_router(local_models_router)
+    app.include_router(agent_templates_router)  # before the main router (/api/library/agents)
+    app.include_router(skills_router)  # before the main router (/api/library/skills)
     app.include_router(connections_router)
     app.include_router(mcp_router)
     app.include_router(budget_router)
@@ -388,6 +392,10 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
         from .api_notifications import notifications_router
 
         app.include_router(notifications_router(composition.notifications))
+    else:  # the local inbox of each tenant's workspace (NAL-A3)
+        from .api_inbox import router as inbox_router
+
+        app.include_router(inbox_router)
     if composition.metrics is not None and composition.metrics_authorized is not None:
         _metrics(app, composition.metrics, composition.metrics_authorized)
     _readiness(app)

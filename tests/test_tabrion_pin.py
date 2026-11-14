@@ -4,8 +4,8 @@ Since the CI-FAST pin switch, nodestro-api names its internal packages by versio
 live in one lock (nodestro-studio ``platform/internal-server.txt``). For Tabrion, every requirement in
 ``pyproject.toml`` (dependencies and extras) names the same range ``>=0.N,<0.(N+1)``: no direct URL, no other
 specifier, no pre-release bound and no environment marker (one Tabrion version per installation, AC-6). The installed
-Tabrion, which the lock chose, must be a final release inside that range (``0.1.0``, never ``0.1.1.dev0`` or
-``0.2.0a1``, RC-8).
+Tabrion, which the lock chose, must be a final release inside that range (``0.2.1``, never ``0.2.2.dev0`` or
+``0.3.0a1``, RC-8).
 
 DC-NA-1 (dependency confusion): the installed Tabrion's ``direct_url.json`` must name a git commit; when
 ``NODESTRO_STUDIO_LOCK`` names the lock file (CI sets it to the studio lock it installs with), the URL and commit

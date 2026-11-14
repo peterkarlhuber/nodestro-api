@@ -83,6 +83,10 @@ class JsonFormatter(logging.Formatter):
         }
         if record.exc_info:
             found["exception"] = self.formatException(record.exc_info)
+        elif record.exc_text:
+            # A traceback that is already text: Tabrion's DbErrorRedactionFilter keeps the redacted one there and
+            # clears exc_info (TABRION MIG-NOD-3, nodestro_api.db_log_redaction).
+            found["exception"] = record.exc_text
         return json.dumps(found, ensure_ascii=False, default=str)
 
 

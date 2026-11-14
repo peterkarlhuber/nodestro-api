@@ -64,6 +64,8 @@ from nodestro_runtime.schemas import NodeRun, Run, RunEvent, RunIn, RunSummary, 
 from nodestro_runtime.storage import DocumentStore
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
+from .app_contract import FORM_VERSION, FormField, form_fields
+
 logger = logging.getLogger(__name__)
 
 PREFIX = "/api/published"
@@ -702,6 +704,10 @@ class InfoOut(BaseModel):
     #: The file fields of the input form and how to send files (JSON with Base64 or multipart/form-data).
     file_inputs: list[dict[str, Any]] = Field(default_factory=list)
     uploads: dict[str, Any] = Field(default_factory=dict)
+    #: The input form in order, enough to render it (app contract, ``docs/app-api/v1.md``); empty: the workflow takes
+    #: free text in ``input``.
+    form: list[FormField] = Field(default_factory=list)
+    form_version: int = FORM_VERSION
 
 
 def multipart_schema(workflow: Workflow) -> dict[str, Any]:
@@ -995,20 +1001,34 @@ class ServingCore:
                 headers={"Retry-After": str(int(wait))},
             )
 
+    def identify(self, request: Request) -> KeyIdentity | None:
+        """The caller's identity like :meth:`authenticate`, but ``None`` when the request carries no credential at all
+        (a wrong or revoked one still answers ``401``: a backend never silently ignores a credential)."""
+        try:
+            return self.authenticate(request)
+        except ApiError as exc:
+            if exc.code == "auth.missing":
+                return None
+            raise
+
     def authorize(self, identity: KeyIdentity, release: ServedRelease, scope: Scope) -> None:
         if release.publication_id not in identity.publications:
             # Same answer as for an unknown publication: a key learns nothing about other APIs.
             raise ApiError(404, "publication.not_found", "No published workflow with this name")
         if scope not in identity.scopes:
             raise ApiError(403, "auth.scope", f"This key may not {scope}", scope=scope)
-        wait = self._requests.allow(f"req:{identity.id}", release.limits.requests_per_minute)
+        self.throttle(f"req:{identity.id}", release.limits.requests_per_minute)
+
+    def throttle(self, bucket: str, limit: int) -> None:
+        """Count a request in ``bucket``; ``429 limit.requests`` beyond ``limit`` requests per minute."""
+        wait = self._requests.allow(bucket, limit)
         if wait is not None:
             raise ApiError(
                 429,
                 "limit.requests",
                 "Too many requests; slow down",
                 headers={"Retry-After": str(int(wait))},
-                limit=release.limits.requests_per_minute,
+                limit=limit,
             )
 
     def access(
@@ -1152,6 +1172,7 @@ class ServingCore:
                 "values as a JSON part 'values', free text as 'input'",
                 "max_upload_mb": release.limits.max_upload_mb,
             },
+            form=form_fields(release.workflow, release.limits.max_upload_mb),
         )
 
     # ---- runs -----------------------------------------------------------------------

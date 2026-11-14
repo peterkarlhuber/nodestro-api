@@ -328,3 +328,59 @@ def test_a_template_without_memory_ignores_the_space(make_app: Callable[..., Tes
     client = make_app()
     copied = client.post("/api/library/business-idea/copy", json={"language": "en", "memory_space": "Mine"})
     assert copied.status_code == 201 and _spaces(copied.json()) == set()
+
+
+# ---- service connections of built-in tools (NAL-B2) --------------------------------------------------------------
+
+
+def _search(client: TestClient) -> str:
+    made = client.post("/api/connections", json={"type": "search", "provider": "test", "name": "Test search"})
+    assert made.status_code == 201, made.text
+    return str(made.json()["id"])
+
+
+def _agents(workflow: dict[str, Any]) -> list[dict[str, Any]]:
+    return [node["agent"] for node in workflow["nodes"] if node["type"] == "agent"]
+
+
+def test_the_web_research_example_names_its_service(make_app: Callable[..., TestClient]) -> None:
+    client = make_app()
+    detail = client.get("/api/library/web-research").json()
+    assert detail["services"] == ["search"]
+
+
+def test_a_copy_binds_the_chosen_search_connection(make_app: Callable[..., TestClient]) -> None:
+    client = make_app()
+    search = _search(client)
+    copied = client.post("/api/library/web-research/copy", json={"language": "en", "services": {"search": search}})
+    assert copied.status_code == 201, copied.text
+    agents = _agents(copied.json())
+    assert agents and all(agent["tool_settings"]["search_web"]["connection_id"] == search for agent in agents)
+    # The page tool needs no connection.
+    assert all(agent["tool_settings"].get("fetch_web_page", {}).get("connection_id") is None for agent in agents)
+
+
+def test_a_copy_without_a_service_leaves_it_open(make_app: Callable[..., TestClient]) -> None:
+    client = make_app()
+    copied = client.post("/api/library/web-research/copy", json={"language": "en"})
+    assert copied.status_code == 201, copied.text
+    for agent in _agents(copied.json()):
+        assert agent.get("tool_settings", {}).get("search_web", {}).get("connection_id") is None
+
+
+def test_wrong_services_are_refused_and_store_nothing(make_app: Callable[..., TestClient]) -> None:
+    client = make_app()
+    search = _search(client)
+    unknown_kind = client.post("/api/library/web-research/copy", json={"services": {"smtp": search}})
+    assert unknown_kind.status_code == 422 and unknown_kind.json()["code"] == "library.service_unknown"
+    not_needed = client.post("/api/library/contract-review/copy", json={"services": {"search": search}})
+    assert not_needed.status_code == 422 and not_needed.json()["code"] == "library.service_unknown"
+    missing = client.post("/api/library/web-research/copy", json={"services": {"search": "conn_missing"}})
+    assert missing.status_code == 404
+    hook = client.post(
+        "/api/connections", json={"type": "webhook", "name": "Hook", "settings": {"url": "https://hooks.example.com/x"}}
+    )
+    assert hook.status_code == 201, hook.text
+    wrong = client.post("/api/library/web-research/copy", json={"services": {"search": hook.json()["id"]}})
+    assert wrong.status_code == 422 and wrong.json()["code"] == "library.service_type"
+    stored_nothing(client)

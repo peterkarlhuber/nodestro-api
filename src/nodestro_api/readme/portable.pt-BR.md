@@ -106,6 +106,11 @@ Os erros têm o formato `{"error": {"status", "code", "message", "params"}}`. A 
 `openapi.json` nesta pasta (OpenAPI 3); a referência interativa é `http://127.0.0.1:{port}/docs` (por padrão, somente a partir
 deste computador). `examples/client.py` mostra tudo em Python.
 
+Qualquer cliente pode perguntar primeiro o que este backend oferece: `GET /api/app` informa o contrato de apps
+(`nodestro-app/1`), o identificador do backend e as formas de login; com uma chave, também este workflow e os
+recursos. `BACKEND_NAME` dá ao backend um nome que os clientes mostram. O contrato está descrito em
+`docs/app-api/v1.md` do nodestro-api.
+
 ## Segurança
 
 - Nenhuma chave do Nodestro ou de um provedor de IA está neste pacote, e o navegador nunca recebe uma chave de provedor.

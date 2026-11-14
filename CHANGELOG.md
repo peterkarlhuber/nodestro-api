@@ -3,11 +3,210 @@
 ## Unreleased
 
 - Added (TABRION DC-NA-1, dependency confusion): new CI job `tabrion source (poisoned index)`, reported by ci-ok, runs
-  the install with `scripts/check_tabrion_source.py` (an unchanged, checksummed copy from nodestro-studio): a poisoned
+  the install with `scripts/check_tabrion_source.py` (an unchanged, checksummed copy of nodestro-studio #198, poisoned 0.2.99): a poisoned
   index must get no request for `tabrion`, which proves that the lock's direct-URL pin keeps a foreign `tabrion` out.
   `tests/test_tabrion_pin.py` requires the installed Tabrion's `direct_url.json` to name a git commit, the studio
   lock's when `NODESTRO_STUDIO_LOCK` names the lock (CI sets it): it detects an accidental index install, but it is
   no proof of origin (a wheel can forge the file).
+- Added (NAL-A3, internal notifications; needs nodestro-runtime with `notifications`): `/api/notifications` (list,
+  `unread_only`, `limit`, `cursor`) and `/api/notifications/read` now serve the local inbox of the context's workspace
+  on the desktop, in Local Docker and on a server whose Axentra inbox is off (`api_inbox`); with
+  `NODESTRO_AXENTRA_NOTIFY=1` the Axentra inbox serves them as before. Same answers in both: `Notification` gains
+  `level`, `params`, `run_id`, `workflow_id` and `workflow_name` (the Axentra inbox leaves them empty). A member sees
+  the tenant's messages for everyone and their own; read state is per member. Workflows carry `notifications`
+  (rules); the export accepts `notify_user` (an exported app has no inbox: it answers `notify.unavailable`).
+  Permission counts: read 151. The export closure adds `nodestro_runtime.notifications`. OpenAPI documents
+  regenerated.
+
+- Added (NAL-B4, skill groups, usage and script drafts; needs nodestro-runtime with `skills_select`):
+  - **Groups:** `GET/POST /api/skill-groups` and `PUT/DELETE /api/skill-groups/{id}` (read, edit). A group is a set
+    of skills of the library; the editor assigns its members one by one. Groups are in the backup
+    (`skill_groups`).
+  - **Usage:** `GET /api/skill-stats?days=` (read) reads one keyset page of at most 2000 runs of the period and
+    reports, per skill, offers, loads, file reads, runs, outcomes and quality checks.
+  - **Script drafts:** `POST /api/skills/{id}/versions/{n}/script-draft` (`{path, note}`, run, like
+    `/api/tools/jobs`) starts a tool job from one script of an active skill. Its origin is
+    `skill:<name>@<n>/<path>` (`ToolJob.origin`, `ToolInfo.origin`). Without the isolating sandbox it is refused
+    with `sandbox.isolation_required`, and with it the draft waits for a person's approval. Other errors:
+    `skill.script_not_found` (404), `skill.file_not_text` and `skill.script_too_large` (422).
+  - Permission counts: read 149, edit 68, run 35. The export closure adds `nodestro_runtime.skills_select`. The
+    OpenAPI documents and the error catalog are regenerated.
+
+- Tests (TABRION QA-7, AC-7/QA-21): only public, stable Tabrion names. `scripts/check_tabrion_api.py` is the shared
+  check of axentra, orkexa, nodestro-runtime and tabrion-studio (axentra's newer copy, which checks `__x__` names
+  by their owner under `--surface`; `tests/test_tabrion_api_check.py` pins its SHA-256 and holds the probes). It
+  reads `src`, `tests` and `scripts` with `ast`, refuses private Tabrion names, checks used names against the
+  installed Tabrion's `__all__` and lists them in `docs/api-consumers.md` (`tabrion.errors.DbErrorRedactionFilter`,
+  `tabrion.testing.configure`). CI (test job) runs
+  `python scripts/check_tabrion_api.py --check-export docs/api-consumers.md --surface <surface.json>` against the
+  frozen API snapshot of the Tabrion commit in the studio lock. Tooling only; no dependency changes.
+- Hardened the skill routes after the internal security review (NAL-B3): unpacking, parsing and checking an upload
+  run off the event loop; importing a file as the next version of a skill marks it as imported, and a copy keeps
+  the source's origin; publishing refuses a disabled or archived skill, and a release run stops a frozen skill that
+  is disabled or archived in the workspace now; text of a rejected upload in error parameters is cut to 200
+  characters.
+- Added building blocks to the library (NAL-B3, for the shared gallery filter "Examples · Building blocks · Agents
+  · Skills"): `GET /api/library/parts` (every part: name, description, capability tags, agent steps, the parts it runs,
+  the templates that use it), `GET /api/library/parts/{id}` (plus the workflow a copy gets) and
+  `POST /api/library/parts/{id}/copy` (`{language}`; an ordinary workflow with the workspace's model tiers, inner
+  parts saved first and pinned; nothing is left behind when a copy fails). Template routes are unchanged.
+- Added (NAL-B3, skill library; `api_skills.py`, tag `skills`): skills in the Agent Skills format.
+  - **Routes:**
+    - `GET /api/skills`, `GET /api/skills/{id}` (with `version`: instructions, files, findings), `.../versions`,
+      `.../versions/{n}/file?path=` (text only), `.../usage` and `.../export` (a standard ZIP with the exact bytes).
+    - `POST /api/skills/import` (multipart ZIP or `SKILL.md`): with `dry_run`, only the validation report and
+      preview; otherwise a new skill with origin `import:<sha256>`, or with `skill_id` the next version of that skill.
+    - `POST /api/skills` and `PUT /api/skills/{id}`: editor files as text, base64 or `keep`.
+    - `POST /api/skills/check` (the editor's live check), `.../copy` (under another name), `.../status`
+      (`active`/`disabled`), `.../archive` (admin) and `DELETE` (admin, refused with `409 skill.in_use` while an
+      agent uses it).
+    - Shipped skills: `GET /api/library/skills?language=`, `GET /api/library/skills/{name}` and
+      `POST /api/library/skills/{name}/copy` (origin `builtin:nodestro-examples@<version>/<name>`).
+  - **Import is untrusted content.** The limits of `orkexa.skills` apply: 10 MB ZIP, 30 MB unpacked, 500 files, no
+    unsafe paths, links or ZIP bombs (`413`/`422` with the package's code). The specification's errors refuse an
+    import (`skill.invalid`); warnings are reported and do not.
+  - **Body limits:** import and editing use the `large` limit.
+  - **Releases** freeze the skill versions their agents use (`bundle.skills`). Published APIs and exported projects
+    resolve skills only from their bundle.
+  - **Backup** holds `skills` and `skill_versions` (blobs as raw documents).
+  - Permission counts are read 145, edit 64, admin 55. The OpenAPI documents and the error catalog are regenerated.
+- Added (QA-17 (AC-2): dependency policy check, 2026-11-14): `dependency-policy.json` is this repository's copy of the
+  dependency policy K-33 from nodestro-studio (only its outgoing edges: `nodestro-runtime`, `orkexa` and
+  `nodestro-examples` in the core, `nodestro-runtime[postgres]` in the extras `server` and `dev`, and
+  `tabrion[testing,postgres]` in `dev`), and `scripts/check_dependency_policy.py` is the unchanged checker from there;
+  `scripts/DEPENDENCY_POLICY_SOURCE.md` records their origin and SHA-256. `python scripts/check_dependency_policy.py`
+  checks `pyproject.toml` (core, every extra and dependency group) against the copy. `tests/test_dependency_policy.py`
+  checks the checksums, runs the checker and probes forbidden requirements (Axentra, the core edge with extras, the
+  wrong extra, the studio, an unknown Levuvo package). Ruff skips the vendored script (it is linted in
+  nodestro-studio). No CI workflow change.
+
+- Changed (TABRION 0.2.1 switch): the `dev` extra requires `tabrion[testing,postgres]>=0.2,<0.3`, and
+  `portable_locks/tabrion.txt` pins the source archive of Tabrion 0.2.1 final `af0458d` (no API change).
+
+- Fixed (MIG-ORK-3): a portable package no longer asks the package index for `tabrion`. orkexa's core requires it
+  now, and the library lock took it over from orkexa's requirements; it is built from the pinned archive by
+  `install_tabrion` only (DC-1).
+
+- Added (TABRION MIG-NOD-9, decision E-NOD-PERM option B): recovery mode for a desktop database that other users may
+  change. When the runtime refuses `nodestro.db` with `storage.unsafe_file` and `fixable: true`, `create_app` no longer
+  stops: it starts the recovery app (`recovery.py`) with the same guards as the studio API (host and strict origin
+  check, launch session, security headers, body limits, contract header) and only three routes:
+  `GET /api/health` (`"mode": "recovery"`), `GET /api/recovery/database-permissions` (dry run: each file with
+  `status`, `old_mode`, `new_mode`, `reason` as the runtime reports them, `repairable`, the manual `chmod 600` command
+  and `plan`, a fingerprint of the files' device, inode, owner, mode and link count) and
+  `POST /api/recovery/database-permissions/repair` (`{"confirm": true, "plan": ...}`, `install` permission). No
+  workspace is opened and the data directory stays locked while it runs. The repair is refused without a JSON `true`
+  (`recovery.not_confirmed`), when the files differ from the dry run (`recovery.plan_changed`) or when a file is left
+  alone (symbolic link, hard link, another owner: `recovery.not_repairable`); the target is always
+  `<data dir>/nodestro.db` and its `-wal`, `-shm`, `-journal` files. After the repair the files are checked again (same
+  files, private, the database opens read-only); a failure answers `500 recovery.repair_failed` with the per-file
+  results and the manual command. On success the process ends with exit code 75 after the shutdown, and the desktop
+  shell starts the regular backend.
+- Added (TABRION MIG-NOD-9): the diagnosis reports `database_permissions` (`not_private` when group or others may
+  read the files, `not_repairable` when a file is left alone; never repairs). `POST
+  /api/diagnostics/database-permissions/recovery` (`{"confirm": true}`, `install`) stops the regular API cleanly and
+  ends the process with exit code 76; the desktop shell starts it again with `NODESTRO_RECOVERY=database-permissions`
+  (`AppConfig.recovery`), which starts recovery mode without opening the workspace. Refused while runs or other
+  background work are active (`recovery.busy`) and outside the desktop app (`recovery.unavailable`). New codes:
+  `recovery.*`. `nodestro_api.cli.serve` ends the process with the requested exit code once uvicorn stopped.
+  Needs nodestro-runtime with `repair_desktop_database_modes` (runtime #176).
+- Changed (TABRION MIG-NOD-9, review): the confirmed repair passes the identities (device, inode) of the dry run the
+  user saw as `expected` (a plan this app never showed is `recovery.plan_changed`); the fingerprint also covers each
+  file's status change time and size. The runtime repairs all or nothing; when the check after the repair fails, the
+  changed modes are restored (`restore_desktop_database_modes`) and `recovery.repair_failed` names the files that could
+  not be set back (`not_restored`) and why (`reason`: `files_changed`, `not_changed`, `not_private`, `does_not_open`).
+  Files report the new statuses `rolled_back`, `rollback_failed` and `restored`. Already private files (a manual
+  `chmod`) only restart (`outcome: already_private`); `{"action": "return"}` leaves a recovery mode the diagnosis asked
+  for without a change (`returned`; `recovery.locked` after a refused start). The repair needs the desktop app's launch
+  session (`recovery.unprotected`), the data directory is locked before the recovery app serves, and the diagnosis
+  restarts into recovery mode only when a repair is possible (`recovery.nothing_to_repair`,
+  `recovery.not_repairable`).
+- Added (NAL-B1): agent templates with versions, export and import, and the shipped agent library
+  (`api_agent_templates.py`). Every changed save of a template is kept as an immutable version
+  (`GET /api/agents/templates/{id}/versions`, newest first, and `.../versions/{n}`); an unchanged save stores nothing,
+  a save without `meta` keeps the stored one, and a client can never set `meta.origin` (`user`, `builtin:...` or
+  `import:<sha256>`). `GET .../{id}/check` names what a template needs here (tools, model, and
+  `template.service_missing` for a service connection kind with no connection). `GET .../{id}/export` writes
+  `nodestro-agent/1` without service connections, knowledge files, approval rules (`tool_policies`) or origin;
+  `POST /api/agents/templates/import` treats the file as untrusted: at most 1 MB (`template.import_too_large`), the
+  format and model are checked (`template.import_invalid`), approval rules are reset and connections and knowledge
+  files are dropped (`removed` names them), and the answer carries the check. `GET /api/library/agents` and
+  `/api/library/agents/{id}` list the shipped templates of `nodestro-examples`; `POST /api/library/agents/{id}/copy`
+  stores one as an own template (version 1, `language`, `model`, `services` as for library examples). The versions
+  are part of the backup (`agent_template_versions`). The template CRUD moved from `api.py` unchanged.
+
+- Added (NAL-B2): `services` in the copy request of a library template (`POST /api/library/{id}/copy`) binds the
+  service connection the copy's built-in tools need (kind such as `search` -> connection id; the kinds are `services`
+  of `GET /api/library/{id}`). A kind the template does not need is refused with `library.service_unknown`, a
+  connection of another type with `library.service_type`, an unknown connection with 404; nothing is stored then. A
+  kind left out stays open and the copy's workflow check names it.
+- NAL-C1: the app API contract `nodestro-app/1` (`docs/app-api/v1.md`, JSON Schemas in `contracts/app-api/v1`), what any
+  interface may rely on in every backend. Additions only; no new run endpoints, no path changes.
+  - `GET /api/app` (discovery) in the desktop studio, its network listener, exported projects and portable packages
+    (`app_discovery.py`). Without credentials only `contract` (`{"name": "nodestro-app", "versions": [1],
+    "current": 1}`), `backend` (`id`, `name`), `auth.methods` and `tls`; with an API key or an interface session also
+    the backend's versions, `capabilities` (`runs`, `runs.sync`, `events.sse`, `files.upload`, `files.download`,
+    `approvals`, `cancel`, `resume`, `history`, `usage`) and the `apps` that credential may use (only with the
+    `read` scope, which `GET /api/published/{slug}` needs too). A wrong key answers
+    `401`; rate-limited like the published API (120 per minute and key, 60 per minute and address without one).
+  - The backend id is random and kept in `<data dir>/instance.json` (written to a temporary file and linked into
+    place, so a second process never reads it half-written); the operator names the backend with
+    `NODESTRO_BACKEND_NAME` (desktop), `BACKEND_NAME` (export, portable) or `name` in that file (default: empty).
+  - `GET /api/published/{slug}` gains `form` (the input form in order: `name`, `type`, `label`, `help`, `required`,
+    `default`, `options`, `multiple`, `accept`, `accept_formats`, `max_mb`, `max_files`) and `form_version: 1`.
+    The embedded web interface's `/ui/api/config` builds its `fields` from the same mapping (`app_contract.py`);
+    field labels fall back to the field name, `select` options without text are left out, and `multiple` is `false`
+    for every field that is not a file field.
+  - Every answer of a contract route (`/api/app`, `/api/published/...`, `/ui/api/session`), errors included, carries
+    `Nodestro-App-Contract: 1`.
+  - The desktop's launch secret and its proxy rule let `/api/app` through like `/api/published`; the route is
+    `public` in the route check. The error code list leaves out every capability name. Contract tests (`tests/contract/test_app_contract_v1.py`) run every route against
+    each backend kind; the portable smoke test checks the discovery and the stable id across restarts. Export and
+    portable READMEs (six languages) mention the discovery. `jsonschema` joins the `dev` extra.
+  - Contract (`openapi/nodestro-api.json`), additions only: the route, `AppDiscovery` and its parts, `FormField`,
+    `InfoOut.form` and `InfoOut.form_version`.
+
+
+- Error code list: the `agent.<error class>` codes of orkexa's web layer (`EgressError`, `FetchError`, `SearchError`,
+  `SearchAuthFailed`, `SearchBadRequest`, `SearchRateLimited`, `SearchUnavailable`; orkexa e59f199, NAL-A2) are listed.
+  Needs the studio lock with orkexa e59f199 (studio #184).
+- NAL-A2 (portable connection proof): `tests/test_portable_smoke.py` now proves a service connection end to end on all
+  six platforms, without any outside service. A fake OpenAI-compatible endpoint on 127.0.0.1 (standard library, a
+  thread) asks for `search_web` first and answers with text once it gets the tool result; the agent uses
+  `compatible:proof-model` and `search_web` bound to a `search` connection with the deterministic `test` provider.
+  In the studio the connection is created and its secret set through the API (without a secret the tool reports
+  `connection.secret_missing`; with it the run's source ledger holds the provider's hits). The package gets the
+  connection from `DATA_DIR/secrets/connections.json` and its secret from `NODESTRO_CONNECTION_<ID>_SECRET`, the
+  endpoint from `COMPATIBLE_BASE_URL`; it runs the search, and after a restart without the secret it refuses new
+  runs with 503 `connection.missing`. Neither secret appears in run answers, events, exports, the backup, the
+  connection routes, the package, its logs or its data folder.
+- Fixed (NAL-A2): the export check refused the built-in web tools (`search_web`, `fetch_web_page`) as
+  `export.integration_tools`; it now accepts them like the other built-in tools. Standalone and Git exports install
+  `orkexa[all,pdf,web]` so the tools can run there too. Publishing and the standalone app set the agent builder's
+  mode (a published release runs in the installation's mode, an exported project in `export`), which decides whether SearXNG may
+  reach private addresses.
+- Fixed (NAL-A2): a portable package now contains the libraries of the web tools (orkexa's extra `web`: httpx,
+  trafilatura with lxml, charset-normalizer); `portable_build.requirements` took only the extras `all`, `pdf` and
+  `local`, so `fetch_web_page` could not have run in a package. Needs nodestro-runtime with the web tools (NAL-A2).
+- Fixed (NAL-A1/A2): building a portable package of a release with a built-in network tool or a service connection
+  failed with `KeyError: 'portable.need.builtin_tool'`: the README texts `portable.need.builtin_tool` and
+  `portable.need.connection` were missing in all six languages; a test now requires a text for every network need.
+- Tests: `test_connections_api` accepts the search providers the runtime with the web tools adds (`test` is always
+  one of them).
+
+- Security (TABRION MIG-NOD-3, finding B-06-2): server error texts and logs without database values. A failed
+  `pg_dump` gives `storage.backup_failed` with its exit code, a fixed reason and a SQLSTATE, never its output; a
+  missing Axentra storage directory is no longer named in the error text (the log names it); `nodestro-server` and
+  `create_server_app` install Tabrion's `DbErrorRedactionFilter` for every log record (uvicorn's loggers included),
+  and the JSON log format keeps the redacted traceback. Needs nodestro-runtime at or after 9e0a73d.
+- Fixed (TABRION MIG-NOD-3): with nodestro-runtime 9e0a73d and later the exported runtime modules import `tabrion`;
+  the export names it as `tabrion @ git+https://github.com/...@<full commit>` (from the installation, PEP 610) in
+  `pyproject.toml`, `requirements.lock` and the manifest, never by bare name (DC-1), and refuses when Tabrion is not a
+  GitHub install at a full commit. No bundled copy: the `bundle` mode also needs GitHub for Tabrion.
+- Portable packages (TABRION MIG-NOD-3): Tabrion is built from the source archive of its pinned commit, checked
+  against the SHA-256 in `src/nodestro_api/portable_locks/tabrion.txt`, with the hash-pinned hatchling of
+  `portable_locks/build.txt` (no build isolation) and installed with `--no-index`; the build fails when the pin names
+  another commit than the installed tabrion. `PORTABLE.json` records the commit and hash; `licenses/tabrion.txt`.
 - Changed (runtime #161, NAL-A1 hardening): the error code catalog lists `connection.id_invalid`, and both OpenAPI
   documents describe `required_connections` with its id pattern `conn_<12 hex>` and `type:provider` values. Needs
   nodestro-runtime at or after 27dd8d5.

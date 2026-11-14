@@ -41,10 +41,9 @@ from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
-from nodestro_runtime.engine import start_fields
-from nodestro_runtime.file_formats import accept_extensions
 from pydantic import BaseModel, Field
 
+from .app_contract import form_fields, ui_form_fields
 from .serving import ApiError, KeyAuthenticatedRoute, KeyIdentity, parse_token, read_body
 
 if TYPE_CHECKING:
@@ -257,13 +256,8 @@ class WebUi:
     def config(self, session: UiSession) -> dict[str, Any]:
         """The workflow's form, result schema, limits and (for the operator) where files go."""
         served = self.host.served
-        fields = []
-        for item in start_fields(served.workflow):
-            entry = item.model_dump(mode="json", exclude={"delivery"})
-            if item.type == "file":
-                entry["accept_extensions"] = accept_extensions(item.accept)
-                entry["max_size_mb"] = item.max_size_mb or served.limits.max_upload_mb
-            fields.append(entry)
+        # The app contract's form mapping (the same as ``InfoOut.form``), under the names this interface reads.
+        fields = ui_form_fields(form_fields(served.workflow, served.limits.max_upload_mb))
         start = next((node for node in served.workflow.nodes if node.type == "start"), None)
         default_input = start.start.default_input if start is not None and start.start is not None else ""
         found: dict[str, Any] = {

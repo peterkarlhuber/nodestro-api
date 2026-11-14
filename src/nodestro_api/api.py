@@ -48,7 +48,6 @@ from nodestro_runtime.schemas import (
     DEFAULT_ASSISTANT_MODEL,
     AgentConfig,
     AgentTemplate,
-    AgentTemplateIn,
     Language,
     OrchestratorConfig,
     Run,
@@ -339,6 +338,9 @@ PATH_TAGS: dict[str, str] = {
     "python": "Python environments",
     "sandbox": "tools",
     "agents": "agents",
+    "skills": "skills",
+    "skill-groups": "skills",
+    "skill-stats": "skills",
     "models": "agents",
     "architect": "architect",
     "assistant": "assistant",
@@ -998,6 +1000,46 @@ def list_library(request: Request, language: Language | None = None) -> list[lib
     return library.summaries(language or request_language(request))
 
 
+# The building blocks (parts) as gallery entries of their own (NAL-B3); before ``/library/{template_id}``.
+
+
+@router.get("/library/parts", dependencies=READ)
+def list_library_parts(request: Request, language: Language | None = None) -> list[library.PartSummary]:
+    """The building blocks templates run as teams or sub-workflows, in one language; nothing is stored."""
+    return library.part_summaries(language or request_language(request))
+
+
+@router.get("/library/parts/{part_id}", dependencies=READ)
+def get_library_part(part_id: str, request: Request, language: Language | None = None) -> library.PartDetail:
+    """One building block with the workflow a copy would get (a preview, never a run)."""
+    return library.part_detail(part_id, language or request_language(request))
+
+
+class LibraryPartCopy(BaseModel):
+    #: The language of the copy; the interface language when empty.
+    language: Language | None = None
+
+
+@router.post("/library/parts/{part_id}/copy", status_code=201, dependencies=EDIT)
+def copy_library_part(part_id: str, body: LibraryPartCopy, request: Request, ctx: Ctx) -> Workflow:
+    """Create an ordinary, independent workflow from a building block; agents get the workspace's model tiers.
+
+    The parts it runs are saved first, as workflows of their own, and pinned to their first version; a copy that
+    fails half-way leaves nothing behind. The copy can serve as a team in the editor's palette right away."""
+    language = body.language or request_language(request)
+    library.part(part_id)  # an unknown part is 404
+    settings = ctx.settings()
+    models = library.model_choice(settings.default_model, settings.assistant_model)
+    host = _LibraryHost(ctx)
+    try:
+        made = library.instantiate_part(part_id, language, host, models=models)
+        copy = ctx.save_workflow(_checked(made.workflow))
+    except Exception:
+        host.undo()
+        raise
+    return copy
+
+
 @router.get("/library/{template_id}", dependencies=READ)
 def get_library_template(
     template_id: str, request: Request, language: Language | None = None
@@ -1035,6 +1077,10 @@ class LibraryCopy(BaseModel):
     #: rule: letters, digits, spaces, ``_ . -``, 1 to 64). Empty or missing: the template's space, which every copy
     #: of the template shares. Refused with ``memory.space_name`` before anything is created.
     memory_space: str | None = Field(default=None, max_length=200)
+    #: The service connection for each kind the template's built-in tools need (kind from ``services`` of
+    #: ``GET /api/library/{id}`` such as ``search`` -> connection id, NAL-B2). A kind left out stays open: the
+    #: workflow check of the copy names it until a connection is chosen in the agent.
+    services: dict[str, str] = Field(default_factory=dict, max_length=20)
 
 
 #: Metadata of a knowledge file stored by a copy: the SHA-256 of the file as the library rendered it, so a second
@@ -1139,6 +1185,43 @@ def _library_connections(ctx: Nodestro, template_id: str, chosen: dict[str, str]
     return connections
 
 
+def _library_services(ctx: Ctx, template_id: str, chosen: dict[str, str]) -> dict[str, str]:
+    """The service connections of a copy (kind -> connection id): each kind must be one the template needs and each
+    connection must exist and be of that kind (404 for an unknown connection, like the connection routes)."""
+    needed = set(library.services(template_id))
+    for kind in chosen:
+        if kind not in needed:
+            raise ApiError(
+                422,
+                "library.service_unknown",
+                f"The template {template_id} needs no service connection of kind {kind}",
+                service=kind,
+            )
+    return service_connections(ctx, chosen)
+
+
+def service_connections(ctx: Nodestro, chosen: dict[str, str]) -> dict[str, str]:
+    """``chosen`` (kind -> connection id) if every connection exists (404 like the connection routes) and is of its
+    kind (422 ``library.service_type``); shared by example and agent template copies."""
+    for kind, connection_id in chosen.items():
+        try:
+            connection = ctx.connections.get(connection_id)
+        except NodestroError as exc:
+            if exc.code == "connection.not_found":
+                raise KeyError(connection_id) from None
+            raise
+        if connection.type != kind:
+            raise ApiError(
+                422,
+                "library.service_type",
+                f"The connection {connection_id} is a {connection.type} connection, not {kind}",
+                service=kind,
+                connection=connection_id,
+                type=connection.type,
+            )
+    return dict(chosen)
+
+
 @router.get("/library/{template_id}/models", dependencies=READ)
 def library_template_models(
     template_id: str, request: Request, ctx: Ctx, language: Language | None = None
@@ -1173,6 +1256,7 @@ def copy_library_template(template_id: str, body: LibraryCopy, request: Request,
             "take over its test cases",
         )
     connections = _library_connections(ctx, template_id, body.integrations)
+    services = _library_services(ctx, template_id, body.services)
     chosen = {key: check_model(model) for key, model in body.models.items()}
     try:
         models = library_models.choice(ctx, template_id, language, chosen)
@@ -1181,7 +1265,13 @@ def copy_library_template(template_id: str, body: LibraryCopy, request: Request,
     host = _LibraryHost(ctx)
     try:
         made = library.instantiate(
-            template_id, language, host, models=models, connections=connections, memory_space=space
+            template_id,
+            language,
+            host,
+            models=models,
+            connections=connections,
+            memory_space=space,
+            services=services,
         )
         # The copy remembers its origin (runtime RT-055), read-only: example, version, language and which
         # integrations run on sample data.
@@ -2087,36 +2177,6 @@ def _check_agent_test(ctx: Nodestro, body: AgentTestIn) -> None:
     if body.agent.quality.enabled:
         models.add(body.agent.quality.judge_model)
     ctx.require_providers(models)  # fail fast: agent and judge need their providers
-
-
-@router.get("/agents/templates", dependencies=READ)
-def list_templates(ctx: Ctx) -> list[AgentTemplate]:
-    return ctx.store.list("templates", AgentTemplate)
-
-
-@router.post("/agents/templates", status_code=201, dependencies=EDIT)
-def create_template(body: AgentTemplateIn, ctx: Ctx) -> AgentTemplate:
-    template = AgentTemplate(agent=body.agent)
-    ctx.store.put("templates", template.id, template)
-    return template
-
-
-@router.put("/agents/templates/{template_id}", dependencies=EDIT)
-def update_template(template_id: str, body: AgentTemplateIn, ctx: Ctx) -> AgentTemplate:
-    current = ctx.store.get("templates", template_id, AgentTemplate)
-    if current is None:
-        raise KeyError(template_id)
-    template = AgentTemplate(agent=body.agent, id=template_id, created_at=current.created_at, updated_at=now())
-    ctx.store.put("templates", template_id, template)
-    return template
-
-
-@router.delete("/agents/templates/{template_id}", status_code=204, dependencies=EDIT)
-def delete_template(template_id: str, ctx: Ctx) -> Response:
-    if not ctx.store.delete("templates", template_id):
-        raise KeyError(template_id)
-    ctx.organize.forget("template", template_id)
-    return Response(status_code=204)
 
 
 # ---- tools ----------------------------------------------------------------------

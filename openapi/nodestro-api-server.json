@@ -572,6 +572,16 @@
             "title": "On Refusal",
             "type": "string"
           },
+          "origin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "output": {
             "$ref": "#/components/schemas/OutputConfig"
           },
@@ -595,10 +605,30 @@
             "title": "Server Tools",
             "type": "array"
           },
+          "skills": {
+            "items": {
+              "$ref": "#/components/schemas/SkillBinding"
+            },
+            "maxItems": 100,
+            "title": "Skills",
+            "type": "array"
+          },
           "system_prompt": {
             "default": "You are a helpful assistant.",
             "title": "System Prompt",
             "type": "string"
+          },
+          "task": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task"
           },
           "task_template": {
             "default": "{{input}}",
@@ -824,6 +854,7 @@
         "type": "object"
       },
       "AgentTemplate": {
+        "description": "A saved agent template in its latest version; every save that changes it makes a new version (NAL-B1).\n\nA template stored before versions existed has ``version`` 1 and ``meta`` with ``origin`` ``user``.",
         "properties": {
           "agent": {
             "$ref": "#/components/schemas/AgentConfig"
@@ -837,10 +868,19 @@
             "title": "Id",
             "type": "string"
           },
+          "meta": {
+            "$ref": "#/components/schemas/TemplateMeta"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
             "type": "string"
+          },
+          "version": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
           }
         },
         "required": [
@@ -853,12 +893,63 @@
         "properties": {
           "agent": {
             "$ref": "#/components/schemas/AgentConfig"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/TemplateMeta"
+          },
+          "note": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Note",
+            "type": "string"
           }
         },
         "required": [
           "agent"
         ],
         "title": "AgentTemplateIn",
+        "type": "object"
+      },
+      "AgentTemplateVersion": {
+        "description": "One version of an agent template; never changed once stored.",
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/AgentConfig"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "default": "",
+            "title": "Created By",
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/TemplateMeta"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "template_id": {
+            "title": "Template Id",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "template_id",
+          "version",
+          "agent"
+        ],
+        "title": "AgentTemplateVersion",
         "type": "object"
       },
       "AgentTestIn": {
@@ -3840,6 +3931,36 @@
           "model"
         ],
         "title": "BlockedRequest",
+        "type": "object"
+      },
+      "Body_import_skill_api_skills_import_post": {
+        "properties": {
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "skill_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Id"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_import_skill_api_skills_import_post",
         "type": "object"
       },
       "Body_inspect_api_backup_inspect_post": {
@@ -8681,6 +8802,29 @@
         "title": "ImportIn",
         "type": "object"
       },
+      "ImportResult": {
+        "properties": {
+          "check": {
+            "$ref": "#/components/schemas/TemplateCheck"
+          },
+          "removed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Removed",
+            "type": "array"
+          },
+          "template": {
+            "$ref": "#/components/schemas/AgentTemplate"
+          }
+        },
+        "required": [
+          "template",
+          "check"
+        ],
+        "title": "ImportResult",
+        "type": "object"
+      },
       "InputCleanupResult": {
         "properties": {
           "assistant_files_expired": {
@@ -9856,6 +10000,154 @@
         "title": "LegacyReport",
         "type": "object"
       },
+      "LibraryAgentCopy": {
+        "properties": {
+          "language": {
+            "anyOf": [
+              {
+                "enum": [
+                  "de",
+                  "en",
+                  "es",
+                  "fr",
+                  "pt-BR",
+                  "it"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "services": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 20,
+            "title": "Services",
+            "type": "object"
+          }
+        },
+        "title": "LibraryAgentCopy",
+        "type": "object"
+      },
+      "LibraryAgentDetail": {
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/AgentConfig"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "help": {
+            "title": "Help",
+            "type": "string"
+          },
+          "icon": {
+            "title": "Icon",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/TemplateMeta"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "category",
+          "name",
+          "description",
+          "icon",
+          "version",
+          "meta",
+          "help",
+          "agent"
+        ],
+        "title": "LibraryAgentDetail",
+        "type": "object"
+      },
+      "LibraryAgentSummary": {
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "icon": {
+            "title": "Icon",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/TemplateMeta"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "category",
+          "name",
+          "description",
+          "icon",
+          "version",
+          "meta"
+        ],
+        "title": "LibraryAgentSummary",
+        "type": "object"
+      },
       "LibraryCopy": {
         "properties": {
           "integrations": {
@@ -9904,6 +10196,14 @@
             "title": "Models",
             "type": "object"
           },
+          "services": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 20,
+            "title": "Services",
+            "type": "object"
+          },
           "tests": {
             "default": false,
             "title": "Tests",
@@ -9943,6 +10243,118 @@
           "agents"
         ],
         "title": "LibraryModelPlan",
+        "type": "object"
+      },
+      "LibraryPartCopy": {
+        "properties": {
+          "language": {
+            "anyOf": [
+              {
+                "enum": [
+                  "de",
+                  "en",
+                  "es",
+                  "fr",
+                  "pt-BR",
+                  "it"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          }
+        },
+        "title": "LibraryPartCopy",
+        "type": "object"
+      },
+      "LibrarySkill": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "family": {
+            "title": "Family",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/SkillFileInfo"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "language": {
+            "title": "Language",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "family",
+          "language",
+          "description",
+          "version",
+          "files"
+        ],
+        "title": "LibrarySkill",
+        "type": "object"
+      },
+      "LibrarySkillDetail": {
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "family": {
+            "title": "Family",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/SkillFileInfo"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "language": {
+            "title": "Language",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "family",
+          "language",
+          "description",
+          "version",
+          "files",
+          "body"
+        ],
+        "title": "LibrarySkillDetail",
         "type": "object"
       },
       "LiveAnswer": {
@@ -10676,6 +11088,33 @@
           "version"
         ],
         "title": "LockedPackage",
+        "type": "object"
+      },
+      "MarkReadIn": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "Ids",
+            "type": "array"
+          }
+        },
+        "title": "MarkReadIn",
+        "type": "object"
+      },
+      "MarkReadOut": {
+        "properties": {
+          "marked": {
+            "title": "Marked",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "marked"
+        ],
+        "title": "MarkReadOut",
         "type": "object"
       },
       "McpDecision": {
@@ -13398,6 +13837,23 @@
             ],
             "title": "Reused From"
           },
+          "skill_selection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SkillSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "skills": {
+            "items": {
+              "$ref": "#/components/schemas/SkillUse"
+            },
+            "title": "Skills",
+            "type": "array"
+          },
           "started_at": {
             "anyOf": [
               {
@@ -13474,6 +13930,181 @@
           }
         },
         "title": "NodeRun",
+        "type": "object"
+      },
+      "Notification": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          },
+          "params": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Params",
+            "type": "object"
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read At"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "subject": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Id"
+          },
+          "workflow_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Name"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "subject",
+          "text",
+          "created_at",
+          "read_at"
+        ],
+        "title": "Notification",
+        "type": "object"
+      },
+      "NotificationPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Notification"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "unread": {
+            "title": "Unread",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "unread"
+        ],
+        "title": "NotificationPage",
+        "type": "object"
+      },
+      "NotificationRules": {
+        "description": "Which events of a workflow's top-level runs notify in the internal inbox, and whom (NAL-A3,\n:mod:`nodestro_runtime.notifications`): ``members`` (everyone who may read the workspace) or ``starter`` (the\nperson who started the run; everyone when that is not known). An empty ``events`` list notifies nothing.",
+        "properties": {
+          "events": {
+            "items": {
+              "enum": [
+                "run_finished",
+                "run_failed",
+                "approval_pending",
+                "budget_pending",
+                "quality_failed"
+              ],
+              "type": "string"
+            },
+            "maxItems": 5,
+            "title": "Events",
+            "type": "array"
+          },
+          "recipients": {
+            "default": "members",
+            "enum": [
+              "members",
+              "starter"
+            ],
+            "title": "Recipients",
+            "type": "string"
+          }
+        },
+        "title": "NotificationRules",
         "type": "object"
       },
       "OptionSupport": {
@@ -13756,7 +14387,11 @@
             "default": "model",
             "enum": [
               "model",
-              "tool"
+              "tool",
+              "ledger",
+              "ledger_cited",
+              "ledger_list",
+              "ledger_range"
             ],
             "title": "Source",
             "type": "string"
@@ -14017,6 +14652,125 @@
           "mapping"
         ],
         "title": "ParsedRows",
+        "type": "object"
+      },
+      "PartDetail": {
+        "properties": {
+          "agents": {
+            "title": "Agents",
+            "type": "integer"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "language": {
+            "title": "Language",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Parts",
+            "type": "array"
+          },
+          "templates": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Templates",
+            "type": "array"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/WorkflowIn"
+          }
+        },
+        "required": [
+          "id",
+          "language",
+          "name",
+          "description",
+          "capabilities",
+          "agents",
+          "parts",
+          "templates",
+          "workflow"
+        ],
+        "title": "PartDetail",
+        "type": "object"
+      },
+      "PartSummary": {
+        "description": "A building block as the gallery lists it: a small workflow that templates run as a team or sub-workflow.",
+        "properties": {
+          "agents": {
+            "title": "Agents",
+            "type": "integer"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "language": {
+            "title": "Language",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Parts",
+            "type": "array"
+          },
+          "templates": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Templates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "language",
+          "name",
+          "description",
+          "capabilities",
+          "agents",
+          "parts",
+          "templates"
+        ],
+        "title": "PartSummary",
         "type": "object"
       },
       "PendingApproval": {
@@ -16932,6 +17686,19 @@
         "title": "ReconciliationRow",
         "type": "object"
       },
+      "RecoveryRequest": {
+        "properties": {
+          "confirm": {
+            "title": "Confirm",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "title": "RecoveryRequest",
+        "type": "object"
+      },
       "Reference": {
         "description": "The users of one object.",
         "properties": {
@@ -17305,6 +18072,13 @@
               "type": "string"
             },
             "title": "Server Tools",
+            "type": "array"
+          },
+          "skills": {
+            "items": {
+              "$ref": "#/components/schemas/SkillSnapshot"
+            },
+            "title": "Skills",
             "type": "array"
           },
           "subworkflows": {
@@ -18225,6 +18999,14 @@
             ],
             "title": "Parent Run Id"
           },
+          "recommended_skills": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Recommended Skills",
+            "type": "array"
+          },
           "release_id": {
             "anyOf": [
               {
@@ -18278,6 +19060,13 @@
               }
             ],
             "title": "Source Run Id"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/SourceEntry"
+            },
+            "title": "Sources",
+            "type": "array"
           },
           "started_at": {
             "anyOf": [
@@ -19996,6 +20785,27 @@
         "title": "ScheduleState",
         "type": "object"
       },
+      "ScriptDraftIn": {
+        "properties": {
+          "note": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Note",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "ScriptDraftIn",
+        "type": "object"
+      },
       "SearchHit": {
         "properties": {
           "file_id": {
@@ -21065,6 +21875,954 @@
         "title": "SetupIn",
         "type": "object"
       },
+      "Skill": {
+        "description": "A skill of the library in its latest version (NAL-B3). ``name`` is unique in a workspace.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "has_scripts": {
+            "default": false,
+            "title": "Has Scripts",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "maxLength": 10,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "origin": {
+            "default": "user",
+            "pattern": "^(user|builtin:[a-z0-9_.-]+@[A-Za-z0-9_.+-]+/[a-z0-9-]+|import:[0-9a-f]{64})$",
+            "title": "Origin",
+            "type": "string"
+          },
+          "status": {
+            "default": "active",
+            "enum": [
+              "active",
+              "disabled",
+              "archived"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "Skill",
+        "type": "object"
+      },
+      "SkillBinding": {
+        "description": "A skill assigned to an agent in one fixed version (NAL-B3). A newer version is never used automatically.",
+        "properties": {
+          "group_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
+          },
+          "mode": {
+            "default": "on_demand",
+            "enum": [
+              "always",
+              "on_demand"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "skill_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "skill_id",
+          "version"
+        ],
+        "title": "SkillBinding",
+        "type": "object"
+      },
+      "SkillCandidate": {
+        "description": "One skill a preselection scored (NAL-B4).",
+        "properties": {
+          "chosen": {
+            "default": false,
+            "title": "Chosen",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "score"
+        ],
+        "title": "SkillCandidate",
+        "type": "object"
+      },
+      "SkillCheck": {
+        "description": "The result of reading a package without storing it: what the import would store and its findings.",
+        "properties": {
+          "allowed_tools": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Tools"
+          },
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "compatibility": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compatibility"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "existing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Skill"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/SkillFileInfo"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/SkillIssue"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "license": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "License"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Metadata",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "body",
+          "files",
+          "issues"
+        ],
+        "title": "SkillCheck",
+        "type": "object"
+      },
+      "SkillCopyIn": {
+        "properties": {
+          "name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "SkillCopyIn",
+        "type": "object"
+      },
+      "SkillDetail": {
+        "description": "A skill with one of its versions: the front matter, the instructions and the file list, and the findings.",
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/SkillFileInfo"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/SkillIssue"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "skill": {
+            "$ref": "#/components/schemas/Skill"
+          },
+          "version": {
+            "$ref": "#/components/schemas/SkillVersion"
+          }
+        },
+        "required": [
+          "skill",
+          "version",
+          "body",
+          "files"
+        ],
+        "title": "SkillDetail",
+        "type": "object"
+      },
+      "SkillFileIn": {
+        "description": "One file of an edited package: text, base64 bytes, or ``keep`` (the bytes of the skill's latest version).",
+        "properties": {
+          "base64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base64"
+          },
+          "keep": {
+            "default": false,
+            "title": "Keep",
+            "type": "boolean"
+          },
+          "path": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "SkillFileIn",
+        "type": "object"
+      },
+      "SkillFileInfo": {
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "script": {
+            "title": "Script",
+            "type": "boolean"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "text": {
+            "title": "Text",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "size",
+          "text",
+          "script"
+        ],
+        "title": "SkillFileInfo",
+        "type": "object"
+      },
+      "SkillFileRef": {
+        "description": "A file of a skill version: its path in the package, size and SHA-256 (the content is stored by hash).",
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size": {
+            "minimum": 0.0,
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "size",
+          "sha256"
+        ],
+        "title": "SkillFileRef",
+        "type": "object"
+      },
+      "SkillFileText": {
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "size",
+          "text"
+        ],
+        "title": "SkillFileText",
+        "type": "object"
+      },
+      "SkillGroup": {
+        "description": "A named set of skills of the library (NAL-B4), e.g. \"Quality methods\". Assigning a group to an agent adds\neach member as an ordinary binding in its version at that moment; the group itself is never resolved at run\ntime, so a change of the group never changes an agent or a release.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "skill_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Skill Ids",
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "SkillGroup",
+        "type": "object"
+      },
+      "SkillGroupIn": {
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "skill_ids": {
+            "items": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Skill Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "SkillGroupIn",
+        "type": "object"
+      },
+      "SkillImportResult": {
+        "properties": {
+          "check": {
+            "$ref": "#/components/schemas/SkillCheck"
+          },
+          "skill": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Skill"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "check"
+        ],
+        "title": "SkillImportResult",
+        "type": "object"
+      },
+      "SkillIn": {
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/SkillFileIn"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Files",
+            "type": "array"
+          },
+          "note": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "title": "SkillIn",
+        "type": "object"
+      },
+      "SkillIssue": {
+        "description": "One finding of :func:`validate`. An ``error`` makes a package unusable; a ``warning`` names a risk.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Params",
+            "type": "object"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning"
+            ],
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "severity",
+          "code",
+          "message"
+        ],
+        "title": "SkillIssue",
+        "type": "object"
+      },
+      "SkillSelection": {
+        "description": "How a step chose the skills it offered (NAL-B4): deterministic, recorded so the choice can be explained.\n\n``method`` ``all``: every assigned skill was offered (at most :data:`SKILL_SELECTION_THRESHOLD` on demand);\n``bm25``: the ``on_demand`` skills were ranked by name and description against the step's prompt and the best\n:data:`SKILL_SELECTION_SIZE` offered, plus the ``always`` and recommended ones.",
+        "properties": {
+          "assigned": {
+            "default": 0,
+            "title": "Assigned",
+            "type": "integer"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/SkillCandidate"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "ignored": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ignored",
+            "type": "array"
+          },
+          "method": {
+            "default": "all",
+            "enum": [
+              "all",
+              "bm25"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "offered": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Offered",
+            "type": "array"
+          },
+          "recommended": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Recommended",
+            "type": "array"
+          }
+        },
+        "title": "SkillSelection",
+        "type": "object"
+      },
+      "SkillSnapshot": {
+        "description": "A skill frozen in a release bundle (NAL-B3): one version with every file, base64-encoded, and its digest.",
+        "properties": {
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "files": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "origin": {
+            "default": "user",
+            "title": "Origin",
+            "type": "string"
+          },
+          "skill_id": {
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "skill_id",
+          "version",
+          "name",
+          "digest"
+        ],
+        "title": "SkillSnapshot",
+        "type": "object"
+      },
+      "SkillStats": {
+        "description": "The use of one skill (by name) in the runs looked at.",
+        "properties": {
+          "checks": {
+            "default": 0,
+            "title": "Checks",
+            "type": "integer"
+          },
+          "checks_passed": {
+            "default": 0,
+            "title": "Checks Passed",
+            "type": "integer"
+          },
+          "failed": {
+            "default": 0,
+            "title": "Failed",
+            "type": "integer"
+          },
+          "files_read": {
+            "default": 0,
+            "title": "Files Read",
+            "type": "integer"
+          },
+          "last_used": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used"
+          },
+          "loaded": {
+            "default": 0,
+            "title": "Loaded",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "offered": {
+            "default": 0,
+            "title": "Offered",
+            "type": "integer"
+          },
+          "recommended": {
+            "default": 0,
+            "title": "Recommended",
+            "type": "integer"
+          },
+          "runs": {
+            "default": 0,
+            "title": "Runs",
+            "type": "integer"
+          },
+          "succeeded": {
+            "default": 0,
+            "title": "Succeeded",
+            "type": "integer"
+          },
+          "versions": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "SkillStats",
+        "type": "object"
+      },
+      "SkillStatusIn": {
+        "properties": {
+          "status": {
+            "enum": [
+              "active",
+              "disabled"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "SkillStatusIn",
+        "type": "object"
+      },
+      "SkillUse": {
+        "description": "A skill an agent loaded (``path`` ``None``) or one of its files it read, during one step (NAL-B3).",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "skill_id": {
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "skill_id",
+          "name",
+          "version"
+        ],
+        "title": "SkillUse",
+        "type": "object"
+      },
+      "SkillUser": {
+        "properties": {
+          "agent": {
+            "title": "Agent",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "name",
+          "agent",
+          "version"
+        ],
+        "title": "SkillUser",
+        "type": "object"
+      },
+      "SkillVersion": {
+        "description": "One version of a skill; never changed once stored. ``digest`` covers every path and its bytes.",
+        "properties": {
+          "allowed_tools": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Tools"
+          },
+          "compatibility": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compatibility"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "default": "",
+            "title": "Created By",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/SkillFileRef"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "license": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "License"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Metadata",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "origin": {
+            "default": "user",
+            "pattern": "^(user|builtin:[a-z0-9_.-]+@[A-Za-z0-9_.+-]+/[a-z0-9-]+|import:[0-9a-f]{64})$",
+            "title": "Origin",
+            "type": "string"
+          },
+          "skill_id": {
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "skill_id",
+          "version",
+          "digest",
+          "name"
+        ],
+        "title": "SkillVersion",
+        "type": "object"
+      },
       "Snapshot": {
         "description": "What the assistant gets of one object at one point in time; never changed afterwards.",
         "properties": {
@@ -21174,6 +22932,88 @@
           "data"
         ],
         "title": "Snapshot",
+        "type": "object"
+      },
+      "SourceEntry": {
+        "description": "One web source a run's tools saw (:mod:`nodestro_runtime.source_ledger`): a search hit or a page that was read.\nThe ledger holds addresses and metadata only, never the page text, and it lives in its run: nothing carries it to\nanother run (search providers' terms forbid storing results).",
+        "properties": {
+          "final_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Url"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Id"
+          },
+          "origin": {
+            "default": "search",
+            "enum": [
+              "search",
+              "fetched"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "retrieved_at": {
+            "format": "date-time",
+            "title": "Retrieved At",
+            "type": "string"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha256"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "url"
+        ],
+        "title": "SourceEntry",
         "type": "object"
       },
       "SourceReport": {
@@ -21842,6 +23682,20 @@
         "title": "TemplateAgent",
         "type": "object"
       },
+      "TemplateCheck": {
+        "description": "What a template needs that this workspace lacks; empty ``issues``: it can be used as it is.",
+        "properties": {
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigIssue"
+            },
+            "title": "Issues",
+            "type": "array"
+          }
+        },
+        "title": "TemplateCheck",
+        "type": "object"
+      },
       "TemplateDetail": {
         "properties": {
           "agent_details": {
@@ -21983,6 +23837,13 @@
             "title": "Sensitive",
             "type": "boolean"
           },
+          "services": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Services",
+            "type": "array"
+          },
           "team_details": {
             "items": {
               "$ref": "#/components/schemas/TemplateTeam"
@@ -22103,6 +23964,142 @@
           "description"
         ],
         "title": "TemplateKnowledge",
+        "type": "object"
+      },
+      "TemplateMeta": {
+        "description": "The description of an agent template besides its agent (NAL-B1).",
+        "properties": {
+          "category": {
+            "default": "",
+            "maxLength": 60,
+            "title": "Category",
+            "type": "string"
+          },
+          "examples": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Examples",
+            "type": "array"
+          },
+          "locale": {
+            "anyOf": [
+              {
+                "maxLength": 10,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
+          "origin": {
+            "default": "user",
+            "pattern": "^(user|builtin:[a-z0-9_.-]+@[A-Za-z0-9_.+-]+/[a-z0-9-]+|import:[0-9a-f]{64})$",
+            "title": "Origin",
+            "type": "string"
+          },
+          "requirements": {
+            "$ref": "#/components/schemas/TemplateRequirements"
+          },
+          "summary": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Summary",
+            "type": "string"
+          },
+          "tests": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateTest"
+            },
+            "maxItems": 50,
+            "title": "Tests",
+            "type": "array"
+          }
+        },
+        "title": "TemplateMeta",
+        "type": "object"
+      },
+      "TemplateRef": {
+        "description": "An agent template in one of its versions (NAL-B1): where an agent of a workflow was copied from.",
+        "properties": {
+          "template_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Template Id",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "template_id",
+          "version"
+        ],
+        "title": "TemplateRef",
+        "type": "object"
+      },
+      "TemplateRequirements": {
+        "description": "What an agent template needs to work; checked before it is used, never enforced by the runtime.",
+        "properties": {
+          "capabilities": {
+            "items": {
+              "enum": [
+                "tools",
+                "vision",
+                "structured_output",
+                "long_context"
+              ],
+              "type": "string"
+            },
+            "maxItems": 4,
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "min_tier": {
+            "anyOf": [
+              {
+                "enum": [
+                  "fast",
+                  "standard",
+                  "strong"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Tier"
+          },
+          "offline_capable": {
+            "default": true,
+            "title": "Offline Capable",
+            "type": "boolean"
+          },
+          "services": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Services",
+            "type": "array"
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "title": "TemplateRequirements",
         "type": "object"
       },
       "TemplateSummary": {
@@ -22298,6 +24295,36 @@
           "parameters"
         ],
         "title": "TemplateTeam",
+        "type": "object"
+      },
+      "TemplateTest": {
+        "description": "A test case of an agent template: an input and what a good answer does (checked by a judge or a person).",
+        "properties": {
+          "expectations": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Expectations",
+            "type": "array"
+          },
+          "input": {
+            "maxLength": 20000,
+            "title": "Input",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "input"
+        ],
+        "title": "TemplateTest",
         "type": "object"
       },
       "TestCase": {
@@ -23448,6 +25475,17 @@
             "title": "Name",
             "type": "string"
           },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin"
+          },
           "requirement": {
             "anyOf": [
               {
@@ -23657,6 +25695,17 @@
             "additionalProperties": true,
             "title": "Message Params",
             "type": "object"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin"
           },
           "requirement": {
             "title": "Requirement",
@@ -24841,6 +26890,9 @@
             "title": "Nodes",
             "type": "array"
           },
+          "notifications": {
+            "$ref": "#/components/schemas/NotificationRules"
+          },
           "origin": {
             "anyOf": [
               {
@@ -24967,6 +27019,9 @@
             "title": "Nodes",
             "type": "array"
           },
+          "notifications": {
+            "$ref": "#/components/schemas/NotificationRules"
+          },
           "python": {
             "anyOf": [
               {
@@ -25029,6 +27084,9 @@
             },
             "title": "Nodes",
             "type": "array"
+          },
+          "notifications": {
+            "$ref": "#/components/schemas/NotificationRules"
           }
         },
         "title": "WorkflowIn",
@@ -25550,6 +27608,7 @@
     },
     "/api/agents/templates": {
       "get": {
+        "description": "Every template in its latest version.",
         "operationId": "list_templates_api_agents_templates_get",
         "responses": {
           "200": {
@@ -25583,6 +27642,7 @@
         ]
       },
       "post": {
+        "description": "A new template (version 1); its origin is always ``user``: only copies and imports set another one.",
         "operationId": "create_template_api_agents_templates_post",
         "requestBody": {
           "content": {
@@ -25622,8 +27682,53 @@
         ]
       }
     },
+    "/api/agents/templates/import": {
+      "post": {
+        "description": "Store an exported template as a new template of this workspace (version 1, origin ``import:<sha256>``).",
+        "operationId": "import_template_api_agents_templates_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Import Template",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
     "/api/agents/templates/{template_id}": {
       "delete": {
+        "description": "Delete a template with all its versions; agents copied from it into workflows stay as they are.",
         "operationId": "delete_template_api_agents_templates__template_id__delete",
         "parameters": [
           {
@@ -25657,6 +27762,7 @@
         ]
       },
       "put": {
+        "description": "Store a change as the next version (an unchanged save makes none). A body without ``meta`` (an older client)\nkeeps the stored description; the origin never changes.",
         "operationId": "update_template_api_agents_templates__template_id__put",
         "parameters": [
           {
@@ -25702,6 +27808,188 @@
           }
         },
         "summary": "Update Template",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/api/agents/templates/{template_id}/check": {
+      "get": {
+        "description": "What the template's latest version needs in this workspace: tools, service connections, a usable model.",
+        "operationId": "check_template_api_agents_templates__template_id__check_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateCheck"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Check Template",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/api/agents/templates/{template_id}/export": {
+      "get": {
+        "description": "The latest version as a file to share; nothing of this workspace's secrets or connections is in it.",
+        "operationId": "export_template_api_agents_templates__template_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Export Template",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/api/agents/templates/{template_id}/versions": {
+      "get": {
+        "description": "Every version, newest first.",
+        "operationId": "list_template_versions_api_agents_templates__template_id__versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AgentTemplateVersion"
+                  },
+                  "title": "Response List Template Versions Api Agents Templates  Template Id  Versions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Template Versions",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/api/agents/templates/{template_id}/versions/{version}": {
+      "get": {
+        "operationId": "get_template_version_api_agents_templates__template_id__versions__version__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTemplateVersion"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Template Version",
         "tags": [
           "agents"
         ]
@@ -29382,6 +31670,46 @@
         ]
       }
     },
+    "/api/diagnostics/database-permissions/recovery": {
+      "post": {
+        "description": "Restart into recovery mode, where the user confirms the repair of the database's permissions (TABRION\nMIG-NOD-9, :mod:`nodestro_api.recovery`); nothing is repaired here. Refused while runs are active.",
+        "operationId": "diagnostics_recovery_api_diagnostics_database_permissions_recovery_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Diagnostics Recovery",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
     "/api/error-codes": {
       "get": {
         "description": "Every problem code the API and the runtime answer with (``code`` of an error, an issue or a status), with the\nnames of its parameters and where it is raised. A client can check that it has a text for each of them.",
@@ -30599,6 +32927,509 @@
           }
         },
         "summary": "List Library",
+        "tags": [
+          "examples"
+        ]
+      }
+    },
+    "/api/library/agents": {
+      "get": {
+        "description": "The shipped agent templates in one language (default: the interface language); nothing is stored.",
+        "operationId": "list_library_agents_api_library_agents_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "language",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "de",
+                    "en",
+                    "es",
+                    "fr",
+                    "pt-BR",
+                    "it"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Language"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LibraryAgentSummary"
+                  },
+                  "title": "Response List Library Agents Api Library Agents Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Library Agents",
+        "tags": [
+          "examples"
+        ]
+      }
+    },
+    "/api/library/agents/{agent_id}": {
+      "get": {
+        "description": "One shipped template with its help, example requests, test cases and the agent a copy would get.",
+        "operationId": "get_library_agent_api_library_agents__agent_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "language",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "de",
+                    "en",
+                    "es",
+                    "fr",
+                    "pt-BR",
+                    "it"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Language"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryAgentDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Library Agent",
+        "tags": [
+          "examples"
+        ]
+      }
+    },
+    "/api/library/agents/{agent_id}/copy": {
+      "post": {
+        "description": "Store a shipped template as a template of the person's own (version 1, origin ``builtin:...``). The copy is\nindependent: a newer package never changes it.",
+        "operationId": "copy_library_agent_api_library_agents__agent_id__copy_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryAgentCopy"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTemplate"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Copy Library Agent",
+        "tags": [
+          "examples"
+        ]
+      }
+    },
+    "/api/library/parts": {
+      "get": {
+        "description": "The building blocks templates run as teams or sub-workflows, in one language; nothing is stored.",
+        "operationId": "list_library_parts_api_library_parts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "language",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "de",
+                    "en",
+                    "es",
+                    "fr",
+                    "pt-BR",
+                    "it"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Language"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PartSummary"
+                  },
+                  "title": "Response List Library Parts Api Library Parts Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Library Parts",
+        "tags": [
+          "examples"
+        ]
+      }
+    },
+    "/api/library/parts/{part_id}": {
+      "get": {
+        "description": "One building block with the workflow a copy would get (a preview, never a run).",
+        "operationId": "get_library_part_api_library_parts__part_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "part_id",
+            "required": true,
+            "schema": {
+              "title": "Part Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "language",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "de",
+                    "en",
+                    "es",
+                    "fr",
+                    "pt-BR",
+                    "it"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Language"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Library Part",
+        "tags": [
+          "examples"
+        ]
+      }
+    },
+    "/api/library/parts/{part_id}/copy": {
+      "post": {
+        "description": "Create an ordinary, independent workflow from a building block; agents get the workspace's model tiers.\n\nThe parts it runs are saved first, as workflows of their own, and pinned to their first version; a copy that\nfails half-way leaves nothing behind. The copy can serve as a team in the editor's palette right away.",
+        "operationId": "copy_library_part_api_library_parts__part_id__copy_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "part_id",
+            "required": true,
+            "schema": {
+              "title": "Part Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryPartCopy"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workflow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Copy Library Part",
+        "tags": [
+          "examples"
+        ]
+      }
+    },
+    "/api/library/skills": {
+      "get": {
+        "description": "The shipped skills in one language (default: the interface language; English where one is missing).",
+        "operationId": "list_library_skills_api_library_skills_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "language",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Language"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LibrarySkill"
+                  },
+                  "title": "Response List Library Skills Api Library Skills Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Library Skills",
+        "tags": [
+          "examples"
+        ]
+      }
+    },
+    "/api/library/skills/{name}": {
+      "get": {
+        "operationId": "get_library_skill_api_library_skills__name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibrarySkillDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Library Skill",
+        "tags": [
+          "examples"
+        ]
+      }
+    },
+    "/api/library/skills/{name}/copy": {
+      "post": {
+        "description": "Store a shipped skill as a skill of this workspace (version 1, origin ``builtin:...``); a newer package\nnever changes the copy. A skill of the same name already here is ``skill.name_taken``.",
+        "operationId": "copy_library_skill_api_library_skills__name__copy_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Skill"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Copy Library Skill",
         "tags": [
           "examples"
         ]
@@ -32669,6 +35500,120 @@
         "summary": "Get Model Profile",
         "tags": [
           "agents"
+        ]
+      }
+    },
+    "/api/notifications": {
+      "get": {
+        "description": "The current member's notifications in the session's workspace, newest first.",
+        "operationId": "list_notifications_api_notifications_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "unread_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Unread Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Notifications",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/notifications/read": {
+      "post": {
+        "description": "Mark the current member's notifications as read (only their own; unknown ids change nothing).",
+        "operationId": "mark_read_api_notifications_read_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkReadIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkReadOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Mark Read",
+        "tags": [
+          "notifications"
         ]
       }
     },
@@ -36760,6 +39705,963 @@
         "summary": "Verify Bedrock",
         "tags": [
           "settings"
+        ]
+      }
+    },
+    "/api/skill-groups": {
+      "get": {
+        "operationId": "list_skill_groups_api_skill_groups_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SkillGroup"
+                  },
+                  "title": "Response List Skill Groups Api Skill Groups Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Skill Groups",
+        "tags": [
+          "skills"
+        ]
+      },
+      "post": {
+        "description": "A named set of skills of the library; assigning it to an agent adds its skills one by one (the editor does\nthat, each in its current version). Names are unique (``skill.group_name_taken``).",
+        "operationId": "create_skill_group_api_skill_groups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillGroupIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillGroup"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Create Skill Group",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/skill-groups/{group_id}": {
+      "delete": {
+        "description": "Delete a group; no skill and no agent changes.",
+        "operationId": "delete_skill_group_api_skill_groups__group_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Delete Skill Group",
+        "tags": [
+          "skills"
+        ]
+      },
+      "put": {
+        "description": "Change a group. Agents keep the skills they were given with it.",
+        "operationId": "update_skill_group_api_skill_groups__group_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillGroupIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillGroup"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Update Skill Group",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/skill-stats": {
+      "get": {
+        "description": "How skills were used in the runs of the last ``days`` days (at most the newest 2000 runs): offered, loaded,\nfiles read, runs, outcomes of the steps that loaded them and quality checks passed.",
+        "operationId": "get_skill_stats_api_skill_stats_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SkillStats"
+                  },
+                  "title": "Response Get Skill Stats Api Skill Stats Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Skill Stats",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/skills": {
+      "get": {
+        "description": "Every skill in its latest version, by name.",
+        "operationId": "list_skills_api_skills_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Skill"
+                  },
+                  "title": "Response List Skills Api Skills Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Skills",
+        "tags": [
+          "skills"
+        ]
+      },
+      "post": {
+        "description": "A new skill made in the studio (version 1, origin ``user``).",
+        "operationId": "create_skill_api_skills_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Skill"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Create Skill",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/skills/check": {
+      "post": {
+        "description": "The findings for an edited package, without storing it (the editor's live check).",
+        "operationId": "check_skill_api_skills_check_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "skill_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Skill Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillCheck"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Check Skill",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/skills/import": {
+      "post": {
+        "description": "Read a ZIP or a ``SKILL.md``. With ``dry_run`` nothing is stored: the answer is the validation report and the\npreview. Otherwise the package becomes a new skill (origin ``import:<sha256>``) or, with ``skill_id``, the next\nversion of that skill. Errors refuse it (``skill.invalid``); warnings do not.",
+        "operationId": "import_skill_api_skills_import_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_import_skill_api_skills_import_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillImportResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Import Skill",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/skills/{skill_id}": {
+      "delete": {
+        "description": "Delete a skill with all its versions; refused while an agent uses it (``skill.in_use``: archive it instead).\nPublished releases keep their frozen copy.",
+        "operationId": "delete_skill_api_skills__skill_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Delete Skill",
+        "tags": [
+          "skills"
+        ]
+      },
+      "get": {
+        "description": "A skill in its latest version (or ``version``) with instructions, files and findings.",
+        "operationId": "get_skill_api_skills__skill_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Skill",
+        "tags": [
+          "skills"
+        ]
+      },
+      "put": {
+        "description": "Store an edited package as the next version (unchanged files make none); the origin stays.",
+        "operationId": "update_skill_api_skills__skill_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Skill"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Update Skill",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/skills/{skill_id}/archive": {
+      "post": {
+        "description": "Archive a skill (it cannot run or be assigned; it stays for history). Activating it again is ``status``.",
+        "operationId": "archive_skill_api_skills__skill_id__archive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Skill"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Archive Skill",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/skills/{skill_id}/copy": {
+      "post": {
+        "description": "A new skill from the latest version under another name (e.g. a copy in another language to translate).",
+        "operationId": "copy_skill_api_skills__skill_id__copy_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillCopyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Skill"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Copy Skill",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/skills/{skill_id}/export": {
+      "get": {
+        "description": "A version as a standard Agent Skills ZIP (a folder named after the skill, the files' exact bytes).",
+        "operationId": "export_skill_api_skills__skill_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Export Skill",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/skills/{skill_id}/status": {
+      "post": {
+        "description": "Activate or disable a skill; a disabled skill cannot run. Archiving needs ``admin`` (``.../archive``).",
+        "operationId": "set_skill_status_api_skills__skill_id__status_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillStatusIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Skill"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Set Skill Status",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/skills/{skill_id}/usage": {
+      "get": {
+        "description": "The workflows and agent templates whose agents have this skill (any version).",
+        "operationId": "skill_usage_api_skills__skill_id__usage_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SkillUser"
+                  },
+                  "title": "Response Skill Usage Api Skills  Skill Id  Usage Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Skill Usage",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/skills/{skill_id}/versions": {
+      "get": {
+        "description": "Every version, newest first.",
+        "operationId": "list_skill_versions_api_skills__skill_id__versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SkillVersion"
+                  },
+                  "title": "Response List Skill Versions Api Skills  Skill Id  Versions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Skill Versions",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/skills/{skill_id}/versions/{version}/file": {
+      "get": {
+        "description": "One text file of a version, for reading in the studio (binary files are listed, not shown).",
+        "operationId": "read_skill_file_api_skills__skill_id__versions__version__file_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillFileText"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Read Skill File",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/skills/{skill_id}/versions/{version}/script-draft": {
+      "post": {
+        "description": "Start a tool job that turns one script of a skill version into a tool draft (NAL-B4).\n\nThe Coding Agent writes a tool from the script's text (a description, never instructions), and the draft goes\nthrough the unchanged tool chain: static check, tests in the isolating sandbox (without one:\n``sandbox.isolation_required``), and a person's approval in the job. Until then the script is text that is\nnever run. The job's ``origin`` is ``skill:<name>@<version>/<path>``. Same permission and model as any tool job.",
+        "operationId": "draft_tool_from_script_api_skills__skill_id__versions__version__script_draft_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScriptDraftIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolJob"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Draft Tool From Script",
+        "tags": [
+          "skills"
         ]
       }
     },

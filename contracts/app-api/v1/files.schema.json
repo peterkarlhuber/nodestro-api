@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/peterkarlhuber/nodestro-api/master/contracts/app-api/v1/files.schema.json",
+  "title": "ResultFiles",
+  "description": "GET …/runs/{id}/files: a run's result files (download each with GET …/files/{file_id}).",
+  "type": "array",
+  "items": {
+    "$ref": "#/$defs/File"
+  },
+  "$defs": {
+    "File": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "media_type",
+        "size",
+        "created_at"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "format": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "error_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

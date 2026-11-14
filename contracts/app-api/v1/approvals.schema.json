@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/peterkarlhuber/nodestro-api/master/contracts/app-api/v1/approvals.schema.json",
+  "title": "Approvals",
+  "description": "GET …/runs/{id}/approvals: the approvals that wait for a decision.",
+  "type": "array",
+  "items": {
+    "$ref": "#/$defs/Approval"
+  },
+  "$defs": {
+    "Approval": {
+      "type": "object",
+      "required": [
+        "approval_id",
+        "step",
+        "workflow"
+      ],
+      "properties": {
+        "approval_id": {
+          "type": "string"
+        },
+        "step": {
+          "type": "string"
+        },
+        "workflow": {
+          "type": "string"
+        },
+        "instructions": {
+          "type": "string"
+        },
+        "waiting_since": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "allow_comment": {
+          "type": "boolean"
+        },
+        "require_comment_on_reject": {
+          "type": "boolean"
+        },
+        "on_reject": {
+          "type": "string"
+        },
+        "review": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "label"
+            ],
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "value": {}
+            }
+          }
+        }
+      }
+    }
+  }
+}

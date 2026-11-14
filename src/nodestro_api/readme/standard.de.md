@@ -132,6 +132,11 @@ zweiten Lauf. Die Ereignisse sind Server-Sent Events; nach einem Verbindungsabbr
 `Last-Event-ID` neu, und das erste Ereignis ist immer der vollständige aktuelle Status. `examples/client.py`
 zeigt alles in Python.
 
+Jeder Client kann zuerst fragen, was dieses Backend bedient: `GET /api/app` nennt den App-Vertrag
+(`nodestro-app/1`), die Kennung des Backends und die Anmeldewege; mit einem Schlüssel zusätzlich diesen Workflow und
+die Fähigkeiten. `BACKEND_NAME` gibt dem Backend einen Namen, den Clients anzeigen. Der Vertrag ist in
+`docs/app-api/v1.md` von nodestro-api beschrieben.
+
 ## Freigaben
 
 Dieser Workflow hat {approvals}. Ein Lauf, der einen erreicht, pausiert mit dem Status

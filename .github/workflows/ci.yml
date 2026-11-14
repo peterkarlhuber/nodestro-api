@@ -77,6 +77,14 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: mypy
+      # TABRION QA-7 (AC-7, QA-21): only public Tabrion names, docs/api-consumers.md lists them, and each is a stable
+      # (S) name of the frozen API snapshot (docs/api/surface.json, K10) of the Tabrion commit in the studio lock.
+      - name: Tabrion API (public and stable names, export current)
+        run: |
+          sha=$(sed -n 's|^tabrion @ git+https://github.com/peterkarlhuber/tabrion.git@\([0-9a-f]\{40\}\)$|\1|p' "$RUNNER_TEMP/lock.txt")
+          test -n "$sha"
+          curl -fsSL "https://raw.githubusercontent.com/peterkarlhuber/tabrion/$sha/docs/api/surface.json" -o "$RUNNER_TEMP/surface.json"
+          python scripts/check_tabrion_api.py --check-export docs/api-consumers.md --surface "$RUNNER_TEMP/surface.json"
       # CI-FAST AP6: the test IDs this run must report, each exactly once (checked after the run).
       - name: Collect the test IDs
         run: pytest --collect-only -q -p no:cacheprovider > "$RUNNER_TEMP/test-ids-collected.txt"
@@ -105,7 +113,7 @@ jobs:
           pip-audit --skip-editable --progress-spinner off "${args[@]}"
 
   # DC-NA-1 (dependency confusion): the test job's install with every installer's index replaced by a poisoned one
-  # (scripts/check_tabrion_source.py, a checksummed copy from nodestro-studio). It serves tabrion 0.1.99 (a wheel and
+  # (scripts/check_tabrion_source.py, a checksummed copy from nodestro-studio). It serves tabrion 0.2.99 (a wheel and
   # an sdist that run code; the wheel forges a direct_url.json naming the locked commit) and redirects every other
   # name to PyPI. Red when pip asks that index for tabrion at all (the proof; direct_url.json checks only detect an
   # accidental index install), when the install never used the index or an index option would bypass it, when
@@ -240,8 +248,9 @@ jobs:
           "$RUNNER_TEMP/runtime-master/bin/python" -m pip install "pip>=26.1"
           "$RUNNER_TEMP/runtime-master/bin/pip" install --no-deps "nodestro-runtime @ git+$repository@master"
           "$RUNNER_TEMP/runtime-master/bin/pip" install "pglast>=7,<9"
-          grep '^orkexa ' "$RUNNER_TEMP/lock.txt" > "$RUNNER_TEMP/orkexa-lock.txt"
-          echo "orkexa of the studio lock: $(cat "$RUNNER_TEMP/orkexa-lock.txt")"
+          # orkexa's core requires tabrion (MIG-ORK-3), which comes only from the lock's pinned commit (V-B0).
+          grep -E '^(orkexa|tabrion) ' "$RUNNER_TEMP/lock.txt" > "$RUNNER_TEMP/orkexa-lock.txt"
+          echo "orkexa and tabrion of the studio lock: $(cat "$RUNNER_TEMP/orkexa-lock.txt")"
           "$RUNNER_TEMP/runtime-master/bin/pip" install -c "$RUNNER_TEMP/orkexa-lock.txt" "orkexa[sqlcheck]"
           master="$(git ls-remote "$repository" refs/heads/master | cut -f1)"
           test -n "$master" || { echo "::error::runtime master not found with git ls-remote"; exit 1; }

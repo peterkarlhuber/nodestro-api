@@ -46,16 +46,19 @@ from nodestro_runtime.release import (
     ReleaseBundle,
     SubworkflowSnapshot,
     current_runtime,
+    freeze_skill,
     materialize_tools,
+    skill_bindings,
     tool_record,
 )
-from nodestro_runtime.schemas import AgentConfig, RunSummary, Workflow, new_id, now
+from nodestro_runtime.schemas import AgentConfig, RunSummary, SkillStatus, Workflow, new_id, now
 from nodestro_runtime.tool_legacy import LegacyBinding, VersionOf, stamp_workflow
 from nodestro_runtime.tool_library import ToolLibrary, make_sandbox
 from nodestro_runtime.tool_preflight import unattended_tool_issues
 from orkexa import __version__ as library_version
 from pydantic import BaseModel, Field
 
+from .app_contract import Instance, load_instance
 from .release_gate import GateOverride, GateRecord, GateReport, ReleaseGate, enforce, evaluate
 from .release_gate import validate as validate_gate
 from .serving import (
@@ -653,6 +656,17 @@ class Publications:
                         python_version=env.python_version,
                     )
                 )
+        # The skills of its agents, frozen in the assigned versions with all their files (NAL-B3).
+        resolve = self.ctx.skills.resolver()
+        skills = []
+        for skill_id, skill_version in skill_bindings(everything):
+            skill, package = resolve(skill_id, skill_version)
+            if skill.status != "active":
+                # A disabled or archived skill is never frozen into a new release (internal review M3).
+                raise NodestroError(
+                    "skill.inactive", f"The skill {skill.name} is {skill.status}; activate it first", name=skill.name
+                )
+            skills.append(freeze_skill(skill_id, skill_version, skill.origin, package))
         bundle = ReleaseBundle(
             workflow_id=workflow_id,
             workflow_version=number,
@@ -667,6 +681,7 @@ class Publications:
             required_connections=dict(sorted(connections.items())),
             server_tools=sorted(server_tools),
             mcp_tools=mcp_tools,
+            skills=skills,
             models=sorted(models),
             python=python,
             knowledge=check.knowledge,
@@ -914,6 +929,11 @@ class Publications:
 
     # ---- execution environment ----------------------------------------------------
 
+    def _skill_status(self, skill_id: str) -> SkillStatus | None:
+        """The workspace's current status of a skill a release froze (``None``: no longer in the workspace)."""
+        skill = self.ctx.skills.get(skill_id)
+        return skill.status if skill is not None else None
+
     def _release_dir(self, release_id: str) -> Any:
         return self.ctx.config.data_dir / "releases" / release_id
 
@@ -950,6 +970,9 @@ class Publications:
                 tools.mcp = PinnedMcp(self.ctx.mcp, bundle.mcp_tools)  # type: ignore[assignment]
             builder = AgentBuilder(tools, self.ctx.knowledge, self.ctx.memory)
             builder.declared = self.ctx.builder.declared
+            # Only the release's frozen skills (NAL-B3); one disabled or archived in the workspace stops (M3).
+            builder.skill_source = bundle.skill_source(status=self._skill_status)
+            builder.mode = self.ctx.builder.mode  # the installation's mode decides which built-in tools run
             locks = {item.workflow_id for item in bundle.python}
 
             def sandbox(workflow_id: str) -> Sandbox | None:
@@ -996,6 +1019,7 @@ class StudioHost:
         self.runs = ctx.runs
         self.store = ctx.store
         self.files = ctx.files
+        self._instance: Instance | None = None
 
     def release(self, slug: str, number: int | None, *, channel: str) -> ServedRelease:
         publication = self.ctx.publications.by_slug(slug)
@@ -1014,6 +1038,29 @@ class StudioHost:
     def versions(self, slug: str) -> list[int]:
         publication = self.ctx.publications.by_slug(slug)
         return [item.number for item in self.ctx.publications.releases(publication.id)] if publication else []
+
+    def instance(self) -> Instance:
+        """This installation's identity for the app contract (``<data dir>/instance.json``)."""
+        if self._instance is None:
+            self._instance = load_instance(self.ctx.config.data_dir)
+        return self._instance
+
+    def visible_releases(self, identity: KeyIdentity, *, channel: str) -> list[ServedRelease]:
+        """The active releases of the publications ``identity`` may use (``network``: only those reachable there)."""
+        found = []
+        for publication_id in identity.publications:
+            try:
+                publication = self.ctx.publications.get(publication_id)
+            except KeyError:
+                continue
+            if publication.active_release is None or (channel == "network" and not publication.network):
+                continue
+            try:
+                release = self.ctx.publications.release(publication.id, publication.active_release)
+            except KeyError:
+                continue
+            found.append(self.ctx.publications.served(publication, release))
+        return found
 
     def release_of_run(self, run: Run) -> ServedRelease | None:
         if not run.release_id or not run.trigger_ref:
