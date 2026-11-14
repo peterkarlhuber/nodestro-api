@@ -38,6 +38,7 @@ from dataclasses import dataclass
 from datetime import datetime
 import hashlib
 from importlib import metadata
+import io
 import json
 import logging
 import os
@@ -871,8 +872,11 @@ def tabrion_pin(text: str | None = None) -> TabrionPin:
     return TabrionPin(url=url, commit=commit, sha256=digest)
 
 
-def _tabrion_archive(ctx: Nodestro, pin: TabrionPin, progress: Progress, *, allow_downloads: bool) -> Path:
-    """The pinned source archive from the cache (downloaded once); its SHA-256 is checked on every use."""
+def _tabrion_archive(ctx: Nodestro, pin: TabrionPin, progress: Progress, *, allow_downloads: bool) -> bytes:
+    """The bytes of the pinned source archive from the cache (downloaded once); their SHA-256 is checked on every use.
+
+    The bytes that were checked are the bytes that get unpacked: the file is read once, so it cannot be swapped
+    between the check and the extraction."""
     archive = cache_root(ctx) / "tabrion" / f"{pin.commit}.tar.gz"
     if not archive.is_file():
         if not allow_downloads:
@@ -891,12 +895,13 @@ def _tabrion_archive(ctx: Nodestro, pin: TabrionPin, progress: Progress, *, allo
             partial.replace(archive)
         finally:
             partial.unlink(missing_ok=True)
-    if _sha_file(archive) != pin.sha256:
+    data = archive.read_bytes()
+    if hashlib.sha256(data).hexdigest() != pin.sha256:
         archive.unlink(missing_ok=True)
         raise NodestroError(
             "export.failed", "Tabrion's source archive does not match the SHA-256 of portable_locks/tabrion.txt"
         )
-    return archive
+    return data
 
 
 def install_tabrion(
@@ -925,7 +930,7 @@ def install_tabrion(
     source_root = work / "tabrion-source"
     shutil.rmtree(source_root, ignore_errors=True)
     source_root.mkdir(parents=True)
-    with tarfile.open(archive, "r:gz") as unpacked:
+    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as unpacked:
         unpacked.extractall(source_root, filter="data")
     tops = [item for item in source_root.iterdir() if item.is_dir()]
     if len(tops) != 1 or not (tops[0] / "pyproject.toml").is_file():
@@ -955,13 +960,14 @@ def install_tabrion(
         progress,
         cwd=work,
     )
-    # PEP 517 without build isolation: this Python with only the hash-pinned backend on its path.
+    # PEP 517 without build isolation: this Python with only the hash-pinned backend on its path (``-S``: not even
+    # the site-packages of the exporting environment, which hatchling's plugin discovery would search).
     build = (
         "import sys; sys.path.insert(0, sys.argv[1]); from hatchling.build import build_wheel; "
         "print(build_wheel(sys.argv[2]))"
     )
     completed = subprocess.run(
-        [sys.executable, "-I", "-c", build, str(backend), str(wheels)],
+        [sys.executable, "-I", "-S", "-c", build, str(backend), str(wheels)],
         cwd=source,
         capture_output=True,
         text=True,

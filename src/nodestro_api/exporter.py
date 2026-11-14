@@ -475,6 +475,10 @@ def _runtime_needs_tabrion() -> bool:
     return False
 
 
+#: A GitHub repository URL as it may go into a requirement line and a TOML string: no quote, blank or ``@``.
+_GITHUB_REPOSITORY = re.compile(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+
+
 def _tabrion_git() -> str | None:
     """``tabrion @ git+<repository>@<full commit>`` when the exported runtime modules need Tabrion, else ``None``.
 
@@ -493,7 +497,7 @@ def _tabrion_git() -> str | None:
         data = json.loads(direct)
         commit = str((data.get("vcs_info") or {}).get("commit_id") or "")
         url = str(data.get("url", ""))
-        if _FULL_COMMIT.fullmatch(commit) and url.startswith("https://github.com/"):
+        if _FULL_COMMIT.fullmatch(commit) and _GITHUB_REPOSITORY.fullmatch(url):
             return f"{_TABRION} @ git+{url}@{commit}"
     raise RuntimeError(
         "cannot name the tabrion commit for the export: tabrion is not installed from a GitHub commit. Install it "

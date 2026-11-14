@@ -135,10 +135,17 @@ _LOG_SCRIPT = textwrap.dedent(
         except SystemExit:
             pass
     elif sys.argv[1] == "factory":
-        from nodestro_api.db_log_redaction import install_db_error_redaction
         from nodestro_api.observability import configure_logging
 
-        install_db_error_redaction()  # what create_server_app does first
+        def no_server():
+            raise RuntimeError("stop after the redaction was installed")
+
+        server.load = no_server  # create_server_app installs the redaction before it loads the server
+        try:
+            server.create_server_app()
+        except RuntimeError:
+            pass
+        assert getattr(logging.getLogRecordFactory(), "_nodestro_db_error_redaction", False)
         configure_logging()
     else:  # the control: the server's logging without the redaction
         from nodestro_api.observability import configure_logging

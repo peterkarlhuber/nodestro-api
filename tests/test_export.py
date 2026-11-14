@@ -570,6 +570,10 @@ def test_a_git_tabrion_installation_exports_its_full_commit(monkeypatch: pytest.
         {"url": "file:///home/user/tabrion", "dir_info": {"editable": True}},  # a local checkout
         {"url": "file:///home/user/tabrion", "vcs_info": {"vcs": "git", "commit_id": "0" * 40}},  # not on GitHub
         {"url": "https://github.com/peterkarlhuber/tabrion.git", "vcs_info": {"vcs": "git", "commit_id": "d5821fa"}},
+        # a URL that would break out of the requirement line or the TOML string (review of MIG-NOD-3, item 4)
+        {"url": 'https://github.com/a/b" x', "vcs_info": {"vcs": "git", "commit_id": "0" * 40}},
+        {"url": "https://github.com/a/b@evil", "vcs_info": {"vcs": "git", "commit_id": "0" * 40}},
+        {"url": "https://github.com/a/b/../c", "vcs_info": {"vcs": "git", "commit_id": "0" * 40}},
     ],
 )
 def test_a_tabrion_without_a_full_github_commit_refuses_the_export(
