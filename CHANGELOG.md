@@ -36,6 +36,19 @@
   session (`recovery.unprotected`), the data directory is locked before the recovery app serves, and the diagnosis
   restarts into recovery mode only when a repair is possible (`recovery.nothing_to_repair`,
   `recovery.not_repairable`).
+- Added (NAL-B1): agent templates with versions, export and import, and the shipped agent library
+  (`api_agent_templates.py`). Every changed save of a template is kept as an immutable version
+  (`GET /api/agents/templates/{id}/versions`, newest first, and `.../versions/{n}`); an unchanged save stores nothing,
+  a save without `meta` keeps the stored one, and a client can never set `meta.origin` (`user`, `builtin:...` or
+  `import:<sha256>`). `GET .../{id}/check` names what a template needs here (tools, model, and
+  `template.service_missing` for a service connection kind with no connection). `GET .../{id}/export` writes
+  `nodestro-agent/1` without service connections, knowledge files, approval rules (`tool_policies`) or origin;
+  `POST /api/agents/templates/import` treats the file as untrusted: at most 1 MB (`template.import_too_large`), the
+  format and model are checked (`template.import_invalid`), approval rules are reset and connections and knowledge
+  files are dropped (`removed` names them), and the answer carries the check. `GET /api/library/agents` and
+  `/api/library/agents/{id}` list the shipped templates of `nodestro-examples`; `POST /api/library/agents/{id}/copy`
+  stores one as an own template (version 1, `language`, `model`, `services` as for library examples). The versions
+  are part of the backup (`agent_template_versions`). The template CRUD moved from `api.py` unchanged.
 
 - Added (NAL-B2): `services` in the copy request of a library template (`POST /api/library/{id}/copy`) binds the
   service connection the copy's built-in tools need (kind such as `search` -> connection id; the kinds are `services`

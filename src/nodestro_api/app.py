@@ -21,6 +21,7 @@ from nodestro_runtime.workspace import DataDirectoryLock
 
 from . import __version__, recovery
 from .api import install_error_handlers, router
+from .api_agent_templates import router as agent_templates_router
 from .api_architect import router as architect_router
 from .api_assistant import router as assistant_router
 from .api_automation import router as automation_router
@@ -182,6 +183,8 @@ def create_app(
     app.include_router(inputs_router)
     app.include_router(pricing_router)
     app.include_router(local_models_router)
+    # Before the main router: /api/library/agents must not be taken for an example named "agents".
+    app.include_router(agent_templates_router)
     app.include_router(connections_router)
     app.include_router(mcp_router)
     app.include_router(budget_router)
