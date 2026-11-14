@@ -360,6 +360,10 @@ def test_a_key_sees_only_its_own_apps(make_app: Callable[..., TestClient]) -> No
         assert apps(remote, both) == ["app-b"]
         assert apps(remote, key_a) == []
         assert set(remote.get("/api/app").json()) == {"contract", "backend", "auth", "tls"}
+    # A run-only key may run the apps it knows but not look them up (GET /api/published/{slug} needs "read").
+    run_only = new_key(studio, first["id"], ["run"])
+    assert apps(studio, run_only) == []
+    refused(studio.get(f"{PUBLISHED}/app-a", headers=auth(run_only)), 403, "auth.scope")
     # A revoked key gets 401, not the minimal answer.
     assert studio.post(f"/api/api-keys/{key_a.split('_')[1]}/revoke").status_code == 200
     refused(studio.get("/api/app", headers=auth(key_a)), 401, "auth.invalid")
@@ -392,9 +396,23 @@ def test_the_backend_id_survives_a_restart_and_the_operator_names_it(
     (data_dir / "instance.json").write_text("{broken", "utf-8")
     renewed = app_contract.load_instance(data_dir)
     assert renewed.id != first["id"] and (data_dir / "instance.json.invalid").is_file()
+    # No temporary file stays behind.
+    assert sorted(path.name for path in data_dir.glob("*instance.json*")) == ["instance.json", "instance.json.invalid"]
     # Another installation has another id.
     other = app_contract.load_instance(tmp_path / "elsewhere")
     assert other.id not in (first["id"], renewed.id)
+
+
+def test_the_backend_id_without_hard_links(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """On a file system without hard links (exFAT on a stick) the file is created exclusively instead."""
+
+    def no_links(*_args: object) -> None:
+        raise OSError("hard links not supported")
+
+    monkeypatch.setattr(app_contract.os, "link", no_links)
+    first = app_contract.load_instance(tmp_path)
+    assert app_contract.load_instance(tmp_path).id == first.id
+    assert [path.name for path in tmp_path.iterdir()] == ["instance.json"]
 
 
 def test_the_exported_backend_keeps_its_id_in_its_data_directory(

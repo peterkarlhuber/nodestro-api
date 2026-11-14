@@ -90,7 +90,9 @@ def build_app_router(core: ServingCore, *, channel: Literal["local", "network"] 
         )
         if identity is not None:
             visible: Callable[..., list[ServedRelease]] | None = getattr(core.host, "visible_releases", None)
-            releases = visible(identity, channel=channel) if visible is not None else []
+            # Naming an app needs the scope that reads its info (GET /api/published/{slug}); a run-only key gets none.
+            readable = "read" in identity.scopes
+            releases = visible(identity, channel=channel) if visible is not None and readable else []
             answer.backend.version = __version__
             answer.backend.runtime_version = runtime_version
             answer.capabilities = list(SERVED_CAPABILITIES)

@@ -8,9 +8,11 @@
     (`app_discovery.py`). Without credentials only `contract` (`{"name": "nodestro-app", "versions": [1],
     "current": 1}`), `backend` (`id`, `name`), `auth.methods` and `tls`; with an API key or an interface session also
     the backend's versions, `capabilities` (`runs`, `runs.sync`, `events.sse`, `files.upload`, `files.download`,
-    `approvals`, `cancel`, `resume`, `history`, `usage`) and the `apps` that credential may use. A wrong key answers
+    `approvals`, `cancel`, `resume`, `history`, `usage`) and the `apps` that credential may use (only with the
+    `read` scope, which `GET /api/published/{slug}` needs too). A wrong key answers
     `401`; rate-limited like the published API (120 per minute and key, 60 per minute and address without one).
-  - The backend id is random and kept in `<data dir>/instance.json`; the operator names the backend with
+  - The backend id is random and kept in `<data dir>/instance.json` (written to a temporary file and linked into
+    place, so a second process never reads it half-written); the operator names the backend with
     `NODESTRO_BACKEND_NAME` (desktop), `BACKEND_NAME` (export, portable) or `name` in that file (default: empty).
   - `GET /api/published/{slug}` gains `form` (the input form in order: `name`, `type`, `label`, `help`, `required`,
     `default`, `options`, `multiple`, `accept`, `accept_formats`, `max_mb`, `max_files`) and `form_version: 1`.

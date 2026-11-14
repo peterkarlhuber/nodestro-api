@@ -28,6 +28,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import tempfile
 import threading
 from typing import Any, Literal
 
@@ -294,11 +295,24 @@ def _read_instance(path: Path) -> Instance | None:
 def _create_instance(path: Path, instance: Instance) -> Instance:
     """Write ``instance`` unless another process was faster; the file that wins is the one every process uses."""
     path.parent.mkdir(parents=True, exist_ok=True)
+    # Written to a private temporary file first and then linked into place: the link fails if the file exists (a planted
+    # symlink included), and a second process never sees a half-written file.
+    handle, temporary = tempfile.mkstemp(prefix=f".{INSTANCE_FILE}.", dir=path.parent)
     try:
-        with path.open("x", encoding="utf-8") as handle:
-            handle.write(instance.model_dump_json(indent=2) + "\n")
-    except FileExistsError:
-        return _read_instance(path) or instance
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(instance.model_dump_json(indent=2) + "\n")
+        try:
+            os.link(temporary, path)
+        except FileExistsError:
+            return _read_instance(path) or instance
+        except OSError:  # a file system without hard links (exFAT on a stick): exclusive create, written at once
+            try:
+                with path.open("x", encoding="utf-8") as stream:
+                    stream.write(instance.model_dump_json(indent=2) + "\n")
+            except FileExistsError:
+                return _read_instance(path) or instance
+    finally:
+        os.unlink(temporary)
     return instance
 
 
