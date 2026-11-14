@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fixed (MIG-ORK-3): a portable package no longer asks the package index for `tabrion`. orkexa's core requires it
+  now, and the library lock took it over from orkexa's requirements; it is built from the pinned archive by
+  `install_tabrion` only (DC-1).
+
 - Added (TABRION MIG-NOD-9, decision E-NOD-PERM option B): recovery mode for a desktop database that other users may
   change. When the runtime refuses `nodestro.db` with `storage.unsafe_file` and `fixable: true`, `create_app` no longer
   stops: it starts the recovery app (`recovery.py`) with the same guards as the studio API (host and strict origin
