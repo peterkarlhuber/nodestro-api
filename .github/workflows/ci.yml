@@ -75,6 +75,14 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: mypy
+      # TABRION QA-7 (AC-7, QA-21): only public Tabrion names, docs/api-consumers.md lists them, and each is a stable
+      # (S) name of the frozen API snapshot (docs/api/surface.json, K10) of the Tabrion commit in the studio lock.
+      - name: Tabrion API (public and stable names, export current)
+        run: |
+          sha=$(sed -n 's|^tabrion @ git+https://github.com/peterkarlhuber/tabrion.git@\([0-9a-f]\{40\}\)$|\1|p' "$RUNNER_TEMP/lock.txt")
+          test -n "$sha"
+          curl -fsSL "https://raw.githubusercontent.com/peterkarlhuber/tabrion/$sha/docs/api/surface.json" -o "$RUNNER_TEMP/surface.json"
+          python scripts/check_tabrion_api.py --check-export docs/api-consumers.md --surface "$RUNNER_TEMP/surface.json"
       # CI-FAST AP6: the test IDs this run must report, each exactly once (checked after the run).
       - name: Collect the test IDs
         run: pytest --collect-only -q -p no:cacheprovider > "$RUNNER_TEMP/test-ids-collected.txt"
