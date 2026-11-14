@@ -22,12 +22,16 @@
   - Every answer of a contract route (`/api/app`, `/api/published/...`, `/ui/api/session`), errors included, carries
     `Nodestro-App-Contract: 1`.
   - The desktop's launch secret and its proxy rule let `/api/app` through like `/api/published`; the route is
-    `public` in the route check. Contract tests (`tests/contract/test_app_contract_v1.py`) run every route against
+    `public` in the route check. The error code list leaves out every capability name. Contract tests (`tests/contract/test_app_contract_v1.py`) run every route against
     each backend kind; the portable smoke test checks the discovery and the stable id across restarts. Export and
     portable READMEs (six languages) mention the discovery. `jsonschema` joins the `dev` extra.
   - Contract (`openapi/nodestro-api.json`), additions only: the route, `AppDiscovery` and its parts, `FormField`,
     `InfoOut.form` and `InfoOut.form_version`.
 
+
+- Error code list: the `agent.<error class>` codes of orkexa's web layer (`EgressError`, `FetchError`, `SearchError`,
+  `SearchAuthFailed`, `SearchBadRequest`, `SearchRateLimited`, `SearchUnavailable`; orkexa e59f199, NAL-A2) are listed.
+  Needs the studio lock with orkexa e59f199 (studio #184).
 
 - Security (TABRION MIG-NOD-3, finding B-06-2): server error texts and logs without database values. A failed
   `pg_dump` gives `storage.backup_failed` with its exit code, a fixed reason and a SQLSTATE, never its output; a

@@ -25,6 +25,7 @@ from fastapi import APIRouter
 from nodestro_runtime import error_codes as runtime_codes
 from pydantic import BaseModel, Field
 
+from .app_contract import CAPABILITIES
 from .missing import REFERENCE_KINDS
 from .permissions import READ
 
@@ -34,8 +35,8 @@ router = APIRouter(prefix="/api")
 _BUILDERS = re.compile(r"(?:Error|_error|problem|Problem|issue|Issue)$")
 #: The API also answers with a few codes without a namespace (``not_found``, ``bad_request``).
 _CODE = re.compile(r"[a-z][a-z0-9_]*(?:\.[A-Za-z0-9_]+)*")
-#: Constants in a code namespace that are not codes (the app contract's capability names, NAL-C1).
-NOT_CODES = frozenset({"release.json", "files.upload", "files.download"})
+#: Constants in a code namespace that are not codes (with the app contract's capability names, NAL-C1).
+NOT_CODES = frozenset({"release.json", *CAPABILITIES})
 #: Code families whose last part is filled in at run time.
 PATTERNS = ("http.<status>",)
 _PACKAGE = Path(__file__).resolve().parent
