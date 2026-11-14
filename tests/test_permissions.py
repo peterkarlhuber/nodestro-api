@@ -157,7 +157,8 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # read: + agent template versions, one version, check, export; library agents list and detail (NAL-B1)
         # read: + skills list, one, versions, file, usage, export, check; library skills list and detail (NAL-B3)
         # read: + skill groups list and skill usage statistics (NAL-B4)
-        "read": 149,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
+        # read: + the local inbox: notifications list and marking them read (NAL-A3; a member's own read state)
+        "read": 151,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
         # MCP status, servers, server, tools (WP-3); tool approval inbox, run questions, pre-grants, state (S-2b)
         # edit: + starting and cancelling a portable export job (like the synchronous export)
         # edit: + uploading and removing a conversation's files (assistant files)

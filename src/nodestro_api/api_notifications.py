@@ -1,6 +1,8 @@
-"""The in-app inbox of a server (``NODESTRO_AXENTRA_NOTIFY=1``): ``/api/notifications``.
+"""The in-app inbox of a server with Axentra's inbox (``NODESTRO_AXENTRA_NOTIFY=1``): ``/api/notifications``.
 
-Only mounted when the switch is on (otherwise the routes do not exist: ``404``). The messages live in Axentra's
+Everywhere else the same routes serve the local inbox (:mod:`nodestro_api.api_inbox`, NAL-A3).
+
+Only mounted when the switch is on (otherwise the local inbox serves these routes). The messages live in Axentra's
 notify module (channel ``inbox``, :mod:`nodestro_runtime.axentra_notify`); a logged-in member reads and marks only
 their own messages of the session's tenant. The member's Axentra user and tenant come from the link table
 (``nodestro_axentra_ids``); a member without a linked Axentra user (identity backfill not run) has an empty inbox.
@@ -65,11 +67,21 @@ def check_cursor(cursor: str | None) -> None:
 
 class Notification(BaseModel):
     id: str
+    #: ``run_failed``, ``approval_pending``, ``budget_pending``, ``quality_failed``, ``run_finished`` or ``message``
+    #: (from the agent tool ``notify_user``, NAL-A3).
     kind: str
+    #: The text as the server's Axentra inbox wrote it; a ``message`` has the agent's title and text (plain text, model
+    #: output). The local inbox leaves both ``None`` for events: interfaces write them from ``kind`` and ``params``.
     subject: str | None
     text: str | None
     created_at: datetime
     read_at: datetime | None
+    #: The local inbox (NAL-A3) also says how important it is, where it came from and the event's parameters.
+    level: str | None = None
+    params: dict[str, str] = Field(default_factory=dict)
+    run_id: str | None = None
+    workflow_id: str | None = None
+    workflow_name: str | None = None
 
 
 class NotificationPage(BaseModel):

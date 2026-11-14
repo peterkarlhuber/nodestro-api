@@ -392,6 +392,10 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
         from .api_notifications import notifications_router
 
         app.include_router(notifications_router(composition.notifications))
+    else:  # the local inbox of each tenant's workspace (NAL-A3)
+        from .api_inbox import router as inbox_router
+
+        app.include_router(inbox_router)
     if composition.metrics is not None and composition.metrics_authorized is not None:
         _metrics(app, composition.metrics, composition.metrics_authorized)
     _readiness(app)

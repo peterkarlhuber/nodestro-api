@@ -711,6 +711,8 @@
   "model_choice.node_unknown": {"params": ["node"], "source": "api"},
   "not_found": {"params": ["name", "request_id"], "source": "api"},
   "notifications.invalid_cursor": {"params": [], "source": "api"},
+  "notify.empty_title": {"params": [], "source": "runtime"},
+  "notify.limit": {"params": [], "source": "runtime"},
   "output.bad_name": {"params": [], "source": "api"},
   "output.exists": {"params": ["path"], "source": "api"},
   "output.fixed": {"params": [], "source": "api"},

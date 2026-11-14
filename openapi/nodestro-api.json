@@ -11613,6 +11613,33 @@
         "title": "LockedPackage",
         "type": "object"
       },
+      "MarkReadIn": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "Ids",
+            "type": "array"
+          }
+        },
+        "title": "MarkReadIn",
+        "type": "object"
+      },
+      "MarkReadOut": {
+        "properties": {
+          "marked": {
+            "title": "Marked",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "marked"
+        ],
+        "title": "MarkReadOut",
+        "type": "object"
+      },
       "McpDecision": {
         "properties": {
           "access": {
@@ -14313,6 +14340,181 @@
           }
         },
         "title": "NodeRun",
+        "type": "object"
+      },
+      "Notification": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          },
+          "params": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Params",
+            "type": "object"
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read At"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "subject": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Id"
+          },
+          "workflow_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Name"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "subject",
+          "text",
+          "created_at",
+          "read_at"
+        ],
+        "title": "Notification",
+        "type": "object"
+      },
+      "NotificationPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Notification"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "unread": {
+            "title": "Unread",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "unread"
+        ],
+        "title": "NotificationPage",
+        "type": "object"
+      },
+      "NotificationRules": {
+        "description": "Which events of a workflow's top-level runs notify in the internal inbox, and whom (NAL-A3,\n:mod:`nodestro_runtime.notifications`): ``members`` (everyone who may read the workspace) or ``starter`` (the\nperson who started the run; everyone when that is not known). An empty ``events`` list notifies nothing.",
+        "properties": {
+          "events": {
+            "items": {
+              "enum": [
+                "run_finished",
+                "run_failed",
+                "approval_pending",
+                "budget_pending",
+                "quality_failed"
+              ],
+              "type": "string"
+            },
+            "maxItems": 5,
+            "title": "Events",
+            "type": "array"
+          },
+          "recipients": {
+            "default": "members",
+            "enum": [
+              "members",
+              "starter"
+            ],
+            "title": "Recipients",
+            "type": "string"
+          }
+        },
+        "title": "NotificationRules",
         "type": "object"
       },
       "OptionSupport": {
@@ -27446,6 +27648,9 @@
             "title": "Nodes",
             "type": "array"
           },
+          "notifications": {
+            "$ref": "#/components/schemas/NotificationRules"
+          },
           "origin": {
             "anyOf": [
               {
@@ -27572,6 +27777,9 @@
             "title": "Nodes",
             "type": "array"
           },
+          "notifications": {
+            "$ref": "#/components/schemas/NotificationRules"
+          },
           "python": {
             "anyOf": [
               {
@@ -27634,6 +27842,9 @@
             },
             "title": "Nodes",
             "type": "array"
+          },
+          "notifications": {
+            "$ref": "#/components/schemas/NotificationRules"
           }
         },
         "title": "WorkflowIn",
@@ -35885,6 +36096,120 @@
         "summary": "Get Model Profile",
         "tags": [
           "agents"
+        ]
+      }
+    },
+    "/api/notifications": {
+      "get": {
+        "description": "The current member's notifications in the session's workspace, newest first.",
+        "operationId": "list_notifications_api_notifications_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "unread_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Unread Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Notifications",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/notifications/read": {
+      "post": {
+        "description": "Mark the current member's notifications as read (only their own; unknown ids change nothing).",
+        "operationId": "mark_read_api_notifications_read_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkReadIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkReadOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Mark Read",
+        "tags": [
+          "notifications"
         ]
       }
     },
