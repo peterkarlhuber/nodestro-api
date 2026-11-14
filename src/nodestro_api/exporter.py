@@ -52,6 +52,7 @@ from nodestro_runtime.problems import CheckIssue, NodestroError
 from nodestro_runtime.providers import PROVIDERS, base_url_variable, exported_settings, has_credentials, provider_of
 from nodestro_runtime.release import ReleaseBundle, current_runtime
 from nodestro_runtime.schemas import InputField, new_id, now
+from nodestro_runtime.web_tools import WEB_TOOLS
 from orkexa import __version__ as library_version
 from packaging.markers import default_environment
 from packaging.requirements import Requirement
@@ -366,8 +367,9 @@ def _sha(data: bytes) -> str:
 #: What the exported application itself needs (orkexa with its provider SDKs comes separately).
 #: python-multipart: runs started with multipart/form-data (file uploads, the web interface).
 _APP_PACKAGES = ("fastapi", "uvicorn[standard]", "python-multipart", "pydantic", "pypdf")
-#: The agent library with every provider SDK (Anthropic, OpenAI, Gemini, boto3 for Amazon Bedrock) and PDF support.
-_LIBRARY = "orkexa[all,pdf]"
+#: The agent library with every provider SDK (Anthropic, OpenAI, Gemini, boto3 for Amazon Bedrock), PDF support and the
+#: web layer of the built-in web tools (NAL-A2: egress guard, search adapters, page fetching).
+_LIBRARY = "orkexa[all,pdf,web]"
 _DEV_PACKAGES = ("pytest", "httpx")
 #: The floor of a test dependency the exporting installation lacks (the server and desktop images install no test
 #: tools): the exported project's tests still name it, unpinned above the version its generated tests need.
@@ -662,7 +664,7 @@ def check(ctx: Nodestro, publication: Publication, release: Release, options: Ex
                 space=space_ref.space,
             )
         )
-    foreign = sorted(set(bundle.builtin_tools) - {tool.name for tool in BUILTIN_TOOLS})
+    foreign = sorted(set(bundle.builtin_tools) - {tool.name for tool in (*BUILTIN_TOOLS, *WEB_TOOLS)})
     if foreign:
         problems.append(
             _issue(
@@ -1817,7 +1819,7 @@ _LIBRARY_DEV_EXTRAS = frozenset({"dev", "docs"})
 
 def _library_extras() -> dict[str, list[str]]:
     """orkexa's extras from its installed metadata (``bedrock`` with boto3, ``all`` with every provider SDK), so the
-    vendored ``pyproject.toml`` installs what ``requirements.lock`` pins (``./vendor/orkexa[all,pdf]``)."""
+    vendored ``pyproject.toml`` installs what ``requirements.lock`` pins (``./vendor/orkexa[all,pdf,web]``)."""
     found: dict[str, list[str]] = {}
     environment = {key: str(value) for key, value in default_environment().items()}
     for item in metadata.requires("orkexa") or []:
@@ -2045,7 +2047,7 @@ def _project_files(
         f"# Exact versions Nodestro {__version__} ran with "
         f"(Python {sys.version_info.major}.{sys.version_info.minor}).\n"
         + "\n".join(lock)
-        + f"\n{agent_line if options.orkexa == 'git' else './vendor/orkexa[all,pdf]'}\n"
+        + f"\n{agent_line if options.orkexa == 'git' else './vendor/orkexa[all,pdf,web]'}\n"
     )
     add("requirements.lock", lock_text)
     if bundle.python:

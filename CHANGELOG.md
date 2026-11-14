@@ -32,6 +32,29 @@
 - Error code list: the `agent.<error class>` codes of orkexa's web layer (`EgressError`, `FetchError`, `SearchError`,
   `SearchAuthFailed`, `SearchBadRequest`, `SearchRateLimited`, `SearchUnavailable`; orkexa e59f199, NAL-A2) are listed.
   Needs the studio lock with orkexa e59f199 (studio #184).
+- NAL-A2 (portable connection proof): `tests/test_portable_smoke.py` now proves a service connection end to end on all
+  six platforms, without any outside service. A fake OpenAI-compatible endpoint on 127.0.0.1 (standard library, a
+  thread) asks for `search_web` first and answers with text once it gets the tool result; the agent uses
+  `compatible:proof-model` and `search_web` bound to a `search` connection with the deterministic `test` provider.
+  In the studio the connection is created and its secret set through the API (without a secret the tool reports
+  `connection.secret_missing`; with it the run's source ledger holds the provider's hits). The package gets the
+  connection from `DATA_DIR/secrets/connections.json` and its secret from `NODESTRO_CONNECTION_<ID>_SECRET`, the
+  endpoint from `COMPATIBLE_BASE_URL`; it runs the search, and after a restart without the secret it refuses new
+  runs with 503 `connection.missing`. Neither secret appears in run answers, events, exports, the backup, the
+  connection routes, the package, its logs or its data folder.
+- Fixed (NAL-A2): the export check refused the built-in web tools (`search_web`, `fetch_web_page`) as
+  `export.integration_tools`; it now accepts them like the other built-in tools. Standalone and Git exports install
+  `orkexa[all,pdf,web]` so the tools can run there too. Publishing and the standalone app set the agent builder's
+  mode (a published release runs in the installation's mode, an exported project in `export`), which decides whether SearXNG may
+  reach private addresses.
+- Fixed (NAL-A2): a portable package now contains the libraries of the web tools (orkexa's extra `web`: httpx,
+  trafilatura with lxml, charset-normalizer); `portable_build.requirements` took only the extras `all`, `pdf` and
+  `local`, so `fetch_web_page` could not have run in a package. Needs nodestro-runtime with the web tools (NAL-A2).
+- Fixed (NAL-A1/A2): building a portable package of a release with a built-in network tool or a service connection
+  failed with `KeyError: 'portable.need.builtin_tool'`: the README texts `portable.need.builtin_tool` and
+  `portable.need.connection` were missing in all six languages; a test now requires a text for every network need.
+- Tests: `test_connections_api` accepts the search providers the runtime with the web tools adds (`test` is always
+  one of them).
 
 - Security (TABRION MIG-NOD-3, finding B-06-2): server error texts and logs without database values. A failed
   `pg_dump` gives `storage.backup_failed` with its exit code, a fixed reason and a SQLSTATE, never its output; a

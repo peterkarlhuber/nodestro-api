@@ -31,6 +31,8 @@
   "portable.need.ollama_cloud": "the Ollama cloud model `{name}`",
   "portable.need.server_tool": "the server tool `{name}` ({detail})",
   "portable.need.mcp": "the MCP service `{name}` ({detail})",
+  "portable.need.builtin_tool": "the built-in tool `{name}`",
+  "portable.need.connection": "the service connection `{name}` ({detail})",
   "portable.need.docker_sandbox": "the AI-generated tool `{name}` (runs only in Docker; Docker must be installed)",
   "portable.output_on": "A copy of every result file goes to `{folder}` (a folder per run: `<date>_<time>_<run>`). A folder that cannot be created or written falls back to `results` in this folder; the start window and the Settings page say so.",
   "portable.output_off": "Result files are not copied to a folder (`[data] output_dir` is empty).",
