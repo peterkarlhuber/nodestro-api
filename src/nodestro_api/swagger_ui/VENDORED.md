@@ -17,7 +17,7 @@ script from a third-party server and works offline.
 | LICENSE | cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30 |
 | NOTICE | 0d20d1adef18aee3f40dd258172155521ce702ac445cb5f7b7d60ed32dad2fb2 |
 
-`nodestro-init.js` is Nodestro's own (MIT): it starts Swagger UI without an inline script.
+`nodestro-init.js` is Nodestro's own (proprietary, see `LICENSE`): it starts Swagger UI without an inline script.
 
 To update: `npm pack swagger-ui-dist@<exact version>`, copy the files above from `package/`, and update the version,
 the integrity, the hashes here and `SWAGGER_UI_VERSION` / `VENDORED_SHA256` in `nodestro_api/api_reference.py`.

@@ -7,7 +7,7 @@ name = "nodestro-api"
 version = "0.2.0"
 description = "Nodestro API – the HTTP backend of Nodestro: studio REST API, run events, published workflow APIs and the standalone export."
 readme = "README.md"
-license = "MIT"
+license = "LicenseRef-Proprietary"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [{ name = "Peter Karlhuber" }]
