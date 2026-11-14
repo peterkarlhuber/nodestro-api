@@ -48,6 +48,7 @@ from nodestro_runtime import __version__ as runtime_version
 from nodestro_runtime.builtin_tools import BUILTIN_TOOLS
 from nodestro_runtime.connections import secret_variable
 from nodestro_runtime.engine import start_fields
+from nodestro_runtime.notifications import NOTIFY_TOOLS
 from nodestro_runtime.problems import CheckIssue, NodestroError
 from nodestro_runtime.providers import PROVIDERS, base_url_variable, exported_settings, has_credentials, provider_of
 from nodestro_runtime.release import ReleaseBundle, current_runtime
@@ -664,7 +665,8 @@ def check(ctx: Nodestro, publication: Publication, release: Release, options: Ex
                 space=space_ref.space,
             )
         )
-    foreign = sorted(set(bundle.builtin_tools) - {tool.name for tool in (*BUILTIN_TOOLS, *WEB_TOOLS)})
+    # notify_user (NAL-A3) is Nodestro's own; an exported app has no inbox, so it answers notify.unavailable.
+    foreign = sorted(set(bundle.builtin_tools) - {tool.name for tool in (*BUILTIN_TOOLS, *WEB_TOOLS, *NOTIFY_TOOLS)})
     if foreign:
         problems.append(
             _issue(

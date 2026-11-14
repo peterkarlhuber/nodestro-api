@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Added (NAL-A3, internal notifications; needs nodestro-runtime with `notifications`): `/api/notifications` (list,
+  `unread_only`, `limit`, `cursor`) and `/api/notifications/read` now serve the local inbox of the context's workspace
+  on the desktop, in Local Docker and on a server whose Axentra inbox is off (`api_inbox`); with
+  `NODESTRO_AXENTRA_NOTIFY=1` the Axentra inbox serves them as before. Same answers in both: `Notification` gains
+  `level`, `params`, `run_id`, `workflow_id` and `workflow_name` (the Axentra inbox leaves them empty). A member sees
+  the tenant's messages for everyone and their own; read state is per member. Workflows carry `notifications`
+  (rules); the export accepts `notify_user` (an exported app has no inbox: it answers `notify.unavailable`).
+  Permission counts: read 151. The export closure adds `nodestro_runtime.notifications`. OpenAPI documents
+  regenerated.
+
 - Added (NAL-B4, skill groups, usage and script drafts; needs nodestro-runtime with `skills_select`):
   - **Groups:** `GET/POST /api/skill-groups` and `PUT/DELETE /api/skill-groups/{id}` (read, edit). A group is a set
     of skills of the library; the editor assigns its members one by one. Groups are in the backup

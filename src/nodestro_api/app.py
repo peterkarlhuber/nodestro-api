@@ -28,6 +28,7 @@ from .api_automation import router as automation_router
 from .api_budget import router as budget_router
 from .api_connections import router as connections_router
 from .api_data import router as data_router
+from .api_inbox import router as inbox_router
 from .api_inputs import router as inputs_router
 from .api_local_models import router as local_models_router
 from .api_mcp import router as mcp_router
@@ -187,6 +188,7 @@ def create_app(
     # Before the main router: /api/library/agents must not be taken for an example named "agents".
     app.include_router(agent_templates_router)
     app.include_router(skills_router)  # before the main router (/api/library/skills)
+    app.include_router(inbox_router)
     app.include_router(connections_router)
     app.include_router(mcp_router)
     app.include_router(budget_router)
