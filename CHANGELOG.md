@@ -32,6 +32,16 @@
     resolve skills only from their bundle.
   - **Backup** holds `skills` and `skill_versions` (blobs as raw documents).
   - Permission counts are read 145, edit 64, admin 55. The OpenAPI documents and the error catalog are regenerated.
+- Added (QA-17 (AC-2): dependency policy check, 2026-11-14): `dependency-policy.json` is this repository's copy of the
+  dependency policy K-33 from nodestro-studio (only its outgoing edges: `nodestro-runtime`, `orkexa` and
+  `nodestro-examples` in the core, `nodestro-runtime[postgres]` in the extras `server` and `dev`, and
+  `tabrion[testing,postgres]` in `dev`), and `scripts/check_dependency_policy.py` is the unchanged checker from there;
+  `scripts/DEPENDENCY_POLICY_SOURCE.md` records their origin and SHA-256. `python scripts/check_dependency_policy.py`
+  checks `pyproject.toml` (core, every extra and dependency group) against the copy. `tests/test_dependency_policy.py`
+  checks the checksums, runs the checker and probes forbidden requirements (Axentra, the core edge with extras, the
+  wrong extra, the studio, an unknown Levuvo package). Ruff skips the vendored script (it is linted in
+  nodestro-studio). No CI workflow change.
+
 - Changed (TABRION 0.2.1 switch): the `dev` extra requires `tabrion[testing,postgres]>=0.2,<0.3`, and
   `portable_locks/tabrion.txt` pins the source archive of Tabrion 0.2.1 final `af0458d` (no API change).
 
