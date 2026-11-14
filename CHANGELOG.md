@@ -11,9 +11,12 @@
   connection from `DATA_DIR/secrets/connections.json` and its secret from `NODESTRO_CONNECTION_<ID>_SECRET`, the
   endpoint from `COMPATIBLE_BASE_URL`; it runs the search, and after a restart without the secret it refuses new
   runs with 503 `connection.missing`. Neither secret appears in run answers, events, exports, the backup, the
-  connection routes, the package, its logs or its data folder. The workflow passes only once the export check accepts
-  the web tools (`exporter.py` still names them `export.integration_tools`) and the package contains `tabrion`, which
-  nodestro-runtime imports since MIG-NOD-3.
+  connection routes, the package, its logs or its data folder.
+- Fixed (NAL-A2): the export check refused the built-in web tools (`search_web`, `fetch_web_page`) as
+  `export.integration_tools`; it now accepts them like the other built-in tools. Standalone and Git exports install
+  `orkexa[all,pdf,web]` so the tools can run there too. Publishing and the standalone app set the agent builder's
+  mode (a published release runs in the installation's mode, an exported project in `export`), which decides whether SearXNG may
+  reach private addresses.
 - Fixed (NAL-A2): a portable package now contains the libraries of the web tools (orkexa's extra `web`: httpx,
   trafilatura with lxml, charset-normalizer); `portable_build.requirements` took only the extras `all`, `pdf` and
   `local`, so `fetch_web_page` could not have run in a package. Needs nodestro-runtime with the web tools (NAL-A2).
