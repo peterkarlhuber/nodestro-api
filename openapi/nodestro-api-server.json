@@ -9904,6 +9904,14 @@
             "title": "Models",
             "type": "object"
           },
+          "services": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 20,
+            "title": "Services",
+            "type": "object"
+          },
           "tests": {
             "default": false,
             "title": "Tests",
@@ -13757,7 +13765,10 @@
             "enum": [
               "model",
               "tool",
-              "ledger"
+              "ledger",
+              "ledger_cited",
+              "ledger_list",
+              "ledger_range"
             ],
             "title": "Source",
             "type": "string"
@@ -22072,6 +22083,13 @@
           "sensitive": {
             "title": "Sensitive",
             "type": "boolean"
+          },
+          "services": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Services",
+            "type": "array"
           },
           "team_details": {
             "items": {
