@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Added (NAL-B4, skill groups, usage and script drafts; needs nodestro-runtime with `skills_select`):
+  - **Groups:** `GET/POST /api/skill-groups` and `PUT/DELETE /api/skill-groups/{id}` (read, edit). A group is a set
+    of skills of the library; the editor assigns its members one by one. Groups are in the backup
+    (`skill_groups`).
+  - **Usage:** `GET /api/skill-stats?days=` (read) reads one keyset page of at most 2000 runs of the period and
+    reports, per skill, offers, loads, file reads, runs, outcomes and quality checks.
+  - **Script drafts:** `POST /api/skills/{id}/versions/{n}/script-draft` (`{path, note}`, run, like
+    `/api/tools/jobs`) starts a tool job from one script of an active skill. Its origin is
+    `skill:<name>@<n>/<path>` (`ToolJob.origin`, `ToolInfo.origin`). Without the isolating sandbox it is refused
+    with `sandbox.isolation_required`, and with it the draft waits for a person's approval. Other errors:
+    `skill.script_not_found` (404), `skill.file_not_text` and `skill.script_too_large` (422).
+  - Permission counts: read 149, edit 68, run 35. The export closure adds `nodestro_runtime.skills_select`. The
+    OpenAPI documents and the error catalog are regenerated.
 - Hardened the skill routes after the internal security review (NAL-B3): unpacking, parsing and checking an upload
   run off the event loop; importing a file as the next version of a skill marks it as imported, and a copy keeps
   the source's origin; publishing refuses a disabled or archived skill, and a release run stops a frozen skill that

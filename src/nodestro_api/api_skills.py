@@ -14,17 +14,23 @@ copies, activates and disables; ``admin`` archives and deletes. A skill an agent
 from __future__ import annotations
 
 import base64
+from datetime import timedelta
 import binascii
 from functools import partial
 import hashlib
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, File, Form, Request, Response, UploadFile
+from fastapi import APIRouter, File, Form, Query, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from nodestro_examples import __version__ as EXAMPLES_VERSION
 from nodestro_examples import skills as skill_library
-from nodestro_runtime.schemas import AgentTemplate, Skill, SkillVersion, Workflow
+from nodestro_runtime.problems import NodestroError
+from nodestro_runtime.schemas import AgentTemplate, Run, Skill, SkillGroup, SkillVersion, Workflow, now
+from nodestro_runtime.skill_stats import SkillStats, skill_stats
+from nodestro_runtime.skill_tools import script_origin, script_requirement
 from nodestro_runtime.skills import Skills, check
+from nodestro_runtime.tool_library import ToolJob
+from orkexa import UsageTracker
 from orkexa.skills import (
     SKILL_FILE,
     SkillIssue,
@@ -38,8 +44,9 @@ from orkexa.skills import (
 )
 from pydantic import BaseModel, Field
 
+from . import model_readiness
 from .api import Ctx, request_language
-from .permissions import ADMIN, EDIT, READ
+from .permissions import ADMIN, EDIT, READ, RUN
 from .serving import ApiError
 
 router = APIRouter(prefix="/api")
@@ -430,6 +437,108 @@ def delete_skill(skill_id: str, ctx: Ctx) -> Response:
         raise ApiError(409, "skill.in_use", "The skill is used by agents; archive it instead", count=len(users))
     _skills(ctx).delete(skill_id)
     return Response(status_code=204)
+
+
+# ---- groups (NAL-B4) --------------------------------------------------------------------------------------------
+
+
+class SkillGroupIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    description: str = Field(default="", max_length=1000)
+    skill_ids: list[Annotated[str, Field(min_length=1, max_length=64)]] = Field(default_factory=list, max_length=100)
+
+
+@router.get("/skill-groups", dependencies=READ)
+def list_skill_groups(ctx: Ctx) -> list[SkillGroup]:
+    return _skills(ctx).groups()
+
+
+@router.post("/skill-groups", status_code=201, dependencies=EDIT)
+def create_skill_group(body: SkillGroupIn, ctx: Ctx) -> SkillGroup:
+    """A named set of skills of the library; assigning it to an agent adds its skills one by one (the editor does
+    that, each in its current version). Names are unique (``skill.group_name_taken``)."""
+    return _skills(ctx).save_group(SkillGroup(**body.model_dump()))
+
+
+@router.put("/skill-groups/{group_id}", dependencies=EDIT)
+def update_skill_group(group_id: str, body: SkillGroupIn, ctx: Ctx) -> SkillGroup:
+    """Change a group. Agents keep the skills they were given with it."""
+    found = _skills(ctx).group(group_id)
+    if found is None:
+        raise KeyError(group_id)
+    return _skills(ctx).save_group(found.model_copy(update=body.model_dump()))
+
+
+@router.delete("/skill-groups/{group_id}", status_code=204, dependencies=EDIT)
+def delete_skill_group(group_id: str, ctx: Ctx) -> Response:
+    """Delete a group; no skill and no agent changes."""
+    if not _skills(ctx).delete_group(group_id):
+        raise KeyError(group_id)
+    return Response(status_code=204)
+
+
+# ---- usage (NAL-B4) ---------------------------------------------------------------------------------------------
+
+#: The most runs the usage looks at (newest first).
+MAX_STATS_RUNS = 2000
+
+
+@router.get("/skill-stats", dependencies=READ)
+def get_skill_stats(ctx: Ctx, days: Annotated[int, Query(ge=1, le=365)] = 30) -> list[SkillStats]:
+    """How skills were used in the runs of the last ``days`` days (at most the newest 2000 runs): offered, loaded,
+    files read, runs, outcomes of the steps that loaded them and quality checks passed."""
+    # One keyset page of the creation index (API2-04): never more than MAX_STATS_RUNS runs are read, and none before
+    # the period. Team runs count too (their agents load the skills).
+    since = now() - timedelta(days=days)
+    runs, _more = ctx.store.list_page("runs", Run, limit=MAX_STATS_RUNS, since=since)
+    return skill_stats(runs)
+
+
+# ---- scripts as tool drafts (NAL-B4) ----------------------------------------------------------------------------
+
+
+class ScriptDraftIn(BaseModel):
+    path: str = Field(min_length=1, max_length=255)
+    #: What the person wants the tool for (optional, at most 1000 characters are used).
+    note: str = Field(default="", max_length=2000)
+
+
+@router.post("/skills/{skill_id}/versions/{version}/script-draft", status_code=201, dependencies=RUN)
+def draft_tool_from_script(skill_id: str, version: int, body: ScriptDraftIn, ctx: Ctx, request: Request) -> ToolJob:
+    """Start a tool job that turns one script of a skill version into a tool draft (NAL-B4).
+
+    The Coding Agent writes a tool from the script's text (a description, never instructions), and the draft goes
+    through the unchanged tool chain: static check, tests in the isolating sandbox (without one:
+    ``sandbox.isolation_required``), and a person's approval in the job. Until then the script is text that is
+    never run. The job's ``origin`` is ``skill:<name>@<version>/<path>``. Same permission and model as any tool job.
+    """
+    skill = _get(ctx, skill_id)
+    if skill.status != "active":
+        raise NodestroError(
+            "skill.inactive", f"The skill {skill.name} is {skill.status}", name=skill.name, status=skill.status
+        )
+    package = _skills(ctx).package(skill_id, version)
+    try:
+        requirement = script_requirement(package, version, body.path, body.note)
+    except ValueError as exc:
+        code = str(exc)
+        status = 404 if code == "skill.script_not_found" else 422
+        raise ApiError(status, code, "The script cannot become a tool") from None
+    model = ctx.settings().assistant_model
+    model_readiness.require_local_now(ctx, request, model, "agent_design")
+    connection = ctx.connect_model(model)
+
+    def record(job: ToolJob, tracker: UsageTracker) -> None:
+        ctx.usage_log.record("tool_generation", tracker.records, label=job.origin or "", ref=job.id, tracker=tracker)
+
+    return ctx.tools.start_job(
+        requirement,
+        connection=connection,
+        model=model,
+        usage_tracker=ctx.tracker(),
+        on_finished=record,
+        origin=script_origin(package.name, version, body.path.strip().lstrip("/")),
+    )
 
 
 # ---- the shipped skills -----------------------------------------------------------------------------------------

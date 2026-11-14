@@ -147,7 +147,9 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     # + nodestro_runtime.skill_tools (NAL-B3): the agent builder gives agents with skills the tools that load a frozen
     # skill of the release; the skill store itself stays in the studio.
     expected.add("nodestro_runtime.skill_tools")
-    assert len(modules) == 68 + with_error_texts and expected | {"nodestro_runtime.local_models"} <= set(modules)
+    # + nodestro_runtime.skills_select (NAL-B4): the preselection the agent builder applies to many skills.
+    expected.add("nodestro_runtime.skills_select")
+    assert len(modules) == 69 + with_error_texts and expected | {"nodestro_runtime.local_models"} <= set(modules)
     assert "nodestro_runtime.local_service" not in modules
     # The audit/usage hook protocol is exported (tool approvals and the usage log import it); the Axentra
     # integration itself is server-only and never part of an export.
