@@ -19,7 +19,7 @@ The project is generated deterministically, without any AI request:
 The agent library ``orkexa`` is not on PyPI. The user chooses how the export gets it: ``git``
 names the exact commit of its public repository (installing needs access to github.com),
 ``bundle`` copies the library's source into ``vendor/`` (only after confirming the right to pass
-it on; the MIT license text travels with it). Both are stated in the README and the manifest.
+it on; its license text travels with it). Both are stated in the README and the manifest.
 
 The agents' providers (Anthropic, OpenAI, Gemini, OpenAI-compatible endpoints) are configured
 with environment variables in the export; the manifest names the providers, the capabilities
@@ -101,27 +101,20 @@ STUDIO_ONLY = frozenset(
     }
 )
 _FIXED_TIME = (2026, 1, 1, 0, 0, 0)
-NODESTRO_LICENSE = """MIT License
+NODESTRO_LICENSE = """Nodestro
+Copyright (c) 2026 Levuvo. All rights reserved.
 
-Copyright (c) 2026 Peter Karlhuber
+This software, including source code, graphics and documentation, is protected by
+copyright. Use, reproduction, modification or distribution is permitted only with the
+express written consent of Levuvo.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+The software is provided without warranty, to the extent permitted by law. Liability for
+slight negligence is excluded, except for injury to life, body or health.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Included open-source components are subject to their own licenses. Their license texts
+are shipped with those components.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Contact: office@levuvo.com
 """
 
 
@@ -645,7 +638,7 @@ def check(ctx: Nodestro, publication: Publication, release: Release, options: Ex
         problems.append(
             _issue(
                 "export.bundled_library",
-                "The source code of orkexa is copied into the project (MIT license included)",
+                "The source code of orkexa is copied into the project (license included)",
                 level="info",
             )
         )
@@ -1808,7 +1801,7 @@ build-backend = "hatchling.build"
 name = "orkexa"
 version = "{library_version}"
 description = "Provider-independent agents (included in this exported project)."
-license = "MIT"
+license = "LicenseRef-Proprietary"
 requires-python = ">=3.11"
 dependencies = [
 {deps}

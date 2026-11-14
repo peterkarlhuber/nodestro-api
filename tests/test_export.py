@@ -319,7 +319,7 @@ def test_bundled_library_mode(exported: Callable[..., Any], tmp_path: Path) -> N
     record = _export(client, publication["id"], orkexa="bundle", confirm_distribution=True)
     project = _extract(_download(client, record["id"]), tmp_path)
     vendor = project / "vendor" / "orkexa"
-    assert (vendor / "LICENSE").is_file() and "MIT" in (vendor / "LICENSE").read_text()
+    assert (vendor / "LICENSE").read_text() == exporter._library_license()
     assert (vendor / "src" / "orkexa" / "__init__.py").is_file()
     assert 'orkexa = { path = "vendor/orkexa" }' in (project / "pyproject.toml").read_text()
     assert [path.name for path in (project / "vendor").iterdir()] == ["orkexa"]
