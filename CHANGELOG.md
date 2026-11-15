@@ -23,7 +23,12 @@
   The `smtp` and `webhook` checks now contact the service (nodestro-runtime `mail_transport`). Run files gain
   `source = "tool"`, `preview` and the format `eml` (drafts of `draft_email` / `draft_webhook`); exports accept the
   draft tools.
-
+- Added (TABRION DC-NA-1, dependency confusion): new CI job `tabrion source (poisoned index)`, reported by ci-ok, runs
+  the install with `scripts/check_tabrion_source.py` (an unchanged, checksummed copy of nodestro-studio #198, poisoned 0.2.99): a poisoned
+  index must get no request for `tabrion`, which proves that the lock's direct-URL pin keeps a foreign `tabrion` out.
+  `tests/test_tabrion_pin.py` requires the installed Tabrion's `direct_url.json` to name a git commit, the studio
+  lock's when `NODESTRO_STUDIO_LOCK` names the lock (CI sets it): it detects an accidental index install, but it is
+  no proof of origin (a wheel can forge the file).
 - Added (NAL-A3, internal notifications; needs nodestro-runtime with `notifications`): `/api/notifications` (list,
   `unread_only`, `limit`, `cursor`) and `/api/notifications/read` now serve the local inbox of the context's workspace
   on the desktop, in Local Docker and on a server whose Axentra inbox is off (`api_inbox`); with
