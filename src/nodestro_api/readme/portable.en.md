@@ -28,6 +28,13 @@ every run, approval, file and setting.
 | `configure` | Enters the keys of the AI providers (input is hidden). |
 | `keys new --name "My app" --scopes run,read` | Creates an API key for another program (`keys list`, `keys revoke <id>`). |
 | `check` | A self-test without starting (`check --full` also checks every model file by SHA-256). |
+| `verify` | Checks every file of `program/` against `SHA256SUMS` (the start does this too, without the model files). |
+| `backup <file.zip>` | Backs up settings and data (stopped; `--include-results`, and `--include-secrets` for the keys). |
+| `restore <file.zip>` | Restores a backup of this application (stopped; the current state is backed up first). |
+| `update <new package>` | Takes the program of a newer package of this application, its ZIP or folder (stopped). |
+| `rollback` | Goes back to the program before the last update. |
+| `adopt <old folder>` | Takes over settings and data of an older package of this application. |
+| `ui install <file.tgz> --sha256 <hash>` | Installs a newer web interface (`ui reset` goes back, `ui status`). |
 
 ## AI providers and keys
 
@@ -82,7 +89,7 @@ export {key_variable}=ndk_...
 {curl_start}
 ```
 
-The request body (`examples/request.json`):
+The request body (`program/examples/request.json`):
 
 ```json
 {request}
@@ -103,8 +110,8 @@ reconnect with `Last-Event-ID`. This workflow has {approvals}; a key with the pe
 ```
 
 Errors have the form `{"error": {"status", "code", "message", "params"}}`. The complete description is
-`openapi.json` in this folder (OpenAPI 3); the interactive reference is `http://127.0.0.1:{port}/docs` (only from
-this computer by default). `examples/client.py` shows everything in Python.
+`program/openapi.json` in this folder (OpenAPI 3); the interactive reference is `http://127.0.0.1:{port}/docs` (only from
+this computer by default). `program/examples/client.py` shows everything in Python.
 
 Every client can first ask what this backend serves: `GET /api/app` names the app contract (`nodestro-app/1`), the
 backend's id and how to sign in; with a key it also lists this workflow and the capabilities. `BACKEND_NAME` gives
@@ -134,10 +141,24 @@ the backend a name that clients show. The contract is described in `docs/app-api
 | Windows SmartScreen | "More info", "Run anyway" (the scripts are plain text you can read). |
 | Something else | `check` tests the package; `logs/` has the logs of the application and the model server. |
 
+## Update, back up, check
+
+- **Update:** stop the application, then run `update <new package.zip>` here (a package of the same application for
+  the same platform). Only `program/` is replaced; settings, data, keys and result files stay. The data are backed up
+  into `backups/` first, and the previous program stays as `program.previous/`: `rollback` goes back to it.
+- **From an older package** (one without a `program/` folder): unpack the new package next to it and run
+  `adopt <old folder>` in the new one. The old folder is not changed.
+- **Back up:** `backup <file.zip>` while the application is stopped. Keys are only included with
+  `--include-secrets`; keep such a backup as safe as the keys. `restore <file.zip>` brings it back.
+- **Check:** every start checks that no file of `program/` was changed, removed or added, and refuses to start
+  otherwise. This finds broken copies and stray edits; it does not protect against someone who may write to this
+  folder (they could also change `SHA256SUMS`).
+
 ## What is in this folder
 
-`python/` (Python {python_version}), `nodestro_runtime/`, `nodestro_api/` and `app/` (the application),
-`workflow/` (the frozen release), `config/`, `examples/`, {models_files}`licenses/` (licenses of everything
-included), `lib.lock` (every library with its SHA-256), `SHA256SUMS` (a checksum of every file), `PORTABLE.json`
-(what this package is) and `openapi.json`. Your data lives in `data/` and `logs/`; back them up to keep runs and
-settings.
+`program/` is what was exported, never changed afterwards: `python/` (Python {python_version}), `nodestro_runtime/`,
+`nodestro_api/` and `app/` (the application), `workflow/` (the frozen release), `examples/`, {models_files}`licenses/`
+(licenses of everything included), `lib.lock` (every library with its SHA-256), `SHA256SUMS` (a checksum of every
+file), `PORTABLE.json` (what this package is) and `openapi.json`. Next to it: the start scripts, `config/` (your
+settings), and once used `data/` (runs, keys), `results/`, `logs/` and `backups/`. Back up `config/` and `data/` to
+keep runs and settings.

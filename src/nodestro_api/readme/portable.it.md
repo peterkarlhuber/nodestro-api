@@ -28,6 +28,13 @@ tutte le esecuzioni, approvazioni, file e impostazioni.
 | `configure` | Inserisce le chiavi dei provider di IA (l'input è nascosto). |
 | `keys new --name "My app" --scopes run,read` | Crea una chiave API per un altro programma (`keys list`, `keys revoke <id>`). |
 | `check` | Un autotest senza avvio (`check --full` verifica anche ogni file di modello tramite SHA-256). |
+| `verify` | Verifica ogni file di `program/` con `SHA256SUMS` (lo fa anche ogni avvio, senza i file dei modelli). |
+| `backup <file.zip>` | Salva impostazioni e dati (fermata; `--include-results`, e `--include-secrets` per le chiavi). |
+| `restore <file.zip>` | Ripristina un backup di questa applicazione (fermata; prima viene salvato lo stato attuale). |
+| `update <nuovo pacchetto>` | Prende il programma di un pacchetto più recente di questa applicazione, il suo ZIP o la cartella (fermata). |
+| `rollback` | Torna al programma di prima dell'ultimo aggiornamento. |
+| `adopt <vecchia cartella>` | Riprende impostazioni e dati di un pacchetto precedente di questa applicazione. |
+| `ui install <file.tgz> --sha256 <hash>` | Installa un'interfaccia web più recente (`ui reset` torna indietro, `ui status`). |
 
 ## Provider di IA e chiavi
 
@@ -83,7 +90,7 @@ export {key_variable}=ndk_...
 {curl_start}
 ```
 
-Il corpo della richiesta (`examples/request.json`):
+Il corpo della richiesta (`program/examples/request.json`):
 
 ```json
 {request}
@@ -104,8 +111,8 @@ riconnettiti con `Last-Event-ID`. Questo workflow ha {approvals}; decide una chi
 ```
 
 Gli errori hanno la forma `{"error": {"status", "code", "message", "params"}}`. La descrizione completa è
-`openapi.json` in questa cartella (OpenAPI 3); il riferimento interattivo è `http://127.0.0.1:{port}/docs` (per impostazione predefinita solo da
-questo computer). `examples/client.py` mostra tutto in Python.
+`program/openapi.json` in questa cartella (OpenAPI 3); il riferimento interattivo è `http://127.0.0.1:{port}/docs` (per impostazione predefinita solo da
+questo computer). `program/examples/client.py` mostra tutto in Python.
 
 Ogni client può chiedere prima che cosa offre questo backend: `GET /api/app` indica il contratto delle app
 (`nodestro-app/1`), l'identificativo del backend e i modi di accesso; con una chiave anche questo workflow e le
@@ -137,10 +144,25 @@ funzionalità. `BACKEND_NAME` dà al backend un nome che i client mostrano. Il c
 | Windows SmartScreen | "Ulteriori informazioni", "Esegui comunque" (gli script sono testo semplice che puoi leggere). |
 | Altro | `check` verifica il pacchetto; `logs/` contiene i log dell'applicazione e del server dei modelli. |
 
+## Aggiornare, fare backup, verificare
+
+- **Aggiornare:** ferma l'applicazione, poi esegui qui `update <nuovo pacchetto.zip>` (un pacchetto della stessa
+  applicazione per la stessa piattaforma). Viene sostituito solo `program/`; impostazioni, dati, chiavi e file di
+  risultato restano. Prima i dati vengono salvati in `backups/`, e il programma precedente resta come
+  `program.previous/`: `rollback` torna a quello.
+- **Da un pacchetto precedente** (senza cartella `program/`): decomprimi il nuovo pacchetto accanto ed esegui
+  `adopt <vecchia cartella>` in quello nuovo. La vecchia cartella non viene modificata.
+- **Backup:** `backup <file.zip>` con l'applicazione fermata. Le chiavi sono incluse solo con `--include-secrets`;
+  conserva un tale backup con la stessa cura delle chiavi. `restore <file.zip>` lo ripristina.
+- **Verificare:** ogni avvio verifica che nessun file di `program/` sia stato modificato, rimosso o aggiunto, e
+  altrimenti non parte. Così si trovano copie danneggiate e modifiche per errore; non protegge da chi può scrivere in
+  questa cartella (potrebbe cambiare anche `SHA256SUMS`).
+
 ## Contenuto di questa cartella
 
-`python/` (Python {python_version}), `nodestro_runtime/`, `nodestro_api/` e `app/` (l'applicazione),
-`workflow/` (la release congelata), `config/`, `examples/`, {models_files}`licenses/` (licenze di tutto ciò che è
-incluso), `lib.lock` (ogni libreria con il suo SHA-256), `SHA256SUMS` (un checksum di ogni file), `PORTABLE.json`
-(cos'è questo pacchetto) e `openapi.json`. I tuoi dati si trovano in `data/` e `logs/`; fanne un backup per conservare esecuzioni e
-impostazioni.
+`program/` è ciò che è stato esportato e non viene mai modificato dopo: `python/` (Python {python_version}),
+`nodestro_runtime/`, `nodestro_api/` e `app/` (l'applicazione), `workflow/` (la release congelata), `examples/`,
+{models_files}`licenses/` (licenze di tutto ciò che è incluso), `lib.lock` (ogni libreria con il suo SHA-256),
+`SHA256SUMS` (un checksum di ogni file), `PORTABLE.json` (cos'è questo pacchetto) e `openapi.json`. Accanto: gli
+script di avvio, `config/` (le tue impostazioni) e, dopo il primo uso, `data/` (esecuzioni, chiavi), `results/`,
+`logs/` e `backups/`. Fai un backup di `config/` e `data/` per conservare esecuzioni e impostazioni.

@@ -61,6 +61,7 @@ from packaging.utils import canonicalize_name
 from pydantic import BaseModel, Field
 
 from . import __version__
+from . import portable_ops as ops
 
 if TYPE_CHECKING:
     from .context import Nodestro
@@ -1071,36 +1072,48 @@ def install_models(ctx: Nodestro, names: list[str], target: Path, progress: Prog
 # ---- start scripts ----------------------------------------------------------------------------------------------
 
 _START_SH = """#!/bin/sh
-# Start the application (Ctrl+C stops it). Other commands: stop, status, open, configure, keys, check.
+# Start the application (Ctrl+C stops it). Other commands: stop, status, open, configure, keys, check, verify,
+# backup, restore, update, rollback, adopt, ui (see README.md).
 cd "$(dirname "$0")" || exit 1
-exec ./python/bin/python3 -I -m nodestro_api.portable "${@:-start}"
+exec ./program/python/bin/python3 -I -m nodestro_api.portable "${@:-start}"
 """
 _STOP_SH = """#!/bin/sh
 cd "$(dirname "$0")" || exit 1
-exec ./python/bin/python3 -I -m nodestro_api.portable stop
+exec ./program/python/bin/python3 -I -m nodestro_api.portable stop
 """
 _CONFIGURE_SH = """#!/bin/sh
 cd "$(dirname "$0")" || exit 1
-exec ./python/bin/python3 -I -m nodestro_api.portable configure
+exec ./program/python/bin/python3 -I -m nodestro_api.portable configure
 """
 _START_COMMAND = """#!/bin/sh
 # macOS: double-click to start in Terminal.
 cd "$(dirname "$0")" || exit 1
-exec ./python/bin/python3 -I -m nodestro_api.portable start
+exec ./program/python/bin/python3 -I -m nodestro_api.portable start
 """
 _START_CMD = """@echo off
-rem Start the application (close this window or press Ctrl+C to stop it).
+rem Start the application (close this window or press Ctrl+C to stop it). Other commands: see README.md.
 cd /d "%~dp0"
-"python\\python.exe" -I -m nodestro_api.portable %*
-if errorlevel 1 pause
+"program\\python\\python.exe" -I -m nodestro_api.portable %*
+set "code=%errorlevel%"
+rem update and rollback leave the program to put in place in program.next: its Python cannot be renamed while it runs.
+if exist "program.next\\PORTABLE.json" call :swap
+if not "%code%"=="0" pause
+rem One block, read before it runs: it may replace this file.
+(if exist "start.cmd.new" move /y "start.cmd.new" "start.cmd" >nul) & exit /b %code%
+
+:swap
+if exist "program.previous" rmdir /s /q "program.previous"
+move "program" "program.previous" >nul || exit /b 1
+move "program.next" "program" >nul || move "program.previous" "program" >nul
+exit /b 0
 """
 _STOP_CMD = """@echo off
 cd /d "%~dp0"
-"python\\python.exe" -I -m nodestro_api.portable stop
+"program\\python\\python.exe" -I -m nodestro_api.portable stop
 """
 _CONFIGURE_CMD = """@echo off
 cd /d "%~dp0"
-"python\\python.exe" -I -m nodestro_api.portable configure
+"program\\python\\python.exe" -I -m nodestro_api.portable configure
 pause
 """
 
@@ -1187,6 +1200,29 @@ timeout_seconds = 60
 
 
 # ---- archive ----------------------------------------------------------------------------------------------------
+
+
+def strip_bytecode(folder: Path) -> None:
+    """Remove Python's bytecode caches: the archive gives every file a new time, so they would not match their
+    sources and Python would write them again into ``program/`` (whose checksums they would then break)."""
+    for cache in sorted(folder.rglob(ops.BYTECODE), reverse=True):
+        if cache.is_dir() and not cache.is_symlink():
+            shutil.rmtree(cache)
+
+
+def embedded_ui(program: Path) -> dict[str, Any] | None:
+    """What ``PORTABLE.json`` says about the embedded web interface: version, contract range, manifest hash."""
+    manifest = program / "nodestro_api" / "webui" / "manifest.json"
+    try:
+        data = manifest.read_bytes()
+        found = json.loads(data)
+    except (OSError, ValueError):
+        return None
+    return {"version": found.get("version"), "contract": found.get("contract"), "manifest_sha256": _sha(data)}
+
+
+def _sha(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
 
 def _walk(folder: Path) -> Iterator[Path]:
@@ -1308,6 +1344,11 @@ def _assemble(
     from . import exporter
 
     allow = options.allow_downloads
+    # The folder model (NAL-C3, layout 2): everything the export writes goes into program/, which no one changes
+    # afterwards; the start scripts, the README and config/ are next to it, the person's data appear there too.
+    package = stage
+    stage = package / ops.PROGRAM
+    stage.mkdir()
     # 1. Python for the target.
     progress.step("python", platform.label)
     python_dir = install_python(ctx, platform, progress, allow_downloads=allow)
@@ -1341,11 +1382,11 @@ def _assemble(
         encoding="utf-8",
     )
     for name, (content, mode) in start_scripts(platform).items():
-        (stage / name).write_text(content, encoding="utf-8", newline="")
-        (stage / name).chmod(mode)
+        (package / name).write_text(content, encoding="utf-8", newline="")
+        (package / name).chmod(mode)
     context_length = _context_length(ctx)
-    (stage / "config").mkdir(exist_ok=True)
-    (stage / "config" / "settings.toml").write_text(settings_toml(options, context_length=context_length), "utf-8")
+    (package / "config").mkdir(exist_ok=True)
+    (package / "config" / "settings.toml").write_text(settings_toml(options, context_length=context_length), "utf-8")
     licenses = stage / "licenses"
     licenses.mkdir(exist_ok=True)
     (licenses / "nodestro.txt").write_text(exporter.NODESTRO_LICENSE, encoding="utf-8")
@@ -1372,7 +1413,7 @@ def _assemble(
     # 5. What the package is.
     readme = stage / "README.md"
     if readme.is_file():
-        readme.write_text(
+        (package / "README.md").write_text(
             fill_readme(
                 readme.read_text(encoding="utf-8"),
                 options,
@@ -1384,9 +1425,12 @@ def _assemble(
             ),
             encoding="utf-8",
         )
+        readme.unlink()
+    strip_bytecode(stage)
     manifest = {
         "format": "nodestro-portable",
         "format_version": 1,
+        "layout_version": ops.LAYOUT_VERSION,
         "name": publication.name,
         "slug": publication.slug,
         "release_number": release.number,
@@ -1399,6 +1443,7 @@ def _assemble(
         "created_at": now().isoformat(),
         "language": options.language,
         "web_ui": options.web_ui,
+        "ui": embedded_ui(stage) if options.web_ui else None,
         "offline": options.offline,
         "providers": found.portable.providers,
         "network_needs": [item.model_dump(mode="json") for item in found.portable.network_needs],
@@ -1419,7 +1464,7 @@ def _assemble(
     # Written in the work folder and moved into place when complete: a build that dies while it writes leaves no
     # partial file in the exports folder (its work folder is removed by recovery or the server's reaper).
     written = work / "package.zip"
-    size = write_zip(stage, root, written, progress, posix=not platform.windows)
+    size = write_zip(package, root, written, progress, posix=not platform.windows)
     os.replace(written, target)
     keep_within_server_limits(ctx, target, size)
     record = exporter.ExportRecord(
@@ -1431,7 +1476,7 @@ def _assemble(
         file_name=f"{root}.zip",
         size=size,
         sha256=_sha_file(target),
-        files=sum(1 for _ in _walk(stage)),
+        files=sum(1 for _ in _walk(package)),
         warnings=[item.code for item in found.problems if item.level == "warning"],
         runtime=found.runtime,
     )

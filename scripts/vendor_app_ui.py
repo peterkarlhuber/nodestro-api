@@ -20,9 +20,7 @@ means embedding the previous commit. ``tests/test_webui_vendored.py`` runs ``--c
 from __future__ import annotations
 
 import argparse
-import hashlib
 import io
-import json
 from pathlib import Path, PurePosixPath
 import re
 import shutil
@@ -33,14 +31,19 @@ import tempfile
 import urllib.request
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+
+from nodestro_api import ui_package  # noqa: E402 - after the path of this checkout
+
 WEBUI = ROOT / "src" / "nodestro_api" / "webui"
 REPOSITORY = "peterkarlhuber/nodestro-app-ui"
 MANIFEST = "manifest.json"
 RECORD = "VENDORED.md"
-#: The contract versions this backend serves (nodestro_api.app_contract); the interface's range must include one.
+#: The contract versions this backend serves (nodestro_api.app_contract.CONTRACT_VERSIONS, which a test compares; not
+#: imported, so the script needs no runtime); the interface's range must include one.
 SERVED_CONTRACTS = {1}
 _SHA = re.compile(r"^[0-9a-f]{40}$")
-_LIMIT = 20 * 1024 * 1024
+_LIMIT = ui_package.LIMIT
 
 
 class VendorError(Exception):
@@ -48,57 +51,25 @@ class VendorError(Exception):
 
 
 def _sha256(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
+    return ui_package.sha256(data)
 
 
 def _safe(path: str) -> PurePosixPath:
-    pure = PurePosixPath(path)
-    if (
-        pure.is_absolute()
-        or not pure.parts
-        or any(part in ("", ".", "..") or part.startswith(".") for part in pure.parts)
-    ):
-        raise VendorError(f"unsafe path in the manifest: {path!r}")
-    return pure
+    try:
+        return ui_package.safe_path(path)
+    except ui_package.UiPackageError:
+        raise VendorError(f"unsafe path in the manifest: {path!r}") from None
 
 
 def check_tree(folder: Path) -> dict[str, object]:
     """``folder`` holds exactly the files its ``manifest.json`` lists (plus ``VENDORED.md``), each with its hash."""
     try:
-        manifest = json.loads((folder / MANIFEST).read_text("utf-8"))
-    except (OSError, ValueError) as exc:
-        raise VendorError(f"no readable {MANIFEST} in {folder}: {exc}") from None
-    if manifest.get("name") != "nodestro-app-ui" or not isinstance(manifest.get("files"), list):
-        raise VendorError(f"{MANIFEST} is not the manifest of nodestro-app-ui")
-    contract = manifest.get("contract")
-    if not (
-        isinstance(contract, dict)
-        and isinstance(contract.get("min"), int)
-        and isinstance(contract.get("max"), int)
-        and isinstance(manifest.get("version"), str)
-    ):
-        raise VendorError(f"{MANIFEST} lacks a version or a contract range")
-    if not any(contract["min"] <= version <= contract["max"] for version in SERVED_CONTRACTS):
-        raise VendorError(f"the interface speaks contract {contract}, this backend serves {sorted(SERVED_CONTRACTS)}")
-    listed = set()
-    for item in manifest["files"]:
-        if not isinstance(item, dict):
-            raise VendorError(f"{MANIFEST}: a file entry is not an object")
-        path = _safe(str(item.get("path", "")))
-        target = folder.joinpath(*path.parts)
-        if target.is_symlink() or not target.is_file():
-            raise VendorError(f"missing: {path}")
-        data = target.read_bytes()
-        if _sha256(data) != item.get("sha256") or len(data) != item.get("size"):
-            raise VendorError(f"changed: {path} (edit nodestro-app-ui, not the embedded copy)")
-        listed.add(path.as_posix())
-    if any(file.is_symlink() for file in folder.rglob("*")):
-        raise VendorError("symbolic links are not allowed in the interface")
-    present = {file.relative_to(folder).as_posix() for file in folder.rglob("*") if file.is_file()}
-    extra = sorted(present - listed - {MANIFEST, RECORD})
-    if extra:
-        raise VendorError(f"not in the manifest: {', '.join(extra)}")
-    return dict(manifest)
+        return ui_package.check_tree(folder, SERVED_CONTRACTS, extra=(RECORD,))
+    except ui_package.UiPackageError as exc:
+        message = str(exc)
+        if message.startswith("changed:"):
+            message += " (edit nodestro-app-ui, not the embedded copy)"
+        raise VendorError(message) from None
 
 
 def record_text(commit: str, manifest: dict[str, object], manifest_sha: str) -> str:

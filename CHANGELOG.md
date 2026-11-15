@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Added (NAL-C3, the folder model of portable packages): `layout_version` 2 puts everything the export writes into
+  `program/` (start scripts, README and `config/` next to it). New launcher commands `verify`, `backup`, `restore`,
+  `update`, `rollback`, `adopt` and `ui install|reset|status` (`portable_ops.py`, `ui_package.py`); each start checks
+  `program/` against its `SHA256SUMS` and refuses a changed program (exit code 4). `PORTABLE.json` gains `ui`
+  (version, contract range, manifest hash). Exports no longer ship Python bytecode caches. `scripts/vendor_app_ui.py`
+  uses `ui_package`. README templates in six languages describe update, backup and the folders.
+
 - Changed (NAL-C2): the web interface of exports is now developed in nodestro-app-ui; `src/nodestro_api/webui/` is an
   unchanged copy of its commit `75785a8` (`VENDORED.md`, `manifest.json` with SHA-256 per file), embedded and checked
   by `scripts/vendor_app_ui.py` (`--check` runs in the tests). The interface now speaks the app contract (discovery,
