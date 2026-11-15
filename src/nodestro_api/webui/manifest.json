@@ -41,8 +41,8 @@
     },
     {
       "path": "connection.js",
-      "size": 7518,
-      "sha256": "ed6a8dce1ae40d7fc9cf333e438de59928bbb787fdb248042ac9d04a27162d8c"
+      "size": 7728,
+      "sha256": "16de06fee6cff43e52f10dcb12d0cad4ede12b96280e9e775a21c8c339a850f3"
     },
     {
       "path": "i18n/de.json",

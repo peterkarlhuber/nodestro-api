@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Changed (NAL-C2): the web interface of exports is now developed in nodestro-app-ui; `src/nodestro_api/webui/` is an
-  unchanged copy of its commit `6346343` (`VENDORED.md`, `manifest.json` with SHA-256 per file), embedded and checked
+  unchanged copy of its commit `75785a8` (`VENDORED.md`, `manifest.json` with SHA-256 per file), embedded and checked
   by `scripts/vendor_app_ui.py` (`--check` runs in the tests). The interface now speaks the app contract (discovery,
   version check, the form of `GET /api/published/{slug}`), shows the connection state and "About this app", retries
   a lost connection, and uses relative asset paths (`ui/assets/...`). `tests/webui_output_e2e.js` waits for the new

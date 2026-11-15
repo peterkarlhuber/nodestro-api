@@ -12,12 +12,12 @@
 
   //: The states of the connection and which state may follow which.
   const TRANSITIONS = Object.freeze({
-    disconnected: ["connecting", "disconnected"],
+    disconnected: ["connecting", "disconnected", "auth_required"],
     connecting: ["auth_required", "connected", "degraded", "error", "incompatible", "disconnected"],
     auth_required: ["connecting", "disconnected"],
     connected: ["connecting", "degraded", "auth_required", "disconnected", "incompatible", "error"],
     degraded: ["connecting", "connected", "auth_required", "disconnected", "error"],
-    error: ["connecting", "disconnected"],
+    error: ["connecting", "disconnected", "auth_required"],
     incompatible: ["connecting"],
   });
   const STATES = Object.freeze(Object.keys(TRANSITIONS));
@@ -42,7 +42,8 @@
       with it give the same form. */
   function fieldsFromForm(form) {
     if (!Array.isArray(form)) return null;
-    return form.map((item) => {
+    // A malformed entry is skipped, never a reason for the interface to stop.
+    return form.filter((item) => item && typeof item === "object" && typeof item.name === "string" && item.name).map((item) => {
       const entry = {
         name: String(item.name),
         label: item.label || String(item.name),
