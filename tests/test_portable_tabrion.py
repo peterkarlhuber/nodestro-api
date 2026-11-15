@@ -23,7 +23,7 @@ import pytest
 
 from nodestro_api import exporter, portable_build
 
-COMMIT = "af0458d54467571abfc1afdd44d76e1f4d727c06"
+COMMIT = "5bc690e2de74a92cd44bb4522cf2533cc2c8d14f"
 ARCHIVE = f"https://github.com/peterkarlhuber/tabrion/archive/{COMMIT}.tar.gz"
 
 
