@@ -80,3 +80,22 @@ def test_unsafe_manifest_paths_and_foreign_contracts_are_refused(tmp_path: Path)
 def test_vendoring_needs_a_full_commit_and_a_clean_checkout(tmp_path: Path) -> None:
     with pytest.raises(vendor.VendorError, match="full 40-character SHA"):
         vendor.vendor("abc123", source=tmp_path, folder=tmp_path / "webui")
+
+
+def test_malformed_manifests_symlinks_and_cache_folders_are_refused(copy: Path, tmp_path: Path) -> None:
+    (copy / "__pycache__").mkdir()
+    (copy / "__pycache__" / "x.js").write_text("1", "utf-8")
+    with pytest.raises(vendor.VendorError, match=re.escape("not in the manifest: __pycache__/x.js")):
+        vendor.check(copy)
+    shutil.rmtree(copy / "__pycache__")
+    (copy / "link.js").symlink_to(copy / "app.js")
+    with pytest.raises(vendor.VendorError, match="symbolic links"):
+        vendor.check(copy)
+    for text in (
+        '{"name": "nodestro-app-ui", "version": "1.0.0", "contract": {"min": "x", "max": 1}, "files": []}',
+        '{"name": "nodestro-app-ui", "version": "1.0.0", "contract": {"min": 1, "max": 1}, "files": [null]}',
+        '{"name": "nodestro-app-ui", "contract": {"min": 1, "max": 1}, "files": []}',
+    ):
+        (tmp_path / "manifest.json").write_text(text, "utf-8")
+        with pytest.raises(vendor.VendorError):
+            vendor.check_tree(tmp_path)

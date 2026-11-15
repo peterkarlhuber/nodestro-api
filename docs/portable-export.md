@@ -187,5 +187,9 @@ own SHA-256.
 - **Check:** `python scripts/vendor_app_ui.py --check` (and `tests/test_webui_vendored.py` in CI) fails when a file
   was changed, added or removed, or the manifest is not the recorded one.
 - **Rollback:** embed the previous commit. The api commit pinned in the studio lock thus also fixes the interface.
+- **What the check proves:** completeness and no local edits against the manifest of the same commit. It does not
+  authenticate the source; that rests on the pinned full commit SHA, TLS to GitHub and the review of the `webui/` diff
+  in pull requests here. Symbolic links and files outside the manifest are refused; `/ui/assets/` never serves `.html`
+  (the page has its Content Security Policy only at `/`).
 - The interface discovers the backend with `GET /api/app`, reads the form from `GET /api/published/{slug}` and shows
   the connection state; an incompatible contract gives a clear message instead of a broken page.

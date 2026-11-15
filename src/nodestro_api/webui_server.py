@@ -316,6 +316,9 @@ def _static(path: str) -> Path | None:
     target = (WEBUI_DIR / Path(*parts)).resolve()
     if WEBUI_DIR.resolve() not in target.parents or not target.is_file() or target.suffix not in _TYPES:
         return None
+    if target.suffix == ".html":
+        # The page itself is served only at ``/``, with its Content Security Policy (not as a plain asset).
+        return None
     return target
 
 

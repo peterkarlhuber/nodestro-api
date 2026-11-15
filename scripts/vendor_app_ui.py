@@ -4,6 +4,11 @@ The interface is developed in https://github.com/peterkarlhuber/nodestro-app-ui.
 of its commits from ``src/nodestro_api/webui/``; ``VENDORED.md`` there names the commit, the version and the SHA-256
 of its ``manifest.json``, which lists every file with its own SHA-256.
 
+What the checks prove: the copy is complete and unchanged against the manifest that came with it (no missing, extra
+or edited file). They do not authenticate the source: the manifest comes from the same commit as the files. The trust
+rests on the pinned full commit SHA, TLS to GitHub, and the review of the ``webui/`` diff in this repository's pull
+requests (anyone who may push here could also regenerate manifest and record together).
+
     python scripts/vendor_app_ui.py --commit <sha>              # download that commit, check it, replace webui/
     python scripts/vendor_app_ui.py --commit <sha> --source DIR # the same from a local checkout at that commit
     python scripts/vendor_app_ui.py --check                     # offline: the embedded files match the manifest
@@ -65,24 +70,31 @@ def check_tree(folder: Path) -> dict[str, object]:
         raise VendorError(f"no readable {MANIFEST} in {folder}: {exc}") from None
     if manifest.get("name") != "nodestro-app-ui" or not isinstance(manifest.get("files"), list):
         raise VendorError(f"{MANIFEST} is not the manifest of nodestro-app-ui")
-    contract = manifest.get("contract") or {}
-    if not any(int(contract.get("min", 0)) <= version <= int(contract.get("max", -1)) for version in SERVED_CONTRACTS):
+    contract = manifest.get("contract")
+    if not (
+        isinstance(contract, dict)
+        and isinstance(contract.get("min"), int)
+        and isinstance(contract.get("max"), int)
+        and isinstance(manifest.get("version"), str)
+    ):
+        raise VendorError(f"{MANIFEST} lacks a version or a contract range")
+    if not any(contract["min"] <= version <= contract["max"] for version in SERVED_CONTRACTS):
         raise VendorError(f"the interface speaks contract {contract}, this backend serves {sorted(SERVED_CONTRACTS)}")
     listed = set()
     for item in manifest["files"]:
+        if not isinstance(item, dict):
+            raise VendorError(f"{MANIFEST}: a file entry is not an object")
         path = _safe(str(item.get("path", "")))
         target = folder.joinpath(*path.parts)
-        if not target.is_file():
+        if target.is_symlink() or not target.is_file():
             raise VendorError(f"missing: {path}")
         data = target.read_bytes()
         if _sha256(data) != item.get("sha256") or len(data) != item.get("size"):
             raise VendorError(f"changed: {path} (edit nodestro-app-ui, not the embedded copy)")
         listed.add(path.as_posix())
-    present = {
-        file.relative_to(folder).as_posix()
-        for file in folder.rglob("*")
-        if file.is_file() and "__pycache__" not in file.parts
-    }
+    if any(file.is_symlink() for file in folder.rglob("*")):
+        raise VendorError("symbolic links are not allowed in the interface")
+    present = {file.relative_to(folder).as_posix() for file in folder.rglob("*") if file.is_file()}
     extra = sorted(present - listed - {MANIFEST, RECORD})
     if extra:
         raise VendorError(f"not in the manifest: {', '.join(extra)}")
@@ -137,6 +149,9 @@ def _download(commit: str, into: Path) -> Path:
         raise VendorError("the download is larger than 20 MB")
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
         members = [member for member in archive.getmembers() if member.isfile() and "/src/" in f"/{member.name}"]
+        # The download is limited above; the unpacked files too (a small archive may expand a lot).
+        if sum(member.size for member in members) > _LIMIT:
+            raise VendorError("the interface is larger than 20 MB unpacked")
         for member in members:
             parts = PurePosixPath(member.name).parts
             if "src" not in parts[1:2]:
@@ -161,7 +176,8 @@ def _from_checkout(source: Path, commit: str, into: Path) -> Path:
     ).stdout.strip()
     if dirty:
         raise VendorError(f"{source}/src has uncommitted changes")
-    shutil.copytree(source / "src", into, dirs_exist_ok=True)
+    # symlinks=True copies a link as a link, which check_tree then refuses (never the file it points to).
+    shutil.copytree(source / "src", into, symlinks=True, dirs_exist_ok=True)
     return into
 
 
