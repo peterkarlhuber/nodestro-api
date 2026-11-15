@@ -154,7 +154,9 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     # + nodestro_runtime.draft_tools and .mail (NAL-A4: the draft tools an exported agent may use) and
     # .mail_transport (the connection check that connections.py imports when a check runs).
     expected |= {"nodestro_runtime.draft_tools", "nodestro_runtime.mail", "nodestro_runtime.mail_transport"}
-    assert len(modules) == 73 + with_error_texts and expected | {"nodestro_runtime.local_models"} <= set(modules)
+    # + nodestro_api.pairing (NAL-C4: the interface's pairing endpoints), which reaches portable_ops (folder rights).
+    expected |= {"nodestro_api.pairing", "nodestro_api.portable_ops"}
+    assert len(modules) == 76 + with_error_texts and expected | {"nodestro_runtime.local_models"} <= set(modules)
     assert "nodestro_runtime.local_service" not in modules
     # The audit/usage hook protocol is exported (tool approvals and the usage log import it); the Axentra
     # integration itself is server-only and never part of an export.

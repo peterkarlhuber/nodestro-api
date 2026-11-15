@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Added (NAL-C4, pairing; off unless `NODESTRO_PAIRING=on`, decision E-7): a browser on another computer pairs with a
+  portable package by a one-time code from `pair` (8 Crockford Base32 characters, 10 minutes, one use, 5 attempts,
+  20 failures per hour and address) instead of an API key. Pairing needs TLS (loopback excepted) and creates a device
+  right with fixed app-user scopes (`pairing.py`, `data/devices.json`, hashes only), a session and a rotating device
+  cookie whose reuse after rotation revokes the device; `devices list|revoke` on the backend. `tls_self_signed`
+  serves the network with a self-issued certificate (ECDSA P-256, 397 days, `tls_selfsigned.py`, cryptography in
+  packages where a wheel exists); discovery reports `tls.mode` and the fingerprint. The launcher reaches its own
+  instance over HTTPS when it serves TLS (`stop`, `status` and the ready message work with an own certificate too).
+  Protocol and threat model: `docs/pairing.md`.
 - Added (NAL-C3, platform pre-check and support matrix): `POST /api/publications/{id}/export/libraries` resolves a
   portable package's libraries for the target platform before the build (`uv pip compile --only-binary :all:`,
   remembered per library set and platform); the export check reports it as `portable.libraries` and refuses an

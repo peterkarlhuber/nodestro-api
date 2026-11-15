@@ -17,7 +17,7 @@ Requests are limited like the published API's: per key, and per client address w
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -88,6 +88,9 @@ def build_app_router(core: ServingCore, *, channel: Literal["local", "network"] 
             auth=AuthInfo.model_validate({"methods": methods() if methods is not None else ["api_key"]}),
             tls=TlsInfo(enabled=request.url.scheme == "https"),
         )
+        tls_info: Callable[[], dict[str, Any]] | None = getattr(core.host, "tls_info", None)
+        if tls_info is not None:
+            answer.tls = TlsInfo.model_validate({"enabled": answer.tls.enabled, **tls_info()})
         if identity is not None:
             visible: Callable[..., list[ServedRelease]] | None = getattr(core.host, "visible_releases", None)
             # Naming an app needs the scope that reads its info (GET /api/published/{slug}); a run-only key gets none.

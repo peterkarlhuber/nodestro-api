@@ -35,6 +35,8 @@ tutte le esecuzioni, approvazioni, file e impostazioni.
 | `rollback` | Torna al programma di prima dell'ultimo aggiornamento. |
 | `adopt <vecchia cartella>` | Riprende impostazioni e dati di un pacchetto precedente di questa applicazione. |
 | `ui install <file.tgz> --sha256 <hash>` | Installa un'interfaccia web più recente (`ui reset` torna indietro, `ui status`). |
+| `pair` | Crea un codice di abbinamento per un browser su un altro computer (solo con `NODESTRO_PAIRING=on`, vedi Impostazioni). |
+| `devices list` | Mostra i browser abbinati (`devices revoke <id>` o `--all` revoca l’accesso). |
 
 ## Provider di IA e chiavi
 
@@ -80,6 +82,15 @@ Per impostazione predefinita l'applicazione risponde **solo a questo computer** 
 `host = "0.0.0.0"` **e** HTTPS (`tls_cert`/`tls_key`, oppure `behind_proxy = true` dietro un reverse proxy con
 HTTPS); senza HTTPS si rifiuta di avviarsi in quel modo. Le altre persone accedono con una chiave API; nessuno può accedere
 senza.
+
+**Da un altro computer (abbinamento, anteprima).** Senza certificato proprio e senza proxy, l’applicazione può
+usare un certificato autoemesso con `tls_self_signed = true`. Il browser lo segnala: confronta l’impronta che la console
+mostra all’avvio con quella nella finestra del certificato del browser prima di continuare. L’interfaccia indica questa
+connessione come di fiducia limitata finché viene usata. Con l’abbinamento attivo (variabile d’ambiente
+`NODESTRO_PAIRING=on`, disattivato per impostazione predefinita fino alla verifica di sicurezza indipendente),
+`pair` crea un codice valido 10 minuti; inseriscilo nel browser dell’altro computer, senza chiave API.
+`devices list` mostra i browser abbinati, `devices revoke <id>` (o `--all`) revoca subito l’accesso. Un
+certificato proprio o un proxy restano la via consigliata.
 
 ## Interfaccia di programmazione (API)
 

@@ -88,6 +88,20 @@
       "properties": {
         "enabled": {
           "type": "boolean"
+        },
+        "mode": {
+          "enum": [
+            "certificate",
+            "proxy",
+            "self_signed",
+            "none"
+          ],
+          "description": "how a portable package serves TLS (NAL-C4); absent where the backend does not say"
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^([0-9A-F]{2}:){31}[0-9A-F]{2}$",
+          "description": "SHA-256 of a self-issued certificate, only with mode self_signed"
         }
       }
     },

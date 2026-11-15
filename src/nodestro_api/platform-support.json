@@ -5,8 +5,8 @@
     "linux-x86_64": {"ci": "built_and_started", "local_models": "checked", "human": false, "limits": []},
     "linux-arm64": {"ci": "built_and_started", "local_models": "unchecked", "human": false, "limits": []},
     "macos-arm64": {"ci": "built_and_started", "local_models": "unchecked", "human": false, "limits": ["unsigned"]},
-    "macos-x86_64": {"ci": "built_and_started", "local_models": "unchecked", "human": false, "limits": ["unsigned", "gemini"]},
+    "macos-x86_64": {"ci": "built_and_started", "local_models": "unchecked", "human": false, "limits": ["unsigned", "gemini", "self_signed_tls"]},
     "windows-x86_64": {"ci": "built_and_started", "local_models": "unchecked", "human": false, "limits": ["unsigned"]},
-    "windows-arm64": {"ci": "built_and_started", "local_models": "unchecked", "human": false, "limits": ["unsigned", "gemini", "vector_search"]}
+    "windows-arm64": {"ci": "built_and_started", "local_models": "unchecked", "human": false, "limits": ["unsigned", "gemini", "vector_search", "self_signed_tls"]}
   }
 }

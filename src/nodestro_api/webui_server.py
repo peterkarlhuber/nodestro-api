@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 import hashlib
 import hmac
 import json
+import logging
 import mimetypes
 from pathlib import Path
 import secrets
@@ -48,7 +49,10 @@ from .serving import ApiError, KeyAuthenticatedRoute, KeyIdentity, parse_token, 
 
 if TYPE_CHECKING:
     from .output_folder import OutputFolder
+    from .pairing import Pairing
     from .standalone import StandaloneHost
+
+logger = logging.getLogger(__name__)
 
 #: The interface embedded in this package (``scripts/vendor_app_ui.py``).
 WEBUI_DIR = Path(__file__).resolve().parent / "webui"
@@ -101,6 +105,8 @@ _SETUP_BYTES = 16384
 class UiSession:
     identity: KeyIdentity
     operator: bool
+    #: The paired device the session belongs to (NAL-C4): it ends as soon as the device is revoked or expires.
+    device_id: str | None = None
     created: float = field(default_factory=time.monotonic)
     seen: float = field(default_factory=time.monotonic)
 
@@ -117,15 +123,25 @@ class UiSessions:
     def _key(token: str) -> str:
         return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
-    def create(self, identity: KeyIdentity, *, operator: bool) -> str:
+    def create(self, identity: KeyIdentity, *, operator: bool, device_id: str | None = None) -> str:
         token = secrets.token_urlsafe(32)
         with self._lock:
             self._prune()
             if len(self._sessions) >= MAX_SESSIONS:
                 oldest = min(self._sessions, key=lambda key: self._sessions[key].seen)
                 del self._sessions[oldest]
-            self._sessions[self._key(token)] = UiSession(identity=identity, operator=operator)
+            self._sessions[self._key(token)] = UiSession(identity=identity, operator=operator, device_id=device_id)
         return token
+
+    def drop_device(self, device_id: str | None) -> None:
+        """End every session of one paired device (or of every device: ``None``)."""
+        with self._lock:
+            for key in [
+                key
+                for key, item in self._sessions.items()
+                if item.device_id is not None and (device_id is None or item.device_id == device_id)
+            ]:
+                del self._sessions[key]
 
     def get(self, token: str | None) -> UiSession | None:
         if not token:
@@ -181,6 +197,10 @@ class UiOptions(BaseModel):
     local_models: dict[str, Any] = Field(default_factory=dict)
     #: The interactive API reference (``/docs``) is served to this computer.
     api_docs: bool = False
+    #: How the application serves TLS (NAL-C4): ``certificate`` (own), ``proxy``, ``self_signed`` or ``none``.
+    tls_mode: str = "none"
+    #: The SHA-256 fingerprint of a self-issued certificate (``tls_mode`` ``self_signed``), for the person to compare.
+    tls_fingerprint: str | None = None
 
 
 class WebUi:
@@ -197,6 +217,7 @@ class WebUi:
         remove_provider: Callable[[str], dict[str, Any]] | None = None,
         auth_failed: Callable[[str], None] | None = None,
         output: OutputFolder | None = None,
+        pairing: Pairing | None = None,
     ) -> None:
         """``output``: the operator may choose the result folder on the settings page (a portable package)."""
         self.host = host
@@ -208,6 +229,8 @@ class WebUi:
         self.remove_provider = remove_provider
         self.auth_failed = auth_failed
         self.output = output
+        #: Pairing by code (NAL-C4); ``None`` unless the launcher switched it on (``NODESTRO_PAIRING``).
+        self.pairing = pairing
 
     # ---- identities -------------------------------------------------------------------------------------------
 
@@ -220,7 +243,17 @@ class WebUi:
         )
 
     def session_of(self, request: Request) -> UiSession | None:
-        return self.sessions.get(request.cookies.get(COOKIE))
+        token = request.cookies.get(COOKIE)
+        session = self.sessions.get(token)
+        # A revoked or expired device loses its access at once, not when its session ends.
+        if (
+            session is not None
+            and session.device_id is not None
+            and (self.pairing is None or self.pairing.device(session.device_id) is None)
+        ):
+            self.sessions.drop(token)
+            return None
+        return session
 
     def identity(self, request: Request) -> KeyIdentity | None:
         """The identity of a request's session cookie, checked against cross-site requests (``None``: no session)."""
@@ -266,7 +299,14 @@ class WebUi:
             "languages": list(LANGUAGES),
             "session": None
             if session is None
-            else {"scopes": session.identity.scopes, "operator": session.operator, "name": session.identity.name},
+            else {
+                "scopes": session.identity.scopes,
+                "operator": session.operator,
+                "name": session.identity.name,
+                "device": session.device_id is not None,
+            },
+            "pairing": self.pairing is not None,
+            "tls": {"mode": self.options.tls_mode, "fingerprint": self.options.tls_fingerprint},
         }
 
     def config(self, session: UiSession) -> dict[str, Any]:
@@ -372,6 +412,12 @@ WEB_UI_ROUTES: dict[tuple[str, str], str] = {
     ("POST", "/ui/api/setup/output/open"): "operator session (WebUi.require(operator=True))",
     ("POST", "/ui/control/stop"): "the launcher's control token (UiOptions.control_token)",
     ("POST", "/ui/control/launch"): "the launcher's control token (UiOptions.control_token)",
+    ("POST", "/ui/api/pair"): "redeems a one-time pairing code (NAL-C4; TLS or loopback, attempts limited)",
+    ("POST", "/ui/api/device/session"): "renews a session from the rotating device cookie (NAL-C4)",
+    ("DELETE", "/ui/api/device"): "a paired device's session removes its own device (NAL-C4)",
+    ("POST", "/ui/control/pair"): "the launcher's control token (UiOptions.control_token)",
+    ("GET", "/ui/control/devices"): "the launcher's control token (UiOptions.control_token)",
+    ("POST", "/ui/control/devices/revoke"): "the launcher's control token (UiOptions.control_token)",
 }
 
 
@@ -555,7 +601,156 @@ def build_router(ui: WebUi) -> APIRouter:
         ui.sessions.add_launch_token(token)
         return json_answer({"token": token})
 
+    _pairing_routes(router, ui, json_answer, control)
     return router
+
+
+def _secure(request: Request) -> bool:
+    """The request reached the application over TLS (its own or a proxy's), or comes from this computer."""
+    client = request.client.host if request.client else ""
+    return request.url.scheme == "https" or client in ("127.0.0.1", "::1")
+
+
+def _pairing_routes(
+    router: APIRouter, ui: WebUi, json_answer: Callable[..., JSONResponse], control: Callable[[Request], None]
+) -> None:
+    """Pairing by code and the device rights it creates (NAL-C4, ``docs/pairing.md``)."""
+    from . import pairing as pairing_module
+
+    def pairing_on() -> Pairing:
+        if ui.pairing is None:
+            raise ApiError(404, "pairing.disabled", "Pairing is not switched on for this application")
+        return ui.pairing
+
+    def device_identity(device: pairing_module.Device) -> KeyIdentity:
+        # An app user of this package's app with the code's scopes: never the operator.
+        return KeyIdentity(
+            id=device.id, name=device.name, scopes=device.scopes, publications=[ui.host.served.publication_id]
+        )
+
+    def signed_in(device: pairing_module.Device, secret: str) -> JSONResponse:
+        answer = json_answer(
+            {"device": {"id": device.id, "name": device.name, "scopes": device.scopes}, "operator": False}
+        )
+        ui._cookie(answer, ui.sessions.create(device_identity(device), operator=False, device_id=device.id))
+        answer.set_cookie(
+            pairing_module.DEVICE_COOKIE,
+            f"{device.id}.{secret}",
+            httponly=True,
+            samesite="strict",
+            secure=ui.options.secure_cookies,
+            path=pairing_module.DEVICE_PATH,
+            max_age=pairing_module.DEVICE_DAYS * 86400,
+        )
+        return answer
+
+    def refused(exc: pairing_module.PairingError) -> ApiError:
+        return ApiError(exc.status, exc.key, str(exc))
+
+    @router.post("/ui/api/pair")
+    async def pair(request: Request) -> JSONResponse:
+        found = pairing_on()
+        check_same_origin(request)
+        if not _secure(request):
+            raise ApiError(403, "pairing.tls_required", "Pairing needs an HTTPS connection")
+        try:
+            body = json.loads(await read_body(request, _SIGN_IN_BYTES) or b"{}")
+        except ValueError:
+            body = {}
+        if not isinstance(body, dict):
+            body = {}
+        client = request.client.host if request.client else "unknown"
+        try:
+            device, secret = found.redeem(
+                str(body.get("code") or ""),
+                address=client,
+                name=str(body.get("name") or ""),
+                agent=request.headers.get("user-agent", ""),
+            )
+        except pairing_module.PairingError as exc:
+            if ui.auth_failed is not None and exc.key == "pairing.code_invalid":
+                ui.auth_failed(client)
+            raise refused(exc) from None
+        logger.info("Paired device %s", pairing_module.short(device.id))
+        return signed_in(device, secret)
+
+    @router.post("/ui/api/device/session")
+    def renew(request: Request) -> JSONResponse:
+        found = pairing_on()
+        check_same_origin(request)
+        if not _secure(request):
+            raise ApiError(403, "pairing.tls_required", "Pairing needs an HTTPS connection")
+        try:
+            device, secret = found.renew(request.cookies.get(pairing_module.DEVICE_COOKIE, ""))
+        except pairing_module.PairingError as exc:
+            answer = json_answer({"error": {"status": exc.status, "code": exc.key, "message": str(exc)}}, exc.status)
+            answer.delete_cookie(pairing_module.DEVICE_COOKIE, path=pairing_module.DEVICE_PATH)
+            return answer
+        ui.sessions.drop(request.cookies.get(COOKIE))
+        return signed_in(device, secret)
+
+    @router.delete("/ui/api/device")
+    def forget(request: Request) -> JSONResponse:
+        found = pairing_on()
+        session = ui.require(request)
+        if session.device_id is None:
+            raise ApiError(403, "pairing.not_a_device", "This browser is not signed in as a paired device")
+        found.revoke(session.device_id)
+        ui.sessions.drop_device(session.device_id)
+        answer = json_answer({"removed": True})
+        answer.delete_cookie(COOKIE, path="/")
+        answer.delete_cookie(pairing_module.DEVICE_COOKIE, path=pairing_module.DEVICE_PATH)
+        return answer
+
+    @router.post("/ui/control/pair")
+    async def new_code(request: Request) -> JSONResponse:
+        control(request)
+        found = pairing_on()
+        try:
+            body = json.loads(await read_body(request, _SIGN_IN_BYTES) or b"{}")
+        except ValueError:
+            body = {}
+        if not isinstance(body, dict):
+            body = {}
+        scopes = body.get("scopes")
+        try:
+            code = found.create_code(
+                name=str(body.get("name") or ""),
+                scopes=[str(item) for item in scopes] if isinstance(scopes, list) else None,
+                minutes=int(body.get("minutes") or pairing_module.CODE_MINUTES),
+            )
+        except (pairing_module.PairingError, ValueError, TypeError) as exc:
+            if isinstance(exc, pairing_module.PairingError):
+                raise refused(exc) from None
+            raise ApiError(400, "pairing.scopes_invalid", "Invalid pairing options") from None
+        return json_answer(
+            {
+                **code.model_dump(mode="json"),
+                "display": pairing_module.display(code.code),
+                "tls": {"mode": ui.options.tls_mode, "fingerprint": ui.options.tls_fingerprint},
+            }
+        )
+
+    @router.get("/ui/control/devices")
+    def devices(request: Request) -> JSONResponse:
+        control(request)
+        return json_answer({"devices": [item.public() for item in pairing_on().devices()]})
+
+    @router.post("/ui/control/devices/revoke")
+    async def revoke(request: Request) -> JSONResponse:
+        control(request)
+        found = pairing_on()
+        try:
+            body = json.loads(await read_body(request, _SIGN_IN_BYTES) or b"{}")
+        except ValueError:
+            body = {}
+        target = str(body.get("id") or "") if isinstance(body, dict) else ""
+        every = isinstance(body, dict) and body.get("all") is True
+        if not target and not every:
+            raise ApiError(400, "pairing.device_required", "Name a device or all")
+        count = found.revoke(None if every else target)
+        ui.sessions.drop_device(None if every else target)
+        return json_answer({"revoked": count})
 
 
 def guess_type(name: str) -> str:

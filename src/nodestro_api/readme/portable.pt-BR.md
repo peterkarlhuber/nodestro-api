@@ -35,6 +35,8 @@ execuções, aprovações, arquivos e configurações são mantidos.
 | `rollback` | Volta ao programa de antes da última atualização. |
 | `adopt <pasta antiga>` | Transfere configurações e dados de um pacote mais antigo deste aplicativo. |
 | `ui install <arquivo.tgz> --sha256 <hash>` | Instala uma interface web mais nova (`ui reset` volta atrás, `ui status`). |
+| `pair` | Cria um código de pareamento para um navegador em outro computador (só com `NODESTRO_PAIRING=on`, veja Configurações). |
+| `devices list` | Mostra os navegadores pareados (`devices revoke <id>` ou `--all` retira o acesso). |
 
 ## Provedores de IA e chaves
 
@@ -79,6 +81,15 @@ Por padrão, a aplicação responde **somente a este computador** (`127.0.0.1`).
 `host = "0.0.0.0"` **e** HTTPS (`tls_cert`/`tls_key`, ou `behind_proxy = true` atrás de um proxy reverso com
 HTTPS); sem HTTPS, ela se recusa a iniciar dessa forma. Outras pessoas entram com uma chave de API; ninguém consegue entrar
 sem uma.
+
+**De outro computador (pareamento, prévia).** Sem certificado próprio e sem proxy, o aplicativo pode usar um
+certificado autoemitido com `tls_self_signed = true`. O navegador avisa sobre isso: compare a impressão digital que o
+console mostra na inicialização com a do diálogo de certificado do navegador antes de continuar. A interface marca essa
+conexão como de confiança restrita enquanto ela for usada. Com o pareamento ativado (variável de ambiente
+`NODESTRO_PAIRING=on`, desativado por padrão até a revisão de segurança independente), `pair` cria um código
+válido por 10 minutos; digite-o no navegador do outro computador, sem chave de API. `devices list` mostra os
+navegadores pareados e `devices revoke <id>` (ou `--all`) retira o acesso na hora. Um certificado próprio ou um
+proxy continuam sendo o caminho recomendado.
 
 ## Interface de programação (API)
 

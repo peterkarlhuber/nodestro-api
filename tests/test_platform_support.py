@@ -152,7 +152,7 @@ def test_the_check_names_the_support_of_every_platform(
 ) -> None:
     studio, publication = published()
     platforms = {item["id"]: item for item in _check(studio, publication)["portable"]["platforms"]}
-    assert platforms["windows-arm64"]["support"]["limits"] == ["unsigned", "gemini", "vector_search"]
+    assert platforms["windows-arm64"]["support"]["limits"] == ["unsigned", "gemini", "vector_search", "self_signed_tls"]
     assert platforms["linux-x86_64"]["support"] == {
         "ci": "built_and_started",
         "local_models": "checked",

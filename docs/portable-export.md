@@ -143,6 +143,12 @@ published no ready-built package for macOS Intel or Windows ARM64 since 46.0.4, 
 `export.libraries_unavailable` for those two platforms (the Windows x64 package runs on Windows 11 on ARM in its x64
 emulation).
 
+### Pairing from another computer (NAL-C4)
+
+Off unless `NODESTRO_PAIRING=on` until the independent review D1. `server.tls_self_signed` serves the network with a
+self-issued certificate when neither `tls_cert`/`tls_key` nor `behind_proxy` is set; `pair` creates a one-time code,
+`devices list|revoke` manages the paired browsers. Protocol, threat model and residual risks: `docs/pairing.md`.
+
 ### Support matrix and platform pre-check (NAL-C3)
 
 `src/nodestro_api/platform-support.json` holds the table above as data, one row per platform: `ci`
@@ -155,6 +161,7 @@ a bundled local model was checked), `human` (whether a person checked a package 
 | `unsigned` | Packages are not code-signed: macOS Gatekeeper or Windows SmartScreen asks once. |
 | `gemini` | No package of a release that uses Gemini (Google's SDK needs `cryptography`, which has no wheel there). |
 | `vector_search` | No `sqlite-vec` wheel: semantic knowledge search falls back to full text. |
+| `self_signed_tls` | No `cryptography` wheel: no self-issued certificate for pairing (NAL-C4); an own certificate or a TLS proxy serves the network. |
 
 `tests/test_platform_support.py` keeps the file in step with the platforms and the smoke jobs of `portable.yml`: a new
 smoke job or platform fails the test until its row exists. The export check lists the row with each platform
