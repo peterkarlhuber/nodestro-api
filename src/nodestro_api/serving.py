@@ -969,6 +969,19 @@ class ServingCore:
                 "Send an API key: Authorization: Bearer <key>",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+        if token.startswith("nat_"):
+            # An access token of the interface on another origin (NAL-C5): only a host with that profile knows it.
+            access_identity = getattr(self.host, "access_identity", None)
+            found = access_identity(token, request) if access_identity is not None else None
+            if found is None:
+                self.auth_failed(client)
+                raise ApiError(
+                    401,
+                    "auth.invalid",
+                    "The access token is invalid or expired",
+                    headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+                )
+            return found  # type: ignore[no-any-return]
         parsed = parse_token(token)
         identity = self.host.verify(*parsed) if parsed is not None else None
         if identity is None:

@@ -126,6 +126,9 @@ class Device(BaseModel):
     secret_hash: str = ""
     #: Hashes of secrets that rotation replaced: presenting one again revokes the device (stolen cookie).
     replaced: list[str] = Field(default_factory=list)
+    #: The origin of the interface that paired from another origin (NAL-C5, ``docs/cross-origin.md``); ``None``: the
+    #: backend's own interface. A device renews only where it was paired.
+    origin: str | None = None
 
     def active(self, moment: datetime) -> bool:
         return self.revoked_at is None and self.expires_at > moment
@@ -179,8 +182,10 @@ class Pairing:
     def _fail(self, address: str) -> None:
         self._failures.setdefault(address, deque()).append(self._clock())
 
-    def redeem(self, code: str, *, address: str, name: str = "", agent: str = "") -> tuple[Device, str]:
-        """Consume ``code`` and create a device; returns it and its first secret."""
+    def redeem(
+        self, code: str, *, address: str, name: str = "", agent: str = "", origin: str | None = None
+    ) -> tuple[Device, str]:
+        """Consume ``code`` and create a device (paired from ``origin``, NAL-C5); returns it and its first secret."""
         typed = normalize(code)
         with self._lock:
             self._prune()
@@ -211,6 +216,7 @@ class Pairing:
             expires_at=moment + timedelta(days=DEVICE_DAYS),
             agent=clean(agent, 120),
             secret_hash=_hash(secret),
+            origin=origin,
         )
         with self._lock:
             devices = self._load()
@@ -265,8 +271,9 @@ class Pairing:
         moment = _now()
         return next((item for item in self.devices() if item.id == device_id and item.active(moment)), None)
 
-    def renew(self, cookie: str) -> tuple[Device, str]:
+    def renew(self, cookie: str, *, origin: str | None = None) -> tuple[Device, str]:
         """A session from the device cookie ``<id>.<secret>``: the secret rotates; an old secret revokes the device.
+        ``origin``: where the renewal comes from (``None``: the backend's own interface); a device renews only there.
 
         There is no grace window for a replaced secret (it would hand a thief the new one): tabs of one browser renew
         one after the other under a Web Lock and look for the session the first one got (nodestro-app-ui)."""
@@ -285,7 +292,7 @@ class Pairing:
                 device.revoked_at = moment
                 self._save(devices)
                 raise refused
-            if not hmac.compare_digest(device.secret_hash, digest):
+            if not hmac.compare_digest(device.secret_hash, digest) or device.origin != origin:
                 raise refused
             fresh = secrets.token_urlsafe(32)
             device.replaced = [*device.replaced, device.secret_hash][-20:]
@@ -303,6 +310,20 @@ class Pairing:
             count = 0
             for item in devices:
                 if item.revoked_at is None and (device_id is None or item.id == device_id):
+                    item.revoked_at = moment
+                    count += 1
+            if count:
+                self._save(devices)
+        return count
+
+    def revoke_origin(self, origin: str) -> int:
+        """Revoke every device paired from ``origin`` (the operator removed it from the allowed origins)."""
+        with self._lock:
+            devices = self._load()
+            moment = _now()
+            count = 0
+            for item in devices:
+                if item.revoked_at is None and item.origin == origin:
                     item.revoked_at = moment
                     count += 1
             if count:

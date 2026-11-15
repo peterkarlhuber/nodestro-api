@@ -2834,7 +2834,8 @@
                 "api_key",
                 "session",
                 "launch_link",
-                "pairing"
+                "pairing",
+                "token"
               ],
               "type": "string"
             },

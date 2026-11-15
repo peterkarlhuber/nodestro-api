@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Added (NAL-C5, the standard interface on another origin; off unless `NODESTRO_CROSS_ORIGIN=on` together with
+  `NODESTRO_PAIRING=on`, `docs/cross-origin.md`): `start.sh origins list|add|remove` keeps the allowed origins
+  (`data/settings/allowed-origins.json`, exact https origins, http only for loopback; removing one revokes its
+  devices). From an allowed origin, `POST /api/app/token` redeems a pairing code for a 15-minute access token (`nat_`,
+  memory only, bound to device and origin) and a refresh cookie per backend (`SameSite=None; Secure; Partitioned`,
+  path `/api/app/token`, rotation with reuse detection); `POST /api/app/token/refresh` renews, `DELETE
+  /api/app/token` revokes. `CorsMiddleware` answers only allowed origins on `/api/app`, the token paths and the
+  package's published app (credentials only on the token paths; API keys and cookies refused or dropped from another
+  origin). Discovery lists `token` in `auth.methods`; `pair --ui ADDRESS` prints a link for the interface. The embedded
+  interface's Content Security Policy gains Trusted Types.
 - Added (NAL-C4, pairing; off unless `NODESTRO_PAIRING=on`, decision E-7): a browser on another computer pairs with a
   portable package by a one-time code from `pair` (8 Crockford Base32 characters, 10 minutes, one use, 5 attempts,
   20 failures per hour and address) instead of an API key. Pairing needs TLS (loopback excepted) and creates a device

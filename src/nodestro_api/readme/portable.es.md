@@ -37,6 +37,7 @@ todas las ejecuciones, aprobaciones, archivos y ajustes.
 | `ui install <archivo.tgz> --sha256 <hash>` | Instala una interfaz web más reciente (`ui reset` vuelve atrás, `ui status`). |
 | `pair` | Crea un código de emparejamiento para un navegador en otro ordenador (solo con `NODESTRO_PAIRING=on`, ver Configuración). |
 | `devices list` | Muestra los navegadores emparejados (`devices revoke <id>` o `--all` retira el acceso). |
+| `origins add <https://…>` | Permite emparejar a la interfaz web en otra dirección (`origins list`, `origins remove`; solo con `NODESTRO_CROSS_ORIGIN=on`). |
 
 ## Proveedores de IA y claves
 
@@ -91,6 +92,13 @@ conexión como de confianza limitada mientras se use. Con el emparejamiento acti
 código válido 10 minutos; introdúcelo en el navegador del otro ordenador, sin clave de API. `devices list`
 muestra los navegadores emparejados y `devices revoke <id>` (o `--all`) les retira el acceso al instante. Un
 certificado propio o un proxy siguen siendo la vía recomendada.
+
+**La interfaz en otra dirección (vista previa).** La misma interfaz web también puede funcionar separada de la
+aplicación, por ejemplo en un servidor web propio, y usar varias aplicaciones una tras otra. Cada aplicación permite esa
+dirección con `origins add https://apps.example` y la variable de entorno `NODESTRO_CROSS_ORIGIN=on` junto con
+`NODESTRO_PAIRING=on` (ambas desactivadas por defecto hasta la revisión de seguridad independiente). `pair --ui
+https://apps.example/` muestra un enlace para ello; la interfaz no guarda ninguna clave, solo un token de acceso de
+corta duración. `origins remove` retira el acceso de todos los navegadores emparejados desde esa dirección.
 
 ## Interfaz de programación (API)
 

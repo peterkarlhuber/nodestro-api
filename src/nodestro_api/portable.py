@@ -50,6 +50,7 @@ import threading
 import time
 import tomllib
 from typing import TYPE_CHECKING, Any
+from urllib.parse import quote
 import webbrowser
 
 from . import portable_ops as ops
@@ -606,6 +607,8 @@ def _serve(
 ) -> int:
     import uvicorn
 
+    from .cross_origin import CorsMiddleware, CrossOrigin
+    from .cross_origin import enabled as cross_origin_enabled
     from .output_folder import OutputFolder, file_manager
     from .pairing import Pairing
     from .pairing import enabled as pairing_enabled
@@ -644,6 +647,7 @@ def _serve(
             protected=[log_dir],
             opener=file_manager() if local_only else None,
         )
+        pairing = Pairing(settings.data_dir) if pairing_enabled() else None
         ui = WebUi(
             host_object,
             options,
@@ -653,12 +657,24 @@ def _serve(
             remove_provider=secrets_store.remove,
             auth_failed=core.auth_failed,
             output=output,
-            pairing=Pairing(settings.data_dir) if pairing_enabled() else None,
+            pairing=pairing,
+            # NAL-C5: the interface from allowed other origins, only with pairing (docs/cross-origin.md).
+            cross_origin=CrossOrigin(settings.data_dir, pairing)
+            if pairing is not None and cross_origin_enabled()
+            else None,
         )
         ui.sessions.add_launch_token(launch)
         return ui
 
     app = create_app(settings.program, settings=standalone, web_ui=make_ui, home=settings.root)
+    served_ui = getattr(getattr(app.state, "host", None), "web_ui", None)
+    if served_ui is not None and getattr(served_ui, "cross_origin", None) is not None:
+        # Inside the host check: a request for an unknown host name is refused before CORS answers it.
+        app.add_middleware(
+            CorsMiddleware,
+            cross_origin=served_ui.cross_origin,
+            app_prefix=f"/api/published/{app.state.host.served.slug}",
+        )
     allowed = {*LOOPBACK, *(str(item).lower() for item in settings.get("server", "allowed_hosts") or [])}
     if host not in LOOPBACK:
         allowed.add(socket.gethostname().lower())
@@ -935,6 +951,23 @@ def ui_command(args: argparse.Namespace, settings: Settings) -> int:
 def pair_command(args: argparse.Namespace, settings: Settings) -> int:
     """A one-time pairing code for a browser on another computer (NAL-C4, ``docs/pairing.md``)."""
     console = Console(settings.language)
+    address = ""
+    if args.ui:
+        # The interface on another origin (NAL-C5): its link names this backend, the code stays in the fragment.
+        # Checked before a code is created: a code never goes into a link to an address that is not an interface.
+        from urllib.parse import urlsplit
+
+        from . import cross_origin
+
+        address = args.ui.split("#")[0].split("?")[0]
+        parts = urlsplit(address)
+        try:
+            interface = cross_origin.normalize_origin(f"{parts.scheme}://{parts.netloc}")
+        except ValueError:
+            console.say("origins_invalid", log=False, reason=args.ui)
+            return 2
+        if not cross_origin.AllowedOrigins(settings.data_dir).allowed(interface) or not cross_origin.enabled():
+            console.say("pair_ui_not_allowed", log=False, origin=interface)
     state = _read_state(settings.data_dir) or {}
     if not state or not _responding(int(state.get("port", 0))):
         console.say("not_running")
@@ -947,7 +980,10 @@ def pair_command(args: argparse.Namespace, settings: Settings) -> int:
     url = str(state.get("url") or "")
     tls = answer.get("tls") or {}
     fingerprint = str(tls.get("fingerprint") or "")
-    link = f"{url}/?pair#code={answer['code']}" + (f"&fp={fingerprint.replace(':', '')}" if fingerprint else "")
+    tail = f"code={answer['code']}" + (f"&fp={fingerprint.replace(':', '')}" if fingerprint else "")
+    link = f"{url}/?pair#{tail}"
+    if args.ui:
+        link = f"{address}?pair#backend={quote(url, safe='')}&{tail}"
     console.say("pair_code", log=False, code=answer["display"], minutes=args.ttl, scopes=", ".join(answer["scopes"]))
     console.say("pair_link", log=False, url=link)
     if fingerprint:
@@ -985,6 +1021,8 @@ def devices_command(args: argparse.Namespace, settings: Settings) -> int:
                 last_seen=str(item.get("last_seen", ""))[:16].replace("T", " "),
                 state="revoked" if item.get("revoked_at") else "active",
             )
+            if item.get("origin"):
+                console.say("devices_origin", log=False, origin=item["origin"])
         return 0
     every = args.id == "--all" or args.all
     if not every and not args.id:
@@ -999,6 +1037,52 @@ def devices_command(args: argparse.Namespace, settings: Settings) -> int:
         console.say("devices_failed")
         return 1
     console.say("devices_revoked", count=count)
+    return 0
+
+
+def origins_command(args: argparse.Namespace, settings: Settings) -> int:
+    """The origins whose interface may use this application (NAL-C5, ``docs/cross-origin.md``): list, add, remove.
+
+    The running application reads the list again when it changes; removing an origin revokes its devices."""
+    from . import cross_origin, pairing
+
+    console = Console(settings.language)
+    allowed = cross_origin.AllowedOrigins(settings.data_dir)
+    if args.action == "list":
+        found = allowed.list()
+        if not found:
+            console.say("origins_none")
+        for item in found:
+            console.say("origins_item", log=False, origin=item)
+        if not cross_origin.enabled():
+            console.say("origins_switch_off", log=False)
+        return 0
+    if args.action == "add":
+        try:
+            chosen = allowed.add(args.origin)
+        except ValueError as exc:
+            console.say("origins_invalid", log=False, reason=str(exc))
+            return 2
+        console.say("origins_added", origin=chosen)
+        if not cross_origin.enabled():
+            console.say("origins_switch_off", log=False)
+        return 0
+    removed = allowed.remove(args.origin)
+    if removed is None:
+        console.say("origins_not_found", log=False, origin=args.origin)
+        return 1
+    state = _read_state(settings.data_dir) or {}
+    answer = None
+    if state and _responding(int(state.get("port", 0))):
+        answer = _control(state, "/ui/control/devices/revoke", body={"origin": removed})
+    # Not running, or the running application could not do it (pairing off there, no answer): change the file, so a
+    # later "origins add" never brings the devices of this origin back.
+    count = (
+        int(answer.get("revoked", 0))
+        if answer is not None
+        else pairing.Pairing(settings.data_dir).revoke_origin(removed)
+    )
+    console.say("origins_removed", origin=removed, count=count)
     return 0
 
 
@@ -1265,12 +1349,18 @@ def parser() -> argparse.ArgumentParser:
     pair.add_argument("--name", default="", help="the device's name (the browser may give another one)")
     pair.add_argument("--scopes", default="run,read", help="run, read and approve, separated by commas")
     pair.add_argument("--ttl", type=int, default=10, help="minutes the code is valid (1 to 10)")
+    pair.add_argument("--ui", default="", help="the address of the interface on another origin (NAL-C5)")
     device = commands.add_parser("devices", help="paired browsers: list, revoke")
     device_commands = device.add_subparsers(dest="action", required=True)
     device_commands.add_parser("list")
     remove = device_commands.add_parser("revoke")
     remove.add_argument("id", nargs="?", default="")
     remove.add_argument("--all", action="store_true", help="revoke every paired browser")
+    origin = commands.add_parser("origins", help="origins whose interface may use this application (NAL-C5)")
+    origin_commands = origin.add_subparsers(dest="action", required=True)
+    origin_commands.add_parser("list")
+    for action in ("add", "remove"):
+        origin_commands.add_parser(action).add_argument("origin", help="https://HOST[:PORT]")
     return found
 
 
@@ -1302,6 +1392,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "ui": lambda: ui_command(args, settings),
         "pair": lambda: pair_command(args, settings),
         "devices": lambda: devices_command(args, settings),
+        "origins": lambda: origins_command(args, settings),
     }
     if command in commands:
         _setup_logging(settings)

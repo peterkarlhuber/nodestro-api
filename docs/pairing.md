@@ -125,7 +125,10 @@ protects against that.
 
 Residual risks: a person who accepts a self-signed certificate without comparing the fingerprint can be attacked by
 someone in the same network; anyone with access to the package folder as the same user can read `devices.json` hashes (not the
-secrets) and the TLS key. Pairing is off by default and stays so until D1.
+secrets) and the TLS key. Cookies do not tell ports apart: two portable packages on one computer share the
+names of the session and device cookies in a browser, so pairing the second one replaces the first one's device
+cookie there (nothing is revoked; the first one asks for a new code). The interface on another origin (NAL-C5) names
+its refresh cookie per backend instead. Pairing is off by default and stays so until D1.
 
 ## Desktop network listener
 

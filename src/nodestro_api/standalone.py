@@ -451,7 +451,24 @@ class StandaloneHost:
             methods.append("launch_link")
         if getattr(ui, "pairing", None) is not None:
             methods.append("pairing")
+        if getattr(ui, "cross_origin", None) is not None:
+            methods.append("token")
         return methods
+
+    def access_identity(self, token: str, request: Request) -> KeyIdentity | None:
+        """The device identity of an access token of the interface on another origin (NAL-C5), else ``None``."""
+        ui = self.web_ui
+        found = getattr(ui, "cross_origin", None) if ui is not None else None
+        if found is None:
+            return None
+        from .cross_origin import request_origin
+
+        device = found.device_of(token, request_origin(request.headers))
+        if device is None:
+            return None
+        return KeyIdentity(
+            id=device.id, name=device.name, scopes=device.scopes, publications=[self.served.publication_id]
+        )
 
     def tls_info(self) -> dict[str, Any]:
         """How a portable package serves TLS (NAL-C4); nothing without the launcher's interface."""

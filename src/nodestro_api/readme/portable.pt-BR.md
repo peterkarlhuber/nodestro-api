@@ -37,6 +37,7 @@ execuções, aprovações, arquivos e configurações são mantidos.
 | `ui install <arquivo.tgz> --sha256 <hash>` | Instala uma interface web mais nova (`ui reset` volta atrás, `ui status`). |
 | `pair` | Cria um código de pareamento para um navegador em outro computador (só com `NODESTRO_PAIRING=on`, veja Configurações). |
 | `devices list` | Mostra os navegadores pareados (`devices revoke <id>` ou `--all` retira o acesso). |
+| `origins add <https://…>` | Permite que a interface web em outro endereço faça o pareamento (`origins list`, `origins remove`; só com `NODESTRO_CROSS_ORIGIN=on`). |
 
 ## Provedores de IA e chaves
 
@@ -90,6 +91,13 @@ conexão como de confiança restrita enquanto ela for usada. Com o pareamento at
 válido por 10 minutos; digite-o no navegador do outro computador, sem chave de API. `devices list` mostra os
 navegadores pareados e `devices revoke <id>` (ou `--all`) retira o acesso na hora. Um certificado próprio ou um
 proxy continuam sendo o caminho recomendado.
+
+**A interface em outro endereço (prévia).** A mesma interface web também pode funcionar separada do aplicativo,
+por exemplo em um servidor web próprio, e usar vários aplicativos um após o outro. Cada aplicativo permite esse endereço
+com `origins add https://apps.example` e a variável de ambiente `NODESTRO_CROSS_ORIGIN=on` junto com
+`NODESTRO_PAIRING=on` (ambas desligadas por padrão até a revisão de segurança independente). `pair --ui
+https://apps.example/` mostra um link para isso; a interface não guarda nenhuma chave, só um token de acesso de curta
+duração. `origins remove` retira o acesso de todos os navegadores pareados a partir desse endereço.
 
 ## Interface de programação (API)
 
