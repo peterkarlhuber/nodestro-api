@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Added (NAL-C3, platform pre-check and support matrix): `POST /api/publications/{id}/export/libraries` resolves a
+  portable package's libraries for the target platform before the build (`uv pip compile --only-binary :all:`,
+  remembered per library set and platform); the export check reports it as `portable.libraries` and refuses an
+  unavailable set with `export.libraries_unavailable` (new parameter `libraries`). `platform-support.json` is the
+  support matrix (`portable.platforms[].support`), kept in step with `portable.yml` by a test.
+- Added (NAL-C3, the folder model of portable packages): `layout_version` 2 puts everything the export writes into
+  `program/` (start scripts, README and `config/` next to it). New launcher commands `verify`, `backup`, `restore`,
+  `update`, `rollback`, `adopt` and `ui install|reset|status` (`portable_ops.py`, `ui_package.py`); each start checks
+  `program/` against its `SHA256SUMS` and refuses a changed program (exit code 4). `PORTABLE.json` gains `ui`
+  (version, contract range, manifest hash). Exports no longer ship Python bytecode caches. `scripts/vendor_app_ui.py`
+  uses `ui_package`. README templates in six languages describe update, backup and the folders. Internal review:
+  links of an update archive are made after every file and must resolve inside it; `restore`/`update` refuse a data
+  or result folder that holds or contains the package or is the home folder, and move the old folder aside instead of
+  deleting it first; `adopt` refuses folders that lead out of either package; a restore never writes `data/run`,
+  `data/models` or `data/ollama`; Windows device names are refused; an instance whose process lives counts as running.
 - Security (Tabrion 0.2.2 pin): `portable_locks/tabrion.txt` pins the source archive of Tabrion 0.2.2 final `5bc690e`
   (tabrion #83, sha256 `a634d06b49038e0233d668062f7dea6eae1aad931d2c4743a32b0a71cdbf2809`, two downloads gave the
   same bytes). 0.2.2 carries security fixes: `grant_runtime_role` refuses members of predefined roles, roles that can

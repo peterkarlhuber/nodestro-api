@@ -431,7 +431,7 @@
   "export.knowledge_changed": {"params": ["name"], "source": "api"},
   "export.knowledge_excluded": {"params": ["name"], "source": "api"},
   "export.knowledge_missing": {"params": ["name"], "source": "api"},
-  "export.libraries_unavailable": {"params": ["platform"], "source": "api"},
+  "export.libraries_unavailable": {"params": ["libraries", "platform"], "source": "api"},
   "export.license_mismatch": {"params": [], "source": "api"},
   "export.local_model_missing": {"params": ["model"], "source": "api"},
   "export.local_models_bundled": {"params": ["models"], "source": "api"},

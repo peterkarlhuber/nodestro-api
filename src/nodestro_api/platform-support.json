@@ -1,0 +1,12 @@
+{
+  "format": 1,
+  "about": "Support matrix of portable packages (NAL-C3). ci: what tests/test_portable_smoke.py does on that platform in .github/workflows/portable.yml (tests/test_platform_support.py keeps both in step). local_models: whether a run with a bundled local model was checked. human: whether a person checked a package on real hardware of that platform. limits: known limits, by code (the studio and docs/portable-export.md explain each).",
+  "platforms": {
+    "linux-x86_64": {"ci": "built_and_started", "local_models": "checked", "human": false, "limits": []},
+    "linux-arm64": {"ci": "built_and_started", "local_models": "unchecked", "human": false, "limits": []},
+    "macos-arm64": {"ci": "built_and_started", "local_models": "unchecked", "human": false, "limits": ["unsigned"]},
+    "macos-x86_64": {"ci": "built_and_started", "local_models": "unchecked", "human": false, "limits": ["unsigned", "gemini"]},
+    "windows-x86_64": {"ci": "built_and_started", "local_models": "unchecked", "human": false, "limits": ["unsigned"]},
+    "windows-arm64": {"ci": "built_and_started", "local_models": "unchecked", "human": false, "limits": ["unsigned", "gemini", "vector_search"]}
+  }
+}

@@ -10672,6 +10672,42 @@
         "title": "LibraryAgentSummary",
         "type": "object"
       },
+      "LibraryCheck": {
+        "description": "The platform pre-check (NAL-C3): can every library of the package be installed from a ready-built package\n(wheel) for the target platform? ``ok`` and ``unavailable`` are remembered per requirement set and platform;\n``unchecked`` means it could not be decided here (no network, no uv): the build decides then.",
+        "properties": {
+          "detail": {
+            "default": "",
+            "title": "Detail",
+            "type": "string"
+          },
+          "libraries": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Libraries",
+            "type": "array"
+          },
+          "platform": {
+            "title": "Platform",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "unavailable",
+              "unchecked"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "platform",
+          "status"
+        ],
+        "title": "LibraryCheck",
+        "type": "object"
+      },
       "LibraryCopy": {
         "properties": {
           "integrations": {
@@ -15523,6 +15559,16 @@
             "title": "Estimated Bytes",
             "type": "integer"
           },
+          "libraries": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LibraryCheck"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "local_models": {
             "items": {
               "$ref": "#/components/schemas/LocalModelInfo"
@@ -15566,9 +15612,7 @@
           },
           "platforms": {
             "items": {
-              "additionalProperties": {
-                "type": "string"
-              },
+              "additionalProperties": true,
               "type": "object"
             },
             "title": "Platforms",
@@ -37509,6 +37553,59 @@
           }
         },
         "summary": "Export Check",
+        "tags": [
+          "publications"
+        ]
+      }
+    },
+    "/api/publications/{publication_id}/export/libraries": {
+      "post": {
+        "description": "The platform pre-check of a portable package: can every library be installed for the target platform? Runs\nonce per library set and platform (``uv pip compile``, downloads only with ``allow_downloads``); the export check\nreports the remembered answer.",
+        "operationId": "export_libraries_api_publications__publication_id__export_libraries_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "publication_id",
+            "required": true,
+            "schema": {
+              "title": "Publication Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryCheck"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Export Libraries",
         "tags": [
           "publications"
         ]

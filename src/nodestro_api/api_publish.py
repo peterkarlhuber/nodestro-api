@@ -409,6 +409,16 @@ def export_check(publication_id: str, body: ExportIn, ctx: Ctx) -> exporter.Expo
     return exporter.check(ctx, publication, release, body.options)
 
 
+@router.post("/publications/{publication_id}/export/libraries", dependencies=EDIT)
+def export_libraries(publication_id: str, body: ExportIn, ctx: Ctx) -> portable_build.LibraryCheck:
+    """The platform pre-check of a portable package: can every library be installed for the target platform? Runs
+    once per library set and platform (``uv pip compile``, downloads only with ``allow_downloads``); the export check
+    reports the remembered answer."""
+    publication = ctx.publications.get(publication_id)
+    release, _ = _served(ctx, publication, body.number)
+    return exporter.check_libraries(ctx, release, body.options)
+
+
 @router.post("/publications/{publication_id}/exports", status_code=201, dependencies=EDIT)
 def create_export(publication_id: str, body: ExportIn, ctx: Ctx) -> exporter.ExportRecord:
     publication = ctx.publications.get(publication_id)
