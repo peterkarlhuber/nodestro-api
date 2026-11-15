@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Added (NAL-C3, platform pre-check and support matrix): `POST /api/publications/{id}/export/libraries` resolves a
+  portable package's libraries for the target platform before the build (`uv pip compile --only-binary :all:`,
+  remembered per library set and platform); the export check reports it as `portable.libraries` and refuses an
+  unavailable set with `export.libraries_unavailable` (new parameter `libraries`). `platform-support.json` is the
+  support matrix (`portable.platforms[].support`), kept in step with `portable.yml` by a test.
 - Added (NAL-C3, the folder model of portable packages): `layout_version` 2 puts everything the export writes into
   `program/` (start scripts, README and `config/` next to it). New launcher commands `verify`, `backup`, `restore`,
   `update`, `rollback`, `adopt` and `ui install|reset|status` (`portable_ops.py`, `ui_package.py`); each start checks

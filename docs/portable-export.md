@@ -143,6 +143,33 @@ published no ready-built package for macOS Intel or Windows ARM64 since 46.0.4, 
 `export.libraries_unavailable` for those two platforms (the Windows x64 package runs on Windows 11 on ARM in its x64
 emulation).
 
+### Support matrix and platform pre-check (NAL-C3)
+
+`src/nodestro_api/platform-support.json` holds the table above as data, one row per platform: `ci`
+(`built_and_started` when `portable.yml` builds and starts a package there), `local_models` (`checked` when a run with
+a bundled local model was checked), `human` (whether a person checked a package on real hardware; no platform yet) and
+`limits`, by code:
+
+| Code | Meaning |
+| --- | --- |
+| `unsigned` | Packages are not code-signed: macOS Gatekeeper or Windows SmartScreen asks once. |
+| `gemini` | No package of a release that uses Gemini (Google's SDK needs `cryptography`, which has no wheel there). |
+| `vector_search` | No `sqlite-vec` wheel: semantic knowledge search falls back to full text. |
+
+`tests/test_platform_support.py` keeps the file in step with the platforms and the smoke jobs of `portable.yml`: a new
+smoke job or platform fails the test until its row exists. The export check lists the row with each platform
+(`portable.platforms[].support`), and the studio shows it as a badge in the export dialog.
+
+The platform pre-check answers before the build whether every library of the package has a ready-built package
+(wheel) for the target platform. `POST /api/publications/{id}/export/libraries` (edit rights) runs
+`uv pip compile --python-platform <target> --only-binary :all:` on the package's requirements and the exporting
+installation's versions as constraints; it installs nothing and downloads only with `allow_downloads`. The answer is
+`ok`, `unavailable` (with the libraries uv names) or `unchecked` (no uv, no network or cache, a timeout of 180 s, or
+another pre-check running: the build decides then). `ok` and `unavailable` are remembered per requirement set and
+platform under `export-cache/precheck/`; the export check reports the remembered answer (`portable.libraries`) and
+refuses an `unavailable` one with `export.libraries_unavailable` (`platform`, `libraries`). On a server the pre-check
+runs only where the operator enabled package builds; one runs at a time per process.
+
 "CI smoke" builds a package of a workflow without models on the runner, runs `check`, starts it, loads the
 interface, runs the workflow through the API, stops and restarts it (`tests/test_portable_smoke.py`). Packages are
 not code-signed: macOS Gatekeeper and Windows SmartScreen ask once (README, troubleshooting).

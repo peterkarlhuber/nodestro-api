@@ -747,6 +747,145 @@ def requirements(options: ExportOptions, bundle: Any) -> tuple[list[str], list[s
     return direct, constraints
 
 
+class PlatformSupport(BaseModel):
+    """One row of the support matrix (``platform-support.json``, NAL-C3)."""
+
+    #: What CI does with a package of this platform: build it and start it there, or nothing.
+    ci: Literal["built_and_started", "none"]
+    #: Whether a run with a bundled local model was checked on this platform.
+    local_models: Literal["checked", "unchecked"]
+    #: Whether a person checked a package on real hardware of this platform.
+    human: bool
+    #: Known limits by code: ``unsigned`` (Gatekeeper or SmartScreen asks once), ``gemini`` (no package with Google's
+    #: SDK), ``vector_search`` (semantic knowledge search falls back to full text).
+    limits: list[Literal["unsigned", "gemini", "vector_search"]] = Field(default_factory=list)
+
+
+SUPPORT_FILE = Path(__file__).with_name("platform-support.json")
+
+
+def platform_support() -> dict[str, PlatformSupport]:
+    data = json.loads(SUPPORT_FILE.read_text("utf-8"))
+    return {key: PlatformSupport.model_validate(value) for key, value in data["platforms"].items()}
+
+
+class LibraryCheck(BaseModel):
+    """The platform pre-check (NAL-C3): can every library of the package be installed from a ready-built package
+    (wheel) for the target platform? ``ok`` and ``unavailable`` are remembered per requirement set and platform;
+    ``unchecked`` means it could not be decided here (no network, no uv): the build decides then."""
+
+    platform: str
+    status: Literal["ok", "unavailable", "unchecked"]
+    #: The libraries without a ready-built package for the platform (``unavailable``).
+    libraries: list[str] = Field(default_factory=list)
+    #: uv's explanation (``unavailable``) or why the check did not run (``unchecked``), in English.
+    detail: str = ""
+
+
+#: uv's words for a library without a ready-built package for the platform (as opposed to a network or cache miss).
+_NO_WHEEL = ("has no usable wheels", "has no wheels with a matching", "no wheels are available")
+_NOT_DECIDED = ("network was disabled", "not found in the cache", "Failed to fetch", "error sending request")
+_NAMED = re.compile(r"([A-Za-z0-9][A-Za-z0-9._-]*)(?:==\S+)? has no (?:usable )?wheels")
+PRECHECK_TIMEOUT = 180
+#: One pre-check at a time in this process (each resolves the whole library set).
+_PRECHECK = threading.Lock()
+
+
+def _library_key(platform: Platform, direct: list[str], constraints: list[str]) -> str:
+    text = json.dumps([platform.wheel_platform, python_minor(), direct, constraints], separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def library_check(
+    ctx: Nodestro, platform: Platform, options: ExportOptions, bundle: Any, *, resolve: bool
+) -> LibraryCheck:
+    """The remembered pre-check for ``platform``; with ``resolve`` it runs one (``uv pip compile``, from the cache
+    alone unless ``options.allow_downloads``) when none is remembered. Nothing is installed."""
+    direct, constraints = requirements(options, bundle)
+    remembered = cache_root(ctx) / "precheck" / f"{_library_key(platform, direct, constraints)}.json"
+    found = _remembered(remembered)
+    if found is not None:
+        return found
+    if not resolve:
+        return LibraryCheck(platform=platform.id, status="unchecked")
+    from nodestro_runtime.python_envs import find_uv
+
+    uv = find_uv()
+    if uv is None:
+        return LibraryCheck(platform=platform.id, status="unchecked", detail="uv is not available")
+    if not _PRECHECK.acquire(timeout=PRECHECK_TIMEOUT):
+        return LibraryCheck(platform=platform.id, status="unchecked", detail="another pre-check is running")
+    try:
+        # Another request may have resolved the same set while this one waited.
+        return _remembered(remembered) or _resolve(
+            ctx, uv, platform, direct, constraints, remembered, offline=not options.allow_downloads
+        )
+    finally:
+        _PRECHECK.release()
+
+
+def _remembered(path: Path) -> LibraryCheck | None:
+    try:
+        return LibraryCheck.model_validate_json(path.read_text("utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _resolve(
+    ctx: Nodestro,
+    uv: str,
+    platform: Platform,
+    direct: list[str],
+    constraints: list[str],
+    remembered: Path,
+    *,
+    offline: bool,
+) -> LibraryCheck:
+    work = cache_root(ctx) / "precheck" / new_id("work")
+    work.mkdir(parents=True)
+    try:
+        (work / "requirements.in").write_text("\n".join(direct) + "\n", encoding="utf-8")
+        (work / "constraints.txt").write_text("\n".join(constraints) + "\n", encoding="utf-8")
+        command = [
+            uv,
+            "pip",
+            "compile",
+            "requirements.in",
+            "-c",
+            "constraints.txt",
+            "--python-platform",
+            platform.wheel_platform,
+            "--python-version",
+            python_minor(),
+            "--only-binary",
+            ":all:",
+            "--no-header",
+            "--quiet",
+            "-o",
+            "lib.lock",
+        ]
+        env = _uv_env(ctx, offline=offline)
+        try:
+            done = subprocess.run(
+                command, env=env, cwd=work, capture_output=True, text=True, timeout=PRECHECK_TIMEOUT, check=False
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return LibraryCheck(platform=platform.id, status="unchecked", detail=str(exc)[-500:])
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    output = " ".join((done.stdout + done.stderr).split())  # uv wraps its explanation
+    if done.returncode == 0:
+        result = LibraryCheck(platform=platform.id, status="ok")
+    elif any(words in output for words in _NO_WHEEL) and not any(words in output for words in _NOT_DECIDED):
+        names = sorted({canonicalize_name(name) for name in _NAMED.findall(output)})
+        result = LibraryCheck(platform=platform.id, status="unavailable", libraries=names, detail=output[-1500:])
+    else:
+        return LibraryCheck(platform=platform.id, status="unchecked", detail=output[-500:])
+    remembered.parent.mkdir(parents=True, exist_ok=True)
+    remembered.write_text(result.model_dump_json(), encoding="utf-8")
+    return result
+
+
 def _extras(name: str) -> str:
     extras = sorted(Requirement(name).extras)
     return f"[{','.join(extras)}]" if extras else ""
@@ -803,10 +942,12 @@ def install_libraries(
             raise NodestroError(
                 "export.download_needed", "The libraries for this platform are not in the cache; allow downloads"
             ) from None
+        named = sorted({canonicalize_name(name) for name in _NAMED.findall(" ".join(str(exc).split()))})
         raise NodestroError(
             "export.libraries_unavailable",
             "Not every library has a ready-built package for this platform: " + str(exc)[-1500:],
             platform=platform.id,
+            libraries=", ".join(named),
         ) from None
     progress.check()
     _run(

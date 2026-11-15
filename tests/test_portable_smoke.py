@@ -280,10 +280,16 @@ def _build_and_run(make_app: Callable[..., TestClient], tmp_path: Path, model: _
         "confirm_distribution": True,
         "output_dir": "ergebnisse",
     }
+    # NAL-C3: the platform pre-check resolves the package's libraries for the target before anything is built.
+    precheck = studio.post(f"/api/publications/{publication['id']}/export/libraries", json={"options": options})
+    assert precheck.status_code == 200 and precheck.json()["status"] == "ok", precheck.text
     checked = studio.post(f"/api/publications/{publication['id']}/export/check", json={"options": options})
     assert checked.status_code == 200, checked.text
     check = checked.json()
     assert check["ok"], check["problems"]
+    assert check["portable"]["libraries"]["status"] == "ok"
+    support = {item["id"]: item["support"] for item in check["portable"]["platforms"]}
+    assert support[options["platform"]]["ci"] == "built_and_started"
     assert not check["portable"]["local_models"]
     started = studio.post(f"/api/publications/{publication['id']}/export-jobs", json={"options": options})
     assert started.status_code == 202, started.text
