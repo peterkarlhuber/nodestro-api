@@ -709,8 +709,9 @@
     input.id = id;
     input.name = field.name;
     input.multiple = field.multiple !== false;
-    const extensions = field.accept_extensions || [];
-    if (extensions.length) input.accept = extensions.map((ext) => "." + ext).join(",");
+    // The contract sends extensions with their dot (".pdf"); older backends sent them without.
+    const extensions = (field.accept_extensions || []).map((ext) => "." + String(ext).replace(/^\./, ""));
+    if (extensions.length) input.accept = extensions.join(",");
     input.setAttribute("aria-labelledby", id + "-label");
     if (field.description) input.setAttribute("aria-describedby", id + "-description");
     const text = document.createElement("p");
@@ -722,7 +723,7 @@
       return named === key ? String(item).replace(/^\./, "").toUpperCase() : named;
     });
     limits.push(kinds.length ? kinds.join(", ") : t("accept.any"));
-    if (extensions.length) drop.title = extensions.map((ext) => "." + ext).join(" ");
+    if (extensions.length) drop.title = extensions.join(" ");
     if (field.max_size_mb) limits.push(t("form.max_size", { size: field.max_size_mb + " MB" }));
     if (field.max_files && input.multiple) limits.push(t("form.max_files", { n: field.max_files }));
     text.textContent = t("form.drop") + (limits.length ? " · " + limits.join(" · ") : "");

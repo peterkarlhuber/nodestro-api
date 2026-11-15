@@ -3,7 +3,7 @@
 These files are a copy of the standard web interface from [nodestro-app-ui](https://github.com/peterkarlhuber/nodestro-app-ui). Do not edit them here: change nodestro-app-ui, then run
 `python scripts/vendor_app_ui.py --commit <sha>` (CI checks the copy with `--check`).
 
-- Commit: `cf264b4f9f356d540bc529770e912ff678406feb`
+- Commit: `640a95aa7cebfc7e8d77c4ca7c564be166189725`
 - Version: `0.1.0`
 - Contract: `1` to `1`
-- Manifest SHA-256: `4c697259582580f832a1023a74d191c810f097cd5078a41f5708b0e3b5fd8d87`
+- Manifest SHA-256: `aa6a6d52affd8ad311b458312ad7684b0558c29cd60eb19642604294469e1468`
