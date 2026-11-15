@@ -5,7 +5,7 @@ with CR-DB): its settings, the hosts it may reach and one secret. Secrets are wr
 ``secret_set`` only says whether one is stored. Everything lives in the tenant's own store.
 
 Permissions: ``read`` lists connections, types and the tool catalog; ``admin`` creates, changes, deletes, sets the
-secret, checks and reads the audit events (on the desktop the owner has ``admin``).
+secret, checks, sends a test (NAL-A4) and reads the audit events (on the desktop the owner has ``admin``).
 """
 
 from __future__ import annotations
@@ -137,6 +137,30 @@ def check_connection(ctx: Ctx, connection_id: str, request: Request) -> Connecti
     """Check the connection; the result is stored as status and error code (never the service's own message)."""
     _connection(ctx, connection_id)
     return ctx.connections.view(ctx.connections.check(connection_id, actor=_actor(request)))
+
+
+class SendTestIn(BaseModel):
+    """A person's explicit confirmation: the studio sends ``SEND`` only after its confirmation dialog."""
+
+    confirm: Literal["SEND"]
+
+
+class SendTestOut(BaseModel):
+    ok: bool
+    #: The webhook's HTTP status (``webhook``); ``None`` for mail.
+    status: int | None = None
+    #: The size of the test message in bytes (``smtp``); ``None`` for webhooks.
+    size: int | None = None
+
+
+@router.post("/connections/{connection_id}/test-send", dependencies=ADMIN)
+def send_connection_test(ctx: Ctx, connection_id: str, data: SendTestIn, request: Request) -> SendTestOut:
+    """Send one test (NAL-A4): ``smtp`` mails a fixed text to the connection's own ``test_address``, ``webhook``
+    posts a payload marked ``test: true``. Only a person with ``admin`` can do this; agents cannot. At most 5 per
+    connection and hour (``connection.test_send_limit``); every attempt is an audit event (``test_sent``). A failure
+    answers with its code only (``connection.*``), never the service's message."""
+    _connection(ctx, connection_id)
+    return SendTestOut.model_validate(ctx.connections.test_send(connection_id, actor=_actor(request)))
 
 
 @router.get("/tools/builtin", dependencies=READ)

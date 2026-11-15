@@ -178,7 +178,8 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # admin: + setting the retention of assistant conversation files (API-056)
         # admin: + service connections: create, change, delete, secret, check, events (NAL-A1)
         # admin: + archiving and deleting a skill (NAL-B3)
-        "admin": 55,  # + price sync, reviews, overrides, billing keys and reconciliation (PRICING-1); gate (Q-3);
+        # admin: + a person's connection test send (NAL-A4)
+        "admin": 56,  # + price sync, reviews, overrides, billing keys and reconciliation (PRICING-1); gate (Q-3);
         # MCP add, change, remove, discover, decision, events (WP-3); pre-grants, audit, activation (S-2b);
         # MCP OAuth start, callback, sign-out (WP-6); MCP stdio package plan (WP-8); MCP stats (WP-7);
         # Amazon Bedrock verification (a settings action)

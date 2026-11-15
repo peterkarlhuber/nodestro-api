@@ -1,16 +1,19 @@
 """Service connections and the built-in tool catalog over the API (NAL-A1, nodestro-runtime ADR-0001).
 
 Desktop cases use ``make_app``; role permissions and tenant isolation run on the multi-tenant server and need
-PostgreSQL (the fixtures of ``test_identity``). Nothing here contacts a service: checks are offline (ADR-0001).
+PostgreSQL (the fixtures of ``test_identity``). Nothing here contacts an outside service: mail and webhook checks and
+test sends (NAL-A4) only reach a local receiver or a closed port on this computer.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import logging
 from pathlib import Path
-from typing import Any
+import threading
+from typing import Any, ClassVar
 
 from fastapi.testclient import TestClient
 import pytest
@@ -93,7 +96,8 @@ def test_secrets_are_write_only_and_never_in_answers_or_logs(
         type="smtp",
         provider="generic",
         name="Mail",
-        settings={"host": "smtp.example.com", "from_address": "bot@example.com"},
+        # A closed port on this computer: the check fails fast without leaving the machine (NAL-A4 checks connect).
+        settings={"host": "localhost", "port": 9, "from_address": "bot@example.com"},
     )
     cid = made["id"]
     stored = client.put(f"/api/connections/{cid}/secret", json={"secret": MARKER})
@@ -166,7 +170,8 @@ def test_configure_stores_connections_owner_only_and_the_environment_wins(
     from nodestro_api import portable, portable_connections
 
     settings = portable.Settings(portable_root, values={"data": {"data_dir": "data"}})
-    answers = iter(["smtp.example.com", "", "", "", "bot@example.com", ""])
+    # host, port, security, username, from_address, auth, test_address (NAL-A4)
+    answers = iter(["smtp.example.com", "", "", "", "bot@example.com", "", ""])
     portable.configure_connections(
         settings, portable.Console("en"), ask=lambda _prompt: next(answers), ask_secret=lambda _prompt: MARKER
     )
@@ -184,7 +189,7 @@ def test_configure_stores_connections_owner_only_and_the_environment_wins(
     assert replaced.resolve("conn_aaaaaaaaaaaa").secret == "from-env"
     # A secret set in the environment is not asked for and not written to the file.
     monkeypatch.setenv(variable, "from-env")
-    answers = iter([""] * 6)
+    answers = iter([""] * 7)
     portable.configure_connections(
         settings, portable.Console("en"), ask=lambda _prompt: next(answers), ask_secret=lambda _prompt: "typed"
     )
@@ -234,3 +239,66 @@ def test_a_standalone_release_refuses_runs_without_its_connections() -> None:
     entry = {"type": "search", "provider": "test", "settings": {}, "secret": "key"}
     host.connections = StaticConnections({"conn_aaaaaaaaaaaa": entry}, environ={})
     asyncio.run(StandaloneHost.prepare_start(host, None))  # type: ignore[arg-type]
+
+
+class _Receiver(BaseHTTPRequestHandler):
+    seen: ClassVar[list[dict[str, Any]]] = []
+
+    def do_POST(self) -> None:
+        size = int(self.headers.get("Content-Length") or 0)
+        self.seen.append({"headers": dict(self.headers), "body": self.rfile.read(size)})
+        self.send_response(202)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def log_message(self, *_args: Any) -> None:
+        return
+
+
+@pytest.fixture
+def receiver() -> Iterator[tuple[int, list[dict[str, Any]]]]:
+    handler = type("Handler", (_Receiver,), {"seen": []})
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    yield server.server_address[1], handler.seen
+    server.shutdown()
+    server.server_close()
+
+
+def test_a_person_sends_a_test_after_confirming(make_app: MakeApp, receiver: tuple[int, list[dict[str, Any]]]) -> None:
+    """NAL-A4: the test send needs ``confirm: "SEND"``, signs the payload, is limited and audited."""
+    port, seen = receiver
+    client = make_app()
+    hook = _create(
+        client, type="webhook", provider="generic", name="Hook", settings={"url": f"http://127.0.0.1:{port}/in"}
+    )
+    client.put(f"/api/connections/{hook['id']}/secret", json={"secret": MARKER})
+    assert client.post(f"/api/connections/{hook['id']}/test-send", json={}).status_code == 422
+    assert client.post(f"/api/connections/{hook['id']}/test-send", json={"confirm": "yes"}).status_code == 422
+    assert seen == []
+    sent = client.post(f"/api/connections/{hook['id']}/test-send", json={"confirm": "SEND"})
+    assert sent.status_code == 200 and sent.json() == {"ok": True, "status": 202, "size": None}
+    [request] = seen
+    assert json.loads(request["body"])["test"] is True and "Nodestro-Signature" in request["headers"]
+    assert MARKER not in sent.text and MARKER.encode() not in request["body"]
+    for _ in range(4):
+        client.post(f"/api/connections/{hook['id']}/test-send", json={"confirm": "SEND"})
+    limited = client.post(f"/api/connections/{hook['id']}/test-send", json={"confirm": "SEND"})
+    assert limited.status_code == 400 and limited.json()["code"] == "connection.test_send_limit"
+    kinds = [item["kind"] for item in client.get("/api/connections/events").json()]
+    assert kinds.count("test_sent") == 10
+
+    mail = _create(
+        client,
+        type="smtp",
+        provider="generic",
+        name="Mail",
+        settings={"host": "localhost", "port": 9, "from_address": "bot@example.com"},
+    )
+    client.put(f"/api/connections/{mail['id']}/secret", json={"secret": "pw"})
+    missing = client.post(f"/api/connections/{mail['id']}/test-send", json={"confirm": "SEND"})
+    assert missing.status_code == 400 and missing.json()["code"] == "connection.test_address_missing"
+    search = _create(client, name="Search")
+    unsupported = client.post(f"/api/connections/{search['id']}/test-send", json={"confirm": "SEND"})
+    assert unsupported.status_code == 400 and unsupported.json()["code"] == "connection.test_send_unsupported"
