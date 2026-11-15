@@ -23,7 +23,7 @@ Both carry `openapi.json` (the same document the running application serves) and
 | `portable_build.py` | Platforms, the job runner (one at a time, cancellable, survives restarts as `interrupted`), Python and wheels for the target via uv, Ollama for the target via Orkexa, the model package, start scripts, `settings.toml`, `SHA256SUMS`, streaming ZIP64 archive. |
 | `portable.py` | The launcher in the package (`python -I -m nodestro_api.portable start|stop|status|open|configure|keys|check`). |
 | `portable_secrets.py` | The AI providers' keys on the target computer (`data/secrets/providers.json`, owner-only). |
-| `webui_server.py` + `webui/` | Sessions, sign-in, the interface's endpoints and the static app (vanilla JS, no build step, no CDN). |
+| `webui_server.py` + `webui/` | Sessions, sign-in, the interface's endpoints and the static app (vanilla JS, no build step, no CDN). The app itself is developed in [nodestro-app-ui](https://github.com/peterkarlhuber/nodestro-app-ui); `webui/` is an unchanged copy of one of its commits (see below). |
 | `output_folder.py` | The result folder chosen on the settings page (portable only): precedence `OUTPUT_DIR` from outside > choice in `data/settings/output-folder.json` > `[data] output_dir`; path checks, the folder browser (names only), "Open folder". |
 
 ## How a package is built
@@ -174,3 +174,18 @@ image needs a pinned base image with glibc for the bundled Python and Ollama; bu
 means assembling an OCI layout (base layers from a registry, plus the Linux package as a layer). That is feasible but
 was deferred (see `docs/TODO.md`). The Linux package runs unchanged in a container (`docker run --network none … sh
 start.sh` is exactly how it was tested).
+
+## The embedded interface (NAL-C2)
+
+The files of `src/nodestro_api/webui/` come from one commit of nodestro-app-ui. `webui/VENDORED.md` names the commit,
+the interface's version, its contract range and the SHA-256 of its `manifest.json`, which lists every file with its
+own SHA-256.
+
+- **Update:** `python scripts/vendor_app_ui.py --commit <full sha>` downloads that commit, checks every file against
+  the manifest and the contract range against the contracts this backend serves, then replaces `webui/`. With
+  `--source <checkout>` it takes a local checkout at that commit instead. Never edit the files here.
+- **Check:** `python scripts/vendor_app_ui.py --check` (and `tests/test_webui_vendored.py` in CI) fails when a file
+  was changed, added or removed, or the manifest is not the recorded one.
+- **Rollback:** embed the previous commit. The api commit pinned in the studio lock thus also fixes the interface.
+- The interface discovers the backend with `GET /api/app`, reads the form from `GET /api/published/{slug}` and shows
+  the connection state; an incompatible contract gives a clear message instead of a broken page.

@@ -38,7 +38,10 @@ async function overflow(page) {
 async function runOnce(page, label) {
   await page.click("#nav-run");
   await page.fill("#field-input", "Bericht " + label);
+  const before = await page.evaluate(() => location.hash);
   await page.click("#start");
+  // Wait for the new run first: until then the badge may still show the previous run's state.
+  await page.waitForFunction((hash) => location.hash.startsWith("#run=") && location.hash !== hash, before, { timeout: 60000 });
   await page.waitForSelector("#run-status.succeeded, #run-status.failed", { timeout: 60000 });
   check((await page.getAttribute("#run-status", "class")).includes("succeeded"), `run ${label} succeeded`);
   await page.waitForTimeout(600);

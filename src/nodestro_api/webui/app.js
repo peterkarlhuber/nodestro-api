@@ -23,7 +23,13 @@
     previews: [],
     view: "run",
     output: null,
+    manifest: null,
+    fields: [],
+    freeInput: true,
   };
+  const Connection = window.NodestroConnection;
+  let retryTimer = null;
+  const conn = new Connection.BackendConnection({ onChange: renderConnection });
 
   const $ = (id) => document.getElementById(id);
   const store = {
@@ -45,7 +51,7 @@
 
   async function loadStrings(language) {
     const read = async (code) => {
-      const response = await fetch("/ui/assets/i18n/" + code + ".json", { credentials: "same-origin" });
+      const response = await fetch("ui/assets/i18n/" + code + ".json", { credentials: "same-origin" });
       if (!response.ok) throw new Error("i18n " + code);
       return response.json();
     };
@@ -60,6 +66,7 @@
     for (const node of document.querySelectorAll("[data-i18n]")) node.textContent = t(node.dataset.i18n);
     for (const node of document.querySelectorAll("[data-i18n-aria]")) node.setAttribute("aria-label", t(node.dataset.i18nAria));
     for (const node of document.querySelectorAll("[data-i18n-title]")) node.title = t(node.dataset.i18nTitle);
+    renderConnection(conn.state);
   }
 
   function formatDate(value) {
@@ -88,6 +95,166 @@
     return t("time.minutes", { m: minutes, s: Math.round(seconds - minutes * 60) });
   }
 
+  // ---- connection ---------------------------------------------------------------------------------------------
+
+  async function loadManifest() {
+    try {
+      const response = await fetch("ui/assets/manifest.json", { credentials: "same-origin" });
+      if (response.ok) state.manifest = await response.json();
+    } catch (error) { /* shown as unknown */ }
+  }
+
+  /** Discovery, contract check and the app's form: the connection is "connected" only when all of them worked. */
+  async function connect() {
+    try {
+      await conn.discover();
+    } catch (problem) {
+      if (problem.kind === "incompatible") { showIncompatible(problem.detail.backend || []); return false; }
+      if (problem.kind === "auth") { showSignIn(); return false; }
+      if (problem.kind === "network") { connectionLost(); return false; }
+      conn.set("error", problem.detail);
+      return false;
+    }
+    state.fields = state.config.fields || [];
+    if (!conn.legacy) {
+      try {
+        const info = await api("GET", state.config.api_base);
+        const fields = info && info.form_version === 1 ? Connection.fieldsFromForm(info.form) : null;
+        if (fields) state.fields = fields;
+      } catch (problem) {
+        // 401: the sign-in shows; no network: the connection retries; anything else: the form of /ui/api/config.
+        if (problem.status === 401 || !(problem instanceof ApiProblem)) return false;
+      }
+    }
+    state.freeInput = !state.fields.length;
+    conn.set(conn.can("events.sse") ? "connected" : "degraded");
+    return true;
+  }
+
+  function showIncompatible(versions) {
+    closeEvents();
+    conn.set("incompatible", { backend: versions });
+    for (const id of ["nav-run", "nav-history", "nav-setup"]) $(id).hidden = true;
+    show("loading");
+    $("view-loading").querySelector(".spinner").hidden = true;
+    $("view-loading").querySelector("p").textContent = incompatibleText();
+  }
+
+  function incompatibleText() {
+    const backend = (conn.detail.backend || []).join(", ") || "?";
+    return t("conn.incompatible", { app: Connection.CONTRACT.max, backend });
+  }
+
+  function connectionLost() {
+    if (conn.state === "disconnected" || conn.state === "incompatible") return;
+    conn.set("disconnected");
+    scheduleRetry();
+  }
+
+  function scheduleRetry() {
+    clearTimeout(retryTimer);
+    const wait = Connection.backoff(conn.attempts);
+    conn.attempts += 1;
+    conn.detail = { retry: Math.round(wait / 1000) };
+    renderConnection(conn.state);
+    retryTimer = setTimeout(reconnect, wait);
+  }
+
+  async function reconnect() {
+    clearTimeout(retryTimer);
+    if (conn.state !== "disconnected" && conn.state !== "error") return;
+    if (!state.boot) { conn.set("connecting"); start(); return; }
+    conn.set("connecting");
+    let boot;
+    try {
+      boot = await api("GET", "/ui/api/bootstrap");
+    } catch (problem) {
+      if (conn.state === "connecting") conn.set("error", { status: problem.status });
+      return;
+    }
+    if (!boot.session) { state.boot.session = null; showSignIn(); return; }
+    if (!state.config) { await enter(); return; }
+    if (!(await connect())) return;
+    if (state.run && !FINAL.has(state.run.status)) { closeEvents(); follow(state.run.run_id); }
+    else if (state.run) await refreshStatus(state.run.run_id);
+  }
+
+  function statusText(name) {
+    switch (name) {
+      case "connected": return t("conn.connected", { name: conn.describe().name || (state.boot && state.boot.name) || "Nodestro" });
+      case "degraded": return t("conn.degraded");
+      case "auth_required": return t("conn.auth_required");
+      case "connecting": return t("conn.connecting");
+      case "disconnected": return t("conn.disconnected");
+      case "incompatible": return t("conn.incompatible_short");
+      default: return t("conn.error");
+    }
+  }
+
+  function renderConnection(name) {
+    const status = $("status");
+    if (!status) return;
+    status.dataset.state = name;
+    const label = statusText(name);
+    $("status-text").textContent = label;
+    status.setAttribute("aria-label", t("about.open") + ": " + label);
+    const banner = $("connection-banner");
+    const shown = name === "disconnected" || name === "error" || name === "incompatible";
+    banner.hidden = !shown;
+    banner.dataset.state = name;
+    if (shown) {
+      let text = t("conn.error_long");
+      if (name === "incompatible") text = incompatibleText();
+      if (name === "disconnected") {
+        const running = state.run && !FINAL.has(state.run.status);
+        text = t(running ? "conn.lost_running" : "conn.lost");
+        if (conn.detail.retry) text += " " + t("conn.retry_in", { n: conn.detail.retry });
+      }
+      $("connection-text").textContent = text;
+      $("connection-retry").hidden = name === "incompatible";
+    }
+    if ($("about-dialog").open) renderAbout();
+  }
+
+  function renderAbout() {
+    const info = conn.describe();
+    const manifest = state.manifest || {};
+    const unknown = t("about.unknown");
+    const rows = [
+      ["about.ui_version", manifest.version || unknown],
+      ["about.contract", info.legacy ? t("about.contract_none") : info.contract ? "v" + info.contract : unknown],
+      ["about.backend_name", info.name || unknown],
+      ["about.backend_id", info.id || unknown],
+      ["about.backend_version", info.version || unknown],
+      ["about.runtime_version", info.runtimeVersion || unknown],
+      ["about.release", state.config && state.config.version ? "v" + state.config.version : unknown],
+      ["about.state", statusText(conn.state)],
+    ];
+    const list = $("about-list");
+    list.textContent = "";
+    for (const [key, value] of rows) {
+      const term = document.createElement("dt");
+      term.textContent = t(key);
+      const detail = document.createElement("dd");
+      detail.textContent = String(value);
+      list.append(term, detail);
+    }
+  }
+
+  function setupAbout() {
+    const dialog = $("about-dialog");
+    $("status").addEventListener("click", () => {
+      renderAbout();
+      dialog.showModal();
+      $("about-close").focus();
+    });
+    $("about-close").addEventListener("click", () => dialog.close());
+    $("connection-retry").addEventListener("click", () => {
+      if (conn.state === "connecting") return;
+      reconnect();
+    });
+  }
+
   // ---- HTTP ---------------------------------------------------------------------------------------------------
 
   class ApiProblem extends Error {
@@ -106,14 +273,20 @@
     if (method !== "GET") init.headers["X-Nodestro-UI"] = "1";
     if (body instanceof FormData) init.body = body;
     else if (body !== undefined) { init.headers["Content-Type"] = "application/json"; init.body = JSON.stringify(body); }
-    const response = await fetch(path, init);
+    let response;
+    try {
+      response = await fetch(conn.url(path), init);
+    } catch (error) {
+      connectionLost();
+      throw error;
+    }
     if (options && options.raw) {
       if (!response.ok) throw new ApiProblem(response.status, await response.json().catch(() => null));
       return response;
     }
     const data = response.status === 204 ? null : await response.json().catch(() => null);
     if (!response.ok) {
-      if (response.status === 401 && path !== "/ui/api/session") showSignIn();
+      if (response.status === 401 && path !== "/ui/api/session" && path !== "/ui/api/bootstrap") showSignIn();
       throw new ApiProblem(response.status, data);
     }
     return data;
@@ -151,6 +324,8 @@
 
   function showSignIn() {
     closeEvents();
+    if (conn.state === "incompatible") conn.set("connecting");
+    conn.set("auth_required");
     $("signin-title").textContent = (state.boot && state.boot.name) || "Nodestro";
     $("signin-description").textContent = (state.boot && state.boot.description) || "";
     for (const id of ["nav-run", "nav-history", "nav-setup", "sign-out"]) $(id).hidden = true;
@@ -160,11 +335,14 @@
 
   async function start() {
     setupTheme();
+    loadManifest();
+    conn.set("connecting");
     try {
       state.boot = await api("GET", "/ui/api/bootstrap");
     } catch (problem) {
       await loadStrings("en").catch(() => {});
       $("view-loading").querySelector("p").textContent = t("error.network");
+      if (conn.state === "connecting") conn.set("error");
       return;
     }
     const chosen = store.get("language");
@@ -179,12 +357,14 @@
   }
 
   async function enter() {
+    if (conn.state !== "connecting") conn.set("connecting");
     try {
       state.config = await api("GET", "/ui/api/config");
     } catch (problem) {
       if (problem.status !== 401) notice(problemText(problem));
       return;
     }
+    if (!(await connect())) return;
     const session = state.boot.session || {};
     const scopes = session.scopes || [];
     $("nav-run").hidden = false;
@@ -253,8 +433,8 @@
     const container = $("fields");
     container.textContent = "";
     state.files = {};
-    const fields = state.config.fields || [];
-    if (state.config.free_input) {
+    const fields = state.fields;
+    if (state.freeInput) {
       container.appendChild(textField({ name: "input", label: t("run.free_input"), type: "textarea", required: false, default: state.config.default_input }));
       container.appendChild(fileField({ name: "files", label: t("run.documents"), type: "file", multiple: true, accept_extensions: [], max_files: 20, max_size_mb: state.config.max_upload_mb }));
     }
@@ -470,7 +650,7 @@
 
   function validate() {
     let first = null;
-    const fields = state.config.free_input ? [] : state.config.fields || [];
+    const fields = state.freeInput ? [] : state.fields;
     const values = {};
     for (const field of fields) {
       const wrap = $("fields").querySelector('.field[data-name="' + CSS.escape(field.name) + '"]');
@@ -503,7 +683,7 @@
     const values = validate();
     if (values === null) return;
     const body = new FormData();
-    if (state.config.free_input) {
+    if (state.freeInput) {
       body.append("input", $("field-input").value);
       for (const file of state.files.files || []) body.append("files", file, file.name);
     } else {
@@ -558,11 +738,12 @@
   }
 
   function follow(runId) {
-    const source = new EventSource(state.config.api_base + "/runs/" + encodeURIComponent(runId) + "/events?text=1");
+    const source = new EventSource(conn.url(state.config.api_base) + "/runs/" + encodeURIComponent(runId) + "/events?text=1");
     state.events = source;
     let failures = 0;
     source.addEventListener("status", (event) => {
       failures = 0;
+      if (conn.state === "degraded" && conn.detail.live === false) conn.set("connected");
       state.run = JSON.parse(event.data);
       renderRun(state.run);
     });
@@ -584,9 +765,12 @@
     });
     source.onerror = () => {
       failures += 1;
+      // The first error: one status request tells a lost connection (banner, retries) from a stream that reconnects.
+      if (failures === 1) refreshStatus(runId);
       if (source.readyState === EventSource.CLOSED || failures > 5) {
         // The browser gave up reconnecting (e.g. the session ended): poll instead.
         closeEvents();
+        if (conn.state === "connected") conn.set("degraded", { live: false });
         poll(runId);
       }
     };
@@ -1436,6 +1620,9 @@
     $("cancel").addEventListener("click", cancelRun);
     $("retry").addEventListener("click", retryRun);
     setupFolderDialog();
+    setupAbout();
+    window.addEventListener("offline", connectionLost);
+    window.addEventListener("online", () => { if (conn.state === "disconnected") reconnect(); });
     for (const button of document.querySelectorAll(".navlink")) button.addEventListener("click", () => show(button.dataset.view));
     start();
   });

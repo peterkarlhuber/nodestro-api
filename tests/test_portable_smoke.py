@@ -380,7 +380,7 @@ def _build_and_run(make_app: Callable[..., TestClient], tmp_path: Path, model: _
         try:
             _wait_for(lambda: _get(f"{base}/health", timeout=2)[0] == 200, 180, "the start")
             status, page = _get(f"{base}/")
-            assert status == 200 and b"/ui/assets/app.js" in page
+            assert status == 200 and b"ui/assets/app.js" in page
             assert _get(f"{base}/ui/assets/i18n/pt-BR.json")[0] == 200
             assert _get(f"{base}/api/published/{slug}/runs")[0] == 401
             # The app contract's discovery (NAL-C1): minimal without a key, this app with one; the same id each start.

@@ -1,0 +1,88 @@
+{
+  "name": "nodestro-app-ui",
+  "version": "0.1.0",
+  "contract": {
+    "min": 1,
+    "max": 1
+  },
+  "languages": [
+    "de",
+    "en",
+    "es",
+    "fr",
+    "it",
+    "pt-BR"
+  ],
+  "files": [
+    {
+      "path": "app.css",
+      "size": 21832,
+      "sha256": "3d8d25a538ec57e55e1a9f2cf9073b3c589c6bda7838d7d322e1c58c60288ba8"
+    },
+    {
+      "path": "app.js",
+      "size": 66300,
+      "sha256": "f1095c5e09357d0893f04ba5d905d23927a84931a2c4b596dd60c9eebb1277d2"
+    },
+    {
+      "path": "brand/nodestro-logo-on-dark.png",
+      "size": 43041,
+      "sha256": "a96bc880eed819ab1d507dc2f20657aa2e610c7e7401b30822b66b4d99ea4d97"
+    },
+    {
+      "path": "brand/nodestro-logo.png",
+      "size": 41797,
+      "sha256": "f450bb911c2ef0476b4bfe59ef6349bc51c8a6ed60e6ef3ba9987a799d5dd627"
+    },
+    {
+      "path": "brand/nodestro-mark-128.png",
+      "size": 10144,
+      "sha256": "9bc81f78ff2c0f5386e4cf732d454a7f404abea3baac4574eb3979db1ea6cad8"
+    },
+    {
+      "path": "connection.js",
+      "size": 7518,
+      "sha256": "ed6a8dce1ae40d7fc9cf333e438de59928bbb787fdb248042ac9d04a27162d8c"
+    },
+    {
+      "path": "i18n/de.json",
+      "size": 15984,
+      "sha256": "24c5bca5948dcf234021f10efec54adbb4d38d8d38770b23b323cb7ecc57fe6d"
+    },
+    {
+      "path": "i18n/en.json",
+      "size": 14635,
+      "sha256": "71ebc2ef079456c07fa6f5c20edbc5c4660faed4cc08c211204b6379798700ba"
+    },
+    {
+      "path": "i18n/es.json",
+      "size": 15831,
+      "sha256": "896a8fd6e189065ebb20d72a687226d86e7fbacaf2017f27030295b0d00eb39c"
+    },
+    {
+      "path": "i18n/fr.json",
+      "size": 16722,
+      "sha256": "ab01f87ec7487d92097cad0e7f86b836c5ca58260e143feaa295527278fd8244"
+    },
+    {
+      "path": "i18n/it.json",
+      "size": 16012,
+      "sha256": "44eba484e9daac3afb5fd0957f5cb3f0f66efa4b515291883bfea642216d5c7c"
+    },
+    {
+      "path": "i18n/pt-BR.json",
+      "size": 15680,
+      "sha256": "41cf9d6c58a466aa66c63566e4ddf1b363a6c28c326de296ff19f4f8e54c3d0f"
+    },
+    {
+      "path": "index.html",
+      "size": 12448,
+      "sha256": "db5c19cf488f5db87aa85452ac11788ecec42ed6537285a1f7abfe884acb9dfd"
+    },
+    {
+      "path": "markdown.js",
+      "size": 6293,
+      "sha256": "7fae0929b882ac19e768088ac6e06c64370cbeaa921fc85702c36d08c429051a"
+    }
+  ]
+}
