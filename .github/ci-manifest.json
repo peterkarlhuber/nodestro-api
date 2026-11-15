@@ -5,6 +5,7 @@
     "ci.yml": [
       "test (3.11)",
       "test (3.13)",
+      "tabrion source (poisoned index)",
       "package",
       "tenant-sql"
     ]

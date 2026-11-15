@@ -1,3 +1,5 @@
-# The shared Tabrion API check is pinned by its SHA-256 in tests/test_tabrion_api_check.py (TABRION QA-7/QA-21);
-# keep LF on every platform so the hash is the same in each checkout.
+# The shared Tabrion checks are pinned by their SHA-256 in tests/test_tabrion_source_check.py (TABRION DC-NA-1) and
+# tests/test_tabrion_api_check.py (TABRION QA-7/QA-21); keep LF on every platform so the hashes are the same in each
+# checkout.
+scripts/check_tabrion_source.py text eol=lf
 scripts/check_tabrion_api.py text eol=lf
