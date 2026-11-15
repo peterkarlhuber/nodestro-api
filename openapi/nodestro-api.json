@@ -6004,7 +6004,8 @@
               "deleted",
               "secret_set",
               "secret_cleared",
-              "checked"
+              "checked",
+              "test_sent"
             ],
             "title": "Kind",
             "type": "string"
@@ -18893,7 +18894,8 @@
               "html",
               "pdf",
               "docx",
-              "xlsx"
+              "xlsx",
+              "eml"
             ],
             "title": "Format",
             "type": "string"
@@ -18921,6 +18923,11 @@
             ],
             "title": "Node Id"
           },
+          "preview": {
+            "additionalProperties": true,
+            "title": "Preview",
+            "type": "object"
+          },
           "run_id": {
             "title": "Run Id",
             "type": "string"
@@ -18939,7 +18946,8 @@
             "default": "manual",
             "enum": [
               "output",
-              "manual"
+              "manual",
+              "tool"
             ],
             "title": "Source",
             "type": "string"
@@ -21628,6 +21636,56 @@
           }
         },
         "title": "SendRequest",
+        "type": "object"
+      },
+      "SendTestIn": {
+        "description": "A person's explicit confirmation: the studio sends ``SEND`` only after its confirmation dialog.",
+        "properties": {
+          "confirm": {
+            "const": "SEND",
+            "title": "Confirm",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "title": "SendTestIn",
+        "type": "object"
+      },
+      "SendTestOut": {
+        "properties": {
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "SendTestOut",
         "type": "object"
       },
       "SentFile": {
@@ -32304,6 +32362,59 @@
           }
         },
         "summary": "Set Connection Secret",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/connections/{connection_id}/test-send": {
+      "post": {
+        "description": "Send one test (NAL-A4): ``smtp`` mails a fixed text to the connection's own ``test_address``, ``webhook``\nposts a payload marked ``test: true``. Only a person with ``admin`` can do this; agents cannot. At most 5 per\nconnection and hour (``connection.test_send_limit``); every attempt is an audit event (``test_sent``). A failure\nanswers with its code only (``connection.*``), never the service's message.",
+        "operationId": "send_connection_test_api_connections__connection_id__test_send_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendTestIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SendTestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Send Connection Test",
         "tags": [
           "tools"
         ]
