@@ -271,6 +271,7 @@
   "launcher.adopt_not_a_package": "Nessun pacchetto portabile trovato in {folder}.",
   "launcher.adopt_other_app": "Il vecchio pacchetto è {old}, questo è {current}. Non è stato copiato nulla.",
   "launcher.adopt_has_data": "Questo pacchetto ha già dati in {folder}. Non è stato copiato nulla.",
+  "launcher.folder_unsafe": "La cartella {folder} non può essere usata per questo (contiene il pacchetto, sta sopra di esso o è la cartella personale). Scegli un'altra cartella dei dati o dei risultati in config/settings.toml.",
   "accept.text": "testo",
   "accept.data": "dati (JSON, CSV, Excel ...)",
   "accept.document": "documenti (PDF, Word ...)",
