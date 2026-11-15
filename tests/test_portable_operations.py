@@ -42,6 +42,10 @@ def _program(folder: Path, *, slug: str = SLUG, release: int = 1, platform: str 
     (folder / "workflow" / "release.json").write_text(json.dumps({"release": release}), encoding="utf-8")
     (folder / "models").mkdir()
     (folder / "models" / "orkexa-models.json").write_text("{}", encoding="utf-8")
+    # Hidden files and folders, as libraries ship them (site-packages/.lock, fastapi/.agents/).
+    (folder / "nodestro_api" / ".agents").mkdir()
+    (folder / "nodestro_api" / ".agents" / "SKILL.md").write_text("skill", encoding="utf-8")
+    (folder / ".lock").write_text("", encoding="utf-8")
     info = {
         "format": "nodestro-portable",
         "format_version": 1,

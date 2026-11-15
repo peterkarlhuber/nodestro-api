@@ -153,10 +153,8 @@ def verify_program(program: Path, *, skip: Iterable[str] = ()) -> list[str]:
         if not line.strip():
             continue
         digest, separator, name = line.partition("  ")
-        try:
-            relative = ui_package.safe_path(name) if separator and len(digest) == 64 else None
-        except ui_package.UiPackageError:
-            relative = None
+        # Hidden files are part of a program (site-packages has ``.lock`` files and ``.agents/`` folders).
+        relative = archive_path(name) if separator and len(digest) == 64 else None
         if relative is None:
             problems.append(f"changed: {SUMS}")
             continue
