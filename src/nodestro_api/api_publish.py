@@ -410,7 +410,7 @@ def export_check(publication_id: str, body: ExportIn, ctx: Ctx) -> exporter.Expo
 
 
 @router.post("/publications/{publication_id}/export/libraries", dependencies=EDIT)
-def export_libraries(publication_id: str, body: ExportIn, ctx: Ctx) -> exporter.LibraryCheck:
+def export_libraries(publication_id: str, body: ExportIn, ctx: Ctx) -> portable_build.LibraryCheck:
     """The platform pre-check of a portable package: can every library be installed for the target platform? Runs
     once per library set and platform (``uv pip compile``, downloads only with ``allow_downloads``); the export check
     reports the remembered answer."""

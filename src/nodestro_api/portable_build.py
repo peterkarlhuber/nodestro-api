@@ -877,7 +877,7 @@ def _resolve(
     if done.returncode == 0:
         result = LibraryCheck(platform=platform.id, status="ok")
     elif any(words in output for words in _NO_WHEEL) and not any(words in output for words in _NOT_DECIDED):
-        names = sorted({canonicalize_name(name) for name in _NAMED.findall(output)})
+        names = sorted({str(canonicalize_name(name)) for name in _NAMED.findall(output)})
         result = LibraryCheck(platform=platform.id, status="unavailable", libraries=names, detail=output[-1500:])
     else:
         return LibraryCheck(platform=platform.id, status="unchecked", detail=output[-500:])
@@ -942,7 +942,7 @@ def install_libraries(
             raise NodestroError(
                 "export.download_needed", "The libraries for this platform are not in the cache; allow downloads"
             ) from None
-        named = sorted({canonicalize_name(name) for name in _NAMED.findall(" ".join(str(exc).split()))})
+        named = sorted({str(canonicalize_name(name)) for name in _NAMED.findall(" ".join(str(exc).split()))})
         raise NodestroError(
             "export.libraries_unavailable",
             "Not every library has a ready-built package for this platform: " + str(exc)[-1500:],
