@@ -335,6 +335,7 @@
   "connection.mode_unsupported": {"params": ["type"], "source": "runtime"},
   "connection.name_taken": {"params": ["name"], "source": "runtime"},
   "connection.not_found": {"params": ["id"], "source": "both"},
+  "connection.port_refused": {"params": ["port"], "source": "runtime"},
   "connection.provider_invalid": {"params": ["provider"], "source": "runtime"},
   "connection.provider_unknown": {"params": ["provider", "type"], "source": "runtime"},
   "connection.provider_unsupported_mode": {"params": ["mode", "provider", "type"], "source": "runtime"},
