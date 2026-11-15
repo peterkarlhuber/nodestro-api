@@ -276,7 +276,12 @@ def test_web_interface_sessions_and_security(ui_project: Any, tmp_path: Path) ->
         assert "default-src 'none'" in page.headers["content-security-policy"]
         assert page.headers["x-frame-options"] == "DENY"
         assert client.get("/ui/assets/app.js").status_code == 200
-        for path in ("/ui/assets/../webui_server.py", "/ui/assets/%2e%2e/standalone.py", "/ui/assets/i18n/none.json"):
+        for path in (
+            "/ui/assets/../webui_server.py",
+            "/ui/assets/%2e%2e/standalone.py",
+            "/ui/assets/i18n/none.json",
+            "/ui/assets/index.html",
+        ):
             assert client.get(path).status_code == 404, path
         boot = client.get("/ui/api/bootstrap").json()
         assert boot["session"] is None and boot["language"] == "de" and "pt-BR" in boot["languages"]

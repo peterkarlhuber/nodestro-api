@@ -246,6 +246,25 @@ th { color: var(--muted); font-weight: 600; }
 .dialog-head h2 { margin: 0; }
 .dialog-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
 .dialog-actions .spacer { flex: 1; }
+
+/* The connection state (NAL-C2): a dot and a short text in the top bar; a click opens "About this app". */
+.status { display: inline-flex; align-items: center; gap: 6px; max-width: 260px; min-height: 32px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
+.status:hover { background: var(--surface-hover); color: var(--text); }
+.status-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--idle); }
+.status[data-state="connected"] .status-dot { background: var(--success); }
+.status[data-state="connecting"] .status-dot, .status[data-state="auth_required"] .status-dot { background: var(--running); }
+.status[data-state="degraded"] .status-dot { background: var(--warning); }
+.status[data-state="disconnected"] .status-dot, .status[data-state="error"] .status-dot, .status[data-state="incompatible"] .status-dot { background: var(--danger); }
+.banner.connection { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--warning-soft); color: var(--text); border-color: var(--warning); }
+.banner.connection[data-state="incompatible"], .banner.connection[data-state="error"] { background: var(--danger-soft); border-color: var(--danger); }
+.banner.connection span { flex: 1 1 240px; }
+.dialog.about { padding: 18px 20px 20px; }
+.about-list { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; margin: 14px 0 0; }
+.about-list dt { color: var(--muted); }
+.about-list dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+@media (max-width: 560px) { .status { max-width: 44px; padding: 4px 8px; } .status-text { display: none; } .about-list { grid-template-columns: 1fr; } .about-list dd { margin-bottom: 6px; } }
+@media (forced-colors: active) { .status-dot { forced-color-adjust: none; } }
 .places { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip { border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); border-radius: 999px; padding: 3px 12px; font-size: .85rem; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip:hover { background: var(--surface-hover); }
