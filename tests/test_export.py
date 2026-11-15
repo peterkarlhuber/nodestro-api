@@ -575,7 +575,7 @@ def _fake_tabrion(monkeypatch: pytest.MonkeyPatch, direct_url: dict[str, Any] | 
 
 
 def test_a_git_tabrion_installation_exports_its_full_commit(monkeypatch: pytest.MonkeyPatch) -> None:
-    commit = "af0458d54467571abfc1afdd44d76e1f4d727c06"
+    commit = "5bc690e2de74a92cd44bb4522cf2533cc2c8d14f"
     url = "https://github.com/peterkarlhuber/tabrion.git"
     _fake_tabrion(monkeypatch, {"url": url, "vcs_info": {"vcs": "git", "commit_id": commit}})
     assert exporter._tabrion_git() == f"tabrion @ git+{url}@{commit}"

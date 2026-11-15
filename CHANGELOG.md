@@ -26,6 +26,13 @@
   or result folder that holds or contains the package or is the home folder, and move the old folder aside instead of
   deleting it first; `adopt` refuses folders that lead out of either package; a restore never writes `data/run`,
   `data/models` or `data/ollama`; Windows device names are refused; an instance whose process lives counts as running.
+- Security (Tabrion 0.2.2 pin): `portable_locks/tabrion.txt` pins the source archive of Tabrion 0.2.2 final `5bc690e`
+  (tabrion #83, sha256 `a634d06b49038e0233d668062f7dea6eae1aad931d2c4743a32b0a71cdbf2809`, two downloads gave the
+  same bytes). 0.2.2 carries security fixes: `grant_runtime_role` refuses members of predefined roles, roles that can
+  still write a protected table and CREATEROLE roles before PostgreSQL 16; `tabrion.check` adds TAB-PG-013/014;
+  `tabrion.profilefile` refuses more host values. No public name is added or removed (`RoleReport` gains the
+  defaulted field `broad`), so no code change; `build.txt` is unchanged (hatchling 1.33.0). The range stays
+  `>=0.2,<0.3`.
 
 - Changed (NAL-C2): the web interface of exports is now developed in nodestro-app-ui; `src/nodestro_api/webui/` is an
   unchanged copy of its commit `75785a8` (`VENDORED.md`, `manifest.json` with SHA-256 per file), embedded and checked
