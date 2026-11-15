@@ -54,7 +54,7 @@ def test_a_code_works_once_and_carries_its_scopes(tmp_path: Path) -> None:
         found.redeem(code.code, address="10.0.0.2")
     assert again.value.key == "pairing.code_invalid"
     # Only hashes are stored: neither the code nor the secret is in the file.
-    stored = (tmp_path / pairing.DEVICES_FILE).read_text("utf-8")
+    stored = (tmp_path / pairing.DEVICES_FOLDER / pairing.DEVICES_FILE).read_text("utf-8")
     assert code.code not in stored and secret not in stored and device.id in stored
 
 
@@ -126,6 +126,57 @@ def test_the_device_secret_rotates_and_an_old_one_revokes_the_device(tmp_path: P
             found.renew(cookie)
 
 
+def test_a_saved_device_list_is_current_even_if_the_file_time_does_not_change(tmp_path: Path) -> None:
+    import os
+
+    found = Pairing(tmp_path)
+    device, secret = found.redeem(found.create_code().code, address="a")
+    path = tmp_path / pairing.DEVICES_FOLDER / pairing.DEVICES_FILE
+    stamp = path.stat().st_mtime_ns
+    for _ in range(3):
+        secret = found.renew(f"{device.id}.{secret}")[1]
+        os.utime(path, ns=(stamp, stamp))  # a file system with coarse time stamps (FAT32)
+    assert found.renew(f"{device.id}.{secret}")[0].id == device.id
+
+
+def test_names_from_a_browser_lose_control_characters(tmp_path: Path) -> None:
+    found = Pairing(tmp_path)
+    device, _ = found.redeem(
+        found.create_code().code, address="a", name="Lap\x1b[2Jtop\nrevoked: no\u202e", agent="UA\r\nX"
+    )
+    assert device.name == "Lap [2Jtop revoked: no" and device.agent == "UA X"
+    assert pairing.clean("\x00\x07", 60) == ""
+
+
+def test_new_addresses_are_capped(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(pairing, "MAX_ADDRESSES", 3)
+    found = Pairing(tmp_path)
+    found.create_code()
+    for index in range(3):
+        with pytest.raises(PairingError) as wrong:
+            found.redeem("AAAAAAAA", address=f"2001:db8::{index}")
+        assert wrong.value.key == "pairing.code_invalid"
+    with pytest.raises(PairingError) as capped:
+        found.redeem("AAAAAAAA", address="2001:db8::99")
+    assert capped.value.key == "pairing.too_many_attempts"
+
+
+def test_a_restore_keeps_revocations(tmp_path: Path) -> None:
+    import shutil
+
+    found = Pairing(tmp_path)
+    device, _ = found.redeem(found.create_code().code, address="a")
+    path = tmp_path / pairing.DEVICES_FOLDER / pairing.DEVICES_FILE
+    saved = tmp_path / "backup.json"
+    shutil.copy(path, saved)
+    found.revoke(device.id)
+    before = found.devices()
+    shutil.copy(saved, path)  # the backup made before the revocation is restored
+    assert Pairing(tmp_path).device(device.id) is not None
+    assert pairing.keep_revocations(tmp_path, before) == 1
+    assert Pairing(tmp_path).device(device.id) is None
+
+
 def test_devices_survive_a_restart_and_can_be_revoked_while_stopped(tmp_path: Path) -> None:
     found = Pairing(tmp_path)
     one, secret = found.redeem(found.create_code().code, address="a")
@@ -142,13 +193,13 @@ def test_devices_survive_a_restart_and_can_be_revoked_while_stopped(tmp_path: Pa
 def test_an_expired_device_and_a_damaged_file_pair_nothing(tmp_path: Path) -> None:
     found = Pairing(tmp_path)
     device, secret = found.redeem(found.create_code().code, address="a")
-    data = json.loads((tmp_path / pairing.DEVICES_FILE).read_text("utf-8"))
+    data = json.loads((tmp_path / pairing.DEVICES_FOLDER / pairing.DEVICES_FILE).read_text("utf-8"))
     data["devices"][0]["expires_at"] = (datetime.now(UTC) - timedelta(seconds=1)).isoformat()
-    (tmp_path / pairing.DEVICES_FILE).write_text(json.dumps(data), "utf-8")
+    (tmp_path / pairing.DEVICES_FOLDER / pairing.DEVICES_FILE).write_text(json.dumps(data), "utf-8")
     assert found.device(device.id) is None
     with pytest.raises(PairingError):
         found.renew(f"{device.id}.{secret}")
-    (tmp_path / pairing.DEVICES_FILE).write_text("{broken", "utf-8")
+    (tmp_path / pairing.DEVICES_FOLDER / pairing.DEVICES_FILE).write_text("{broken", "utf-8")
     assert found.devices() == [] and found.device(device.id) is None
 
 

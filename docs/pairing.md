@@ -38,7 +38,10 @@ comparison is the person's: the launcher prints the fingerprint on A, the browse
 The interface explains where to find it per browser.
 
 A pairing request over plain HTTP is refused with `pairing.tls_required` unless it comes from a loopback address
-(the request's own socket peer, never a forwarded header unless `behind_proxy`).
+(the request's own socket peer, never a forwarded header unless `behind_proxy`). With `behind_proxy`, forwarded
+headers are trusted only from a proxy on the same computer (127.0.0.1), and that proxy must set `X-Forwarded-For` and
+`X-Forwarded-Proto`: without them every client looks like loopback and shares one attempt limit. A proxy on another
+computer is not trusted, so pairing through it is refused (`pairing.tls_required`); sign in with a key there.
 
 ## Pairing codes
 
@@ -48,9 +51,11 @@ launcher asks it over the existing local control channel):
 - 8 characters of Crockford Base32 (40 bits) from `secrets`, shown as two groups of four (`K7QD-M2XA`). Input is
   case-insensitive; `-`, spaces, `I`/`L` (as 1) and `O` (as 0) are accepted.
 - Valid for 10 minutes (`--ttl` 1 to 10), for one use. At most 5 wrong attempts per code, then the code is void.
-- At most 20 failed pairing attempts per hour per client address, then `429 pairing.too_many_attempts`. At most 5
+- At most 20 failed pairing attempts per hour per client address, then `429 pairing.too_many_attempts`; at most
+  10,000 addresses with failures are kept, further new addresses are refused until the hour passes. At most 5
   open codes at a time. A wrong code counts as an attempt against every open code (an attacker does not know which
-  code is open).
+  code is open). Accepted trade-off: a host in the network can void open codes with wrong ones and so keep pairing
+  from working; the operator then sees `pairing.code_invalid` and finds the host by the attempt limit.
 - Only the SHA-256 of the code is kept, in memory of the running process; comparison in constant time. A restart
   voids open codes. The code is never logged.
 - Scopes are a subset of `run`, `read`, `approve` (default `run,read`). A code never grants operator rights: the
@@ -69,20 +74,24 @@ The launcher prints no QR code: the package has no QR library, and the link and 
 2. The code is looked up by hash, checked for expiry and use, and consumed.
 3. A device right is created: `id` (`dev_…`), name (from the request, else the code's name, at most 60 characters),
    scopes and the publication of the code, `created_at`, `last_seen`, `expires_at` (90 days, sliding),
-   `revoked_at`, a short user-agent hint, and the SHA-256 of the current device secret. Devices are kept in
-   `data/devices.json` (0600), so they survive restarts.
+   `revoked_at`, a short user-agent hint, and the SHA-256 of the current device secret. Name and hint lose control
+   and format characters (the device list is printed in a terminal). Devices are kept in
+   `data/secrets/devices.json` (0600, in the folder kept to the current user), so they survive restarts. A backup holds
+   them only with `--include-secrets`; a restore keeps every device revoked since the backup revoked.
 4. The answer sets the normal session cookie (as after a sign-in with a key) and a device cookie
    `nodestro_device` = `<device id>.<secret>` (HttpOnly, Secure, SameSite=Strict, path `/ui/api/device`, 90 days).
 
 `POST /ui/api/device/session` renews a session from the device cookie when the session has expired or the backend
 restarted. The secret rotates on every use: the old value is replaced by a new one. A device cookie presented with a
 secret that was already rotated away revokes the device (a stolen copy and the owner's browser cannot both keep
-working). Expired and revoked devices are refused with `401 pairing.device_revoked`, and their sessions end at once:
+working). There is no grace window for a replaced secret, since it would hand a thief the new one. Instead the
+interface renews under a Web Lock (`navigator.locks`): several tabs of one browser renew one after the other, and a
+tab that gets the lock first asks whether another tab already got a session. Expired and revoked devices are refused with `401 pairing.device_revoked`, and their sessions end at once:
 every request of a device session checks that the device still exists and is not revoked.
 
 `DELETE /ui/api/device` (the paired browser) revokes its own device and signs out. On A:
 `start.sh devices list`, `start.sh devices revoke ID`, `start.sh devices revoke --all` (through the local control
-channel while running, directly on `data/devices.json` while stopped).
+channel while running, directly on `data/secrets/devices.json` while stopped).
 
 Device ids appear shortened in logs (`dev_ab12…`); secrets and codes never do.
 
@@ -109,8 +118,13 @@ state machine (NAL-C2) stays: "connected" only after discovery, contract, sign-i
 | Unauthorized discovery | no broadcasts; anonymous discovery stays minimal |
 | Codes in logs or history | the pairing link carries the code in the fragment; the code is never logged |
 
+The fingerprint of a pairing link (`fp`) is compared by the interface with the one the backend reports, and a
+difference (or a backend that reports none) blocks pairing. This catches a wrong link or a changed certificate, but
+not an active man in the middle, who also serves the interface's script: only the browser's own certificate dialog
+protects against that.
+
 Residual risks: a person who accepts a self-signed certificate without comparing the fingerprint can be attacked by
-someone in the same network; anyone with write access to the package folder can read `devices.json` hashes (not the
+someone in the same network; anyone with access to the package folder as the same user can read `devices.json` hashes (not the
 secrets) and the TLS key. Pairing is off by default and stays so until D1.
 
 ## Desktop network listener

@@ -536,9 +536,14 @@ def restore(root: Path, data_dir: Path, output_dir: Path | None, source: Path, i
             if (unpacked / "config").is_dir():
                 _replace_folder(unpacked / "config", root / "config", staging / "old-config")
             (unpacked / "data").mkdir(exist_ok=True)
+            from . import pairing
+
+            paired = pairing.Pairing(data_dir).devices()
             _replace_folder(unpacked / "data", data_dir, staging / "old-data")
             if (data_dir / SECRETS).is_dir():
                 restrict_folder(data_dir / SECRETS)
+            # A browser revoked after the backup was made stays revoked (NAL-C4 review).
+            pairing.keep_revocations(data_dir, paired)
             if output_dir is not None and (unpacked / "results").is_dir():
                 shutil.copytree(unpacked / "results", output_dir, dirs_exist_ok=True)
         finally:

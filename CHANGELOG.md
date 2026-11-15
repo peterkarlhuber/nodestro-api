@@ -5,7 +5,7 @@
 - Added (NAL-C4, pairing; off unless `NODESTRO_PAIRING=on`, decision E-7): a browser on another computer pairs with a
   portable package by a one-time code from `pair` (8 Crockford Base32 characters, 10 minutes, one use, 5 attempts,
   20 failures per hour and address) instead of an API key. Pairing needs TLS (loopback excepted) and creates a device
-  right with fixed app-user scopes (`pairing.py`, `data/devices.json`, hashes only), a session and a rotating device
+  right with fixed app-user scopes (`pairing.py`, `data/secrets/devices.json`, hashes only, kept revoked across a restore), a session and a rotating device
   cookie whose reuse after rotation revokes the device; `devices list|revoke` on the backend. `tls_self_signed`
   serves the network with a self-issued certificate (ECDSA P-256, 397 days, `tls_selfsigned.py`, cryptography in
   packages where a wheel exists); discovery reports `tls.mode` and the fingerprint. The launcher reaches its own
