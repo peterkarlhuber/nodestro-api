@@ -124,9 +124,14 @@ class AuthInfo(BaseModel):
 
 
 class TlsInfo(BaseModel):
-    """Whether the request reached the backend over HTTPS."""
+    """Whether the request reached the backend over HTTPS, and (a portable package, NAL-C4) how it serves TLS."""
 
     enabled: bool = False
+    #: ``certificate`` (the operator's own), ``proxy`` (a TLS proxy in front), ``self_signed`` (restricted trust: a
+    #: person compares ``fingerprint``) or ``none``; absent where the backend does not say.
+    mode: Literal["certificate", "proxy", "self_signed", "none"] | None = None
+    #: The SHA-256 fingerprint of a self-issued certificate (``AB:CD:…``), only with ``mode`` ``self_signed``.
+    fingerprint: str | None = None
 
 
 class AppLinks(BaseModel):

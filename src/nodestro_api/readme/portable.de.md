@@ -37,6 +37,8 @@ Läufe, Freigaben, Dateien und Einstellungen noch da.
 | `rollback` | Geht zum Programm vor dem letzten Update zurück. |
 | `adopt <alter Ordner>` | Übernimmt Einstellungen und Daten eines älteren Pakets dieser Anwendung. |
 | `ui install <datei.tgz> --sha256 <hash>` | Installiert eine neuere Weboberfläche (`ui reset` geht zurück, `ui status`). |
+| `pair` | Erzeugt einen Kopplungscode für einen Browser auf einem anderen Computer (nur mit `NODESTRO_PAIRING=on`, siehe Einstellungen). |
+| `devices list` | Zeigt die gekoppelten Browser (`devices revoke <id>` oder `--all` entzieht den Zugang). |
 
 ## KI-Anbieter und Schlüssel
 
@@ -83,6 +85,15 @@ Standardmäßig antwortet die Anwendung **nur diesem Computer** (`127.0.0.1`). U
 `host = "0.0.0.0"` **und** HTTPS (`tls_cert`/`tls_key`, oder `behind_proxy = true` hinter einem Reverse Proxy mit
 HTTPS); ohne HTTPS startet sie so nicht. Andere melden sich mit einem API-Schlüssel an; ohne Schlüssel kommt niemand
 hinein.
+
+**Von einem anderen Computer (Kopplung, Vorschau).** Ohne eigenes Zertifikat und ohne Proxy kann die Anwendung
+mit `tls_self_signed = true` ein selbst ausgestelltes Zertifikat verwenden. Der Browser warnt davor: Vergleiche den
+Fingerabdruck, den die Konsole beim Start zeigt, mit dem im Zertifikatsdialog des Browsers, bevor du fortfährst. Die
+Oberfläche kennzeichnet diese Verbindung dauerhaft als eingeschränkt vertrauenswürdig. Ist die Kopplung eingeschaltet
+(Umgebungsvariable `NODESTRO_PAIRING=on`, bis zur unabhängigen Sicherheitsprüfung standardmäßig aus), erzeugt
+`pair` einen Code für 10 Minuten; im Browser des anderen Computers gibst du ihn ein und brauchst keinen
+API-Schlüssel. `devices list` zeigt die gekoppelten Browser, `devices revoke <id>` (oder `--all`)
+entzieht den Zugang sofort. Eigenes Zertifikat oder Proxy bleiben der empfohlene Weg.
 
 ## Programmierschnittstelle (API)
 

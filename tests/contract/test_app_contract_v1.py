@@ -193,8 +193,9 @@ def test_discovery_without_credentials_is_minimal(backend: Backend) -> None:
     assert set(body) == {"contract", "backend", "auth", "tls"}
     assert body["contract"] == {"name": "nodestro-app", "versions": [1], "current": 1}
     assert set(body["backend"]) == {"id", "name"} and body["backend"]["name"] == ""
-    assert body["tls"] == {"enabled": False}
-    assert "api_key" in body["auth"]["methods"]
+    # A portable package also says how it serves TLS (NAL-C4); here this computer alone, without TLS.
+    assert body["tls"] in ({"enabled": False}, {"enabled": False, "mode": "none"})
+    assert "api_key" in body["auth"]["methods"] and "pairing" not in body["auth"]["methods"]
     # No app names, no publications, no versions.
     text_ = json.dumps(body)
     assert backend.slug not in text_ and backend.publication["name"] not in text_ and 'version"' not in text_

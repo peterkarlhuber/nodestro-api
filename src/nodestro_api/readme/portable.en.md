@@ -35,6 +35,8 @@ every run, approval, file and setting.
 | `rollback` | Goes back to the program before the last update. |
 | `adopt <old folder>` | Takes over settings and data of an older package of this application. |
 | `ui install <file.tgz> --sha256 <hash>` | Installs a newer web interface (`ui reset` goes back, `ui status`). |
+| `pair` | Creates a pairing code for a browser on another computer (only with `NODESTRO_PAIRING=on`, see Configuration). |
+| `devices list` | Shows the paired browsers (`devices revoke <id>` or `--all` ends their access). |
 
 ## AI providers and keys
 
@@ -79,6 +81,15 @@ By default the application answers **only this computer** (`127.0.0.1`). To serv
 `host = "0.0.0.0"` **and** HTTPS (`tls_cert`/`tls_key`, or `behind_proxy = true` behind a reverse proxy with
 HTTPS); without HTTPS it refuses to start that way. Other people sign in with an API key; nobody can sign in
 without one.
+
+**From another computer (pairing, preview).** Without an own certificate and without a proxy, the application can
+use a self-issued certificate with `tls_self_signed = true`. The browser warns about it: compare the fingerprint the
+console shows at the start with the one in the browser's certificate dialog before you continue. The interface marks
+this connection as restricted trust for as long as it is used. With pairing switched on (environment variable
+`NODESTRO_PAIRING=on`, off by default until the independent security review), `pair` creates a code valid for
+10 minutes; type it in the browser of the other computer, no API key needed. `devices list` shows the paired
+browsers, `devices revoke <id>` (or `--all`) ends their access at once. An own certificate or a proxy stays the
+recommended way.
 
 ## Programming interface (API)
 

@@ -449,7 +449,17 @@ class StandaloneHost:
         methods = ["api_key", "session"]
         if getattr(ui.options, "control_token", None):
             methods.append("launch_link")
+        if getattr(ui, "pairing", None) is not None:
+            methods.append("pairing")
         return methods
+
+    def tls_info(self) -> dict[str, Any]:
+        """How a portable package serves TLS (NAL-C4); nothing without the launcher's interface."""
+        ui = self.web_ui
+        if ui is None or not getattr(ui.options, "control_token", None):
+            return {}
+        fingerprint = ui.options.tls_fingerprint if ui.options.tls_mode == "self_signed" else None
+        return {"mode": ui.options.tls_mode, "fingerprint": fingerprint}
 
     def release_of_run(self, run: Run) -> ServedRelease | None:
         return self.served

@@ -739,6 +739,12 @@ def requirements(options: ExportOptions, bundle: Any) -> tuple[list[str], list[s
     # Semantic knowledge search on SQLite (no wheel for Windows on ARM: there the search stays full-text).
     direct.append("sqlite-vec>=0.1.6; sys_platform != 'win32' or platform_machine != 'ARM64'")
     direct.append("tzdata>=2024.1; sys_platform == 'win32'")
+    # The self-issued TLS certificate of pairing (NAL-C4, tls_selfsigned): cryptography has no ready-built package for
+    # macOS Intel or Windows ARM64 (there only an own certificate or a TLS proxy serves the network).
+    direct.append(
+        "cryptography>=42; (sys_platform != 'win32' or platform_machine != 'ARM64')"
+        " and (sys_platform != 'darwin' or platform_machine != 'x86_64')"
+    )
     direct += tool_libraries(bundle)
     closure = _closure([*_APP_PACKAGES, "orkexa[all,pdf,local,web]", "sqlite-vec"])
     closure.pop("orkexa", None)
@@ -757,8 +763,9 @@ class PlatformSupport(BaseModel):
     #: Whether a person checked a package on real hardware of this platform.
     human: bool
     #: Known limits by code: ``unsigned`` (Gatekeeper or SmartScreen asks once), ``gemini`` (no package with Google's
-    #: SDK), ``vector_search`` (semantic knowledge search falls back to full text).
-    limits: list[Literal["unsigned", "gemini", "vector_search"]] = Field(default_factory=list)
+    #: SDK), ``vector_search`` (semantic knowledge search falls back to full text), ``self_signed_tls`` (no self-issued
+    #: certificate for pairing: an own certificate or a TLS proxy serves the network).
+    limits: list[Literal["unsigned", "gemini", "vector_search", "self_signed_tls"]] = Field(default_factory=list)
 
 
 SUPPORT_FILE = Path(__file__).with_name("platform-support.json")
@@ -1307,6 +1314,9 @@ tls_key = ""
 behind_proxy = false
 # Further host names this application answers to when it serves the network, e.g. ["app.example.com"].
 allowed_hosts = []
+# Without an own certificate or proxy: a self-issued certificate (restricted trust: compare its fingerprint, which
+# the console shows, with the one your browser shows). Pairing browsers by code also needs NODESTRO_PAIRING=on.
+tls_self_signed = false
 
 [data]
 # Runs, uploads, result files, memory and keys (relative paths are relative to this folder).

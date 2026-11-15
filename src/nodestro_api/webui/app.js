@@ -35,6 +35,7 @@
   const store = {
     get(key) { try { return window.localStorage.getItem("nodestro." + key); } catch (error) { return null; } },
     set(key, value) { try { window.localStorage.setItem("nodestro." + key, value); } catch (error) { /* private mode */ } },
+    remove(key) { try { window.localStorage.removeItem("nodestro." + key); } catch (error) { /* private mode */ } },
   };
 
   // ---- translations ---------------------------------------------------------------------------------------
@@ -172,7 +173,12 @@
       if (conn.state === "connecting") conn.set("error", { status: problem.status });
       return;
     }
-    if (!boot.session) { state.boot.session = null; showSignIn(); return; }
+    state.boot.tls = boot.tls;
+    state.boot.pairing = boot.pairing;
+    if (!boot.session) {
+      state.boot.session = null;
+      if (!(await renewDevice())) { showSignIn(); return; }
+    }
     if (!state.config) { await enter(); return; }
     if (!(await connect())) return;
     if (state.run && !FINAL.has(state.run.status)) { closeEvents(); follow(state.run.run_id); }
@@ -181,7 +187,12 @@
 
   function statusText(name) {
     switch (name) {
-      case "connected": return t("conn.connected", { name: conn.describe().name || (state.boot && state.boot.name) || "Nodestro" });
+      case "connected": {
+        const backend = conn.describe().name || (state.boot && state.boot.name) || "Nodestro";
+        const session = (state.boot && state.boot.session) || {};
+        if (session.device) return t("conn.connected_device", { name: backend, device: session.name || "" });
+        return t("conn.connected", { name: backend });
+      }
       case "degraded": return t("conn.degraded");
       case "auth_required": return t("conn.auth_required");
       case "connecting": return t("conn.connecting");
@@ -229,6 +240,7 @@
       ["about.runtime_version", info.runtimeVersion || unknown],
       ["about.release", state.config && state.config.version ? "v" + state.config.version : unknown],
       ["about.state", statusText(conn.state)],
+      ["about.tls", tlsText()],
     ];
     const list = $("about-list");
     list.textContent = "";
@@ -239,6 +251,22 @@
       detail.textContent = String(value);
       list.append(term, detail);
     }
+  }
+
+  /** How the backend serves TLS (NAL-C4), as the about dialog names it. */
+  function tlsText() {
+    const tls = (state.boot && state.boot.tls) || {};
+    const mode = tls.mode || (location.protocol === "https:" ? "certificate" : "none");
+    const text = t("about.tls_" + mode);
+    return mode === "self_signed" && tls.fingerprint ? text + " (" + tls.fingerprint + ")" : text;
+  }
+
+  /** The permanent "restricted trust" notice of a self-issued certificate (NAL-C4, decision E-7). */
+  function renderTlsNotice() {
+    const tls = (state.boot && state.boot.tls) || {};
+    const shown = tls.mode === "self_signed" && location.protocol === "https:";
+    $("tls-notice").hidden = !shown;
+    if (shown) $("tls-fingerprint").textContent = tls.fingerprint || t("about.unknown");
   }
 
   function setupAbout() {
@@ -286,7 +314,8 @@
     }
     const data = response.status === 204 ? null : await response.json().catch(() => null);
     if (!response.ok) {
-      if (response.status === 401 && path !== "/ui/api/session" && path !== "/ui/api/bootstrap") showSignIn();
+      const signIn = ["/ui/api/session", "/ui/api/bootstrap", "/ui/api/pair", "/ui/api/device/session"];
+      if (response.status === 401 && !signIn.includes(path)) showSignIn();
       throw new ApiProblem(response.status, data);
     }
     return data;
@@ -328,14 +357,17 @@
     conn.set("auth_required");
     $("signin-title").textContent = (state.boot && state.boot.name) || "Nodestro";
     $("signin-description").textContent = (state.boot && state.boot.description) || "";
-    for (const id of ["nav-run", "nav-history", "nav-setup", "sign-out"]) $(id).hidden = true;
+    for (const id of ["nav-run", "nav-history", "nav-setup", "sign-out", "remove-device"]) $(id).hidden = true;
+    renderPairing();
     show("signin");
-    setTimeout(() => $("signin-key").focus(), 0);
+    setTimeout(() => $(state.pairing && state.boot && state.boot.pairing ? "pair-name" : "signin-key").focus(), 0);
   }
 
   async function start() {
     setupTheme();
     loadManifest();
+    // First of all, so the code leaves the address even when the backend cannot be reached.
+    readPairingLink();
     conn.set("connecting");
     try {
       state.boot = await api("GET", "/ui/api/bootstrap");
@@ -352,8 +384,94 @@
     document.title = state.boot.name + " · Nodestro";
     $("app-name").textContent = state.boot.name;
     $("app-version").textContent = state.boot.version ? "v" + state.boot.version : "";
-    if (!state.boot.session) { showSignIn(); return; }
+    renderTlsNotice();
+    if (!state.boot.session && !(await renewDevice())) { showSignIn(); return; }
     await enter();
+  }
+
+  // ---- pairing (NAL-C4) ---------------------------------------------------------------------------------------
+
+  /** A pairing link (``/?pair#code=…&fp=…``): the code fills the field and leaves the address (and the history). */
+  function readPairingLink() {
+    const params = new URLSearchParams(location.hash.slice(1));
+    const code = params.get("code");
+    if (!code) return;
+    state.pairing = { code, fingerprint: (params.get("fp") || "").replace(/[^0-9a-f]/gi, "").toUpperCase() };
+    history.replaceState(null, "", location.pathname);
+  }
+
+  /** The fingerprint of the link is not the one the backend reports (or it reports none): a wrong link or another
+   *  certificate. This does not stop an active man in the middle, who serves this script too: only the browser's
+   *  certificate dialog does (docs/pairing.md in nodestro-api). */
+  function fingerprintMismatch() {
+    const expected = state.pairing && state.pairing.fingerprint;
+    const tls = (state.boot && state.boot.tls) || {};
+    if (!expected) return false;
+    return !tls.fingerprint || expected !== tls.fingerprint.replace(/:/g, "").toUpperCase();
+  }
+
+  /** A paired browser gets a new session from its device cookie (the backend restarted or the session ended). */
+  async function renewDevice() {
+    if (!state.boot || !state.boot.pairing || store.get("paired") !== "1") return false;
+    // A replaced secret revokes the device, so tabs of this browser renew one after the other, and a tab that waited
+    // first looks for the session another tab already got (their cookies are shared).
+    const renew = async () => {
+      const boot = await api("GET", "/ui/api/bootstrap").catch(() => null);
+      if (boot && boot.session) { state.boot.session = boot.session; return true; }
+      try {
+        const answer = await api("POST", "/ui/api/device/session", {});
+        state.boot.session = { scopes: answer.device.scopes, operator: false, name: answer.device.name, device: true };
+        return true;
+      } catch (problem) {
+        if (problem.status === 401) store.remove("paired");
+        return false;
+      }
+    };
+    return navigator.locks ? navigator.locks.request("nodestro-device-renewal", renew) : renew();
+  }
+
+  function renderPairing() {
+    const form = $("pair-form");
+    const on = Boolean(state.boot && state.boot.pairing);
+    form.hidden = !on;
+    if (!on) return;
+    const error = $("pair-error");
+    if (state.pairing && state.pairing.code && !$("pair-code").value) $("pair-code").value = state.pairing.code;
+    if (fingerprintMismatch()) {
+      error.textContent = t("tls.mismatch");
+      error.hidden = false;
+      form.querySelector("button[type=submit]").disabled = true;
+    }
+  }
+
+  async function pair(event) {
+    event.preventDefault();
+    const error = $("pair-error");
+    if (fingerprintMismatch()) return;
+    error.hidden = true;
+    const code = $("pair-code").value.trim();
+    if (!code) { error.textContent = t("pair.code_missing"); error.hidden = false; return; }
+    try {
+      const answer = await api("POST", "/ui/api/pair", { code, name: $("pair-name").value.trim() });
+      $("pair-code").value = "";
+      state.pairing = null;
+      store.set("paired", "1");
+      state.boot.session = { scopes: answer.device.scopes, operator: false, name: answer.device.name, device: true };
+      await enter();
+    } catch (problem) {
+      error.textContent = problemText(problem);
+      error.hidden = false;
+    }
+  }
+
+  async function removeDevice() {
+    if (!window.confirm(t("device.remove_confirm"))) return;
+    try { await api("DELETE", "/ui/api/device"); } catch (problem) { /* already gone */ }
+    store.remove("paired");
+    state.boot.session = null;
+    state.run = null;
+    notice(t("device.removed"));
+    showSignIn();
   }
 
   async function enter() {
@@ -370,7 +488,9 @@
     $("nav-run").hidden = false;
     $("nav-history").hidden = !scopes.includes("read");
     $("nav-setup").hidden = !session.operator;
-    $("sign-out").hidden = false;
+    // A paired browser signs in again by itself from its device cookie: it ends its access by removing the device.
+    $("sign-out").hidden = Boolean(session.device);
+    $("remove-device").hidden = !session.device;
     $("workflow-name").textContent = state.config.name;
     $("workflow-description").textContent = state.config.description || "";
     $("start").disabled = !scopes.includes("run");
@@ -1614,6 +1734,8 @@
 
   document.addEventListener("DOMContentLoaded", () => {
     $("signin-form").addEventListener("submit", signIn);
+    $("pair-form").addEventListener("submit", pair);
+    $("remove-device").addEventListener("click", removeDevice);
     $("run-form").addEventListener("submit", submit);
     $("run-form").addEventListener("reset", () => setTimeout(() => renderForm(false), 0));
     $("sign-out").addEventListener("click", signOut);

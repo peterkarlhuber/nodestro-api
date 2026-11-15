@@ -115,6 +115,8 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "tls_key": "",
         "behind_proxy": False,
         "allowed_hosts": [],
+        # NAL-C4 (E-7): serve the network with a self-issued certificate when neither an own one nor a proxy is set.
+        "tls_self_signed": False,
     },
     "data": {"data_dir": "data", "output_dir": "results", "run_retention_days": 0, "log_dir": "logs"},
     "web": {"enabled": True, "language": "en", "api_docs": "local"},
@@ -404,20 +406,41 @@ def _write_state(data_dir: Path, state: dict[str, Any]) -> None:
     os.replace(temporary, target)
 
 
-def _control(state: dict[str, Any], path: str, timeout: float = 5.0) -> dict[str, Any] | None:
+def _local(port: int, *, tls: bool, timeout: float) -> http.client.HTTPConnection:
+    """A connection to this computer's own instance. With TLS the certificate is not checked: the port is the one this
+    instance wrote into its state file, and the control secret is what authenticates (an own certificate names the
+    public host name, a self-issued one no authority)."""
+    if not tls:
+        return http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
+    import ssl
+
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    return http.client.HTTPSConnection("127.0.0.1", port, timeout=timeout, context=context)
+
+
+def _control(
+    state: dict[str, Any], path: str, timeout: float = 5.0, *, method: str = "POST", body: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
     """A control request to a running instance (loopback, with its control secret)."""
     try:
-        connection = http.client.HTTPConnection("127.0.0.1", int(state["port"]), timeout=timeout)
-        connection.request("POST", path, headers={"X-Control-Token": str(state["control"])})
+        connection = _local(int(state["port"]), tls=bool(state.get("tls")), timeout=timeout)
+        headers = {"X-Control-Token": str(state["control"])}
+        payload = None
+        if body is not None:
+            payload = json.dumps(body).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        connection.request(method, path, body=payload, headers=headers)
         response = connection.getresponse()
-        body = response.read()
+        raw = response.read()
         connection.close()
-    except (OSError, KeyError, ValueError):
+    except (OSError, KeyError, ValueError, http.client.HTTPException):
         return None
     if response.status != 200:
         return None
     with suppress(ValueError):
-        return dict(json.loads(body))
+        return dict(json.loads(raw))
     return None
 
 
@@ -432,14 +455,18 @@ def _responding(port: int) -> bool:
 
 
 def _health(port: int, timeout: float = 2.0) -> bool:
-    try:
-        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
-        connection.request("GET", "/health")
-        ok = connection.getresponse().status == 200
-        connection.close()
-        return ok
-    except OSError:
-        return False
+    """Whether an instance answers on ``port`` (over HTTP or, served with TLS, HTTPS)."""
+    for tls in (False, True):
+        try:
+            connection = _local(port, tls=tls, timeout=timeout)
+            connection.request("GET", "/health")
+            ok = connection.getresponse().status == 200
+            connection.close()
+            if ok:
+                return True
+        except (OSError, http.client.HTTPException):
+            continue
+    return False
 
 
 def _free(host: str, port: int) -> bool:
@@ -493,7 +520,30 @@ def _network_problem(settings: Settings, host: str | None = None) -> str | None:
         return None
     if settings.get("server", "tls_cert") and settings.get("server", "tls_key"):
         return None
+    if settings.get("server", "tls_self_signed"):
+        # NAL-C4 (E-7): a self-issued certificate needs the cryptography library of the package.
+        from . import tls_selfsigned
+
+        return None if tls_selfsigned.available() else "self_signed_unavailable"
     return "network_needs_tls"
+
+
+def _tls(settings: Settings, host: str, console: Console) -> tuple[Path | None, Path | None, str, str | None]:
+    """The certificate and key to serve, the TLS mode the interface and discovery report, and a self-issued
+    certificate's fingerprint (NAL-C4): an own certificate wins, then a proxy, then a self-issued one for the
+    network; this computer alone needs none."""
+    if settings.get("server", "tls_cert") and settings.get("server", "tls_key"):
+        cert = settings.path(settings.get("server", "tls_cert"))
+        return cert, settings.path(settings.get("server", "tls_key")), "certificate", None
+    if settings.get("server", "behind_proxy"):
+        return None, None, "proxy", None
+    if host not in LOOPBACK and settings.get("server", "tls_self_signed"):
+        from . import tls_selfsigned
+
+        cert, key, fingerprint = tls_selfsigned.ensure(settings.data_dir)
+        console.say("tls_self_signed", fingerprint=fingerprint)
+        return cert, key, "self_signed", fingerprint
+    return None, None, "none", None
 
 
 def start(args: argparse.Namespace, settings: Settings) -> int:
@@ -514,8 +564,9 @@ def start(args: argparse.Namespace, settings: Settings) -> int:
     if not _program_intact(settings, console):
         return 4
     host = args.host or settings.host
-    if _network_problem(settings, host):
-        console.say("network_needs_tls")
+    problem = _network_problem(settings, host)
+    if problem:
+        console.say(problem)
         return 2
     # OUTPUT_DIR set outside the application wins over the folder chosen on the settings page.
     output_fixed = bool(os.environ.get("OUTPUT_DIR"))
@@ -556,13 +607,16 @@ def _serve(
     import uvicorn
 
     from .output_folder import OutputFolder, file_manager
+    from .pairing import Pairing
+    from .pairing import enabled as pairing_enabled
     from .standalone import StandaloneSettings, create_app
     from .webui_server import UiOptions, WebUi
 
     control = secrets.token_urlsafe(32)
     launch = secrets.token_urlsafe(32)
     standalone = StandaloneSettings.from_env()
-    tls = bool(settings.get("server", "tls_cert") and settings.get("server", "tls_key"))
+    certificate, key, tls_mode, fingerprint = _tls(settings, host, console)
+    tls = certificate is not None
     scheme = "https" if tls else "http"
     url = f"{scheme}://{_browser_host(host)}:{port}"
     holder: dict[str, Any] = {}
@@ -576,6 +630,8 @@ def _serve(
             output_dir_warning=host_object.output_warning,
             local_models=models.state,
             api_docs=str(settings.get("web", "api_docs") or "local") != "off",
+            tls_mode=tls_mode,
+            tls_fingerprint=fingerprint,
         )
         # The settings page may show the result folder in the file manager only when the application serves this
         # computer alone (a browser elsewhere would open nothing it can see).
@@ -597,6 +653,7 @@ def _serve(
             remove_provider=secrets_store.remove,
             auth_failed=core.auth_failed,
             output=output,
+            pairing=Pairing(settings.data_dir) if pairing_enabled() else None,
         )
         ui.sessions.add_launch_token(launch)
         return ui
@@ -612,15 +669,15 @@ def _serve(
         port=port,
         log_level="info",
         access_log=False,
-        ssl_certfile=str(settings.path(settings.get("server", "tls_cert"))) if tls else None,
-        ssl_keyfile=str(settings.path(settings.get("server", "tls_key"))) if tls else None,
+        ssl_certfile=str(certificate) if certificate is not None else None,
+        ssl_keyfile=str(key) if key is not None else None,
         proxy_headers=bool(settings.get("server", "behind_proxy")),
         forwarded_allow_ips="127.0.0.1" if settings.get("server", "behind_proxy") else None,
         timeout_graceful_shutdown=20,
     )
     server = uvicorn.Server(config)
     holder["server"] = server
-    state = {"pid": os.getpid(), "port": port, "url": url, "control": control, "started": time.time()}
+    state = {"pid": os.getpid(), "port": port, "url": url, "control": control, "started": time.time(), "tls": tls}
 
     def announce() -> None:
         deadline = time.monotonic() + 120
@@ -873,6 +930,76 @@ def ui_command(args: argparse.Namespace, settings: Settings) -> int:
         return 0
 
     return _operate(settings, console, run, stopped=args.action != "status")
+
+
+def pair_command(args: argparse.Namespace, settings: Settings) -> int:
+    """A one-time pairing code for a browser on another computer (NAL-C4, ``docs/pairing.md``)."""
+    console = Console(settings.language)
+    state = _read_state(settings.data_dir) or {}
+    if not state or not _responding(int(state.get("port", 0))):
+        console.say("not_running")
+        return 1
+    scopes = [item.strip() for item in str(args.scopes).split(",") if item.strip()]
+    answer = _control(state, "/ui/control/pair", body={"name": args.name, "scopes": scopes, "minutes": args.ttl})
+    if answer is None:
+        console.say("pair_unavailable")
+        return 1
+    url = str(state.get("url") or "")
+    tls = answer.get("tls") or {}
+    fingerprint = str(tls.get("fingerprint") or "")
+    link = f"{url}/?pair#code={answer['code']}" + (f"&fp={fingerprint.replace(':', '')}" if fingerprint else "")
+    console.say("pair_code", log=False, code=answer["display"], minutes=args.ttl, scopes=", ".join(answer["scopes"]))
+    console.say("pair_link", log=False, url=link)
+    if fingerprint:
+        console.say("pair_fingerprint", log=False, fingerprint=fingerprint)
+    if url.startswith("http://"):
+        console.say("pair_this_computer_only", log=False)
+    else:
+        console.say("pair_firewall", log=False, port=state.get("port", ""))
+    return 0
+
+
+def devices_command(args: argparse.Namespace, settings: Settings) -> int:
+    """The paired browsers: list them or revoke one or all (NAL-C4); through the running instance, else the file."""
+    from . import pairing
+
+    console = Console(settings.language)
+    state = _read_state(settings.data_dir) or {}
+    running = bool(state) and _responding(int(state.get("port", 0)))
+    if args.action == "list":
+        found: list[dict[str, Any]] = []
+        if running:
+            answer = _control(state, "/ui/control/devices", method="GET")
+            found = list((answer or {}).get("devices") or [])
+        else:
+            found = [item.public() for item in pairing.Pairing(settings.data_dir).devices()]
+        if not found:
+            console.say("devices_none")
+        for item in found:
+            console.say(
+                "devices_item",
+                log=False,
+                id=item["id"],
+                name=item.get("name", ""),
+                scopes=", ".join(item.get("scopes") or []),
+                last_seen=str(item.get("last_seen", ""))[:16].replace("T", " "),
+                state="revoked" if item.get("revoked_at") else "active",
+            )
+        return 0
+    every = args.id == "--all" or args.all
+    if not every and not args.id:
+        console.say("devices_name_one")
+        return 2
+    if running:
+        answer = _control(state, "/ui/control/devices/revoke", body={"all": True} if every else {"id": args.id})
+        count = int((answer or {}).get("revoked", 0)) if answer is not None else -1
+    else:
+        count = pairing.revoke_offline(settings.data_dir, None if every else args.id)
+    if count < 0:
+        console.say("devices_failed")
+        return 1
+    console.say("devices_revoked", count=count)
+    return 0
 
 
 def stop(settings: Settings) -> int:
@@ -1134,6 +1261,16 @@ def parser() -> argparse.ArgumentParser:
     put.add_argument("artifact", help="nodestro-app-ui-<version>.tgz")
     put.add_argument("--sha256", required=True, help="the artifact's SHA-256 (from its .sha256 file)")
     face_commands.add_parser("reset")
+    pair = commands.add_parser("pair", help="a one-time code to pair a browser on another computer (NAL-C4)")
+    pair.add_argument("--name", default="", help="the device's name (the browser may give another one)")
+    pair.add_argument("--scopes", default="run,read", help="run, read and approve, separated by commas")
+    pair.add_argument("--ttl", type=int, default=10, help="minutes the code is valid (1 to 10)")
+    device = commands.add_parser("devices", help="paired browsers: list, revoke")
+    device_commands = device.add_subparsers(dest="action", required=True)
+    device_commands.add_parser("list")
+    remove = device_commands.add_parser("revoke")
+    remove.add_argument("id", nargs="?", default="")
+    remove.add_argument("--all", action="store_true", help="revoke every paired browser")
     return found
 
 
@@ -1163,6 +1300,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "rollback": lambda: rollback_command(settings),
         "adopt": lambda: adopt_command(args, settings),
         "ui": lambda: ui_command(args, settings),
+        "pair": lambda: pair_command(args, settings),
+        "devices": lambda: devices_command(args, settings),
     }
     if command in commands:
         _setup_logging(settings)

@@ -39,6 +39,7 @@
         <button type="button" class="icon-button" id="theme" data-i18n-title="a11y.theme" data-i18n-aria="a11y.theme" title="Theme">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>
         </button>
+        <button type="button" class="ghost" id="remove-device" hidden data-i18n="device.remove">Remove this device</button>
         <button type="button" class="ghost" id="sign-out" hidden data-i18n="auth.sign_out">Sign out</button>
       </div>
     </div>
@@ -49,6 +50,12 @@
     <div id="connection-banner" class="banner connection" role="alert" hidden>
       <span id="connection-text"></span>
       <button type="button" class="ghost small" id="connection-retry" data-i18n="conn.retry">Try again</button>
+    </div>
+    <div id="tls-notice" class="banner warning" role="note" hidden>
+      <p><strong data-i18n="tls.restricted">Restricted trust: this application uses a certificate it issued itself.</strong></p>
+      <p><span data-i18n="tls.compare">Compare this fingerprint with the one your browser shows for the certificate and with the one in the start window of the application:</span></p>
+      <p class="mono" id="tls-fingerprint"></p>
+      <p class="hint" data-i18n="tls.howto">Chrome and Edge: click the icon left of the address, then "Certificate". Firefox: the lock, then "Connection not secure", "More information", "View certificate". Safari: the lock, then "Show certificate".</p>
     </div>
 
     <section id="view-loading" class="view center">
@@ -61,6 +68,17 @@
         <img class="mark" src="ui/assets/brand/nodestro-mark-128.png" alt="" width="56" height="56">
         <h1 id="signin-title"></h1>
         <p class="muted" id="signin-description"></p>
+        <form id="pair-form" class="pair" novalidate hidden>
+          <h2 data-i18n="pair.title">Connect with this backend</h2>
+          <label for="pair-code" data-i18n="pair.code_label">Pairing code</label>
+          <input id="pair-code" name="code" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" maxlength="11" aria-describedby="pair-hint">
+          <p class="hint" id="pair-hint" data-i18n="pair.code_hint">The operator creates the code on the computer of the application with "pair". It is valid for 10 minutes.</p>
+          <label for="pair-name" data-i18n="pair.name_label">Name of this device (optional)</label>
+          <input id="pair-name" name="name" maxlength="60" autocomplete="off">
+          <p class="error" id="pair-error" role="alert" hidden></p>
+          <button type="submit" class="primary" data-i18n="pair.submit">Connect</button>
+          <p class="hint" data-i18n="pair.or_key">Or sign in with an API key:</p>
+        </form>
         <form id="signin-form" novalidate>
           <label for="signin-key" data-i18n="auth.key_label">API key</label>
           <input id="signin-key" name="key" type="password" autocomplete="off" spellcheck="false" required>

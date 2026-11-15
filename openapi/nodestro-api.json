@@ -25198,12 +25198,40 @@
         "type": "object"
       },
       "TlsInfo": {
-        "description": "Whether the request reached the backend over HTTPS.",
+        "description": "Whether the request reached the backend over HTTPS, and (a portable package, NAL-C4) how it serves TLS.",
         "properties": {
           "enabled": {
             "default": false,
             "title": "Enabled",
             "type": "boolean"
+          },
+          "fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fingerprint"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "certificate",
+                  "proxy",
+                  "self_signed",
+                  "none"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
           }
         },
         "title": "TlsInfo",

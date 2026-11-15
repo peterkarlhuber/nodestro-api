@@ -16,13 +16,13 @@
   "files": [
     {
       "path": "app.css",
-      "size": 21832,
-      "sha256": "3d8d25a538ec57e55e1a9f2cf9073b3c589c6bda7838d7d322e1c58c60288ba8"
+      "size": 22042,
+      "sha256": "744d58d56e80d2ce4715f3f2ad299cba9620adc4b00e10f828bed1474d9eb921"
     },
     {
       "path": "app.js",
-      "size": 66300,
-      "sha256": "f1095c5e09357d0893f04ba5d905d23927a84931a2c4b596dd60c9eebb1277d2"
+      "size": 72011,
+      "sha256": "2d55f4ec0cb9b31eaba9a248f1a34d4b6f551356d2f3eadd971c076f1c5ddd0e"
     },
     {
       "path": "brand/nodestro-logo-on-dark.png",
@@ -46,38 +46,38 @@
     },
     {
       "path": "i18n/de.json",
-      "size": 20590,
-      "sha256": "8d75d29e3e1944ef447e333c137650750ef33126f9c27440b48b81d9c25eff69"
+      "size": 24401,
+      "sha256": "926b4eb005a9e8ed320e82d6e6ff6ef4469a1c6e7d99354b3e8541de93af094e"
     },
     {
       "path": "i18n/en.json",
-      "size": 18842,
-      "sha256": "f2586a3e7b96e4ecf3958c6ec8e8b547217b205c3b5328bd028a2765f176e36c"
+      "size": 22343,
+      "sha256": "8e3b0edd8279100e1f787aa1f337ca1fbb5e505c58eea0f7dc6ecd7c74a3121b"
     },
     {
       "path": "i18n/es.json",
-      "size": 20376,
-      "sha256": "3d693539bde90057024c4bb93c5fd53d87c0b5ee0a28ba3f93b3cd38dd296bf8"
+      "size": 24127,
+      "sha256": "8fa67c9e97390b5c6190440d9b8d76acffc60ca08075856ee4a4c749016c3f5d"
     },
     {
       "path": "i18n/fr.json",
-      "size": 21481,
-      "sha256": "eb846888ee653018bf7c40f884287254cebaa643a9c4fb08ca314a7ab7653ade"
+      "size": 25389,
+      "sha256": "e6015c03d462aa409085759203b79f57da093b78352d2c5edb6053925dedf28e"
     },
     {
       "path": "i18n/it.json",
-      "size": 20679,
-      "sha256": "0fafbc5f61827eff55257c311762526c5d7f19a6adc0c4dd2c21db338d5ae067"
+      "size": 24443,
+      "sha256": "2cadaf49a7fbda1c7fe3cf29bce72ccb0a40d767d695b8a6cf84b0aab2c3cea1"
     },
     {
       "path": "i18n/pt-BR.json",
-      "size": 20111,
-      "sha256": "dbc39708336a74fe2ec74cdd4388f4f0779397fc7e551a56edf16fa073403491"
+      "size": 23822,
+      "sha256": "82b73cadf19006abb272f889381d17e07cc5d5bb0d9afdc0389843d3b9271270"
     },
     {
       "path": "index.html",
-      "size": 12448,
-      "sha256": "db5c19cf488f5db87aa85452ac11788ecec42ed6537285a1f7abfe884acb9dfd"
+      "size": 14253,
+      "sha256": "151058bb2efd887b40565ec2fba0221eb077f19ecada27de977e5beba1b5b538"
     },
     {
       "path": "markdown.js",

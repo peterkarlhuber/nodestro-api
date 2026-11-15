@@ -296,3 +296,8 @@ th { color: var(--muted); font-weight: 600; }
 }
 @media (forced-colors: active) { .badge::before, .step .dot { forced-color-adjust: none; } }
 @media print { .topbar, .footer, .form, .actions { display: none !important; } .layout { display: block; } body { background: none; } }
+
+/* Pairing (NAL-C4) */
+.pair { margin-bottom: 1rem; }
+.pair h2 { font-size: 1rem; margin: 0 0 .5rem; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }

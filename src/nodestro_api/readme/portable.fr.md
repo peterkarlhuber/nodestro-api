@@ -35,6 +35,8 @@ toutes les exécutions, approbations, fichiers et paramètres.
 | `rollback` | Revient au programme d’avant la dernière mise à jour. |
 | `adopt <ancien dossier>` | Reprend paramètres et données d’un paquet plus ancien de cette application. |
 | `ui install <fichier.tgz> --sha256 <hash>` | Installe une interface web plus récente (`ui reset` revient en arrière, `ui status`). |
+| `pair` | Crée un code d’appairage pour un navigateur sur un autre ordinateur (seulement avec `NODESTRO_PAIRING=on`, voir Configuration). |
+| `devices list` | Affiche les navigateurs appairés (`devices revoke <id>` ou `--all` retire l’accès). |
 
 ## Fournisseurs d’IA et clés
 
@@ -80,6 +82,15 @@ Par défaut, l’application ne répond **qu’à cet ordinateur** (`127.0.0.1`)
 `host = "0.0.0.0"` **et** HTTPS (`tls_cert`/`tls_key`, ou `behind_proxy = true` derrière un proxy inverse avec
 HTTPS) ; sans HTTPS, elle refuse de démarrer ainsi. Les autres personnes se connectent avec une clé d’API ; personne ne peut se connecter
 sans clé.
+
+**Depuis un autre ordinateur (appairage, aperçu).** Sans certificat propre ni proxy, l’application peut utiliser un
+certificat auto-émis avec `tls_self_signed = true`. Le navigateur vous avertit : comparez l’empreinte que la console
+affiche au démarrage avec celle de la boîte de dialogue du certificat du navigateur avant de continuer. L’interface
+marque cette connexion comme de confiance restreinte tant qu’elle est utilisée. Avec l’appairage activé (variable
+d’environnement `NODESTRO_PAIRING=on`, désactivé par défaut jusqu’à l’audit de sécurité indépendant), `pair`
+crée un code valable 10 minutes ; saisissez-le dans le navigateur de l’autre ordinateur, sans clé d’API.
+`devices list` affiche les navigateurs appairés, `devices revoke <id>` (ou `--all`) leur retire l’accès
+immédiatement. Un certificat propre ou un proxy reste la voie recommandée.
 
 ## Interface de programmation (API)
 
