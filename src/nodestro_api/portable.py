@@ -52,11 +52,16 @@ import tomllib
 from typing import TYPE_CHECKING, Any
 import webbrowser
 
+from . import portable_ops as ops
+from .portable_ops import PackageRefusal, package_root, program_of
+
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
-ROOT = Path(__file__).resolve().parent.parent
-MANIFEST = ROOT / "PORTABLE.json"
+#: The program folder this launcher runs from, and the package folder around it (the same before layout 2).
+PROGRAM = Path(__file__).resolve().parent.parent
+ROOT = package_root(PROGRAM)
+MANIFEST = PROGRAM / "PORTABLE.json"
 CONFIG = ROOT / "config" / "settings.toml"
 LOOPBACK = ("127.0.0.1", "::1", "localhost")
 #: Ports tried after the configured one when it is taken.
@@ -122,8 +127,12 @@ DEFAULTS: dict[str, dict[str, Any]] = {
 class Settings:
     """``config/settings.toml`` over :data:`DEFAULTS`; environment variables win where they exist."""
 
-    def __init__(self, root: Path = ROOT, values: dict[str, dict[str, Any]] | None = None) -> None:
+    def __init__(
+        self, root: Path = ROOT, values: dict[str, dict[str, Any]] | None = None, program: Path | None = None
+    ) -> None:
+        #: The package folder (settings, data, results, logs) and its program folder (layout 2: ``program/``).
         self.root = root
+        self.program = program if program is not None else program_of(root)
         merged = {section: dict(items) for section, items in DEFAULTS.items()}
         for section, items in (values if values is not None else self._read(root / "config" / "settings.toml")).items():
             if isinstance(items, dict):
@@ -149,6 +158,22 @@ class Settings:
     @property
     def data_dir(self) -> Path:
         return self.path(os.environ.get("DATA_DIR") or self.get("data", "data_dir"))
+
+    @property
+    def output_dir(self) -> Path | None:
+        """The result folder as the application uses it (:mod:`nodestro_api.output_folder`): ``OUTPUT_DIR`` from
+        the environment, else the operator's choice on the settings page, else ``[data] output_dir``."""
+        value = os.environ.get("OUTPUT_DIR")
+        if not value:
+            with suppress(OSError, ValueError, AttributeError):
+                stored = json.loads((self.data_dir / "settings" / "output-folder.json").read_text(encoding="utf-8"))
+                value = str(stored.get("path") or "")
+        value = value or self.get("data", "output_dir")
+        return self.path(value) if value else None
+
+    @property
+    def log_dir(self) -> Path:
+        return self.path(self.get("data", "log_dir") or "logs")
 
     @property
     def host(self) -> str:
@@ -226,7 +251,7 @@ def _check_folder(folder: Path) -> str | None:
 # ---- package facts ---------------------------------------------------------------------------------------------
 
 
-def package_info(root: Path = ROOT) -> dict[str, Any]:
+def package_info(root: Path = PROGRAM) -> dict[str, Any]:
     if not (root / "PORTABLE.json").is_file():
         return {}
     try:
@@ -486,6 +511,8 @@ def start(args: argparse.Namespace, settings: Settings) -> int:
         if not args.no_browser:
             _open_browser(running, console)
         return 0
+    if not _program_intact(settings, console):
+        return 4
     host = args.host or settings.host
     if _network_problem(settings, host):
         console.say("network_needs_tls")
@@ -497,12 +524,12 @@ def start(args: argparse.Namespace, settings: Settings) -> int:
     if not os.environ.get("API_KEYS"):
         os.environ["API_KEYS"] = _api_keys(data_dir)
     port = _choose_port(host, args.port or settings.port)
-    info = package_info(settings.root)
+    info = package_info(settings.program)
     from .portable_secrets import ProviderSecrets
 
     secrets_store = ProviderSecrets(data_dir, info.get("providers") or [])
     secrets_store.apply()
-    models = LocalModels(settings.root, settings, console)
+    models = LocalModels(settings.program, settings, console)
     try:
         if settings.get("models", "start_server"):
             url = models.start(data_dir)
@@ -574,7 +601,7 @@ def _serve(
         ui.sessions.add_launch_token(launch)
         return ui
 
-    app = create_app(settings.root, settings=standalone, web_ui=make_ui)
+    app = create_app(settings.program, settings=standalone, web_ui=make_ui, home=settings.root)
     allowed = {*LOOPBACK, *(str(item).lower() for item in settings.get("server", "allowed_hosts") or [])}
     if host not in LOOPBACK:
         allowed.add(socket.gethostname().lower())
@@ -616,7 +643,7 @@ def _serve(
     # report "not running" (they check /health); start() removes the file when the server ends.
     _write_state(settings.data_dir, state)
     threading.Thread(target=announce, name="nodestro-announce", daemon=True).start()
-    console.say("starting", name=package_info(settings.root).get("name", ""), port=port)
+    console.say("starting", name=package_info(settings.program).get("name", ""), port=port)
     server.run()
     console.say("stopped")
     return 0
@@ -656,6 +683,196 @@ def _open_browser(state: dict[str, Any], console: Console) -> None:
     answer = _control(state, "/ui/control/launch")
     if answer and answer.get("token"):
         _open(f"{state['url']}/ui/launch?token={answer['token']}")
+
+
+def _layout2(settings: Settings) -> bool:
+    return settings.program != settings.root
+
+
+def _program_intact(settings: Settings, console: Console) -> bool:
+    """The check at each start (NAL-C3): every file of ``program/`` is as exported (the model files are checked by
+    :class:`LocalModels`), and an interface installed with ``ui install`` matches its manifest. Packages of the old
+    layout have nothing to check."""
+    if not _layout2(settings):
+        return True
+    problems = ops.verify_program(settings.program, skip=ops.SKIPPED_AT_START)
+    if problems:
+        for problem in problems[:20]:
+            logger.error("program/ is not as exported: %s", problem)
+        console.say("verify_failed", count=len(problems), first=problems[0])
+        return False
+    from .app_contract import CONTRACT_VERSIONS
+    from .webui_server import use_ui_dir
+
+    try:
+        use_ui_dir(ops.installed_ui(settings.root, CONTRACT_VERSIONS))
+    except PackageRefusal as exc:
+        console.say(exc.key, **exc.values)
+        return False
+    return True
+
+
+def _running(settings: Settings) -> bool:
+    """Whether an instance of this package runs: its instance file names a port that answers, or (Linux, macOS) a
+    process that is still alive, so an instance that is starting or hangs also counts (internal review L3)."""
+    state = _read_state(settings.data_dir)
+    if not state:
+        return False
+    if _responding(int(state.get("port", 0))):
+        return True
+    pid = state.get("pid")
+    if os.name == "posix" and isinstance(pid, int) and pid > 0 and pid != os.getpid():
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except OSError:
+            return True
+        return True
+    return False
+
+
+def _operate(settings: Settings, console: Console, action: Callable[[], int], *, stopped: bool = True) -> int:
+    """Run a command of the folder model: only in a package of layout 2, with the application stopped (``stopped``),
+    a refusal as the launcher's message (exit code 2)."""
+    if not _layout2(settings):
+        console.say("layout_old")
+        return 2
+    if stopped and _running(settings):
+        console.say("stop_first")
+        return 2
+    try:
+        return action()
+    except PackageRefusal as exc:
+        logger.error("%s", exc)
+        console.say(exc.key, **exc.values)
+        return 2
+
+
+def verify_command(settings: Settings) -> int:
+    """Check every file of ``program/`` against ``SHA256SUMS``, the model files included."""
+    console = Console(settings.language)
+
+    def run() -> int:
+        console.say("verify_running")
+        problems = ops.verify_program(settings.program)
+        for problem in problems:
+            print(f"  {problem}", flush=True)
+        if problems:
+            console.say("verify_failed", count=len(problems), first=problems[0])
+            return 1
+        console.say("verify_ok")
+        return 0
+
+    return _operate(settings, console, run, stopped=False)
+
+
+def backup_command(args: argparse.Namespace, settings: Settings) -> int:
+    console = Console(settings.language)
+
+    def run() -> int:
+        if args.include_secrets:
+            console.say("backup_secrets_warning")
+        ops.backup(
+            settings.root,
+            settings.data_dir,
+            settings.output_dir,
+            Path(args.target),
+            package_info(settings.program),
+            include_secrets=args.include_secrets,
+            include_results=args.include_results,
+        )
+        console.say("backup_done", file=str(Path(args.target).resolve()))
+        return 0
+
+    return _operate(settings, console, run)
+
+
+def restore_command(args: argparse.Namespace, settings: Settings) -> int:
+    console = Console(settings.language)
+
+    def run() -> int:
+        meta = ops.restore(
+            settings.root, settings.data_dir, settings.output_dir, Path(args.source), package_info(settings.program)
+        )
+        if meta.get("release_number") != package_info(settings.program).get("release_number"):
+            console.say("restore_other_release", backup=meta.get("release_number"))
+        console.say("restore_done", saved=meta["saved"])
+        return 0
+
+    return _operate(settings, console, run)
+
+
+def update_command(args: argparse.Namespace, settings: Settings) -> int:
+    console = Console(settings.language)
+
+    def run() -> int:
+        record = ops.update(
+            settings.root,
+            settings.data_dir,
+            settings.output_dir,
+            Path(args.source),
+            say=lambda key, **values: console.say(key, **values),
+        )
+        console.say("update_done", old=record["from"], new=record["to"], backup=record["backup"])
+        return 0
+
+    return _operate(settings, console, run)
+
+
+def rollback_command(settings: Settings) -> int:
+    console = Console(settings.language)
+
+    def run() -> int:
+        record = ops.rollback(settings.root)
+        console.say("rollback_done", release=record["release_number"], backup=record.get("backup") or "-")
+        return 0
+
+    return _operate(settings, console, run)
+
+
+def adopt_command(args: argparse.Namespace, settings: Settings) -> int:
+    """Take over the settings and data of an older package of the same application (any layout)."""
+    console = Console(settings.language)
+
+    def run() -> int:
+        old = Path(args.source).resolve()
+        old_settings = Settings(old)
+        if _running(old_settings):
+            console.say("stop_first")
+            return 2
+        relative = {}
+        for name in ("data_dir", "output_dir", "log_dir"):
+            value = str(old_settings.get("data", name) or "")
+            if value and not Path(os.path.expandvars(os.path.expanduser(value))).is_absolute():
+                relative[name] = value
+        copied = ops.adopt(settings.root, old, relative=relative, say=lambda key, **values: console.say(key, **values))
+        console.say("adopt_done", folder=str(old), copied=", ".join(copied) or "-")
+        return 0
+
+    return _operate(settings, console, run)
+
+
+def ui_command(args: argparse.Namespace, settings: Settings) -> int:
+    console = Console(settings.language)
+    from .app_contract import CONTRACT_VERSIONS
+
+    def run() -> int:
+        if args.action == "install":
+            found = ops.install_ui(settings.root, Path(args.artifact), args.sha256, CONTRACT_VERSIONS)
+            console.say("ui_installed", version=found["version"])
+        elif args.action == "reset":
+            console.say("ui_reset" if ops.reset_ui(settings.root) else "ui_embedded")
+        else:
+            folder = ops.installed_ui(settings.root, CONTRACT_VERSIONS)
+            shown = folder or settings.program / "nodestro_api" / "webui"
+            version = "-"
+            with suppress(OSError, ValueError, AttributeError):
+                version = str(json.loads((shown / "manifest.json").read_text(encoding="utf-8")).get("version") or "-")
+            console.say("ui_status_installed" if folder else "ui_status_embedded", version=version)
+        return 0
+
+    return _operate(settings, console, run, stopped=args.action != "status")
 
 
 def stop(settings: Settings) -> int:
@@ -701,7 +918,7 @@ def configure(settings: Settings) -> int:
     from .portable_secrets import ProviderSecrets
 
     console = Console(settings.language)
-    info = package_info(settings.root)
+    info = package_info(settings.program)
     store = ProviderSecrets(settings.data_dir, info.get("providers") or [], environ=dict(os.environ))
     store.apply()
     # The local model server needs nothing; cloud models of Ollama and every other provider do.
@@ -754,7 +971,7 @@ def configure_connections(
 
     from . import portable_connections
 
-    release = settings.root / "workflow" / "release.json"
+    release = settings.program / "workflow" / "release.json"
     if not release.is_file():
         return
     required = ReleaseBundle.model_validate_json(release.read_text("utf-8")).required_connections
@@ -850,22 +1067,22 @@ def check(settings: Settings, *, full: bool = False) -> int:
     _private_folder(settings.data_dir, settings.root)
     data_problem = _check_folder(settings.data_dir)
     results.append(("data folder", data_problem is None, data_problem or str(settings.data_dir)))
-    info = package_info(settings.root)
+    info = package_info(settings.program)
     if (info.get("local_models") or {}).get("models"):
-        binary = _ollama_binary(settings.root)
+        binary = _ollama_binary(settings.program)
         results.append(("model server", binary is not None, str(binary or "ollama/ missing")))
         try:
             from orkexa.local import verify_package
 
-            report = verify_package(settings.root / "models", hashes=full)
+            report = verify_package(settings.program / "models", hashes=full)
             results.append(("models", True, ", ".join(report.models)))
         except Exception as exc:
             results.append(("models", False, str(exc)))
     try:
         from nodestro_runtime.release import ReleaseBundle
 
-        bundle = ReleaseBundle.model_validate_json((settings.root / "workflow" / "release.json").read_text("utf-8"))
-        manifest = json.loads((settings.root / "workflow" / "manifest.json").read_text("utf-8"))
+        bundle = ReleaseBundle.model_validate_json((settings.program / "workflow" / "release.json").read_text("utf-8"))
+        manifest = json.loads((settings.program / "workflow" / "manifest.json").read_text("utf-8"))
         results.append(("release", bundle.digest() == manifest["release_digest"], manifest.get("name", "")))
     except Exception as exc:
         results.append(("release", False, str(exc)))
@@ -898,6 +1115,25 @@ def parser() -> argparse.ArgumentParser:
     revoke.add_argument("id")
     test = commands.add_parser("check", help="self-test without starting")
     test.add_argument("--full", action="store_true", help="also check every model file by SHA-256")
+    commands.add_parser("verify", help="check every file of program/ against SHA256SUMS")
+    save = commands.add_parser("backup", help="back up settings and data into a ZIP file (stopped)")
+    save.add_argument("target", help="the ZIP file to write")
+    save.add_argument("--include-secrets", action="store_true", help="also the provider and connection secrets")
+    save.add_argument("--include-results", action="store_true", help="also the result files")
+    back = commands.add_parser("restore", help="restore a backup (stopped; the current state is backed up first)")
+    back.add_argument("source", help="the backup ZIP file")
+    renew = commands.add_parser("update", help="replace program/ with a newer package of this application (stopped)")
+    renew.add_argument("source", help="the new package: its ZIP file or unpacked folder")
+    commands.add_parser("rollback", help="go back to the program before the last update (stopped)")
+    take = commands.add_parser("adopt", help="take over the settings and data of an older package (stopped)")
+    take.add_argument("source", help="the older package's folder")
+    face = commands.add_parser("ui", help="the web interface: status, install a newer one, reset")
+    face_commands = face.add_subparsers(dest="action", required=True)
+    face_commands.add_parser("status")
+    put = face_commands.add_parser("install")
+    put.add_argument("artifact", help="nodestro-app-ui-<version>.tgz")
+    put.add_argument("--sha256", required=True, help="the artifact's SHA-256 (from its .sha256 file)")
+    face_commands.add_parser("reset")
     return found
 
 
@@ -919,6 +1155,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         return configure(settings)
     if command == "keys":
         return keys(args, settings)
+    commands: dict[str, Callable[[], int]] = {
+        "verify": lambda: verify_command(settings),
+        "backup": lambda: backup_command(args, settings),
+        "restore": lambda: restore_command(args, settings),
+        "update": lambda: update_command(args, settings),
+        "rollback": lambda: rollback_command(settings),
+        "adopt": lambda: adopt_command(args, settings),
+        "ui": lambda: ui_command(args, settings),
+    }
+    if command in commands:
+        _setup_logging(settings)
+        return commands[command]()
     return check(settings, full=args.full)
 
 

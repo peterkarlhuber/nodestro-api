@@ -52,7 +52,11 @@ MAX_PATH = 1024
 #: At most this many folders are listed in one answer of the browser.
 MAX_ENTRIES = 500
 #: Folders of an exported package that hold its code, its Python, models or state (never a result folder).
-PACKAGE_FOLDERS = ("app", "workflow", "nodestro_runtime", "nodestro_api", "python", "ollama", "models", "config", "run")
+PACKAGE_FOLDERS = (
+    "app", "workflow", "nodestro_runtime", "nodestro_api", "python", "ollama", "models", "config", "run",
+    # The folder model of NAL-C3 (layout 2, nodestro_api.portable_ops).
+    "program", "program.previous", "program.next", "ui", "backups",
+)  # fmt: skip
 
 _POSIX_SYSTEM = (
     "/bin", "/boot", "/dev", "/etc", "/lib", "/lib32", "/lib64", "/libx32", "/opt", "/proc", "/run", "/sbin",

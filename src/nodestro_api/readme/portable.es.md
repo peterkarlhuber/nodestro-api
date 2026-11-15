@@ -28,6 +28,13 @@ todas las ejecuciones, aprobaciones, archivos y ajustes.
 | `configure` | Introduce las claves de los proveedores de IA (la entrada queda oculta). |
 | `keys new --name "My app" --scopes run,read` | Crea una clave de API para otro programa (`keys list`, `keys revoke <id>`). |
 | `check` | Una autoprueba sin iniciar (`check --full` también comprueba cada archivo de modelo mediante SHA-256). |
+| `verify` | Comprueba cada archivo de `program/` con `SHA256SUMS` (cada inicio también lo hace, sin los archivos de modelo). |
+| `backup <archivo.zip>` | Copia la configuración y los datos (detenida; `--include-results`, y `--include-secrets` para las claves). |
+| `restore <archivo.zip>` | Restaura una copia de esta aplicación (detenida; antes se copia el estado actual). |
+| `update <paquete nuevo>` | Toma el programa de un paquete más reciente de esta aplicación, su ZIP o carpeta (detenida). |
+| `rollback` | Vuelve al programa anterior a la última actualización. |
+| `adopt <carpeta antigua>` | Toma la configuración y los datos de un paquete anterior de esta aplicación. |
+| `ui install <archivo.tgz> --sha256 <hash>` | Instala una interfaz web más reciente (`ui reset` vuelve atrás, `ui status`). |
 
 ## Proveedores de IA y claves
 
@@ -83,7 +90,7 @@ export {key_variable}=ndk_...
 {curl_start}
 ```
 
-El cuerpo de la solicitud (`examples/request.json`):
+El cuerpo de la solicitud (`program/examples/request.json`):
 
 ```json
 {request}
@@ -104,8 +111,8 @@ vuelve a conectarte con `Last-Event-ID`. Este workflow tiene {approvals}; decide
 ```
 
 Los errores tienen la forma `{"error": {"status", "code", "message", "params"}}`. La descripción completa es
-`openapi.json` en esta carpeta (OpenAPI 3); la referencia interactiva es `http://127.0.0.1:{port}/docs` (por defecto, solo desde
-este equipo). `examples/client.py` lo muestra todo en Python.
+`program/openapi.json` en esta carpeta (OpenAPI 3); la referencia interactiva es `http://127.0.0.1:{port}/docs` (por defecto, solo desde
+este equipo). `program/examples/client.py` lo muestra todo en Python.
 
 Cualquier cliente puede preguntar primero qué ofrece este backend: `GET /api/app` indica el contrato de apps
 (`nodestro-app/1`), el identificador del backend y cómo iniciar sesión; con una clave, además este workflow y las
@@ -137,10 +144,25 @@ capacidades. `BACKEND_NAME` da al backend un nombre que muestran los clientes. E
 | Windows SmartScreen | "Más información", "Ejecutar de todas formas" (los scripts son texto plano que puedes leer). |
 | Otra cosa | `check` prueba el paquete; `logs/` contiene los registros de la aplicación y del servidor de modelos. |
 
+## Actualizar, hacer copias, comprobar
+
+- **Actualizar:** detén la aplicación y ejecuta aquí `update <paquete nuevo.zip>` (un paquete de la misma aplicación
+  para la misma plataforma). Solo se reemplaza `program/`; la configuración, los datos, las claves y los archivos de
+  resultados se quedan. Antes se copian los datos en `backups/`, y el programa anterior queda como
+  `program.previous/`: `rollback` vuelve a él.
+- **Desde un paquete anterior** (uno sin carpeta `program/`): descomprime el paquete nuevo a su lado y ejecuta
+  `adopt <carpeta antigua>` en el nuevo. La carpeta antigua no se modifica.
+- **Copia de seguridad:** `backup <archivo.zip>` con la aplicación detenida. Las claves solo se incluyen con
+  `--include-secrets`; guarda esa copia tan segura como las claves. `restore <archivo.zip>` la restaura.
+- **Comprobar:** cada inicio comprueba que ningún archivo de `program/` se haya modificado, eliminado o añadido, y si
+  no, no arranca. Así se detectan copias dañadas y cambios por error; no protege frente a alguien que pueda escribir en
+  esta carpeta (también podría cambiar `SHA256SUMS`).
+
 ## Qué hay en esta carpeta
 
-`python/` (Python {python_version}), `nodestro_runtime/`, `nodestro_api/` y `app/` (la aplicación),
-`workflow/` (la versión congelada), `config/`, `examples/`, {models_files}`licenses/` (licencias de todo lo
-incluido), `lib.lock` (cada biblioteca con su SHA-256), `SHA256SUMS` (una suma de control de cada archivo), `PORTABLE.json`
-(qué es este paquete) y `openapi.json`. Tus datos están en `data/` y `logs/`; haz una copia de seguridad para conservar ejecuciones y
-ajustes.
+`program/` es lo exportado y no se modifica después: `python/` (Python {python_version}), `nodestro_runtime/`,
+`nodestro_api/` y `app/` (la aplicación), `workflow/` (la versión congelada), `examples/`, {models_files}`licenses/`
+(licencias de todo lo incluido), `lib.lock` (cada biblioteca con su SHA-256), `SHA256SUMS` (una suma de control de
+cada archivo), `PORTABLE.json` (qué es este paquete) y `openapi.json`. Al lado: los scripts de inicio, `config/` (tu
+configuración) y, tras el primer uso, `data/` (ejecuciones, claves), `results/`, `logs/` y `backups/`. Haz copia de
+`config/` y `data/` para conservar ejecuciones y ajustes.

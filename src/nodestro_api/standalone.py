@@ -190,9 +190,12 @@ class StandaloneHost:
         settings: StandaloneSettings,
         *,
         client_factory: Callable[[str], Any] | None = None,
+        home: Path | None = None,
     ) -> None:
-        """``client_factory(provider)`` replaces the SDK clients (tests)."""
+        """``client_factory(provider)`` replaces the SDK clients (tests). ``home`` is the folder relative data and
+        result folders are under (a portable package's folder; by default the project folder)."""
         self.project_dir = project_dir
+        home = home if home is not None else project_dir
         self.settings = settings
         #: The web interface (:mod:`nodestro_api.webui_server`), set by :func:`create_app` when it is served.
         self.web_ui: Any = None
@@ -201,7 +204,7 @@ class StandaloneHost:
         self.manifest = Manifest.model_validate_json((workflow_dir / "manifest.json").read_text(encoding="utf-8"))
         if self.bundle.digest() != self.manifest.release_digest:
             raise RuntimeError("workflow/release.json does not match its manifest (digest differs)")
-        data_dir = settings.data_dir if settings.data_dir.is_absolute() else project_dir / settings.data_dir
+        data_dir = settings.data_dir if settings.data_dir.is_absolute() else home / settings.data_dir
         data_dir.mkdir(parents=True, exist_ok=True)
         self.data_dir = data_dir
         self._instance: Instance | None = None
@@ -255,7 +258,7 @@ class StandaloneHost:
         )
         self.runs.environments = lambda _run: self.environment
         self.files = ResultFiles(self.store)
-        self.output_dir, self.output_warning = resolve_output_dir(project_dir, settings.output_dir)
+        self.output_dir, self.output_warning = resolve_output_dir(home, settings.output_dir)
         #: Checks a folder the operator chose on the settings page again before each copy (it may have been replaced
         #: by a link meanwhile); set by :class:`nodestro_api.output_folder.OutputFolder`, ``None`` for the default.
         self.output_check: Callable[[Path], Any] | None = None
@@ -693,6 +696,7 @@ def create_app(
     settings: StandaloneSettings | None = None,
     client_factory: Callable[[str], Any] | None = None,
     web_ui: Callable[[StandaloneHost, ServingCore], Any] | None = None,
+    home: Path | None = None,
 ) -> FastAPI:
     """The FastAPI application of an exported project; ``client_factory(provider)`` replaces SDK clients.
 
@@ -700,10 +704,12 @@ def create_app(
     package passes one with the operator's launch link and the provider setup); without it the interface, if the
     project has one and ``WEB_UI`` is not ``off``, offers sign-in with an API key only."""
     settings = settings or StandaloneSettings.from_env()
-    host = StandaloneHost(project_dir, settings, client_factory=client_factory)
+    host = StandaloneHost(project_dir, settings, client_factory=client_factory, home=home)
     core = ServingCore(host)
     ui = None
-    if settings.web_ui == "on" and (Path(__file__).resolve().parent / "webui" / "index.html").is_file():
+    from .webui_server import ui_dir
+
+    if settings.web_ui == "on" and (ui_dir() / "index.html").is_file():
         from .webui_server import UiOptions, WebUi
 
         if web_ui is not None:

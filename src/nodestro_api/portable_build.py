@@ -61,6 +61,7 @@ from packaging.utils import canonicalize_name
 from pydantic import BaseModel, Field
 
 from . import __version__
+from . import portable_ops as ops
 
 if TYPE_CHECKING:
     from .context import Nodestro
@@ -746,6 +747,145 @@ def requirements(options: ExportOptions, bundle: Any) -> tuple[list[str], list[s
     return direct, constraints
 
 
+class PlatformSupport(BaseModel):
+    """One row of the support matrix (``platform-support.json``, NAL-C3)."""
+
+    #: What CI does with a package of this platform: build it and start it there, or nothing.
+    ci: Literal["built_and_started", "none"]
+    #: Whether a run with a bundled local model was checked on this platform.
+    local_models: Literal["checked", "unchecked"]
+    #: Whether a person checked a package on real hardware of this platform.
+    human: bool
+    #: Known limits by code: ``unsigned`` (Gatekeeper or SmartScreen asks once), ``gemini`` (no package with Google's
+    #: SDK), ``vector_search`` (semantic knowledge search falls back to full text).
+    limits: list[Literal["unsigned", "gemini", "vector_search"]] = Field(default_factory=list)
+
+
+SUPPORT_FILE = Path(__file__).with_name("platform-support.json")
+
+
+def platform_support() -> dict[str, PlatformSupport]:
+    data = json.loads(SUPPORT_FILE.read_text("utf-8"))
+    return {key: PlatformSupport.model_validate(value) for key, value in data["platforms"].items()}
+
+
+class LibraryCheck(BaseModel):
+    """The platform pre-check (NAL-C3): can every library of the package be installed from a ready-built package
+    (wheel) for the target platform? ``ok`` and ``unavailable`` are remembered per requirement set and platform;
+    ``unchecked`` means it could not be decided here (no network, no uv): the build decides then."""
+
+    platform: str
+    status: Literal["ok", "unavailable", "unchecked"]
+    #: The libraries without a ready-built package for the platform (``unavailable``).
+    libraries: list[str] = Field(default_factory=list)
+    #: uv's explanation (``unavailable``) or why the check did not run (``unchecked``), in English.
+    detail: str = ""
+
+
+#: uv's words for a library without a ready-built package for the platform (as opposed to a network or cache miss).
+_NO_WHEEL = ("has no usable wheels", "has no wheels with a matching", "no wheels are available")
+_NOT_DECIDED = ("network was disabled", "not found in the cache", "Failed to fetch", "error sending request")
+_NAMED = re.compile(r"([A-Za-z0-9][A-Za-z0-9._-]*)(?:==\S+)? has no (?:usable )?wheels")
+PRECHECK_TIMEOUT = 180
+#: One pre-check at a time in this process (each resolves the whole library set).
+_PRECHECK = threading.Lock()
+
+
+def _library_key(platform: Platform, direct: list[str], constraints: list[str]) -> str:
+    text = json.dumps([platform.wheel_platform, python_minor(), direct, constraints], separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def library_check(
+    ctx: Nodestro, platform: Platform, options: ExportOptions, bundle: Any, *, resolve: bool
+) -> LibraryCheck:
+    """The remembered pre-check for ``platform``; with ``resolve`` it runs one (``uv pip compile``, from the cache
+    alone unless ``options.allow_downloads``) when none is remembered. Nothing is installed."""
+    direct, constraints = requirements(options, bundle)
+    remembered = cache_root(ctx) / "precheck" / f"{_library_key(platform, direct, constraints)}.json"
+    found = _remembered(remembered)
+    if found is not None:
+        return found
+    if not resolve:
+        return LibraryCheck(platform=platform.id, status="unchecked")
+    from nodestro_runtime.python_envs import find_uv
+
+    uv = find_uv()
+    if uv is None:
+        return LibraryCheck(platform=platform.id, status="unchecked", detail="uv is not available")
+    if not _PRECHECK.acquire(timeout=PRECHECK_TIMEOUT):
+        return LibraryCheck(platform=platform.id, status="unchecked", detail="another pre-check is running")
+    try:
+        # Another request may have resolved the same set while this one waited.
+        return _remembered(remembered) or _resolve(
+            ctx, uv, platform, direct, constraints, remembered, offline=not options.allow_downloads
+        )
+    finally:
+        _PRECHECK.release()
+
+
+def _remembered(path: Path) -> LibraryCheck | None:
+    try:
+        return LibraryCheck.model_validate_json(path.read_text("utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _resolve(
+    ctx: Nodestro,
+    uv: str,
+    platform: Platform,
+    direct: list[str],
+    constraints: list[str],
+    remembered: Path,
+    *,
+    offline: bool,
+) -> LibraryCheck:
+    work = cache_root(ctx) / "precheck" / new_id("work")
+    work.mkdir(parents=True)
+    try:
+        (work / "requirements.in").write_text("\n".join(direct) + "\n", encoding="utf-8")
+        (work / "constraints.txt").write_text("\n".join(constraints) + "\n", encoding="utf-8")
+        command = [
+            uv,
+            "pip",
+            "compile",
+            "requirements.in",
+            "-c",
+            "constraints.txt",
+            "--python-platform",
+            platform.wheel_platform,
+            "--python-version",
+            python_minor(),
+            "--only-binary",
+            ":all:",
+            "--no-header",
+            "--quiet",
+            "-o",
+            "lib.lock",
+        ]
+        env = _uv_env(ctx, offline=offline)
+        try:
+            done = subprocess.run(
+                command, env=env, cwd=work, capture_output=True, text=True, timeout=PRECHECK_TIMEOUT, check=False
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return LibraryCheck(platform=platform.id, status="unchecked", detail=str(exc)[-500:])
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    output = " ".join((done.stdout + done.stderr).split())  # uv wraps its explanation
+    if done.returncode == 0:
+        result = LibraryCheck(platform=platform.id, status="ok")
+    elif any(words in output for words in _NO_WHEEL) and not any(words in output for words in _NOT_DECIDED):
+        names = sorted({str(canonicalize_name(name)) for name in _NAMED.findall(output)})
+        result = LibraryCheck(platform=platform.id, status="unavailable", libraries=names, detail=output[-1500:])
+    else:
+        return LibraryCheck(platform=platform.id, status="unchecked", detail=output[-500:])
+    remembered.parent.mkdir(parents=True, exist_ok=True)
+    remembered.write_text(result.model_dump_json(), encoding="utf-8")
+    return result
+
+
 def _extras(name: str) -> str:
     extras = sorted(Requirement(name).extras)
     return f"[{','.join(extras)}]" if extras else ""
@@ -802,10 +942,12 @@ def install_libraries(
             raise NodestroError(
                 "export.download_needed", "The libraries for this platform are not in the cache; allow downloads"
             ) from None
+        named = sorted({str(canonicalize_name(name)) for name in _NAMED.findall(" ".join(str(exc).split()))})
         raise NodestroError(
             "export.libraries_unavailable",
             "Not every library has a ready-built package for this platform: " + str(exc)[-1500:],
             platform=platform.id,
+            libraries=", ".join(named),
         ) from None
     progress.check()
     _run(
@@ -1071,36 +1213,55 @@ def install_models(ctx: Nodestro, names: list[str], target: Path, progress: Prog
 # ---- start scripts ----------------------------------------------------------------------------------------------
 
 _START_SH = """#!/bin/sh
-# Start the application (Ctrl+C stops it). Other commands: stop, status, open, configure, keys, check.
+# Start the application (Ctrl+C stops it). Other commands: stop, status, open, configure, keys, check, verify,
+# backup, restore, update, rollback, adopt, ui (see README.md).
 cd "$(dirname "$0")" || exit 1
-exec ./python/bin/python3 -I -m nodestro_api.portable "${@:-start}"
+exec ./program/python/bin/python3 -I -m nodestro_api.portable "${@:-start}"
 """
 _STOP_SH = """#!/bin/sh
 cd "$(dirname "$0")" || exit 1
-exec ./python/bin/python3 -I -m nodestro_api.portable stop
+exec ./program/python/bin/python3 -I -m nodestro_api.portable stop
 """
 _CONFIGURE_SH = """#!/bin/sh
 cd "$(dirname "$0")" || exit 1
-exec ./python/bin/python3 -I -m nodestro_api.portable configure
+exec ./program/python/bin/python3 -I -m nodestro_api.portable configure
 """
 _START_COMMAND = """#!/bin/sh
 # macOS: double-click to start in Terminal.
 cd "$(dirname "$0")" || exit 1
-exec ./python/bin/python3 -I -m nodestro_api.portable start
+exec ./program/python/bin/python3 -I -m nodestro_api.portable start
 """
 _START_CMD = """@echo off
-rem Start the application (close this window or press Ctrl+C to stop it).
+rem Start the application (close this window or press Ctrl+C to stop it). Other commands: see README.md.
 cd /d "%~dp0"
-"python\\python.exe" -I -m nodestro_api.portable %*
-if errorlevel 1 pause
+"program\\python\\python.exe" -I -m nodestro_api.portable %*
+set "code=%errorlevel%"
+rem update and rollback leave the program to put in place in program.next: its Python cannot be renamed while it runs.
+if exist "program.next\\PORTABLE.json" call :swap
+if not "%code%"=="0" pause
+rem One block, read before it runs: it may replace this file.
+(if exist "start.cmd.new" move /y "start.cmd.new" "start.cmd" >nul) & exit /b %code%
+
+:swap
+if exist "program.previous" rmdir /s /q "program.previous"
+if exist "program.previous" goto :swap_failed
+move "program" "program.previous" >nul || goto :swap_failed
+move "program.next" "program" >nul && exit /b 0
+move "program.previous" "program" >nul
+
+:swap_failed
+echo The new version could not be put in place (a file in program is in use?). Close every window of this
+echo application and run start.cmd again; program.next is used then.
+set "code=1"
+exit /b 1
 """
 _STOP_CMD = """@echo off
 cd /d "%~dp0"
-"python\\python.exe" -I -m nodestro_api.portable stop
+"program\\python\\python.exe" -I -m nodestro_api.portable stop
 """
 _CONFIGURE_CMD = """@echo off
 cd /d "%~dp0"
-"python\\python.exe" -I -m nodestro_api.portable configure
+"program\\python\\python.exe" -I -m nodestro_api.portable configure
 pause
 """
 
@@ -1187,6 +1348,29 @@ timeout_seconds = 60
 
 
 # ---- archive ----------------------------------------------------------------------------------------------------
+
+
+def strip_bytecode(folder: Path) -> None:
+    """Remove Python's bytecode caches: the archive gives every file a new time, so they would not match their
+    sources and Python would write them again into ``program/`` (whose checksums they would then break)."""
+    for cache in sorted(folder.rglob(ops.BYTECODE), reverse=True):
+        if cache.is_dir() and not cache.is_symlink():
+            shutil.rmtree(cache)
+
+
+def embedded_ui(program: Path) -> dict[str, Any] | None:
+    """What ``PORTABLE.json`` says about the embedded web interface: version, contract range, manifest hash."""
+    manifest = program / "nodestro_api" / "webui" / "manifest.json"
+    try:
+        data = manifest.read_bytes()
+        found = json.loads(data)
+    except (OSError, ValueError):
+        return None
+    return {"version": found.get("version"), "contract": found.get("contract"), "manifest_sha256": _sha(data)}
+
+
+def _sha(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
 
 def _walk(folder: Path) -> Iterator[Path]:
@@ -1308,6 +1492,11 @@ def _assemble(
     from . import exporter
 
     allow = options.allow_downloads
+    # The folder model (NAL-C3, layout 2): everything the export writes goes into program/, which no one changes
+    # afterwards; the start scripts, the README and config/ are next to it, the person's data appear there too.
+    package = stage
+    stage = package / ops.PROGRAM
+    stage.mkdir()
     # 1. Python for the target.
     progress.step("python", platform.label)
     python_dir = install_python(ctx, platform, progress, allow_downloads=allow)
@@ -1341,11 +1530,11 @@ def _assemble(
         encoding="utf-8",
     )
     for name, (content, mode) in start_scripts(platform).items():
-        (stage / name).write_text(content, encoding="utf-8", newline="")
-        (stage / name).chmod(mode)
+        (package / name).write_text(content, encoding="utf-8", newline="")
+        (package / name).chmod(mode)
     context_length = _context_length(ctx)
-    (stage / "config").mkdir(exist_ok=True)
-    (stage / "config" / "settings.toml").write_text(settings_toml(options, context_length=context_length), "utf-8")
+    (package / "config").mkdir(exist_ok=True)
+    (package / "config" / "settings.toml").write_text(settings_toml(options, context_length=context_length), "utf-8")
     licenses = stage / "licenses"
     licenses.mkdir(exist_ok=True)
     (licenses / "nodestro.txt").write_text(exporter.NODESTRO_LICENSE, encoding="utf-8")
@@ -1372,7 +1561,7 @@ def _assemble(
     # 5. What the package is.
     readme = stage / "README.md"
     if readme.is_file():
-        readme.write_text(
+        (package / "README.md").write_text(
             fill_readme(
                 readme.read_text(encoding="utf-8"),
                 options,
@@ -1384,9 +1573,12 @@ def _assemble(
             ),
             encoding="utf-8",
         )
+        readme.unlink()
+    strip_bytecode(stage)
     manifest = {
         "format": "nodestro-portable",
         "format_version": 1,
+        "layout_version": ops.LAYOUT_VERSION,
         "name": publication.name,
         "slug": publication.slug,
         "release_number": release.number,
@@ -1399,6 +1591,7 @@ def _assemble(
         "created_at": now().isoformat(),
         "language": options.language,
         "web_ui": options.web_ui,
+        "ui": embedded_ui(stage) if options.web_ui else None,
         "offline": options.offline,
         "providers": found.portable.providers,
         "network_needs": [item.model_dump(mode="json") for item in found.portable.network_needs],
@@ -1419,7 +1612,7 @@ def _assemble(
     # Written in the work folder and moved into place when complete: a build that dies while it writes leaves no
     # partial file in the exports folder (its work folder is removed by recovery or the server's reaper).
     written = work / "package.zip"
-    size = write_zip(stage, root, written, progress, posix=not platform.windows)
+    size = write_zip(package, root, written, progress, posix=not platform.windows)
     os.replace(written, target)
     keep_within_server_limits(ctx, target, size)
     record = exporter.ExportRecord(
@@ -1431,7 +1624,7 @@ def _assemble(
         file_name=f"{root}.zip",
         size=size,
         sha256=_sha_file(target),
-        files=sum(1 for _ in _walk(stage)),
+        files=sum(1 for _ in _walk(package)),
         warnings=[item.code for item in found.problems if item.level == "warning"],
         runtime=found.runtime,
     )

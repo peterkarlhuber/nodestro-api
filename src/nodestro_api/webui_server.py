@@ -50,7 +50,23 @@ if TYPE_CHECKING:
     from .output_folder import OutputFolder
     from .standalone import StandaloneHost
 
+#: The interface embedded in this package (``scripts/vendor_app_ui.py``).
 WEBUI_DIR = Path(__file__).resolve().parent / "webui"
+#: A newer interface the operator of a portable package installed (``ui install``, NAL-C3), checked by the launcher.
+_installed: Path | None = None
+
+
+def use_ui_dir(folder: Path | None) -> None:
+    """Serve the interface in ``folder`` instead of the embedded one (``None``: the embedded one again)."""
+    global _installed
+    _installed = folder
+
+
+def ui_dir() -> Path:
+    """The folder of the interface this process serves."""
+    return _installed if _installed is not None else WEBUI_DIR
+
+
 LANGUAGES = ("de", "en", "es", "fr", "pt-BR", "it")
 COOKIE = "nodestro_app_session"
 HEADER = "x-nodestro-ui"
@@ -313,8 +329,9 @@ def _static(path: str) -> Path | None:
     parts = [part for part in path.split("/") if part]
     if not parts or any(part.startswith(".") or "\\" in part for part in parts):
         return None
-    target = (WEBUI_DIR / Path(*parts)).resolve()
-    if WEBUI_DIR.resolve() not in target.parents or not target.is_file() or target.suffix not in _TYPES:
+    folder = ui_dir().resolve()
+    target = (folder / Path(*parts)).resolve()
+    if folder not in target.parents or not target.is_file() or target.suffix not in _TYPES:
         return None
     if target.suffix == ".html":
         # The page itself is served only at ``/``, with its Content Security Policy (not as a plain asset).
@@ -367,7 +384,7 @@ def build_router(ui: WebUi) -> APIRouter:
 
     @router.get("/")
     def index() -> Response:
-        page = WEBUI_DIR / "index.html"
+        page = ui_dir() / "index.html"
         if not page.is_file():
             return json_answer({"error": {"status": 404, "code": "ui.missing", "message": "No web interface"}}, 404)
         return FileResponse(page, media_type=_TYPES[".html"], headers=_headers(html=True))
@@ -383,7 +400,7 @@ def build_router(ui: WebUi) -> APIRouter:
     def launch(request: Request) -> Response:
         token = request.query_params.get("token", "")
         if not token or not ui.sessions.use_launch_token(token):
-            page = WEBUI_DIR / "index.html"
+            page = ui_dir() / "index.html"
             # An old or used link: the app opens and offers sign-in with a key (nothing about the token is shown).
             return (
                 RedirectResponse("/?launch=expired", status_code=303) if page.is_file() else Response(status_code=403)

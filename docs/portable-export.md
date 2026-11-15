@@ -21,7 +21,9 @@ Both carry `openapi.json` (the same document the running application serves) and
 | `export_models.py` | Every model of a release with its role (agent, fallback, judge, orchestrator, embedding of semantic knowledge search; sub-workflows and team pools included); local model facts (installed, size, digest, capabilities, license, memory); network needs. |
 | `exporter.py` | Options, check (`ExportCheck.portable`), project files, README rendering from `readme/`. |
 | `portable_build.py` | Platforms, the job runner (one at a time, cancellable, survives restarts as `interrupted`), Python and wheels for the target via uv, Ollama for the target via Orkexa, the model package, start scripts, `settings.toml`, `SHA256SUMS`, streaming ZIP64 archive. |
-| `portable.py` | The launcher in the package (`python -I -m nodestro_api.portable start|stop|status|open|configure|keys|check`). |
+| `portable.py` | The launcher in the package (`python -I -m nodestro_api.portable start|stop|status|open|configure|keys|check|verify|backup|restore|update|rollback|adopt|ui`). |
+| `portable_ops.py` | The folder model (NAL-C3): integrity check of `program/`, backup and restore, update and rollback, `adopt`, `ui install`. Standard library only. |
+| `ui_package.py` | Checks an interface folder or artifact against its `manifest.json` and contract range (used by `scripts/vendor_app_ui.py` and `ui install`). |
 | `portable_secrets.py` | The AI providers' keys on the target computer (`data/secrets/providers.json`, owner-only). |
 | `webui_server.py` + `webui/` | Sessions, sign-in, the interface's endpoints and the static app (vanilla JS, no build step, no CDN). The app itself is developed in [nodestro-app-ui](https://github.com/peterkarlhuber/nodestro-app-ui); `webui/` is an unchanged copy of one of its commits (see below). |
 | `output_folder.py` | The result folder chosen on the settings page (portable only): precedence `OUTPUT_DIR` from outside > choice in `data/settings/output-folder.json` > `[data] output_dir`; path checks, the folder browser (names only), "Open folder". |
@@ -40,7 +42,8 @@ Both carry `openapi.json` (the same document the running application serves) and
 5. **Model server and models** (optional): Ollama for the target platform from Orkexa's pinned, SHA-256-checked
    artifacts; the models as an Orkexa model package (`models/`, blobs by SHA-256), verified after export and on the
    first start on the target. The package's own folder is activated in place (no copy) unless it is read-only.
-6. **Archive**: `SHA256SUMS`, `PORTABLE.json`, then a streamed ZIP64 file with Unix modes and symlinks (blobs
+6. **Archive**: Python's bytecode caches are removed, `PORTABLE.json` and `SHA256SUMS` (of `program/`) are written,
+   then a streamed ZIP64 file with Unix modes and symlinks (blobs
    stored, not compressed). The build works in `DATA_DIR/export-work/<job>` and needs about twice the estimated
    size free; it never holds the package in memory. Downloads are cached and reused.
 
@@ -140,6 +143,33 @@ published no ready-built package for macOS Intel or Windows ARM64 since 46.0.4, 
 `export.libraries_unavailable` for those two platforms (the Windows x64 package runs on Windows 11 on ARM in its x64
 emulation).
 
+### Support matrix and platform pre-check (NAL-C3)
+
+`src/nodestro_api/platform-support.json` holds the table above as data, one row per platform: `ci`
+(`built_and_started` when `portable.yml` builds and starts a package there), `local_models` (`checked` when a run with
+a bundled local model was checked), `human` (whether a person checked a package on real hardware; no platform yet) and
+`limits`, by code:
+
+| Code | Meaning |
+| --- | --- |
+| `unsigned` | Packages are not code-signed: macOS Gatekeeper or Windows SmartScreen asks once. |
+| `gemini` | No package of a release that uses Gemini (Google's SDK needs `cryptography`, which has no wheel there). |
+| `vector_search` | No `sqlite-vec` wheel: semantic knowledge search falls back to full text. |
+
+`tests/test_platform_support.py` keeps the file in step with the platforms and the smoke jobs of `portable.yml`: a new
+smoke job or platform fails the test until its row exists. The export check lists the row with each platform
+(`portable.platforms[].support`), and the studio shows it as a badge in the export dialog.
+
+The platform pre-check answers before the build whether every library of the package has a ready-built package
+(wheel) for the target platform. `POST /api/publications/{id}/export/libraries` (edit rights) runs
+`uv pip compile --python-platform <target> --only-binary :all:` on the package's requirements and the exporting
+installation's versions as constraints; it installs nothing and downloads only with `allow_downloads`. The answer is
+`ok`, `unavailable` (with the libraries uv names) or `unchecked` (no uv, no network or cache, a timeout of 180 s, or
+another pre-check running: the build decides then). `ok` and `unavailable` are remembered per requirement set and
+platform under `export-cache/precheck/`; the export check reports the remembered answer (`portable.libraries`) and
+refuses an `unavailable` one with `export.libraries_unavailable` (`platform`, `libraries`). On a server the pre-check
+runs only where the operator enabled package builds; one runs at a time per process.
+
 "CI smoke" builds a package of a workflow without models on the runner, runs `check`, starts it, loads the
 interface, runs the workflow through the API, stops and restarts it (`tests/test_portable_smoke.py`). Packages are
 not code-signed: macOS Gatekeeper and Windows SmartScreen ask once (README, troubleshooting).
@@ -193,3 +223,43 @@ own SHA-256.
   (the page has its Content Security Policy only at `/`).
 - The interface discovers the backend with `GET /api/app`, reads the form from `GET /api/published/{slug}` and shows
   the connection state; an incompatible contract gives a clear message instead of a broken page.
+
+## The folder model and operating a package (NAL-C3)
+
+Since `layout_version` 2 (in `PORTABLE.json`) everything the export writes is in `program/`; the start scripts, the
+README and `config/` sit next to it, and the person's state appears there too (`data/`, `results/`, `logs/`,
+`backups/`, `ui/`). The launcher finds the package folder as the parent of the `program/` it runs from
+(`portable_ops.package_root`); `Settings.root` is the package folder (relative settings paths), `Settings.program`
+the program folder (workflow, models, model server). `StandaloneHost`/`create_app` take `home=` for relative data
+and result folders.
+
+| Command | What it does |
+| --- | --- |
+| (each start) | `program/` must match its `SHA256SUMS`: no changed, missing or extra file, no link leading out (exit code 4 otherwise). Model files are checked for presence; their hashes are checked on the first start and by `verify`. Python's `__pycache__` and the model server's `models/manifests-v2/` are written at run time and not checked. An interface in `ui/` is checked against its manifest. |
+| `verify` | The same with every model file hashed; lists the problems. Allowed while the application runs. |
+| `backup <zip> [--include-secrets] [--include-results]` | `BACKUP.json`, `config/`, `data/` (without `secrets/`, `run/`, `models/`, `ollama/`), optionally the result folder; written as `.partial`, `0600`. Plain file copies of a stopped application (`portable_ops.snapshot_data`, the one place an online database backup replaces later, Tabrion MIG-NOD-6). |
+| `restore <zip>` | Same application (`slug`) only; every entry checked first (no absolute path, drive, `..`, backslash, control character, link, duplicate, or top-level name other than `BACKUP.json`, `config`, `data`, `results`; enough disk). The current state goes to `backups/before-restore-<time>.zip` (with secrets) first; `config/` and `data/` are replaced, secrets the backup lacks are kept, result files are copied in without removing others. |
+| `update <zip or folder>` | Same application and platform; the new `program/` is unpacked next to the current one (links only relative and inside), checked against its `SHA256SUMS`, the data are backed up to `backups/before-update-<time>.zip` (no secrets), then `program/` becomes `program.previous/` and the new one takes its place; start scripts and README are replaced, settings kept. The runtime migrates the data on the next start. |
+| `rollback` | Swaps `program/` and `program.previous/`. The data stay; if the older version cannot read them, `restore` the update's backup. |
+| `adopt <old folder>` | Copies `config/settings.toml` (the package's own is kept as `settings.toml.package`) and the relative data, result and log folders of an older package of the same application (any layout) into this one, which must have no data yet. The old folder is not changed. This is how layout 1 packages move to layout 2. |
+| `ui install <tgz> --sha256 <hex>` / `ui reset` / `ui status` | Installs a nodestro-app-ui artifact into `ui/` after checking its SHA-256, paths (regular files, at most 20 MB), manifest and contract range; served instead of the embedded interface from the next start. |
+
+Every command but `verify` and `ui status` refuses while the application runs, and every command of the folder model
+refuses in a layout 1 package. The swap of an update or rollback goes through `program.next/`: on Linux and macOS
+the launcher renames it right away; on Windows the folder of the running Python cannot be renamed, so `start.cmd`
+does it after the launcher ended (and replaces itself last, from one parsed block). `restrict_folder` keeps
+`backups/` (and the secrets folder) to the current user: `0700` on POSIX, on Windows an access list with only the
+current user's SID (`icacls /inheritance:r /grant:r`), logged and not fatal when that fails.
+
+Internal review (NAL-C3): links in an update archive are made after every file and must resolve inside it once all
+exist; `restore` and `update` refuse a data or result folder that is, holds or lies above the package, or is the home
+folder, and move the old folder aside before the new one takes its place (put back on failure); `adopt` copies only
+plain relative folders inside both packages; a restore never writes `data/run`, `data/models` or `data/ollama`.
+Accepted residual risks: on Windows a running instance is recognised only by its answering port (on Linux and macOS
+also by its live process); the result folder chosen on the settings page is used by `backup --include-results` and
+`restore` as stored, with the guard above but without the settings page's other checks.
+
+What the integrity check proves: no file of `program/` changed by mistake (a broken copy, a stray edit, a sync tool).
+It does not protect against someone who may write to the folder: they could rewrite `SHA256SUMS` too. Only a
+signature can prove a package's origin (API-046). An export with `web_ui: false` (variant C) has no `/` and no `/ui`
+routes; it serves the app contract, the published API and `/health`.

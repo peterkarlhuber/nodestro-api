@@ -63,6 +63,7 @@ from pydantic import BaseModel, Field
 from . import __version__
 from .api_examples import KEY_VARIABLE, examples
 from .export_models import LocalModelInfo, ModelUse, NetworkNeed
+from .portable_build import LibraryCheck
 from .publishing import Publication, PublicationEvent, Release
 from .serving import ApiLimits, ServedRelease, openapi_document
 
@@ -179,7 +180,10 @@ class PortableCheck(BaseModel):
     """What a portable package of the release would contain and need (:mod:`nodestro_api.portable_build`)."""
 
     platform: str
-    platforms: list[dict[str, str]] = Field(default_factory=list)
+    #: Every platform with its id, label and row of the support matrix (``support``).
+    platforms: list[dict[str, Any]] = Field(default_factory=list)
+    #: The platform pre-check of the libraries for ``platform`` (``POST .../export/libraries`` runs it).
+    libraries: LibraryCheck | None = None
     providers: list[str] = Field(default_factory=list)
     models: list[ModelUse] = Field(default_factory=list)
     local_models: list[LocalModelInfo] = Field(default_factory=list)
@@ -837,6 +841,19 @@ def _workspace_retrieval(ctx: Nodestro) -> tuple[str, str | None]:
     return str(mode), getattr(settings, "embedding_model", None)
 
 
+def check_libraries(ctx: Nodestro, release: Release, options: ExportOptions) -> LibraryCheck:
+    """The platform pre-check of a portable package (NAL-C3): resolves its libraries for the target platform once and
+    remembers the answer, which :func:`check` then reports. On a server only where its operator enabled packages."""
+    from . import portable_build
+
+    options = normalized(options)
+    platform = portable_build.PLATFORMS.get(options.platform or portable_build.host_platform())
+    if platform is None:
+        raise NodestroError("export.platform_unknown", f"Unknown platform {options.platform}")
+    resolve = ctx.profile.kind != "server" or portable_build.server_jobs_enabled()
+    return portable_build.library_check(ctx, platform, options, release.bundle, resolve=resolve)
+
+
 def _portable_check(
     ctx: Nodestro, release: Release, options: ExportOptions, problems: list[CheckIssue]
 ) -> PortableCheck:
@@ -947,6 +964,18 @@ def _portable_check(
                 level="error",
             )
         )
+    libraries = portable_build.library_check(ctx, platform, options, bundle, resolve=False)
+    if libraries.status == "unavailable":
+        problems.append(
+            _issue(
+                "export.libraries_unavailable",
+                f"Not every library has a ready-built package for {platform.label}: "
+                + (", ".join(libraries.libraries) or libraries.detail[-300:]),
+                level="error",
+                platform=platform.id,
+                libraries=", ".join(libraries.libraries),
+            )
+        )
     downloads = portable_build.downloads(ctx, platform, local_models=bool(bundled))
     missing = [item for item in downloads if not item.cached]
     if missing and not options.allow_downloads:
@@ -978,6 +1007,7 @@ def _portable_check(
         + model_bytes
     )
     memory = max((item.memory_bytes or 0 for item in local if item.name in bundled), default=0) or None
+    support = portable_build.platform_support()
     requirements = [f"os.{platform.id}"]
     if memory:
         requirements.append("memory")
@@ -987,7 +1017,15 @@ def _portable_check(
         requirements.append("network")
     return PortableCheck(
         platform=platform.id,
-        platforms=[{"id": item.id, "label": item.label} for item in portable_build.PLATFORMS.values()],
+        platforms=[
+            {
+                "id": item.id,
+                "label": item.label,
+                "support": support[item.id].model_dump() if item.id in support else None,
+            }
+            for item in portable_build.PLATFORMS.values()
+        ],
+        libraries=libraries,
         providers=sorted({use.provider for use in uses}),
         models=uses,
         local_models=local,

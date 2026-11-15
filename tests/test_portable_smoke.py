@@ -280,10 +280,16 @@ def _build_and_run(make_app: Callable[..., TestClient], tmp_path: Path, model: _
         "confirm_distribution": True,
         "output_dir": "ergebnisse",
     }
+    # NAL-C3: the platform pre-check resolves the package's libraries for the target before anything is built.
+    precheck = studio.post(f"/api/publications/{publication['id']}/export/libraries", json={"options": options})
+    assert precheck.status_code == 200 and precheck.json()["status"] == "ok", precheck.text
     checked = studio.post(f"/api/publications/{publication['id']}/export/check", json={"options": options})
     assert checked.status_code == 200, checked.text
     check = checked.json()
     assert check["ok"], check["problems"]
+    assert check["portable"]["libraries"]["status"] == "ok"
+    support = {item["id"]: item["support"] for item in check["portable"]["platforms"]}
+    assert support[options["platform"]]["ci"] == "built_and_started"
     assert not check["portable"]["local_models"]
     started = studio.post(f"/api/publications/{publication['id']}/export-jobs", json={"options": options})
     assert started.status_code == 202, started.text
@@ -317,17 +323,21 @@ def _build_and_run(make_app: Callable[..., TestClient], tmp_path: Path, model: _
                 path.symlink_to(link)
             elif mode and path.is_file():
                 path.chmod(mode & 0o777)
-    for name in ("README.md", "openapi.json", "SHA256SUMS", "PORTABLE.json", "config/settings.toml"):
+    # The folder model (NAL-C3): the export's files in program/, the person's next to it.
+    for name in ("README.md", "config/settings.toml", "program/openapi.json", "program/SHA256SUMS"):
         assert (folder / name).is_file(), name
+    assert not (folder / "PORTABLE.json").exists() and not (folder / "python").exists()
+    assert not list((folder / "program").rglob("__pycache__"))
     # TABRION MIG-NOD-3: with a runtime that requires tabrion, it was built from the pinned, hash-checked archive.
     from nodestro_api import exporter
     from nodestro_api.portable_build import tabrion_pin
 
-    manifest = json.loads((folder / "PORTABLE.json").read_text(encoding="utf-8"))
+    manifest = json.loads((folder / "program" / "PORTABLE.json").read_text(encoding="utf-8"))
+    assert manifest["layout_version"] == 2 and manifest["ui"]["contract"] == {"min": 1, "max": 1}
     if exporter._runtime_needs_tabrion():
         pin = tabrion_pin()
         assert manifest["tabrion"] == {"commit": pin.commit, "archive_sha256": pin.sha256}
-        assert (folder / "licenses" / "tabrion.txt").is_file()
+        assert (folder / "program" / "licenses" / "tabrion.txt").is_file()
     else:
         assert manifest["tabrion"] is None
     starter = [str(folder / "start.cmd")] if windows else [str(folder / "start.sh")]
@@ -357,11 +367,20 @@ def _build_and_run(make_app: Callable[..., TestClient], tmp_path: Path, model: _
 
     def run(*args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [*starter, *args], cwd=folder, env=environment, capture_output=True, text=True, timeout=600, check=False
+            [*starter, *args],
+            cwd=folder,
+            env=environment,
+            stdin=subprocess.DEVNULL,  # start.cmd pauses after a failure: no key to wait for
+            capture_output=True,
+            text=True,
+            timeout=600,
+            check=False,
         )
 
     test = run("check")
     assert test.returncode == 0, test.stdout + test.stderr
+    verified = run("verify")
+    assert verified.returncode == 0, verified.stdout + verified.stderr
     created = run("keys", "new", "--name", "smoke", "--scopes", "run,read")
     assert created.returncode == 0, created.stderr
     token = created.stdout.splitlines()[1].strip()
@@ -435,6 +454,7 @@ def _build_and_run(make_app: Callable[..., TestClient], tmp_path: Path, model: _
         assert not _port_open(port), "the port is still in use after stop"
         environment.pop(secret_variable, None)  # the second start has the connection's settings, but no secret
     assert len(backend_ids) == 1, backend_ids  # the package keeps its backend id across restarts
+    _operate_the_package(folder, target, run, tmp_path)
     # The agent's run recorded the test provider's hits in its source ledger (the published API does not show it).
     from nodestro_runtime.schemas import Run
     from nodestro_runtime.storage import Store
@@ -459,3 +479,38 @@ def _port_open(port: int) -> bool:
     with socket.socket() as probe:
         probe.settimeout(1)
         return probe.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _operate_the_package(
+    folder: Path, package: Path, run: Callable[..., subprocess.CompletedProcess[str]], tmp_path: Path
+) -> None:
+    """NAL-C3 on the real package: Python wrote its bytecode while it ran and program/ still checks; a changed file
+    stops the start; backup, update (with the same package), rollback and restore keep the runs."""
+    verified = run("verify")
+    assert verified.returncode == 0, verified.stdout + verified.stderr
+    runs = (folder / "data" / "runtime.db").read_bytes()
+    backup = tmp_path / "backup.zip"
+    saved = run("backup", str(backup))
+    assert saved.returncode == 0, saved.stdout + saved.stderr
+    with zipfile.ZipFile(backup) as archive:
+        names = set(archive.namelist())
+    assert "data/runtime.db" in names and not any(name.startswith("data/secrets/") for name in names)
+    target = folder / "program" / "workflow" / "manifest.json"
+    original = target.read_bytes()
+    target.write_bytes(original + b" ")
+    refused = run("start", "--no-browser")
+    assert refused.returncode == 4, refused.stdout + refused.stderr
+    target.write_bytes(original)
+    updated = run("update", str(package))
+    assert updated.returncode == 0, updated.stdout + updated.stderr
+    assert (folder / "program.previous" / "PORTABLE.json").is_file()
+    assert run("verify").returncode == 0
+    rolled = run("rollback")
+    assert rolled.returncode == 0, rolled.stdout + rolled.stderr
+    assert run("check").returncode == 0
+    restored = run("restore", str(backup))
+    assert restored.returncode == 0, restored.stdout + restored.stderr
+    assert (folder / "data" / "runtime.db").read_bytes() == runs
+    assert list((folder / "backups").glob("before-update-*.zip")) and list(
+        (folder / "backups").glob("before-restore-*.zip")
+    )
