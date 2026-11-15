@@ -37,6 +37,7 @@ toutes les exécutions, approbations, fichiers et paramètres.
 | `ui install <fichier.tgz> --sha256 <hash>` | Installe une interface web plus récente (`ui reset` revient en arrière, `ui status`). |
 | `pair` | Crée un code d’appairage pour un navigateur sur un autre ordinateur (seulement avec `NODESTRO_PAIRING=on`, voir Configuration). |
 | `devices list` | Affiche les navigateurs appairés (`devices revoke <id>` ou `--all` retire l’accès). |
+| `origins add <https://…>` | Autorise l’interface web à une autre adresse à s’appairer (`origins list`, `origins remove` ; uniquement avec `NODESTRO_CROSS_ORIGIN=on`). |
 
 ## Fournisseurs d’IA et clés
 
@@ -91,6 +92,13 @@ d’environnement `NODESTRO_PAIRING=on`, désactivé par défaut jusqu’à l’
 crée un code valable 10 minutes ; saisissez-le dans le navigateur de l’autre ordinateur, sans clé d’API.
 `devices list` affiche les navigateurs appairés, `devices revoke <id>` (ou `--all`) leur retire l’accès
 immédiatement. Un certificat propre ou un proxy reste la voie recommandée.
+
+**L’interface à une autre adresse (aperçu).** La même interface web peut aussi fonctionner séparément de
+l’application, par exemple sur votre propre serveur web, et utiliser plusieurs applications l’une après l’autre. Chaque
+application autorise cette adresse avec `origins add https://apps.example` et la variable d’environnement
+`NODESTRO_CROSS_ORIGIN=on` avec `NODESTRO_PAIRING=on` (toutes deux désactivées par défaut jusqu’à l’audit de sécurité
+indépendant). `pair --ui https://apps.example/` affiche un lien pour cela ; l’interface ne garde aucune clé, seulement
+un jeton d’accès de courte durée. `origins remove` retire l’accès de tous les navigateurs appairés depuis cette adresse.
 
 ## Interface de programmation (API)
 

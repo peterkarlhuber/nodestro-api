@@ -39,6 +39,7 @@ Läufe, Freigaben, Dateien und Einstellungen noch da.
 | `ui install <datei.tgz> --sha256 <hash>` | Installiert eine neuere Weboberfläche (`ui reset` geht zurück, `ui status`). |
 | `pair` | Erzeugt einen Kopplungscode für einen Browser auf einem anderen Computer (nur mit `NODESTRO_PAIRING=on`, siehe Einstellungen). |
 | `devices list` | Zeigt die gekoppelten Browser (`devices revoke <id>` oder `--all` entzieht den Zugang). |
+| `origins add <https://…>` | Erlaubt der Weboberfläche unter einer anderen Adresse das Koppeln (`origins list`, `origins remove`; nur mit `NODESTRO_CROSS_ORIGIN=on`). |
 
 ## KI-Anbieter und Schlüssel
 
@@ -94,6 +95,13 @@ Oberfläche kennzeichnet diese Verbindung dauerhaft als eingeschränkt vertrauen
 `pair` einen Code für 10 Minuten; im Browser des anderen Computers gibst du ihn ein und brauchst keinen
 API-Schlüssel. `devices list` zeigt die gekoppelten Browser, `devices revoke <id>` (oder `--all`)
 entzieht den Zugang sofort. Eigenes Zertifikat oder Proxy bleiben der empfohlene Weg.
+
+**Die Oberfläche unter einer anderen Adresse (Vorschau).** Dieselbe Weboberfläche kann auch getrennt von der
+Anwendung laufen, etwa auf einem eigenen Webserver, und nacheinander mehrere Anwendungen nutzen. Jede Anwendung erlaubt
+diese Adresse mit `origins add https://apps.example` und der Umgebungsvariablen `NODESTRO_CROSS_ORIGIN=on` zusammen mit
+`NODESTRO_PAIRING=on` (beide standardmäßig aus bis zur unabhängigen Sicherheitsprüfung). `pair --ui
+https://apps.example/` zeigt einen Link dafür; die Oberfläche behält keinen Schlüssel, nur ein kurzlebiges
+Zugriffs-Token. `origins remove` beendet den Zugang aller Browser, die von dieser Adresse aus gekoppelt wurden.
 
 ## Programmierschnittstelle (API)
 

@@ -48,6 +48,7 @@ from .app_contract import form_fields, ui_form_fields
 from .serving import ApiError, KeyAuthenticatedRoute, KeyIdentity, parse_token, read_body
 
 if TYPE_CHECKING:
+    from .cross_origin import CrossOrigin
     from .output_folder import OutputFolder
     from .pairing import Pairing
     from .standalone import StandaloneHost
@@ -89,11 +90,11 @@ _TYPES = {
 }
 #: The app's Content Security Policy: only its own files; images also from ``blob:`` (previews of files the user
 #: chose or downloaded through the API) and ``data:`` (inline icons). No inline script, no inline style attributes
-#: from content, no frames, no plugins.
+#: from content, no frames, no plugins. Trusted Types (NAL-C5): the interface writes no HTML from strings at all.
 CSP = (
     "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; "
     "connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; "
-    "form-action 'self'; frame-ancestors 'none'"
+    "form-action 'self'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'"
 )
 _SAFE = frozenset({"GET", "HEAD", "OPTIONS"})
 #: Body limits of the sign-in and of the provider setup (``413 request.too_large`` above).
@@ -218,6 +219,7 @@ class WebUi:
         auth_failed: Callable[[str], None] | None = None,
         output: OutputFolder | None = None,
         pairing: Pairing | None = None,
+        cross_origin: CrossOrigin | None = None,
     ) -> None:
         """``output``: the operator may choose the result folder on the settings page (a portable package)."""
         self.host = host
@@ -231,6 +233,8 @@ class WebUi:
         self.output = output
         #: Pairing by code (NAL-C4); ``None`` unless the launcher switched it on (``NODESTRO_PAIRING``).
         self.pairing = pairing
+        #: The interface from other origins (NAL-C5); ``None`` unless ``NODESTRO_CROSS_ORIGIN`` and pairing are on.
+        self.cross_origin = cross_origin if pairing is not None else None
 
     # ---- identities -------------------------------------------------------------------------------------------
 
@@ -418,6 +422,9 @@ WEB_UI_ROUTES: dict[tuple[str, str], str] = {
     ("POST", "/ui/control/pair"): "the launcher's control token (UiOptions.control_token)",
     ("GET", "/ui/control/devices"): "the launcher's control token (UiOptions.control_token)",
     ("POST", "/ui/control/devices/revoke"): "the launcher's control token (UiOptions.control_token)",
+    ("POST", "/api/app/token"): "redeems a pairing code from an allowed origin for an access token (NAL-C5)",
+    ("POST", "/api/app/token/refresh"): "renews an access token from the rotating refresh cookie (NAL-C5)",
+    ("DELETE", "/api/app/token"): "an access token revokes its own device (NAL-C5)",
 }
 
 
@@ -602,6 +609,7 @@ def build_router(ui: WebUi) -> APIRouter:
         return json_answer({"token": token})
 
     _pairing_routes(router, ui, json_answer, control)
+    _token_routes(router, ui, json_answer)
     return router
 
 
@@ -681,7 +689,8 @@ def _pairing_routes(
         if not _secure(request):
             raise ApiError(403, "pairing.tls_required", "Pairing needs an HTTPS connection")
         try:
-            device, secret = found.renew(request.cookies.get(pairing_module.DEVICE_COOKIE, ""))
+            # Only a device of this interface (no origin): one paired from another origin renews there (NAL-C5).
+            device, secret = found.renew(request.cookies.get(pairing_module.DEVICE_COOKIE, ""), origin=None)
         except pairing_module.PairingError as exc:
             answer = json_answer({"error": {"status": exc.status, "code": exc.key, "message": str(exc)}}, exc.status)
             answer.delete_cookie(pairing_module.DEVICE_COOKIE, path=pairing_module.DEVICE_PATH)
@@ -745,12 +754,121 @@ def _pairing_routes(
         except ValueError:
             body = {}
         target = str(body.get("id") or "") if isinstance(body, dict) else ""
+        origin = str(body.get("origin") or "") if isinstance(body, dict) else ""
         every = isinstance(body, dict) and body.get("all") is True
+        if origin:
+            # The operator removed an origin from the allowed ones (NAL-C5): its devices end with it.
+            count = (
+                ui.cross_origin.revoke_origin(origin) if ui.cross_origin is not None else found.revoke_origin(origin)
+            )
+            return json_answer({"revoked": count})
         if not target and not every:
             raise ApiError(400, "pairing.device_required", "Name a device or all")
         count = found.revoke(None if every else target)
         ui.sessions.drop_device(None if every else target)
+        if ui.cross_origin is not None:
+            ui.cross_origin.tokens.drop_device(None if every else target)
         return json_answer({"revoked": count})
+
+
+def _token_routes(router: APIRouter, ui: WebUi, json_answer: Callable[..., JSONResponse]) -> None:
+    """The token profile for the interface on another origin (NAL-C5, ``docs/cross-origin.md``)."""
+    from . import cross_origin as cross
+    from . import pairing as pairing_module
+
+    def profile_on(request: Request) -> tuple[CrossOrigin, str]:
+        """The cross-origin profile and the request's allowed origin, or the refusal."""
+        found = ui.cross_origin
+        if found is None:
+            raise ApiError(404, "token.disabled", "Access from other origins is not switched on for this application")
+        origin = cross.request_origin(request.headers)
+        if origin is None or cross.same_origin(request.headers) or not found.origins.allowed(origin):
+            raise ApiError(403, "cors.origin_not_allowed", "This origin may not use this backend")
+        if request.headers.get(cross.APP_HEADER) != "1":
+            raise ApiError(403, "token.header_required", "This request must come from the app interface")
+        if not _secure(request):
+            raise ApiError(403, "pairing.tls_required", "Pairing needs an HTTPS connection")
+        return found, origin
+
+    def name() -> str:
+        instance = getattr(ui.host, "instance", None)
+        return cross.cookie_name(instance().id) if instance is not None else cross.REFRESH_COOKIE
+
+    def issued(found: CrossOrigin, device: pairing_module.Device, secret: str, origin: str) -> JSONResponse:
+        identity = KeyIdentity(
+            id=device.id, name=device.name, scopes=device.scopes, publications=[ui.host.served.publication_id]
+        )
+        app = ui.config(UiSession(identity=identity, operator=False, device_id=device.id))
+        answer = json_answer(
+            {
+                "access_token": found.tokens.issue(device.id, origin),
+                "token_type": "Bearer",
+                "expires_in": cross.ACCESS_SECONDS,
+                "device": {"id": device.id, "name": device.name, "scopes": device.scopes},
+                "app": app,
+            }
+        )
+        answer.headers.append(
+            "set-cookie",
+            cross.refresh_cookie(f"{device.id}.{secret}", max_age=pairing_module.DEVICE_DAYS * 86400, name=name()),
+        )
+        return answer
+
+    def cleared(body: dict[str, Any], status: int = 200) -> JSONResponse:
+        answer = json_answer(body, status)
+        answer.headers.append("set-cookie", cross.refresh_cookie("", max_age=0, name=name()))
+        return answer
+
+    @router.post(cross.TOKEN_PATH)
+    async def grant(request: Request) -> JSONResponse:
+        found, origin = profile_on(request)
+        try:
+            body = json.loads(await read_body(request, _SIGN_IN_BYTES) or b"{}")
+        except ValueError:
+            body = {}
+        if not isinstance(body, dict) or body.get("grant_type") != "pairing_code":
+            raise ApiError(400, "token.grant_invalid", "The grant type is pairing_code")
+        client = request.client.host if request.client else "unknown"
+        try:
+            device, secret = found.pairing.redeem(
+                str(body.get("code") or ""),
+                address=client,
+                name=str(body.get("name") or ""),
+                agent=request.headers.get("user-agent", ""),
+                origin=origin,
+            )
+        except pairing_module.PairingError as exc:
+            if ui.auth_failed is not None and exc.key == "pairing.code_invalid":
+                ui.auth_failed(client)
+            raise ApiError(exc.status, exc.key, str(exc)) from None
+        logger.info("Paired device %s from another origin", pairing_module.short(device.id))
+        return issued(found, device, secret, origin)
+
+    @router.post(cross.REFRESH_PATH)
+    def refresh(request: Request) -> JSONResponse:
+        found, origin = profile_on(request)
+        cookie = request.cookies.get(name(), "")
+        try:
+            device, secret = found.pairing.renew(cookie, origin=origin)
+        except pairing_module.PairingError as exc:
+            # A browser that never paired asks on every load: only a cookie that was sent and refused counts.
+            if ui.auth_failed is not None and cookie:
+                ui.auth_failed(request.client.host if request.client else "unknown")
+            return cleared({"error": {"status": exc.status, "code": exc.key, "message": str(exc)}}, exc.status)
+        return issued(found, device, secret, origin)
+
+    @router.delete(cross.TOKEN_PATH)
+    def revoke(request: Request) -> JSONResponse:
+        found, origin = profile_on(request)
+        header = request.headers.get("authorization", "")
+        token = header[7:].strip() if header[:7].lower() == "bearer " else ""
+        device = found.device_of(token, origin) if token else None
+        if device is None:
+            raise ApiError(401, "auth.invalid", "The access token is invalid or expired")
+        found.pairing.revoke(device.id)
+        found.tokens.drop_device(device.id)
+        logger.info("Device %s removed itself", pairing_module.short(device.id))
+        return cleared({"removed": True})
 
 
 def guess_type(name: str) -> str:

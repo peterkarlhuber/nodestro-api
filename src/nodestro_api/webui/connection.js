@@ -74,13 +74,15 @@
 
       options.fetch     the fetch function (the browser's, or a stand-in in tests)
       options.base      the backend's address ("" = the origin the interface came from)
-      options.onChange  called with (state, connection) after every change */
+      options.onChange  called with (state, connection) after every change
+      options.headers   returns extra request headers (the standalone interface's access token, NAL-C5) */
   class BackendConnection {
     constructor(options) {
       const settings = options || {};
       this.fetch = settings.fetch || (typeof fetch === "function" ? fetch.bind(root) : null);
       this.base = settings.base || "";
       this.onChange = settings.onChange || null;
+      this.headers = settings.headers || null;
       this.state = "disconnected";
       this.discovery = null; // the answer of GET /api/app (null: not known yet or a backend without the contract)
       this.contract = null; // the negotiated version (null with a backend without the contract)
@@ -109,7 +111,8 @@
     async discover() {
       let response;
       try {
-        response = await this.fetch(this.url("/api/app"), { credentials: "same-origin", headers: { Accept: "application/json" } });
+        const headers = { Accept: "application/json", ...(this.headers ? this.headers() : {}) };
+        response = await this.fetch(this.url("/api/app"), { credentials: "same-origin", headers });
       } catch (error) {
         throw new ConnectionProblem("network");
       }

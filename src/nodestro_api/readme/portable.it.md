@@ -37,6 +37,7 @@ tutte le esecuzioni, approvazioni, file e impostazioni.
 | `ui install <file.tgz> --sha256 <hash>` | Installa un'interfaccia web più recente (`ui reset` torna indietro, `ui status`). |
 | `pair` | Crea un codice di abbinamento per un browser su un altro computer (solo con `NODESTRO_PAIRING=on`, vedi Impostazioni). |
 | `devices list` | Mostra i browser abbinati (`devices revoke <id>` o `--all` revoca l’accesso). |
+| `origins add <https://…>` | Consente all’interfaccia web su un altro indirizzo di abbinarsi (`origins list`, `origins remove`; solo con `NODESTRO_CROSS_ORIGIN=on`). |
 
 ## Provider di IA e chiavi
 
@@ -91,6 +92,14 @@ connessione come di fiducia limitata finché viene usata. Con l’abbinamento at
 `pair` crea un codice valido 10 minuti; inseriscilo nel browser dell’altro computer, senza chiave API.
 `devices list` mostra i browser abbinati, `devices revoke <id>` (o `--all`) revoca subito l’accesso. Un
 certificato proprio o un proxy restano la via consigliata.
+
+**L’interfaccia su un altro indirizzo (anteprima).** La stessa interfaccia web può funzionare anche separata
+dall’applicazione, per esempio su un proprio server web, e usare più applicazioni una dopo l’altra. Ogni applicazione
+consente quell’indirizzo con `origins add https://apps.example` e la variabile d’ambiente `NODESTRO_CROSS_ORIGIN=on`
+insieme a `NODESTRO_PAIRING=on` (entrambe disattivate per impostazione predefinita fino alla verifica di sicurezza
+indipendente). `pair --ui https://apps.example/` mostra un link per questo; l’interfaccia non conserva alcuna chiave,
+solo un token di accesso di breve durata. `origins remove` revoca l’accesso di tutti i browser abbinati da
+quell’indirizzo.
 
 ## Interfaccia di programmazione (API)
 

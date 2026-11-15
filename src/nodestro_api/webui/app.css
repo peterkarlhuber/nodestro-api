@@ -301,3 +301,13 @@ th { color: var(--muted); font-weight: 600; }
 .pair { margin-bottom: 1rem; }
 .pair h2 { font-size: 1rem; margin: 0 0 .5rem; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+
+/* The interface on its own origin (NAL-C5): the list of backends. */
+.backends { max-width: 720px; width: 100%; margin: 24px auto; }
+.backend-list { list-style: none; padding: 0; margin: 16px 0; display: grid; gap: 10px; }
+.backend { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; border: 1px solid var(--border); border-radius: var(--r-md); padding: 10px 12px; }
+.backend-text { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.backend-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+#backend-form { display: grid; gap: 6px; margin-top: 12px; }
+#backend-form button { justify-self: start; margin-top: 8px; }
+.primary.small { min-height: 32px; padding: 4px 12px; font-size: .9rem; }

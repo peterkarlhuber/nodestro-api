@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="ui/assets/app.css">
   <script src="ui/assets/markdown.js" defer></script>
   <script src="ui/assets/connection.js" defer></script>
+  <script src="ui/assets/standalone.js" defer></script>
   <script src="ui/assets/app.js" defer></script>
 </head>
 <body>
@@ -28,6 +29,7 @@
         <button type="button" class="navlink" id="nav-run" data-view="run" hidden data-i18n="nav.run">Run</button>
         <button type="button" class="navlink" id="nav-history" data-view="history" hidden data-i18n="nav.history">History</button>
         <button type="button" class="navlink" id="nav-setup" data-view="setup" hidden data-i18n="nav.setup">Settings</button>
+        <button type="button" class="navlink" id="nav-backends" data-view="backends" hidden data-i18n="nav.backends">Backends</button>
       </nav>
       <div class="tools">
         <button type="button" class="status" id="status" data-state="connecting" aria-haspopup="dialog" data-i18n-title="about.open" title="About this app">
@@ -77,7 +79,7 @@
           <input id="pair-name" name="name" maxlength="60" autocomplete="off">
           <p class="error" id="pair-error" role="alert" hidden></p>
           <button type="submit" class="primary" data-i18n="pair.submit">Connect</button>
-          <p class="hint" data-i18n="pair.or_key">Or sign in with an API key:</p>
+          <p class="hint" id="pair-or-key" data-i18n="pair.or_key">Or sign in with an API key:</p>
         </form>
         <form id="signin-form" novalidate>
           <label for="signin-key" data-i18n="auth.key_label">API key</label>
@@ -86,7 +88,31 @@
           <p class="error" id="signin-error" role="alert" hidden></p>
           <button type="submit" class="primary" data-i18n="auth.sign_in">Sign in</button>
         </form>
-        <p class="hint operator-hint" data-i18n="auth.operator_hint">Operator of this computer: open the link shown in the start window.</p>
+        <p class="hint operator-hint" id="operator-hint" data-i18n="auth.operator_hint">Operator of this computer: open the link shown in the start window.</p>
+      </div>
+    </section>
+
+    <section id="view-backends" class="view" hidden>
+      <div class="card backends">
+        <h1 data-i18n="backends.title">Backends</h1>
+        <p class="muted" data-i18n="backends.intro">This interface runs on its own and can use several backends one after the other. Each backend must allow this address (origins add) and have pairing switched on.</p>
+        <p class="banner warning" id="backend-link" role="alert" hidden></p>
+        <p class="error" id="backend-error" role="alert" hidden></p>
+        <p><a id="backend-open" target="_blank" rel="noopener noreferrer" hidden data-i18n="backends.open">Open the backend's address in a new tab (to check and accept its certificate)</a></p>
+        <ul class="backend-list" id="backend-list"></ul>
+        <p class="hint" id="backend-none" data-i18n="backends.none" hidden>No backend yet. Add one below.</p>
+        <form id="backend-form" novalidate>
+          <h2 data-i18n="backends.add_title">Add a backend</h2>
+          <label for="backend-address" data-i18n="backends.address">Address</label>
+          <input id="backend-address" name="address" type="url" inputmode="url" autocomplete="url" spellcheck="false" aria-describedby="backend-address-hint">
+          <p class="hint" id="backend-address-hint" data-i18n="backends.address_hint">The address the application shows in its start window.</p>
+          <label for="backend-name" data-i18n="backends.name">Name (optional)</label>
+          <input id="backend-name" name="name" maxlength="80" autocomplete="off">
+          <label for="backend-fingerprint" data-i18n="backends.fingerprint">Certificate fingerprint (optional)</label>
+          <input id="backend-fingerprint" name="fingerprint" class="mono" spellcheck="false" autocomplete="off" aria-describedby="backend-fingerprint-hint">
+          <p class="hint" id="backend-fingerprint-hint" data-i18n="backends.fingerprint_hint">Only for a self-issued certificate: the fingerprint from the start window. Without it, the first connection's fingerprint is kept and compared from then on.</p>
+          <button type="submit" class="primary" data-i18n="backends.add">Add and connect</button>
+        </form>
       </div>
     </section>
 

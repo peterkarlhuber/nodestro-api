@@ -80,7 +80,7 @@ SERVED_CAPABILITIES: tuple[str, ...] = (
     "usage",
 )
 
-AuthMethod = Literal["api_key", "session", "launch_link", "pairing"]
+AuthMethod = Literal["api_key", "session", "launch_link", "pairing", "token"]
 #: The field types of form version 1; a client renders an unknown type as JSON input (contract rule).
 FORM_FIELD_TYPES: tuple[str, ...] = ("text", "textarea", "number", "date", "boolean", "select", "file")
 

@@ -28,8 +28,19 @@
     freeInput: true,
   };
   const Connection = window.NodestroConnection;
+  const Standalone = window.NodestroStandalone;
+  //: The interface on its own origin (NAL-C5): a list of backends and the token profile instead of a session cookie.
+  const mode = document.querySelector('meta[name="nodestro-mode"]');
+  const standalone = Boolean(mode && mode.getAttribute("content") === "standalone" && Standalone);
   let retryTimer = null;
-  const conn = new Connection.BackendConnection({ onChange: renderConnection });
+  //: The token session with the current backend (standalone only); the access token lives only in its memory.
+  let tokens = null;
+  const conn = new Connection.BackendConnection({ onChange: renderConnection, headers: () => (tokens ? tokens.headers() : {}) });
+  const backends = standalone ? new Standalone.Backends(localStore()) : null;
+
+  function localStore() {
+    try { return window.localStorage; } catch (error) { return null; }
+  }
 
   const $ = (id) => document.getElementById(id);
   const store = {
@@ -164,6 +175,7 @@
   async function reconnect() {
     clearTimeout(retryTimer);
     if (conn.state !== "disconnected" && conn.state !== "error") return;
+    if (standalone) { await reconnectStandalone(); return; }
     if (!state.boot) { conn.set("connecting"); start(); return; }
     conn.set("connecting");
     let boot;
@@ -240,6 +252,7 @@
       ["about.runtime_version", info.runtimeVersion || unknown],
       ["about.release", state.config && state.config.version ? "v" + state.config.version : unknown],
       ["about.state", statusText(conn.state)],
+      ...(standalone ? [["about.backend_address", conn.base || unknown]] : []),
       ["about.tls", tlsText()],
     ];
     const list = $("about-list");
@@ -256,7 +269,7 @@
   /** How the backend serves TLS (NAL-C4), as the about dialog names it. */
   function tlsText() {
     const tls = (state.boot && state.boot.tls) || {};
-    const mode = tls.mode || (location.protocol === "https:" ? "certificate" : "none");
+    const mode = tls.mode || (secureBackend() ? "certificate" : "none");
     const text = t("about.tls_" + mode);
     return mode === "self_signed" && tls.fingerprint ? text + " (" + tls.fingerprint + ")" : text;
   }
@@ -264,9 +277,14 @@
   /** The permanent "restricted trust" notice of a self-issued certificate (NAL-C4, decision E-7). */
   function renderTlsNotice() {
     const tls = (state.boot && state.boot.tls) || {};
-    const shown = tls.mode === "self_signed" && location.protocol === "https:";
+    const shown = tls.mode === "self_signed" && secureBackend();
     $("tls-notice").hidden = !shown;
     if (shown) $("tls-fingerprint").textContent = tls.fingerprint || t("about.unknown");
+  }
+
+  /** The backend is reached over HTTPS (embedded: the page's own address; standalone: the backend's). */
+  function secureBackend() {
+    return standalone ? conn.base.startsWith("https:") : location.protocol === "https:";
   }
 
   function setupAbout() {
@@ -297,8 +315,9 @@
   }
 
   async function api(method, path, body, options) {
-    const init = { method, credentials: "same-origin", headers: { Accept: "application/json" } };
-    if (method !== "GET") init.headers["X-Nodestro-UI"] = "1";
+    const init = { method, credentials: standalone ? "omit" : "same-origin", headers: { Accept: "application/json" } };
+    if (standalone) Object.assign(init.headers, tokens ? tokens.headers() : {});
+    else if (method !== "GET") init.headers["X-Nodestro-UI"] = "1";
     if (body instanceof FormData) init.body = body;
     else if (body !== undefined) { init.headers["Content-Type"] = "application/json"; init.body = JSON.stringify(body); }
     let response;
@@ -307,6 +326,12 @@
     } catch (error) {
       connectionLost();
       throw error;
+    }
+    if (standalone && response.status === 401 && tokens && tokens.token && !(options && options.retried)) {
+      // The access token expired or the backend restarted: one renewal from the refresh cookie, then once again.
+      let renewed = false;
+      try { await tokens.refresh(); renewed = true; } catch (problem) { /* signs in again below */ }
+      if (renewed) return api(method, path, body, { ...(options || {}), retried: true });
     }
     if (options && options.raw) {
       if (!response.ok) throw new ApiProblem(response.status, await response.json().catch(() => null));
@@ -342,13 +367,14 @@
 
   function show(view) {
     state.view = view;
-    for (const id of ["loading", "signin", "run", "history", "setup"]) $("view-" + id).hidden = id !== view;
+    for (const id of ["loading", "signin", "run", "history", "setup", "backends"]) $("view-" + id).hidden = id !== view;
     for (const button of document.querySelectorAll(".navlink")) {
       if (button.dataset.view === view) button.setAttribute("aria-current", "page");
       else button.removeAttribute("aria-current");
     }
     if (view === "history") loadHistory();
     if (view === "setup") loadSetup();
+    if (view === "backends") renderBackends();
   }
 
   function showSignIn() {
@@ -360,10 +386,12 @@
     for (const id of ["nav-run", "nav-history", "nav-setup", "sign-out", "remove-device"]) $(id).hidden = true;
     renderPairing();
     show("signin");
-    setTimeout(() => $(state.pairing && state.boot && state.boot.pairing ? "pair-name" : "signin-key").focus(), 0);
+    const first = standalone ? (state.pairing && state.pairing.code ? "pair-name" : "pair-code") : state.pairing && state.boot && state.boot.pairing ? "pair-name" : "signin-key";
+    setTimeout(() => $(first).focus(), 0);
   }
 
   async function start() {
+    if (standalone) { await startStandalone(); return; }
     setupTheme();
     loadManifest();
     // First of all, so the code leaves the address even when the backend cannot be reached.
@@ -398,13 +426,22 @@
     if (!code) return;
     state.pairing = { code, fingerprint: (params.get("fp") || "").replace(/[^0-9a-f]/gi, "").toUpperCase() };
     history.replaceState(null, "", location.pathname);
+    if (standalone && params.get("backend")) {
+      // A link of the launcher (pair --ui). A backend already in the list becomes the current one; a new one is never
+      // added by a link alone (anyone can send a link): the person confirms its full address first.
+      const address = Standalone.normalizeAddress(params.get("backend"));
+      const known = address && backends.list().find((item) => item.address === address);
+      if (known) backends.choose(known.id);
+      else if (address) state.pairing.newBackend = address;
+      else state.pairing.badBackend = true;
+    }
   }
 
   /** The fingerprint of the link is not the one the backend reports (or it reports none): a wrong link or another
    *  certificate. This does not stop an active man in the middle, who serves this script too: only the browser's
    *  certificate dialog does (docs/pairing.md in nodestro-api). */
   function fingerprintMismatch() {
-    const expected = state.pairing && state.pairing.fingerprint;
+    const expected = (state.pairing && state.pairing.fingerprint) || (standalone && state.backend && state.backend.fingerprint);
     const tls = (state.boot && state.boot.tls) || {};
     if (!expected) return false;
     return !tls.fingerprint || expected !== tls.fingerprint.replace(/:/g, "").toUpperCase();
@@ -412,6 +449,7 @@
 
   /** A paired browser gets a new session from its device cookie (the backend restarted or the session ended). */
   async function renewDevice() {
+    if (standalone) return false;
     if (!state.boot || !state.boot.pairing || store.get("paired") !== "1") return false;
     // A replaced secret revokes the device, so tabs of this browser renew one after the other, and a tab that waited
     // first looks for the session another tab already got (their cookies are shared).
@@ -451,6 +489,7 @@
     error.hidden = true;
     const code = $("pair-code").value.trim();
     if (!code) { error.textContent = t("pair.code_missing"); error.hidden = false; return; }
+    if (standalone) { await pairStandalone(code); return; }
     try {
       const answer = await api("POST", "/ui/api/pair", { code, name: $("pair-name").value.trim() });
       $("pair-code").value = "";
@@ -466,7 +505,9 @@
 
   async function removeDevice() {
     if (!window.confirm(t("device.remove_confirm"))) return;
-    try { await api("DELETE", "/ui/api/device"); } catch (problem) { /* already gone */ }
+    closeEvents();
+    if (standalone) { try { await tokens.revoke(); } catch (problem) { /* already gone */ } }
+    else { try { await api("DELETE", "/ui/api/device"); } catch (problem) { /* already gone */ } }
     store.remove("paired");
     state.boot.session = null;
     state.run = null;
@@ -476,11 +517,16 @@
 
   async function enter() {
     if (conn.state !== "connecting") conn.set("connecting");
-    try {
-      state.config = await api("GET", "/ui/api/config");
-    } catch (problem) {
-      if (problem.status !== 401) notice(problemText(problem));
-      return;
+    if (standalone) {
+      // The configuration came with the access token (the same object as /ui/api/config, never operator data).
+      if (!state.config) { showSignIn(); return; }
+    } else {
+      try {
+        state.config = await api("GET", "/ui/api/config");
+      } catch (problem) {
+        if (problem.status !== 401) notice(problemText(problem));
+        return;
+      }
     }
     if (!(await connect())) return;
     const session = state.boot.session || {};
@@ -858,7 +904,12 @@
   }
 
   function follow(runId) {
-    const source = new EventSource(conn.url(state.config.api_base) + "/runs/" + encodeURIComponent(runId) + "/events?text=1");
+    const url = conn.url(state.config.api_base) + "/runs/" + encodeURIComponent(runId) + "/events?text=1";
+    // EventSource cannot send a token: the standalone interface reads the stream with fetch.
+    const Source = standalone ? Standalone.TokenEventSource : EventSource;
+    const source = standalone
+      ? new Source(url, { fetch: window.fetch.bind(window), headers: () => (tokens ? tokens.headers() : {}) })
+      : new EventSource(url);
     state.events = source;
     let failures = 0;
     source.addEventListener("status", (event) => {
@@ -887,7 +938,7 @@
       failures += 1;
       // The first error: one status request tells a lost connection (banner, retries) from a stream that reconnects.
       if (failures === 1) refreshStatus(runId);
-      if (source.readyState === EventSource.CLOSED || failures > 5) {
+      if (source.readyState === Source.CLOSED || failures > 5) {
         // The browser gave up reconnecting (e.g. the session ended): poll instead.
         closeEvents();
         if (conn.state === "connected") conn.set("degraded", { live: false });
@@ -1732,7 +1783,237 @@
     showSignIn();
   }
 
+  // ---- the interface on its own origin (NAL-C5) ----------------------------------------------------------------
+
+  async function startStandalone() {
+    setupTheme();
+    loadManifest();
+    // First of all, so the code leaves the address even when no backend can be reached.
+    readPairingLink();
+    const chosen = store.get("language");
+    const browser = (navigator.language || "en").split("-")[0];
+    const language = chosen && LANGUAGE_NAMES[chosen] ? chosen : LANGUAGE_NAMES[navigator.language] ? navigator.language : LANGUAGE_NAMES[browser] ? browser : "en";
+    await loadStrings(language).catch(() => loadStrings("en"));
+    state.boot = { name: "Nodestro", description: "", version: "", languages: Object.keys(LANGUAGE_NAMES), session: null, pairing: true, tls: {} };
+    setupLanguages();
+    document.body.classList.add("standalone");
+    $("nav-backends").hidden = false;
+    $("signin-form").hidden = true;
+    // Set here, not in the page: the page names no address of any other site.
+    $("backend-address").placeholder = "https://server:8800";
+    $("pair-or-key").hidden = true;
+    $("operator-hint").hidden = true;
+    const current = backends.current();
+    if (state.pairing && state.pairing.newBackend) {
+      conn.set("disconnected");
+      showBackends();
+      $("backend-address").value = state.pairing.newBackend;
+      if (state.pairing.fingerprint) $("backend-fingerprint").value = state.pairing.fingerprint;
+      const confirm = $("backend-link");
+      confirm.textContent = t("backends.link_confirm", { address: state.pairing.newBackend });
+      confirm.hidden = false;
+      $("backend-address").focus();
+      return;
+    }
+    if (!current) {
+      conn.set("disconnected");
+      showBackends(state.pairing && state.pairing.badBackend ? t("backends.address_invalid") : "");
+      return;
+    }
+    await openBackend(current);
+  }
+
+  /** Connects to a saved backend: discovery and contract, then a token from the refresh cookie or the sign-in. */
+  async function openBackend(id) {
+    const backend = backends.get(id);
+    if (!backend) { showBackends(); return; }
+    backends.choose(id);
+    closeEvents();
+    clearTimeout(retryTimer);
+    if (tokens) tokens.forget();
+    state.backend = backend;
+    state.config = null;
+    state.run = null;
+    state.boot = { ...state.boot, name: backend.name, description: "", version: "", session: null, tls: {} };
+    conn.base = backend.address;
+    conn.discovery = null;
+    tokens = new Standalone.TokenSession({ fetch: window.fetch.bind(window), base: backend.address, locks: navigator.locks || null, onToken: tokenArrived });
+    if (conn.state !== "connecting") conn.set("connecting");
+    $("app-name").textContent = backend.name;
+    $("app-version").textContent = "";
+    document.title = backend.name + " · Nodestro";
+    let found;
+    try {
+      found = await conn.discover();
+    } catch (problem) {
+      if (problem.kind === "incompatible") { showIncompatible(problem.detail.backend || []); return; }
+      conn.set("error", problem.detail);
+      showBackends(t(problem.kind === "network" ? "backends.unreachable" : "conn.error_long", { address: backend.address }), backend.address);
+      return;
+    }
+    const methods = (found && found.auth && found.auth.methods) || [];
+    if (!found || !methods.includes("token")) {
+      conn.set("error");
+      showBackends(t("backends.no_token", { address: backend.address }));
+      return;
+    }
+    state.boot.tls = found.tls || {};
+    if (found.backend && found.backend.name && backend.name === new URL(backend.address).host) {
+      state.backend = backends.update(id, { name: found.backend.name }) || backend;
+      $("app-name").textContent = state.backend.name;
+    }
+    renderTlsNotice();
+    if (fingerprintMismatch()) { showSignIn(); return; }
+    try {
+      await tokens.refresh();
+    } catch (problem) {
+      if (problem instanceof Standalone.TokenProblem) { showSignIn(); return; }
+      conn.set("error");
+      showBackends(t("backends.unreachable", { address: backend.address }), backend.address);
+      return;
+    }
+    await enter();
+  }
+
+  /** Every new access token brings the app's configuration and the device (grant and refresh). */
+  function tokenArrived(answer) {
+    const device = answer.device || {};
+    state.config = answer.app || state.config;
+    state.boot.session = { scopes: device.scopes || [], operator: false, name: device.name || "", device: true };
+    if (state.config) {
+      state.boot.name = state.config.name || state.boot.name;
+      state.boot.description = state.config.description || "";
+      state.boot.version = state.config.version || "";
+      $("app-name").textContent = state.boot.name;
+      $("app-version").textContent = state.boot.version ? "v" + state.boot.version : "";
+      document.title = state.boot.name + " · Nodestro";
+    }
+    // Trust on first pairing: the fingerprint of a self-issued certificate is kept and compared from then on.
+    const tls = state.boot.tls || {};
+    if (state.backend && !state.backend.fingerprint && tls.mode === "self_signed" && tls.fingerprint) {
+      state.backend = backends.update(state.backend.id, { fingerprint: tls.fingerprint }) || state.backend;
+    }
+  }
+
+  async function pairStandalone(code) {
+    const error = $("pair-error");
+    try {
+      await tokens.grant(code, $("pair-name").value.trim());
+      $("pair-code").value = "";
+      state.pairing = null;
+      await enter();
+    } catch (problem) {
+      error.textContent = problem instanceof TypeError ? t("backends.unreachable", { address: conn.base }) : problemText(problem);
+      error.hidden = false;
+    }
+  }
+
+  async function reconnectStandalone() {
+    if (!state.backend) { showBackends(); return; }
+    conn.set("connecting");
+    try {
+      await tokens.refresh();
+    } catch (problem) {
+      if (problem instanceof Standalone.TokenProblem) { showSignIn(); return; }
+      conn.set("disconnected");
+      scheduleRetry();
+      return;
+    }
+    if (!(await connect())) return;
+    if (state.run && !FINAL.has(state.run.status)) { closeEvents(); follow(state.run.run_id); }
+    else if (state.run) await refreshStatus(state.run.run_id);
+  }
+
+  function showBackends(message, address) {
+    closeEvents();
+    for (const id of ["nav-run", "nav-history", "nav-setup", "sign-out", "remove-device"]) $(id).hidden = true;
+    const error = $("backend-error");
+    error.textContent = message || "";
+    error.hidden = !message;
+    const open = $("backend-open");
+    open.hidden = !address;
+    if (address) open.href = address + "/api/app";
+    show("backends");
+  }
+
+  function renderBackends() {
+    const list = $("backend-list");
+    list.textContent = "";
+    const items = backends.list();
+    $("backend-none").hidden = items.length > 0;
+    const current = backends.current();
+    for (const item of items) {
+      const row = document.createElement("li");
+      row.className = "backend";
+      const text = document.createElement("div");
+      text.className = "backend-text";
+      const name = document.createElement("strong");
+      name.textContent = item.name;
+      const address = document.createElement("span");
+      address.className = "muted mono";
+      address.textContent = item.address;
+      text.append(name, address);
+      if (item.fingerprint) {
+        const print = document.createElement("span");
+        print.className = "hint mono";
+        print.textContent = t("backends.fingerprint_saved", { fingerprint: item.fingerprint.match(/../g).join(":") });
+        text.appendChild(print);
+      }
+      if (item.id === current) {
+        const mark = document.createElement("span");
+        mark.className = "hint";
+        mark.textContent = t("backends.current");
+        text.appendChild(mark);
+      }
+      const actions = document.createElement("div");
+      actions.className = "backend-actions";
+      actions.append(
+        button("primary small", t("backends.connect"), () => openBackend(item.id)),
+        button("ghost small", t("backends.rename"), () => {
+          const next = window.prompt(t("backends.rename_prompt"), item.name);
+          if (next && next.trim()) { backends.update(item.id, { name: next }); renderBackends(); }
+        }),
+        button("ghost small", t("backends.remove"), async () => {
+          if (!window.confirm(t("backends.remove_confirm", { name: item.name }))) return;
+          // The device on that backend is removed as well: with the current token, or with one from its refresh cookie.
+          const session = item.id === current && tokens ? tokens : new Standalone.TokenSession({ fetch: window.fetch.bind(window), base: item.address, locks: navigator.locks || null });
+          try {
+            if (!session.token) await session.refresh();
+            await session.revoke();
+          } catch (problem) { /* not paired there, or not reachable: nothing more to remove */ }
+          session.forget();
+          backends.remove(item.id);
+          if (item.id === current) { state.backend = null; state.config = null; if (tokens) tokens.forget(); }
+          renderBackends();
+        }),
+      );
+      for (const node of actions.children) node.setAttribute("aria-label", node.textContent + ": " + item.name);
+      row.append(text, actions);
+      list.appendChild(row);
+    }
+  }
+
+  async function addBackend(event) {
+    event.preventDefault();
+    const error = $("backend-error");
+    error.hidden = true;
+    $("backend-open").hidden = true;
+    $("backend-link").hidden = true;
+    if (state.pairing) state.pairing.newBackend = null;
+    const address = Standalone.normalizeAddress($("backend-address").value);
+    if (!address) { error.textContent = t("backends.address_invalid"); error.hidden = false; return; }
+    if (Standalone.normalizeFingerprint($("backend-fingerprint").value) === null) {
+      error.textContent = t("backends.fingerprint_invalid");
+      error.hidden = false;
+      return;
+    }
+    const added = backends.add($("backend-name").value.trim(), address, $("backend-fingerprint").value);
+    $("backend-form").reset();
+    await openBackend(added.id);
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
+    if (standalone) $("backend-form").addEventListener("submit", addBackend);
     $("signin-form").addEventListener("submit", signIn);
     $("pair-form").addEventListener("submit", pair);
     $("remove-device").addEventListener("click", removeDevice);

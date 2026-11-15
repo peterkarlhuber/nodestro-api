@@ -37,6 +37,7 @@ every run, approval, file and setting.
 | `ui install <file.tgz> --sha256 <hash>` | Installs a newer web interface (`ui reset` goes back, `ui status`). |
 | `pair` | Creates a pairing code for a browser on another computer (only with `NODESTRO_PAIRING=on`, see Configuration). |
 | `devices list` | Shows the paired browsers (`devices revoke <id>` or `--all` ends their access). |
+| `origins add <https://…>` | Allows the web interface on another address to pair (`origins list`, `origins remove`; only with `NODESTRO_CROSS_ORIGIN=on`). |
 
 ## AI providers and keys
 
@@ -90,6 +91,13 @@ this connection as restricted trust for as long as it is used. With pairing swit
 10 minutes; type it in the browser of the other computer, no API key needed. `devices list` shows the paired
 browsers, `devices revoke <id>` (or `--all`) ends their access at once. An own certificate or a proxy stays the
 recommended way.
+
+**The interface on another address (preview).** The same web interface can also run apart from the application, for
+example on a web server of your own, and use several applications one after the other. Each application allows that
+address with `origins add https://apps.example` and the environment variable `NODESTRO_CROSS_ORIGIN=on` together
+with `NODESTRO_PAIRING=on` (both off by default until the independent security review). `pair --ui
+https://apps.example/` prints a link for it; the interface keeps no key, only a short-lived access token.
+`origins remove` ends the access of every browser paired from that address.
 
 ## Programming interface (API)
 
