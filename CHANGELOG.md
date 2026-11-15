@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Added (NAL-A4): `POST /api/connections/{id}/test-send` (`admin`, body `{"confirm": "SEND"}`): a person's test
+  send of an `smtp` connection (to its own `test_address`) or a `webhook` (a payload with `test: true`, signed);
+  at most 5 per connection and 20 per tenant and hour, audited as `test_sent`; failures answer with a code only.
+  The `smtp` and `webhook` checks now contact the service (nodestro-runtime `mail_transport`). Run files gain
+  `source = "tool"`, `preview` and the format `eml` (drafts of `draft_email` / `draft_webhook`); exports accept the
+  draft tools.
 - Added (TABRION DC-NA-1, dependency confusion): new CI job `tabrion source (poisoned index)`, reported by ci-ok, runs
   the install with `scripts/check_tabrion_source.py` (an unchanged, checksummed copy of nodestro-studio #198, poisoned 0.2.99): a poisoned
   index must get no request for `tabrion`, which proves that the lock's direct-URL pin keeps a foreign `tabrion` out.

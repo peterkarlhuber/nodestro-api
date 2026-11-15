@@ -47,6 +47,7 @@ import zipfile
 from nodestro_runtime import __version__ as runtime_version
 from nodestro_runtime.builtin_tools import BUILTIN_TOOLS
 from nodestro_runtime.connections import secret_variable
+from nodestro_runtime.draft_tools import DRAFT_TOOLS
 from nodestro_runtime.engine import start_fields
 from nodestro_runtime.notifications import NOTIFY_TOOLS
 from nodestro_runtime.problems import CheckIssue, NodestroError
@@ -666,7 +667,9 @@ def check(ctx: Nodestro, publication: Publication, release: Release, options: Ex
             )
         )
     # notify_user (NAL-A3) is Nodestro's own; an exported app has no inbox, so it answers notify.unavailable.
-    foreign = sorted(set(bundle.builtin_tools) - {tool.name for tool in (*BUILTIN_TOOLS, *WEB_TOOLS, *NOTIFY_TOOLS)})
+    # The draft tools (NAL-A4) write result files of the run, as in the studio.
+    nodestro_own = (*BUILTIN_TOOLS, *WEB_TOOLS, *NOTIFY_TOOLS, *DRAFT_TOOLS)
+    foreign = sorted(set(bundle.builtin_tools) - {tool.name for tool in nodestro_own})
     if foreign:
         problems.append(
             _issue(
