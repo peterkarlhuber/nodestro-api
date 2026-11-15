@@ -78,7 +78,7 @@ BACKUP_PARTS = ("config", "data", "results")
 logger = logging.getLogger("nodestro.portable")
 
 
-class PackageError(Exception):
+class PackageRefusal(Exception):
     """A command cannot be carried out; ``key`` names the launcher's message, ``values`` fill it."""
 
     def __init__(self, key: str, message: str, **values: Any) -> None:
@@ -272,22 +272,22 @@ def extract(
     for info in infos:
         relative = archive_path(info.filename)
         if relative is None or any(_reserved(part) for part in relative.parts):
-            raise PackageError("archive_unsafe", f"unsafe path in the archive: {info.filename!r}", name=info.filename)
+            raise PackageRefusal("archive_unsafe", f"unsafe path in the archive: {info.filename!r}", name=info.filename)
         # Exact names: a Linux Python has terminfo entries that differ only in case (``2/2621a``, ``2/2621A``). On a
         # file system that ignores case, the second one cannot be created (``xb`` below) and the archive is refused.
         key = relative.as_posix()
         if key in seen:
-            raise PackageError("archive_unsafe", f"twice in the archive: {relative}", name=str(relative))
+            raise PackageRefusal("archive_unsafe", f"twice in the archive: {relative}", name=str(relative))
         seen.add(key)
         if tops is not None and relative.parts[0] not in tops:
-            raise PackageError("archive_unexpected", f"not part of a backup: {relative}", name=str(relative))
+            raise PackageRefusal("archive_unexpected", f"not part of a backup: {relative}", name=str(relative))
         if refused(relative):
-            raise PackageError("archive_unexpected", f"not part of a backup: {relative}", name=str(relative))
+            raise PackageRefusal("archive_unexpected", f"not part of a backup: {relative}", name=str(relative))
         if _is_link(info) and not links:
-            raise PackageError("archive_unsafe", f"symbolic link in the archive: {relative}", name=str(relative))
+            raise PackageRefusal("archive_unsafe", f"symbolic link in the archive: {relative}", name=str(relative))
     needed = sum(info.file_size for info in infos)
     if needed + 50_000_000 > _free_bytes(into):
-        raise PackageError("disk_full", "not enough free disk space", needed=needed // 1_000_000)
+        raise PackageRefusal("disk_full", "not enough free disk space", needed=needed // 1_000_000)
     into.mkdir(parents=True, exist_ok=True)
     made: list[Path] = []
     try:
@@ -320,20 +320,20 @@ def extract(
                 or ":" in link
                 or any(parent.is_symlink() for parent in _parents(target, into))
             ):
-                raise PackageError(
+                raise PackageRefusal(
                     "archive_unsafe", f"symbolic link out of the package: {relative}", name=str(relative)
                 )
             target.parent.mkdir(parents=True, exist_ok=True)
             target.symlink_to(link)
             made.append(target)
     except (OSError, UnicodeDecodeError) as exc:
-        raise PackageError("archive_unsafe", f"the archive cannot be unpacked: {exc}", name=str(exc)) from None
+        raise PackageRefusal("archive_unsafe", f"the archive cannot be unpacked: {exc}", name=str(exc)) from None
     base = os.path.realpath(into)
     for target in made:
         resolved = os.path.realpath(target)
         if os.path.commonpath([base, resolved]) != base:
             name = target.relative_to(into).as_posix()
-            raise PackageError("archive_unsafe", f"symbolic link out of the package: {name}", name=name)
+            raise PackageRefusal("archive_unsafe", f"symbolic link out of the package: {name}", name=name)
 
 
 def _parents(target: Path, into: Path) -> list[Path]:
@@ -450,11 +450,11 @@ def read_backup(archive: zipfile.ZipFile) -> dict[str, Any]:
     try:
         meta = json.loads(archive.read("BACKUP.json"))
     except (KeyError, ValueError, zipfile.BadZipFile):
-        raise PackageError("backup_unreadable", "the file is not a backup of a portable package") from None
+        raise PackageRefusal("backup_unreadable", "the file is not a backup of a portable package") from None
     if not isinstance(meta, dict) or meta.get("format") != BACKUP_FORMAT:
-        raise PackageError("backup_unreadable", "the file is not a backup of a portable package")
+        raise PackageRefusal("backup_unreadable", "the file is not a backup of a portable package")
     if meta.get("format_version") != BACKUP_VERSION:
-        raise PackageError(
+        raise PackageRefusal(
             "backup_version", "this backup was made by a newer version", version=meta.get("format_version")
         )
     return meta
@@ -472,7 +472,7 @@ def check_own_folder(root: Path, folder: Path, what: str) -> None:
         or resolved in package.parents
         or any((resolved / name).exists() for name in (PROGRAM, BACKUPS, INFO))
     ):
-        raise PackageError(
+        raise PackageRefusal(
             "folder_unsafe", f"the {what} folder {resolved} cannot be used for this", folder=str(resolved)
         )
 
@@ -501,11 +501,11 @@ def restore(root: Path, data_dir: Path, output_dir: Path | None, source: Path, i
     try:
         archive = zipfile.ZipFile(source)
     except (OSError, zipfile.BadZipFile):
-        raise PackageError("backup_unreadable", "the file is not a backup of a portable package") from None
+        raise PackageRefusal("backup_unreadable", "the file is not a backup of a portable package") from None
     with archive:
         meta = read_backup(archive)
         if meta.get("slug") != info.get("slug"):
-            raise PackageError(
+            raise PackageRefusal(
                 "backup_other_app",
                 "the backup belongs to another application",
                 backup=str(meta.get("name") or meta.get("slug")),
@@ -568,7 +568,7 @@ def _package_folder(unpacked: Path) -> Path:
     children = [child for child in unpacked.iterdir() if child.is_dir() and not child.name.startswith("__MACOSX")]
     if len(children) == 1 and (children[0] / PROGRAM / INFO).is_file():
         return children[0]
-    raise PackageError("update_not_a_package", "no portable package (layout 2) found there")
+    raise PackageRefusal("update_not_a_package", "no portable package (layout 2) found there")
 
 
 def _start_files(folder: Path) -> list[Path]:
@@ -603,7 +603,7 @@ def stage_package(root: Path, source: Path, stamp: str) -> tuple[Path, Path]:
         try:
             archive = zipfile.ZipFile(source)
         except (OSError, zipfile.BadZipFile):
-            raise PackageError("update_not_a_package", "no portable package (layout 2) found there") from None
+            raise PackageRefusal("update_not_a_package", "no portable package (layout 2) found there") from None
         with archive:
             extract(archive, staging / "unpacked", links=os.name == "posix")
         return staging, _package_folder(staging / "unpacked")
@@ -634,7 +634,7 @@ def update(
     program = root / PROGRAM
     current = read_info(program)
     if layout_of(current) < LAYOUT_VERSION:
-        raise PackageError("update_old_layout", "this package has the old folder layout: use adopt in the new one")
+        raise PackageRefusal("update_old_layout", "this package has the old folder layout: use adopt in the new one")
     check_own_folder(root, data_dir, "data")
     stamp = time.strftime("%Y%m%d-%H%M%S")
     say("update_checking")
@@ -642,16 +642,16 @@ def update(
     try:
         incoming = read_info(package / PROGRAM)
         if layout_of(incoming) < LAYOUT_VERSION:
-            raise PackageError("update_not_a_package", "no portable package (layout 2) found there")
+            raise PackageRefusal("update_not_a_package", "no portable package (layout 2) found there")
         if incoming.get("slug") != current.get("slug"):
-            raise PackageError(
+            raise PackageRefusal(
                 "update_other_app",
                 "the new package is another application",
                 new=str(incoming.get("name") or incoming.get("slug")),
                 current=str(current.get("name") or current.get("slug")),
             )
         if incoming.get("platform") != current.get("platform"):
-            raise PackageError(
+            raise PackageRefusal(
                 "update_other_platform",
                 "the new package is for another platform",
                 new=str(incoming.get("platform_label") or incoming.get("platform")),
@@ -659,7 +659,7 @@ def update(
             )
         problems = verify_program(package / PROGRAM, skip=SKIPPED_AT_START)
         if problems:
-            raise PackageError("update_damaged", "the new package is damaged", count=len(problems), first=problems[0])
+            raise PackageRefusal("update_damaged", "the new package is damaged", count=len(problems), first=problems[0])
         saved = backups_folder(root) / f"before-update-{stamp}.zip"
         say("update_backup", file=str(saved))
         backup(root, data_dir, output_dir, saved, current, include_secrets=False, include_results=False)
@@ -713,7 +713,7 @@ def rollback(root: Path, *, swap_now: bool = os.name != "nt") -> dict[str, Any]:
     previous, following = root / PREVIOUS, root / NEXT
     info = read_info(previous)
     if layout_of(info) < LAYOUT_VERSION:
-        raise PackageError("rollback_nothing", "there is no previous version to go back to")
+        raise PackageRefusal("rollback_nothing", "there is no previous version to go back to")
     if following.exists():
         shutil.rmtree(following)
     os.replace(previous, following)
@@ -743,9 +743,9 @@ def adopt(
     old_program = program_of(old)
     old_info, info = read_info(old_program), read_info(root / PROGRAM)
     if not old_info:
-        raise PackageError("adopt_not_a_package", "no portable package found there", folder=str(old))
+        raise PackageRefusal("adopt_not_a_package", "no portable package found there", folder=str(old))
     if old_info.get("slug") != info.get("slug"):
-        raise PackageError(
+        raise PackageRefusal(
             "adopt_other_app",
             "the old package is another application",
             old=str(old_info.get("name") or old_info.get("slug")),
@@ -766,11 +766,11 @@ def adopt(
             or not _inside(target, root)
             or target.resolve() == root.resolve()
         ):
-            raise PackageError("folder_unsafe", f"the folder {folder} cannot be taken over", folder=folder)
+            raise PackageRefusal("folder_unsafe", f"the folder {folder} cannot be taken over", folder=folder)
         targets[name] = target
     for target in targets.values():
         if target.is_dir() and any(target.iterdir()):
-            raise PackageError("adopt_has_data", "this package already has data", folder=str(target))
+            raise PackageRefusal("adopt_has_data", "this package already has data", folder=str(target))
     settings = old / "config" / "settings.toml"
     if settings.is_file():
         mine = root / "config" / "settings.toml"
@@ -811,7 +811,7 @@ def installed_ui(root: Path, served: Iterable[int]) -> Path | None:
     try:
         ui_package.check_tree(folder, served, extra=(INSTALLED,))
     except ui_package.UiPackageError as exc:
-        raise PackageError("ui_damaged", f"the installed interface is damaged: {exc}", problem=str(exc)) from None
+        raise PackageRefusal("ui_damaged", f"the installed interface is damaged: {exc}", problem=str(exc)) from None
     return folder
 
 
@@ -821,15 +821,15 @@ def install_ui(root: Path, artifact: Path, expected_sha256: str, served: Iterabl
     contract version this backend serves. ``ui reset`` goes back to the interface of the export."""
     expected = expected_sha256.strip().lower()
     if len(expected) != 64 or any(char not in "0123456789abcdef" for char in expected):
-        raise PackageError("ui_hash_needed", "--sha256 takes the 64 hex digits of the artifact's SHA-256")
+        raise PackageRefusal("ui_hash_needed", "--sha256 takes the 64 hex digits of the artifact's SHA-256")
     try:
         if artifact.stat().st_size > ui_package.LIMIT:
-            raise PackageError("ui_invalid", "the artifact is larger than 20 MB", problem="size")
+            raise PackageRefusal("ui_invalid", "the artifact is larger than 20 MB", problem="size")
         data = artifact.read_bytes()
     except OSError as exc:
-        raise PackageError("ui_invalid", f"cannot read {artifact}: {exc}", problem=str(exc)) from None
+        raise PackageRefusal("ui_invalid", f"cannot read {artifact}: {exc}", problem=str(exc)) from None
     if ui_package.sha256(data) != expected:
-        raise PackageError("ui_hash_mismatch", "the artifact's SHA-256 is not the one given")
+        raise PackageRefusal("ui_hash_mismatch", "the artifact's SHA-256 is not the one given")
     staging = root / f".ui-{time.strftime('%Y%m%d-%H%M%S')}"
     shutil.rmtree(staging, ignore_errors=True)
     staging.mkdir()
@@ -845,7 +845,7 @@ def install_ui(root: Path, artifact: Path, expected_sha256: str, served: Iterabl
         _replace_folder(staging, root / UI, aside)
         shutil.rmtree(aside, ignore_errors=True)
     except ui_package.UiPackageError as exc:
-        raise PackageError("ui_invalid", f"the artifact is not a usable interface: {exc}", problem=str(exc)) from None
+        raise PackageRefusal("ui_invalid", f"the artifact is not a usable interface: {exc}", problem=str(exc)) from None
     finally:
         shutil.rmtree(staging, ignore_errors=True)
     return {"version": manifest["version"], "contract": manifest["contract"]}

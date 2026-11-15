@@ -27,7 +27,7 @@ from test_portable import published  # noqa: F401 - the fixture
 
 from nodestro_api import portable, portable_build, portable_ops, ui_package
 from nodestro_api.app_contract import CONTRACT_VERSIONS
-from nodestro_api.portable_ops import PackageError
+from nodestro_api.portable_ops import PackageRefusal
 
 WEBUI = Path(portable_build.__file__).resolve().parent / "webui"
 SLUG = "offer-writer"
@@ -260,7 +260,7 @@ def test_restore_refuses_a_backup_of_another_application(tmp_path: Path) -> None
     portable_ops.backup(other, settings.data_dir, None, target, portable.package_info(settings.program))
     root = _package(tmp_path / "app")
     mine = _settings(root)
-    with pytest.raises(PackageError) as refused:
+    with pytest.raises(PackageRefusal) as refused:
         portable_ops.restore(root, mine.data_dir, None, target, portable.package_info(mine.program))
     assert refused.value.key == "backup_other_app"
     assert (mine.data_dir / "runtime.db").read_bytes() == b"runs"
@@ -285,7 +285,7 @@ def test_restore_checks_every_path_before_it_changes_anything(tmp_path: Path, na
         archive.writestr("BACKUP.json", json.dumps(meta))
         archive.writestr("data/runtime.db", b"other")
         archive.writestr(name, b"x")
-    with pytest.raises(PackageError) as refused:
+    with pytest.raises(PackageRefusal) as refused:
         portable_ops.restore(root, settings.data_dir, None, target, portable.package_info(settings.program))
     assert refused.value.key == key
     assert (settings.data_dir / "runtime.db").read_bytes() == b"runs"
@@ -305,17 +305,17 @@ def test_restore_refuses_links_and_unknown_backups(tmp_path: Path) -> None:
         link.create_system = 3
         link.external_attr = (stat.S_IFLNK | 0o777) << 16
         archive.writestr(link, "/etc")
-    with pytest.raises(PackageError) as refused:
+    with pytest.raises(PackageRefusal) as refused:
         portable_ops.restore(root, settings.data_dir, None, target, info)
     assert refused.value.key == "archive_unsafe"
     newer = tmp_path / "newer.zip"
     with zipfile.ZipFile(newer, "w") as archive:
         archive.writestr("BACKUP.json", json.dumps({"format": "nodestro-portable-backup", "format_version": 9}))
-    with pytest.raises(PackageError) as refused:
+    with pytest.raises(PackageRefusal) as refused:
         portable_ops.restore(root, settings.data_dir, None, newer, info)
     assert refused.value.key == "backup_version"
     (tmp_path / "plain.txt").write_text("no zip", encoding="utf-8")
-    with pytest.raises(PackageError) as refused:
+    with pytest.raises(PackageRefusal) as refused:
         portable_ops.restore(root, settings.data_dir, None, tmp_path / "plain.txt", info)
     assert refused.value.key == "backup_unreadable"
 
@@ -392,21 +392,21 @@ def test_update_refuses_another_application_platform_or_a_damaged_package(tmp_pa
         ({"platform": "windows-x86_64"}, "update_other_platform"),
     ):
         new = _new_package(tmp_path, **options)
-        with pytest.raises(PackageError) as refused:
+        with pytest.raises(PackageRefusal) as refused:
             portable_ops.update(root, settings.data_dir, None, new)
         assert refused.value.key == key
         shutil.rmtree(new)
     new = _new_package(tmp_path)
     (new / "program" / "nodestro_api" / "portable.py").write_text("# broken copy\n", encoding="utf-8")
-    with pytest.raises(PackageError) as refused:
+    with pytest.raises(PackageRefusal) as refused:
         portable_ops.update(root, settings.data_dir, None, new)
     assert refused.value.key == "update_damaged"
     assert portable.package_info(root / "program")["release_number"] == 1
     assert not (root / "program.previous").exists() and not list(root.glob(".update-*"))
-    with pytest.raises(PackageError) as refused:
+    with pytest.raises(PackageRefusal) as refused:
         portable_ops.update(root, settings.data_dir, None, tmp_path / "app" / "results")
     assert refused.value.key == "update_not_a_package"
-    with pytest.raises(PackageError) as refused:
+    with pytest.raises(PackageRefusal) as refused:
         portable_ops.rollback(root)
     assert refused.value.key == "rollback_nothing"
 
@@ -421,7 +421,7 @@ def test_update_refuses_a_link_out_of_the_package(tmp_path: Path) -> None:
         link.create_system = 3
         link.external_attr = (stat.S_IFLNK | 0o777) << 16
         archive.writestr(link, "../../../../outside")
-    with pytest.raises(PackageError) as refused:
+    with pytest.raises(PackageRefusal) as refused:
         portable_ops.update(root, _settings(root).data_dir, None, target)
     assert refused.value.key == "archive_unsafe"
     assert portable.package_info(root / "program")["release_number"] == 1
@@ -473,7 +473,7 @@ def test_adopt_copies_the_settings_and_data_of_an_old_package(tmp_path: Path) ->
     assert (root / "config" / "settings.toml.package").read_text(encoding="utf-8") == "# new defaults\n"
     assert (old / "data" / "runtime.db").is_file()  # the old package is not changed
     # A second time: this package has data now.
-    with pytest.raises(PackageError) as refused:
+    with pytest.raises(PackageRefusal) as refused:
         portable_ops.adopt(root, old, relative={"data_dir": "data"})
     assert refused.value.key == "adopt_has_data"
 
@@ -482,10 +482,10 @@ def test_adopt_refuses_another_application(tmp_path: Path) -> None:
     old = _old_package(tmp_path / "old", slug="another-app")
     root = tmp_path / "app"
     _program(root / "program")
-    with pytest.raises(PackageError) as refused:
+    with pytest.raises(PackageRefusal) as refused:
         portable_ops.adopt(root, old, relative={"data_dir": "data"})
     assert refused.value.key == "adopt_other_app"
-    with pytest.raises(PackageError) as refused:
+    with pytest.raises(PackageRefusal) as refused:
         portable_ops.adopt(root, tmp_path / "nothing", relative={})
     assert refused.value.key == "adopt_not_a_package"
 
@@ -517,20 +517,20 @@ def _artifact(tmp_path: Path, *, edit: dict[str, Any] | None = None, tamper: boo
 def test_ui_install_checks_hash_files_and_contract(tmp_path: Path) -> None:
     root = _package(tmp_path / "app")
     artifact, digest = _artifact(tmp_path, edit={"version": "0.2.0"})
-    with pytest.raises(PackageError) as refused:
+    with pytest.raises(PackageRefusal) as refused:
         portable_ops.install_ui(root, artifact, "0" * 64, CONTRACT_VERSIONS)
     assert refused.value.key == "ui_hash_mismatch"
-    with pytest.raises(PackageError) as refused:
+    with pytest.raises(PackageRefusal) as refused:
         portable_ops.install_ui(root, artifact, "short", CONTRACT_VERSIONS)
     assert refused.value.key == "ui_hash_needed"
     (tmp_path / "changed").mkdir()
     changed, changed_digest = _artifact(tmp_path / "changed", tamper=True)
-    with pytest.raises(PackageError) as refused:
+    with pytest.raises(PackageRefusal) as refused:
         portable_ops.install_ui(root, changed, changed_digest, CONTRACT_VERSIONS)
     assert refused.value.key == "ui_invalid" and "app.js" in str(refused.value)
     (tmp_path / "future").mkdir()
     future, future_digest = _artifact(tmp_path / "future", edit={"contract": {"min": 7, "max": 9}})
-    with pytest.raises(PackageError) as refused:
+    with pytest.raises(PackageRefusal) as refused:
         portable_ops.install_ui(root, future, future_digest, CONTRACT_VERSIONS)
     assert "contract" in str(refused.value)
     assert portable_ops.installed_ui(root, CONTRACT_VERSIONS) is None
@@ -539,7 +539,7 @@ def test_ui_install_checks_hash_files_and_contract(tmp_path: Path) -> None:
     assert portable_ops.installed_ui(root, CONTRACT_VERSIONS) == root / "ui"
     # A changed file of the installed interface stops the start.
     (root / "ui" / "app.css").write_text("/* edited */", encoding="utf-8")
-    with pytest.raises(PackageError) as refused:
+    with pytest.raises(PackageRefusal) as refused:
         portable_ops.installed_ui(root, CONTRACT_VERSIONS)
     assert refused.value.key == "ui_damaged"
     assert not portable._program_intact(_settings(root), portable.Console("en"))
@@ -702,7 +702,7 @@ def test_a_chain_of_links_cannot_lead_out_of_an_update(tmp_path: Path) -> None:
         _link(archive, "package/a", "b/b/c/../../..")
         _link(archive, "package/b", ".")
         archive.writestr("package/a/ESCAPED.txt", b"x")
-    with pytest.raises(PackageError) as refused:
+    with pytest.raises(PackageRefusal) as refused:
         portable_ops.update(root, _settings(root).data_dir, None, target)
     assert refused.value.key == "archive_unsafe"
     assert not list(tmp_path.rglob("ESCAPED.txt"))
@@ -711,7 +711,7 @@ def test_a_chain_of_links_cannot_lead_out_of_an_update(tmp_path: Path) -> None:
         archive.writestr("package/program/x", b"")
         _link(archive, "package/program/up", "..")
         _link(archive, "package/program/out", "up/../../..")
-    with pytest.raises(PackageError) as refused:
+    with pytest.raises(PackageRefusal) as refused:
         portable_ops.update(root, _settings(root).data_dir, None, tmp_path / "evil2.zip")
     assert refused.value.key == "archive_unsafe"
     assert not list(root.glob(".update-*"))
@@ -725,14 +725,14 @@ def test_restore_and_update_refuse_a_data_folder_that_holds_the_package(tmp_path
     info = portable.package_info(settings.program)
     target = tmp_path / "backup.zip"
     portable_ops.backup(root, settings.data_dir, None, target, info)
-    with pytest.raises(PackageError) as refused:
+    with pytest.raises(PackageRefusal) as refused:
         portable_ops.restore(root, root / data_dir, None, target, info)
     assert refused.value.key == "folder_unsafe"
-    with pytest.raises(PackageError) as refused:
+    with pytest.raises(PackageRefusal) as refused:
         portable_ops.update(root, root / data_dir, None, _new_package(tmp_path))
     assert refused.value.key == "folder_unsafe"
     assert portable_ops.verify_program(root / "program") == [] and (settings.data_dir / "runtime.db").is_file()
-    with pytest.raises(PackageError):
+    with pytest.raises(PackageRefusal):
         portable_ops.check_own_folder(root, Path.home(), "data")
 
 
@@ -764,7 +764,7 @@ def test_adopt_refuses_folders_that_lead_out_of_either_package(tmp_path: Path) -
     root = tmp_path / "app"
     _program(root / "program")
     for folder in ("a/../../outside", "../outside", "."):
-        with pytest.raises(PackageError) as refused:
+        with pytest.raises(PackageRefusal) as refused:
             portable_ops.adopt(root, old, relative={"log_dir": folder})
         assert refused.value.key == "folder_unsafe"
     assert not (tmp_path / "outside").exists()
@@ -781,7 +781,7 @@ def test_restore_refuses_what_a_backup_never_holds(tmp_path: Path) -> None:
                 "BACKUP.json", json.dumps({"format": "nodestro-portable-backup", "format_version": 1, "slug": SLUG})
             )
             archive.writestr(name, b"{}")
-        with pytest.raises(PackageError) as refused:
+        with pytest.raises(PackageRefusal) as refused:
             portable_ops.restore(root, settings.data_dir, None, target, portable.package_info(settings.program))
         assert refused.value.key == "archive_unexpected"
 
@@ -800,7 +800,7 @@ def test_restore_refuses_device_names_and_clashes_with_a_message(tmp_path: Path,
         archive.writestr(name + ("/" if name == "data/dir" else ""), b"")
         if name == "data/dir":
             archive.writestr("data/dir", b"file")
-    with pytest.raises(PackageError) as refused:
+    with pytest.raises(PackageRefusal) as refused:
         portable_ops.restore(root, settings.data_dir, None, target, portable.package_info(settings.program))
     assert refused.value.key == "archive_unsafe"
     assert (settings.data_dir / "runtime.db").read_bytes() == b"runs"
@@ -825,7 +825,7 @@ def test_names_that_differ_only_in_case_are_two_files(tmp_path: Path) -> None:
         archive.writestr("share/terminfo/2/2621A", b"A")
     with zipfile.ZipFile(target) as archive:
         if (tmp_path / "probe").mkdir() is None and (tmp_path / "PROBE").exists():
-            with pytest.raises(PackageError):  # a file system that ignores case
+            with pytest.raises(PackageRefusal):  # a file system that ignores case
                 portable_ops.extract(archive, tmp_path / "into")
             return
         portable_ops.extract(archive, tmp_path / "into")

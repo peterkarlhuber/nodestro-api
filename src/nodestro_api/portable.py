@@ -53,7 +53,7 @@ from typing import TYPE_CHECKING, Any
 import webbrowser
 
 from . import portable_ops as ops
-from .portable_ops import PackageError, package_root, program_of
+from .portable_ops import PackageRefusal, package_root, program_of
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -706,7 +706,7 @@ def _program_intact(settings: Settings, console: Console) -> bool:
 
     try:
         use_ui_dir(ops.installed_ui(settings.root, CONTRACT_VERSIONS))
-    except PackageError as exc:
+    except PackageRefusal as exc:
         console.say(exc.key, **exc.values)
         return False
     return True
@@ -743,7 +743,7 @@ def _operate(settings: Settings, console: Console, action: Callable[[], int], *,
         return 2
     try:
         return action()
-    except PackageError as exc:
+    except PackageRefusal as exc:
         logger.error("%s", exc)
         console.say(exc.key, **exc.values)
         return 2
