@@ -16,13 +16,13 @@
   "files": [
     {
       "path": "app.css",
-      "size": 22042,
-      "sha256": "744d58d56e80d2ce4715f3f2ad299cba9620adc4b00e10f828bed1474d9eb921"
+      "size": 22800,
+      "sha256": "71b1469f0505f4d878d1022ef32d904ab4fa969e2a05a562173b519cf080fad9"
     },
     {
       "path": "app.js",
-      "size": 72011,
-      "sha256": "2d55f4ec0cb9b31eaba9a248f1a34d4b6f551356d2f3eadd971c076f1c5ddd0e"
+      "size": 85421,
+      "sha256": "8fae490910f5f27c4c2ef5c516503a291161f742d9323af80cf232feaa15fa37"
     },
     {
       "path": "brand/nodestro-logo-on-dark.png",
@@ -41,48 +41,53 @@
     },
     {
       "path": "connection.js",
-      "size": 7728,
-      "sha256": "16de06fee6cff43e52f10dcb12d0cad4ede12b96280e9e775a21c8c339a850f3"
+      "size": 7944,
+      "sha256": "2c7b84ca89bbdf6d834732b8e8ff6f56bdb517aec8db96d1eb71868ac1d2fc58"
     },
     {
       "path": "i18n/de.json",
-      "size": 24401,
-      "sha256": "926b4eb005a9e8ed320e82d6e6ff6ef4469a1c6e7d99354b3e8541de93af094e"
+      "size": 27932,
+      "sha256": "654039e71bd5d4a9d24f1cbfece6bc0352067469b27e3c82451444a8f107f266"
     },
     {
       "path": "i18n/en.json",
-      "size": 22343,
-      "sha256": "8e3b0edd8279100e1f787aa1f337ca1fbb5e505c58eea0f7dc6ecd7c74a3121b"
+      "size": 25562,
+      "sha256": "0a7e1b6df4e672f4b8815de6e3ae64012959d1dc3d66db8f428cfe47133083ea"
     },
     {
       "path": "i18n/es.json",
-      "size": 24127,
-      "sha256": "8fa67c9e97390b5c6190440d9b8d76acffc60ca08075856ee4a4c749016c3f5d"
+      "size": 27631,
+      "sha256": "357373bc79bd1492b3536275addf27184e4ca086369d6a5a6198c21f01832504"
     },
     {
       "path": "i18n/fr.json",
-      "size": 25389,
-      "sha256": "e6015c03d462aa409085759203b79f57da093b78352d2c5edb6053925dedf28e"
+      "size": 28955,
+      "sha256": "d4243eceae4b8b27c3c3717ff3ca829a49486cca8f3c20ce294423292fa86780"
     },
     {
       "path": "i18n/it.json",
-      "size": 24443,
-      "sha256": "2cadaf49a7fbda1c7fe3cf29bce72ccb0a40d767d695b8a6cf84b0aab2c3cea1"
+      "size": 27970,
+      "sha256": "b9afb8608df191edfedd367e674524567c16d20d411ed17de14f3b943f8a1c3f"
     },
     {
       "path": "i18n/pt-BR.json",
-      "size": 23822,
-      "sha256": "82b73cadf19006abb272f889381d17e07cc5d5bb0d9afdc0389843d3b9271270"
+      "size": 27353,
+      "sha256": "ce8faefce82c885c5bf3241c45bd3ffa4233d3443b8e155231537bec645abd95"
     },
     {
       "path": "index.html",
-      "size": 14253,
-      "sha256": "151058bb2efd887b40565ec2fba0221eb077f19ecada27de977e5beba1b5b538"
+      "size": 16682,
+      "sha256": "375caf80c75b81a33f9eefaa4a52d36c9e69baa4d5f7b65f5fc3e918cb777416"
     },
     {
       "path": "markdown.js",
       "size": 6293,
       "sha256": "7fae0929b882ac19e768088ac6e06c64370cbeaa921fc85702c36d08c429051a"
+    },
+    {
+      "path": "standalone.js",
+      "size": 12826,
+      "sha256": "ad571588639b21eaa84aec56013e97e282348105dc5f88e389399376cfd82e90"
     }
   ]
 }

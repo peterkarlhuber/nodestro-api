@@ -374,7 +374,7 @@ def test_the_launcher_manages_allowed_origins(tmp_path: Path, capsys: pytest.Cap
     assert portable.origins_command(parse(["origins", "add", "https://Apps.example/"]), settings) == 0
     assert portable.origins_command(parse(["origins", "add", "http://apps.example"]), settings) == 2
     assert portable.origins_command(parse(["origins", "list"]), settings) == 0
-    assert "origins_item" in capsys.readouterr().out and AllowedOrigins(settings.data_dir).list() == [APP]
+    assert f"Allowed: {APP}" in capsys.readouterr().out and AllowedOrigins(settings.data_dir).list() == [APP]
     store = Pairing(settings.data_dir)
     made, _secret = store.redeem(store.create_code().code, address="10.0.0.2", origin=APP)
     assert portable.origins_command(parse(["origins", "remove", APP]), settings) == 0
