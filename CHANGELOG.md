@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Fixed: the embedded interface (nodestro-app-ui `640a95a`, #9) shows accepted file extensions with one dot (`.pdf`,
+  not `..pdf`).
+- Changed: `docs/TODO.md`: API-054 names the NAL review briefs; new API-069 (pairing and the interface on another origin stay
+  off until the review) and API-070 (limits of app contract v1); API-067 reassessed after NAL-A2.
+
 - Added (NAL-C5, the standard interface on another origin; off unless `NODESTRO_CROSS_ORIGIN=on` together with
   `NODESTRO_PAIRING=on`, `docs/cross-origin.md`): `start.sh origins list|add|remove` keeps the allowed origins
   (`data/settings/allowed-origins.json`, exact https origins, http only for loopback; removing one revokes its

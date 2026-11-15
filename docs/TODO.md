@@ -11,9 +11,9 @@
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 0 |
-| P2 Medium | 5 |
+| P2 Medium | 6 |
 | P3 Low | 11 |
-| P4 Optional | 5 |
+| P4 Optional | 6 |
 
 **Release blockers:** None for this repository; every entry below is not a release blocker. The next desktop
 preview is gated by nodestro-desktop DSK-001 (new candidate and Go/No-Go).
@@ -50,7 +50,19 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
 - **What:** The portable export (a standalone package with its own web interface and launcher) and the hardening of
   #87 were reviewed internally only. An internal audit does not replace an independent security review.
 - **Next step:** Have the export, the exported app and the launcher reviewed independently; record the result here.
+  The NAL review briefs bundle it with P-Pair (pairing, NAL-C4, and the interface on another origin, NAL-C5) and
+  P-Import (`restore`, `update`, `ui install`, NAL-C3; skill and template import): nodestro-studio
+  `docs/security/nal/`, ST-064. Prepared, not commissioned.
 - **Depends on:** None
+
+### API-069 · Pairing and the interface on another origin stay off until the review
+
+- **Priority:** P2 Medium · **Status:** Needs external review · **Refs:** NAL-C4 (#149), NAL-C5 (#150),
+  `docs/pairing.md`, `docs/cross-origin.md`, nodestro-studio `docs/security/nal/p-pair.md` (ST-064)
+- **What:** `NODESTRO_PAIRING` and `NODESTRO_CROSS_ORIGIN` are off by default and stay off for productive use until
+  the independent review P-Pair has a report without open critical or high findings, or the owner accepts the
+  residual risk. Internal reviews found no critical or high finding. Residual risks are listed in both documents.
+- **Next step:** The owner decides on commissioning the review; enabling either switch needs the owner's consent.
 
 ### API-005 · Rotation of the server secret key
 
@@ -120,6 +132,15 @@ None known.
 
 ## Features and enhancements
 
+### API-070 · App contract v1: languages, per-app capabilities, backend id after restore (NAL-C1)
+
+- **Priority:** P4 Optional · **Status:** Open · **Refs:** NAL-C1 (#134), `app_contract.py`, `docs/app-api/v1.md`
+- **What:** `AppSummary.languages` is always `[]` because apps do not declare languages yet; capabilities are per
+  backend, not per app; a restored backup keeps the backend id, so it reports itself as the same backend (C5's
+  per-backend refresh cookie name is derived from that id).
+- **Next step:** Fill `languages` once apps declare them; decide whether a restore onto another computer should get
+  a new backend id (it would void paired devices).
+
 ### API-045 · Offline container image of a published workflow
 
 - **Priority:** P4 Optional · **Status:** Open · **Refs:** portable export work order (2026-11-04),
@@ -135,8 +156,9 @@ None known.
 - **Priority:** P3 Low · **Status:** Open · **Refs:** NAL-A1, nodestro-runtime ADR-0001, `portable_connections.py`
 - **What:** An exported package asks for the service connections its built-in tools are bound to only in the
   terminal (`configure`) or through `NODESTRO_CONNECTION_<ID>_SECRET` and `DATA_DIR/secrets/connections.json`. The
-  setup page of the web interface shows provider keys but not connections yet. No built-in tool needs a connection
-  before NAL-A2, so no export is affected today.
+  setup page of the web interface shows provider keys but not connections yet. Since NAL-A2, `search_web` with a
+  key-based search provider needs one: such a package is set up in the terminal or by the environment variable
+  (the portable smoke test proves that path on six platforms).
 - **Next step:** Add a connections section to the local-operator setup page (write-only secret, `secret_set` only),
   together with the first tool that needs a connection.
 
