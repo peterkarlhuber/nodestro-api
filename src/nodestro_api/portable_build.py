@@ -1103,9 +1103,16 @@ rem One block, read before it runs: it may replace this file.
 
 :swap
 if exist "program.previous" rmdir /s /q "program.previous"
-move "program" "program.previous" >nul || exit /b 1
-move "program.next" "program" >nul || move "program.previous" "program" >nul
-exit /b 0
+if exist "program.previous" goto :swap_failed
+move "program" "program.previous" >nul || goto :swap_failed
+move "program.next" "program" >nul && exit /b 0
+move "program.previous" "program" >nul
+
+:swap_failed
+echo The new version could not be put in place (a file in program is in use?). Close every window of this
+echo application and run start.cmd again; program.next is used then.
+set "code=1"
+exit /b 1
 """
 _STOP_CMD = """@echo off
 cd /d "%~dp0"

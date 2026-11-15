@@ -224,6 +224,14 @@ does it after the launcher ended (and replaces itself last, from one parsed bloc
 `backups/` (and the secrets folder) to the current user: `0700` on POSIX, on Windows an access list with only the
 current user's SID (`icacls /inheritance:r /grant:r`), logged and not fatal when that fails.
 
+Internal review (NAL-C3): links in an update archive are made after every file and must resolve inside it once all
+exist; `restore` and `update` refuse a data or result folder that is, holds or lies above the package, or is the home
+folder, and move the old folder aside before the new one takes its place (put back on failure); `adopt` copies only
+plain relative folders inside both packages; a restore never writes `data/run`, `data/models` or `data/ollama`.
+Accepted residual risks: on Windows a running instance is recognised only by its answering port (on Linux and macOS
+also by its live process); the result folder chosen on the settings page is used by `backup --include-results` and
+`restore` as stored, with the guard above but without the settings page's other checks.
+
 What the integrity check proves: no file of `program/` changed by mistake (a broken copy, a stray edit, a sync tool).
 It does not protect against someone who may write to the folder: they could rewrite `SHA256SUMS` too. Only a
 signature can prove a package's origin (API-046). An export with `web_ui: false` (variant C) has no `/` and no `/ui`

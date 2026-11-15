@@ -252,22 +252,36 @@ def _free_bytes(folder: Path) -> int:
     return shutil.disk_usage(probe).free
 
 
-def extract(archive: zipfile.ZipFile, into: Path, *, links: bool = False, allowed: Iterable[str] | None = None) -> None:
-    """Unpack ``archive`` into the empty folder ``into`` after checking every entry: safe paths, no entry twice,
-    top-level names from ``allowed`` (if given), enough free space; symbolic links only with ``links`` and only
-    relative ones that stay inside ``into`` (a portable package's Python has some on Linux and macOS)."""
+def extract(
+    archive: zipfile.ZipFile,
+    into: Path,
+    *,
+    links: bool = False,
+    allowed: Iterable[str] | None = None,
+    refused: Callable[[PurePosixPath], bool] = lambda _path: False,
+) -> None:
+    """Unpack ``archive`` into the empty folder ``into`` after checking every entry: safe paths (also no Windows
+    device names), no entry twice, top-level names from ``allowed`` (if given), nothing ``refused`` says no to, enough
+    free space. Symbolic links only with ``links`` (a portable package's Python has some on Linux and macOS): made
+    after every file, relative, and each must still lead into ``into`` once all of them exist (a chain of links that
+    each look harmless while the next is missing is refused, internal review H1). Files are never written through a
+    link, because none exists while files are written."""
     infos = archive.infolist()
     seen: set[str] = set()
     tops = set(allowed) if allowed is not None else None
     for info in infos:
         relative = archive_path(info.filename)
-        if relative is None:
+        if relative is None or any(_reserved(part) for part in relative.parts):
             raise PackageError("archive_unsafe", f"unsafe path in the archive: {info.filename!r}", name=info.filename)
-        key = relative.as_posix().lower()
-        if key in seen and not info.is_dir():
+        # Exact names: a Linux Python has terminfo entries that differ only in case (``2/2621a``, ``2/2621A``). On a
+        # file system that ignores case, the second one cannot be created (``xb`` below) and the archive is refused.
+        key = relative.as_posix()
+        if key in seen:
             raise PackageError("archive_unsafe", f"twice in the archive: {relative}", name=str(relative))
         seen.add(key)
         if tops is not None and relative.parts[0] not in tops:
+            raise PackageError("archive_unexpected", f"not part of a backup: {relative}", name=str(relative))
+        if refused(relative):
             raise PackageError("archive_unexpected", f"not part of a backup: {relative}", name=str(relative))
         if _is_link(info) and not links:
             raise PackageError("archive_unsafe", f"symbolic link in the archive: {relative}", name=str(relative))
@@ -275,27 +289,71 @@ def extract(archive: zipfile.ZipFile, into: Path, *, links: bool = False, allowe
     if needed + 50_000_000 > _free_bytes(into):
         raise PackageError("disk_full", "not enough free disk space", needed=needed // 1_000_000)
     into.mkdir(parents=True, exist_ok=True)
-    for info in infos:
-        relative = archive_path(info.filename)
-        assert relative is not None
-        target = into.joinpath(*relative.parts)
-        if info.is_dir():
-            target.mkdir(parents=True, exist_ok=True)
-            continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if _is_link(info):
+    made: list[Path] = []
+    try:
+        for info in infos:
+            relative = archive_path(info.filename)
+            assert relative is not None
+            target = into.joinpath(*relative.parts)
+            if info.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            if _is_link(info):
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with archive.open(info) as reader, target.open("xb") as writer:
+                shutil.copyfileobj(reader, writer, 4 * 1024 * 1024)
+            mode = (info.external_attr >> 16) & 0o777
+            if os.name == "posix" and info.create_system == 3 and mode:
+                target.chmod(0o755 if mode & 0o111 else 0o644)
+        for info in infos:
+            if not _is_link(info):
+                continue
+            relative = archive_path(info.filename)
+            assert relative is not None
+            target = into.joinpath(*relative.parts)
             link = archive.read(info).decode("utf-8")
-            if os.path.isabs(link) or "\\" in link or not _inside(target.parent / link, into):
+            if (
+                not link
+                or os.path.isabs(link)
+                or "\\" in link
+                or ":" in link
+                or any(parent.is_symlink() for parent in _parents(target, into))
+            ):
                 raise PackageError(
                     "archive_unsafe", f"symbolic link out of the package: {relative}", name=str(relative)
                 )
+            target.parent.mkdir(parents=True, exist_ok=True)
             target.symlink_to(link)
-            continue
-        with archive.open(info) as reader, target.open("wb") as writer:
-            shutil.copyfileobj(reader, writer, 4 * 1024 * 1024)
-        mode = (info.external_attr >> 16) & 0o777
-        if os.name == "posix" and info.create_system == 3 and mode:
-            target.chmod(0o755 if mode & 0o111 else 0o644)
+            made.append(target)
+    except (OSError, UnicodeDecodeError) as exc:
+        raise PackageError("archive_unsafe", f"the archive cannot be unpacked: {exc}", name=str(exc)) from None
+    base = os.path.realpath(into)
+    for target in made:
+        resolved = os.path.realpath(target)
+        if os.path.commonpath([base, resolved]) != base:
+            name = target.relative_to(into).as_posix()
+            raise PackageError("archive_unsafe", f"symbolic link out of the package: {name}", name=name)
+
+
+def _parents(target: Path, into: Path) -> list[Path]:
+    """The folders between ``into`` and ``target`` (excluding both)."""
+    found = []
+    probe = target.parent
+    while probe != into and into in probe.parents:
+        found.append(probe)
+        probe = probe.parent
+    return found
+
+
+_RESERVED = frozenset(
+    {"con", "prn", "aux", "nul", *(f"com{n}" for n in range(1, 10)), *(f"lpt{n}" for n in range(1, 10))}
+)
+
+
+def _reserved(part: str) -> bool:
+    """A Windows device name (``CON``, ``nul.txt`` ...) or a name Windows changes (trailing dot or space)."""
+    return part.split(".")[0].lower() in _RESERVED or part.endswith((".", " "))
 
 
 def _files(folder: Path, skip: Callable[[PurePosixPath], bool] = lambda _path: False) -> Iterator[Path]:
@@ -402,12 +460,37 @@ def read_backup(archive: zipfile.ZipFile) -> dict[str, Any]:
     return meta
 
 
-def _replace_folder(staged: Path, target: Path) -> None:
-    """Put ``staged`` where ``target`` is (``target`` was saved before: the caller made a backup)."""
-    if target.exists():
-        shutil.rmtree(target)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(staged), str(target))
+def check_own_folder(root: Path, folder: Path, what: str) -> None:
+    """Refuse a data or result folder that a restore or update must not replace or write into: the package folder
+    itself, a folder above it, the home folder, a file system root, or one that holds the program, backups or
+    staging folders (a setting like ``data_dir = "."`` or ``"~"``; internal review H2)."""
+    resolved = folder.resolve()
+    package = root.resolve()
+    home = Path.home().resolve()
+    if (
+        resolved in (package, home, Path(resolved.anchor))
+        or resolved in package.parents
+        or any((resolved / name).exists() for name in (PROGRAM, BACKUPS, INFO))
+    ):
+        raise PackageError(
+            "folder_unsafe", f"the {what} folder {resolved} cannot be used for this", folder=str(resolved)
+        )
+
+
+def _replace_folder(staged: Path, target: Path, aside: Path) -> None:
+    """Put ``staged`` where ``target`` is. The old ``target`` is moved to ``aside`` first (removed with the staging
+    folder once everything succeeded, put back when the move of ``staged`` fails); the caller made a backup."""
+    moved = False
+    if target.exists() or target.is_symlink():
+        shutil.move(str(target), str(aside))
+        moved = True
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(staged), str(target))
+    except BaseException:
+        if moved and not target.exists():
+            shutil.move(str(aside), str(target))
+        raise
 
 
 def restore(root: Path, data_dir: Path, output_dir: Path | None, source: Path, info: dict[str, Any]) -> dict[str, Any]:
@@ -428,6 +511,9 @@ def restore(root: Path, data_dir: Path, output_dir: Path | None, source: Path, i
                 backup=str(meta.get("name") or meta.get("slug")),
                 package=str(info.get("name") or info.get("slug")),
             )
+        check_own_folder(root, data_dir, "data")
+        if output_dir is not None and meta.get("results"):
+            check_own_folder(root, output_dir, "result")
         stamp = time.strftime("%Y%m%d-%H%M%S")
         saved = backups_folder(root) / f"before-restore-{stamp}.zip"
         backup(
@@ -441,27 +527,29 @@ def restore(root: Path, data_dir: Path, output_dir: Path | None, source: Path, i
         )
         staging = root / f".restore-{stamp}"
         try:
-            extract(archive, staging, allowed=("BACKUP.json", *BACKUP_PARTS))
+            unpacked = staging / "unpacked"
+            extract(archive, unpacked, allowed=("BACKUP.json", *BACKUP_PARTS), refused=_not_in_a_backup)
             secrets = data_dir / SECRETS
             if not meta.get("secrets") and secrets.is_dir():
-                (staging / "data").mkdir(parents=True, exist_ok=True)
-                shutil.copytree(secrets, staging / "data" / SECRETS, dirs_exist_ok=True)
-            if (staging / "config").is_dir():
-                _replace_folder(staging / "config", root / "config")
-            _replace_folder(staging / "data" if (staging / "data").is_dir() else _empty(staging), data_dir)
+                (unpacked / "data").mkdir(parents=True, exist_ok=True)
+                shutil.copytree(secrets, unpacked / "data" / SECRETS, dirs_exist_ok=True)
+            if (unpacked / "config").is_dir():
+                _replace_folder(unpacked / "config", root / "config", staging / "old-config")
+            (unpacked / "data").mkdir(exist_ok=True)
+            _replace_folder(unpacked / "data", data_dir, staging / "old-data")
             if (data_dir / SECRETS).is_dir():
                 restrict_folder(data_dir / SECRETS)
-            if output_dir is not None and (staging / "results").is_dir():
-                shutil.copytree(staging / "results", output_dir, dirs_exist_ok=True)
+            if output_dir is not None and (unpacked / "results").is_dir():
+                shutil.copytree(unpacked / "results", output_dir, dirs_exist_ok=True)
         finally:
             shutil.rmtree(staging, ignore_errors=True)
     return {**meta, "saved": str(saved)}
 
 
-def _empty(staging: Path) -> Path:
-    folder = staging / "data"
-    folder.mkdir(parents=True, exist_ok=True)
-    return folder
+def _not_in_a_backup(relative: PurePosixPath) -> bool:
+    """What a backup never holds, so a restore never writes it: the instance file, the record of the model check,
+    a model copy and the model server's folder below ``data/`` (internal review M2)."""
+    return len(relative.parts) > 1 and relative.parts[0] == "data" and relative.parts[1] in NOT_BACKED_UP
 
 
 def backups_folder(root: Path) -> Path:
@@ -547,6 +635,7 @@ def update(
     current = read_info(program)
     if layout_of(current) < LAYOUT_VERSION:
         raise PackageError("update_old_layout", "this package has the old folder layout: use adopt in the new one")
+    check_own_folder(root, data_dir, "data")
     stamp = time.strftime("%Y%m%d-%H%M%S")
     say("update_checking")
     staging, package = stage_package(root, source, stamp)
@@ -663,7 +752,22 @@ def adopt(
             current=str(info.get("name") or info.get("slug")),
         )
     copied: list[str] = []
-    targets = {name: root / folder for name, folder in relative.items()}
+    targets: dict[str, Path] = {}
+    for name, folder in relative.items():
+        # Only plain relative folders that stay inside both packages (internal review M1).
+        parts = PurePosixPath(folder.replace("\\", "/")).parts
+        source, target = old / folder, root / folder
+        if (
+            not parts
+            or ".." in parts
+            or PurePosixPath(folder).is_absolute()
+            or not _inside(source, old)
+            or source.resolve() == old
+            or not _inside(target, root)
+            or target.resolve() == root.resolve()
+        ):
+            raise PackageError("folder_unsafe", f"the folder {folder} cannot be taken over", folder=folder)
+        targets[name] = target
     for target in targets.values():
         if target.is_dir() and any(target.iterdir()):
             raise PackageError("adopt_has_data", "this package already has data", folder=str(target))
@@ -682,6 +786,8 @@ def adopt(
         say("adopt_copying", folder=folder)
         shutil.copytree(source, targets[name], symlinks=True, dirs_exist_ok=True, ignore=_not_adopted(source))
         copied.append(folder)
+        if (targets[name] / SECRETS).is_dir():
+            restrict_folder(targets[name] / SECRETS)  # internal review L1
     return copied
 
 
@@ -735,7 +841,9 @@ def install_ui(root: Path, artifact: Path, expected_sha256: str, served: Iterabl
         (staging / INSTALLED).write_text(
             json.dumps({"artifact": artifact.name, "sha256": expected}, indent=2) + "\n", encoding="utf-8"
         )
-        _replace_folder(staging, root / UI)
+        aside = root / f".ui-old-{time.strftime('%Y%m%d-%H%M%S')}"
+        _replace_folder(staging, root / UI, aside)
+        shutil.rmtree(aside, ignore_errors=True)
     except ui_package.UiPackageError as exc:
         raise PackageError("ui_invalid", f"the artifact is not a usable interface: {exc}", problem=str(exc)) from None
     finally:

@@ -680,3 +680,153 @@ def test_a_portable_package_carries_the_modules_of_its_commands() -> None:
 
     modules = exporter.runtime_modules(None, exporter.PORTABLE_ROOTS)
     assert {"nodestro_api.portable_ops", "nodestro_api.ui_package", "nodestro_api.app_contract"} <= set(modules)
+
+
+# ---- findings of the internal review ---------------------------------------------------------------------------
+
+
+def _link(archive: zipfile.ZipFile, name: str, target: str) -> None:
+    info = zipfile.ZipInfo(name)
+    info.create_system = 3
+    info.external_attr = (stat.S_IFLNK | 0o777) << 16
+    archive.writestr(info, target)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="symbolic links")
+def test_a_chain_of_links_cannot_lead_out_of_an_update(tmp_path: Path) -> None:
+    """H1: ``a -> b/b/c/../../..`` looks inside while ``b`` is missing; then ``b -> .`` and a file below ``a``."""
+    root = _package(tmp_path / "app")
+    target = tmp_path / "evil.zip"
+    with zipfile.ZipFile(target, "w") as archive:
+        archive.writestr("package/c/", b"")
+        _link(archive, "package/a", "b/b/c/../../..")
+        _link(archive, "package/b", ".")
+        archive.writestr("package/a/ESCAPED.txt", b"x")
+    with pytest.raises(PackageError) as refused:
+        portable_ops.update(root, _settings(root).data_dir, None, target)
+    assert refused.value.key == "archive_unsafe"
+    assert not list(tmp_path.rglob("ESCAPED.txt"))
+    # A link that leads out only through another link is refused once both exist.
+    with zipfile.ZipFile(tmp_path / "evil2.zip", "w") as archive:
+        archive.writestr("package/program/x", b"")
+        _link(archive, "package/program/up", "..")
+        _link(archive, "package/program/out", "up/../../..")
+    with pytest.raises(PackageError) as refused:
+        portable_ops.update(root, _settings(root).data_dir, None, tmp_path / "evil2.zip")
+    assert refused.value.key == "archive_unsafe"
+    assert not list(root.glob(".update-*"))
+
+
+@pytest.mark.parametrize("data_dir", [".", "..", "program"])
+def test_restore_and_update_refuse_a_data_folder_that_holds_the_package(tmp_path: Path, data_dir: str) -> None:
+    """H2: ``data_dir = "."`` would have replaced the whole package (and the backup just made)."""
+    root = _package(tmp_path / "app")
+    settings = _settings(root)
+    info = portable.package_info(settings.program)
+    target = tmp_path / "backup.zip"
+    portable_ops.backup(root, settings.data_dir, None, target, info)
+    with pytest.raises(PackageError) as refused:
+        portable_ops.restore(root, root / data_dir, None, target, info)
+    assert refused.value.key == "folder_unsafe"
+    with pytest.raises(PackageError) as refused:
+        portable_ops.update(root, root / data_dir, None, _new_package(tmp_path))
+    assert refused.value.key == "folder_unsafe"
+    assert portable_ops.verify_program(root / "program") == [] and (settings.data_dir / "runtime.db").is_file()
+    with pytest.raises(PackageError):
+        portable_ops.check_own_folder(root, Path.home(), "data")
+
+
+def test_a_failed_restore_puts_the_data_back(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = _package(tmp_path / "app")
+    settings = _settings(root)
+    info = portable.package_info(settings.program)
+    target = tmp_path / "backup.zip"
+    portable_ops.backup(root, settings.data_dir, None, target, info)
+    (settings.data_dir / "runtime.db").write_bytes(b"current")
+    real = shutil.move
+    calls = {"n": 0}
+
+    def failing(source: str, destination: str) -> Any:
+        calls["n"] += 1
+        if destination == str(settings.data_dir) and "unpacked" in source:
+            raise OSError("disk gone")
+        return real(source, destination)
+
+    monkeypatch.setattr(portable_ops.shutil, "move", failing)
+    with pytest.raises(OSError):
+        portable_ops.restore(root, settings.data_dir, None, target, info)
+    assert (settings.data_dir / "runtime.db").read_bytes() == b"current"
+
+
+def test_adopt_refuses_folders_that_lead_out_of_either_package(tmp_path: Path) -> None:
+    """M1: a relative folder with ``..`` (through a link in the old package) may not reach outside."""
+    old = _old_package(tmp_path / "old")
+    root = tmp_path / "app"
+    _program(root / "program")
+    for folder in ("a/../../outside", "../outside", "."):
+        with pytest.raises(PackageError) as refused:
+            portable_ops.adopt(root, old, relative={"log_dir": folder})
+        assert refused.value.key == "folder_unsafe"
+    assert not (tmp_path / "outside").exists()
+
+
+def test_restore_refuses_what_a_backup_never_holds(tmp_path: Path) -> None:
+    """M2: a crafted backup may not plant the instance file or the record of the model check."""
+    root = _package(tmp_path / "app")
+    settings = _settings(root)
+    for name in ("data/run/models-verified.json", "data/run/instance.json", "data/ollama/x", "data/models/blob"):
+        target = tmp_path / "crafted.zip"
+        with zipfile.ZipFile(target, "w") as archive:
+            archive.writestr(
+                "BACKUP.json", json.dumps({"format": "nodestro-portable-backup", "format_version": 1, "slug": SLUG})
+            )
+            archive.writestr(name, b"{}")
+        with pytest.raises(PackageError) as refused:
+            portable_ops.restore(root, settings.data_dir, None, target, portable.package_info(settings.program))
+        assert refused.value.key == "archive_unexpected"
+
+
+@pytest.mark.parametrize("name", ["data/CON", "data/nul.txt", "data/x.", "data/dir", "data/runtime.db"])
+def test_restore_refuses_device_names_and_clashes_with_a_message(tmp_path: Path, name: str) -> None:
+    """L5: Windows device names, and a file and a folder of the same name, are refusals, not tracebacks."""
+    root = _package(tmp_path / "app")
+    settings = _settings(root)
+    target = tmp_path / "crafted.zip"
+    with zipfile.ZipFile(target, "w") as archive:
+        archive.writestr(
+            "BACKUP.json", json.dumps({"format": "nodestro-portable-backup", "format_version": 1, "slug": SLUG})
+        )
+        archive.writestr("data/runtime.db", b"x")
+        archive.writestr(name + ("/" if name == "data/dir" else ""), b"")
+        if name == "data/dir":
+            archive.writestr("data/dir", b"file")
+    with pytest.raises(PackageError) as refused:
+        portable_ops.restore(root, settings.data_dir, None, target, portable.package_info(settings.program))
+    assert refused.value.key == "archive_unsafe"
+    assert (settings.data_dir / "runtime.db").read_bytes() == b"runs"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="process check")
+def test_an_instance_that_does_not_answer_yet_counts_as_running(tmp_path: Path) -> None:
+    """L3: the instance file names a live process whose port does not answer (starting or hanging)."""
+    root = _package(tmp_path / "app")
+    settings = _settings(root)
+    (settings.data_dir / "run" / "instance.json").write_text(json.dumps({"pid": os.getppid(), "port": 1}))
+    assert portable._running(settings)
+    (settings.data_dir / "run" / "instance.json").write_text(json.dumps({"pid": 2**22 + 12345, "port": 1}))
+    assert not portable._running(settings)
+
+
+def test_names_that_differ_only_in_case_are_two_files(tmp_path: Path) -> None:
+    """A Linux Python has terminfo entries like ``2/2621a`` and ``2/2621A``."""
+    target = tmp_path / "case.zip"
+    with zipfile.ZipFile(target, "w") as archive:
+        archive.writestr("share/terminfo/2/2621a", b"a")
+        archive.writestr("share/terminfo/2/2621A", b"A")
+    with zipfile.ZipFile(target) as archive:
+        if (tmp_path / "probe").mkdir() is None and (tmp_path / "PROBE").exists():
+            with pytest.raises(PackageError):  # a file system that ignores case
+                portable_ops.extract(archive, tmp_path / "into")
+            return
+        portable_ops.extract(archive, tmp_path / "into")
+    assert (tmp_path / "into" / "share" / "terminfo" / "2" / "2621A").read_bytes() == b"A"

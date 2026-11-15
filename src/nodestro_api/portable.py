@@ -713,8 +713,23 @@ def _program_intact(settings: Settings, console: Console) -> bool:
 
 
 def _running(settings: Settings) -> bool:
+    """Whether an instance of this package runs: its instance file names a port that answers, or (Linux, macOS) a
+    process that is still alive, so an instance that is starting or hangs also counts (internal review L3)."""
     state = _read_state(settings.data_dir)
-    return bool(state and _responding(int(state.get("port", 0))))
+    if not state:
+        return False
+    if _responding(int(state.get("port", 0))):
+        return True
+    pid = state.get("pid")
+    if os.name == "posix" and isinstance(pid, int) and pid > 0 and pid != os.getpid():
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except OSError:
+            return True
+        return True
+    return False
 
 
 def _operate(settings: Settings, console: Console, action: Callable[[], int], *, stopped: bool = True) -> int:
