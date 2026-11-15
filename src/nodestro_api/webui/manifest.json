@@ -46,33 +46,33 @@
     },
     {
       "path": "i18n/de.json",
-      "size": 15984,
-      "sha256": "24c5bca5948dcf234021f10efec54adbb4d38d8d38770b23b323cb7ecc57fe6d"
+      "size": 20362,
+      "sha256": "7b82b56ab14fb9598cab7b1674342228372045ce736524e7c0cd7fed17cf8d66"
     },
     {
       "path": "i18n/en.json",
-      "size": 14635,
-      "sha256": "71ebc2ef079456c07fa6f5c20edbc5c4660faed4cc08c211204b6379798700ba"
+      "size": 18644,
+      "sha256": "a2c10a4e47b4460205230293b86e0eede60424389d80c92179172bcbdf6e30b4"
     },
     {
       "path": "i18n/es.json",
-      "size": 15831,
-      "sha256": "896a8fd6e189065ebb20d72a687226d86e7fbacaf2017f27030295b0d00eb39c"
+      "size": 20163,
+      "sha256": "90fc8323e3a019005ad93392cd220537dda2b7d89637d0a312074ba57cb5f16e"
     },
     {
       "path": "i18n/fr.json",
-      "size": 16722,
-      "sha256": "ab01f87ec7487d92097cad0e7f86b836c5ca58260e143feaa295527278fd8244"
+      "size": 21235,
+      "sha256": "85060b6313b292667cb280b14113debd68af629d0643c680c7bacb02f679a8f3"
     },
     {
       "path": "i18n/it.json",
-      "size": 16012,
-      "sha256": "44eba484e9daac3afb5fd0957f5cb3f0f66efa4b515291883bfea642216d5c7c"
+      "size": 20448,
+      "sha256": "9bc06c49371260b73917b9054433d5afa1ed46cab7734cd052ac40f8e39a4df0"
     },
     {
       "path": "i18n/pt-BR.json",
-      "size": 15680,
-      "sha256": "41cf9d6c58a466aa66c63566e4ddf1b363a6c28c326de296ff19f4f8e54c3d0f"
+      "size": 19903,
+      "sha256": "9b6da626a044288b81c83f50e8a3c33c79aad43ebdccaa4ae66dd677db798bc8"
     },
     {
       "path": "index.html",

@@ -184,7 +184,7 @@ def test_commands_of_the_folder_model_need_layout_2_and_a_stopped_application(
     arguments = portable.parser().parse_args(["backup", str(tmp_path / "b.zip")])
     assert portable.backup_command(arguments, _settings(root)) == 2
     assert not (tmp_path / "b.zip").exists()
-    assert "stop_first" in capsys.readouterr().out
+    assert "Beende sie zuerst" in capsys.readouterr().out
     assert portable.verify_command(_settings(root)) == 0  # verify is allowed while it runs
 
 
@@ -222,7 +222,7 @@ def test_the_backup_command_warns_about_secrets(tmp_path: Path, capsys: pytest.C
     root = _package(tmp_path / "app")
     arguments = portable.parser().parse_args(["backup", str(tmp_path / "b.zip"), "--include-secrets"])
     assert portable.backup_command(arguments, _settings(root)) == 0
-    assert "backup_secrets_warning" in capsys.readouterr().out
+    assert "unverschlüsselt" in capsys.readouterr().out
     assert "data/secrets/providers.json" in _names(tmp_path / "b.zip")
 
 
