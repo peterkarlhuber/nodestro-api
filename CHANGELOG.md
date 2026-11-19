@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Security (N-03): the desktop's keychain key (handoff or `NODESTRO_VAULT_KEY`) is handed to the workspace when it is
+  created (`Workspace(vault_key=...)`), so it seals provider API keys and service connection secrets as well as MCP
+  tokens; plain provider keys of earlier releases are encrypted when the backend starts. `NodestroContext.compose` no
+  longer replaces the MCP vault afterwards. Needs nodestro-runtime with `Workspace(vault_key=...)`.
+
 - Fixed: the embedded interface (nodestro-app-ui `640a95a`, #9) shows accepted file extensions with one dot (`.pdf`,
   not `..pdf`).
 - Changed: `docs/TODO.md`: API-054 names the NAL review briefs; new API-069 (pairing and the interface on another origin stay

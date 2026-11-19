@@ -18,7 +18,6 @@ from typing import Any, Literal
 from nodestro_runtime.extensions import Integration
 from nodestro_runtime.forms import FileRef
 from nodestro_runtime.input_files import FileCatalog, is_input_id
-from nodestro_runtime.mcp.vault import VAULT_KEY_ENV, TokenVault, vault_box_from_env
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.profile import ProfileKind, RuntimeProfile
 from nodestro_runtime.schemas import Run
@@ -196,6 +195,10 @@ class Nodestro(Workspace):
             ocr_runner=ocr_runner,
             integrations=integrations,
             storage=storage,
+            # The desktop's keychain key lives in this process's memory only (never in os.environ, where every child
+            # process would inherit it); it seals provider keys, MCP tokens and connection secrets. A server tenant
+            # keeps its own secret box.
+            vault_key=None if storage is not None else config.vault_key,
         )
 
     def file_catalog(self) -> FileCatalog:
@@ -203,10 +206,6 @@ class Nodestro(Workspace):
         return RunFileCatalog(self.inputs, self.knowledge.store)
 
     def compose(self) -> None:
-        if self.config.vault_key is not None and not self.shared_storage:
-            # The desktop's key lives in this process's memory only (never in os.environ, where every child process
-            # would inherit it); a server tenant keeps its own secret box.
-            self.mcp.vault = TokenVault(vault_box_from_env({VAULT_KEY_ENV: self.config.vault_key}), self.tenant_id)
         self.organize = Organizer(self.store)
         self.assistants = Assistants(self.tools, capabilities=self.builder.capabilities, builder=self.builder)
         self.batches = Batches(self)

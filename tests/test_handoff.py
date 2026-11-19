@@ -135,6 +135,39 @@ def test_the_workspace_seals_tokens_with_the_handed_over_key(tmp_path: Path) -> 
     assert handoff.VAULT_KEY_ENV not in os.environ
 
 
+def test_the_handed_over_key_seals_provider_keys_and_connection_secrets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Security fix N-03: with the desktop's keychain key a provider key is stored only encrypted, and a plain key of
+    an earlier release is encrypted when the backend starts; the key itself never leaves the backend."""
+    from nodestro_runtime.server_settings import is_encrypted
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    canary = "sk-ant-canary-handoff-0123456789"
+    data = tmp_path / "data"
+    # An earlier release (no keychain key) stored the key in plain text.
+    with TestClient(
+        create_app(AppConfig(data_dir=data), integrations=[], scheduler=False), base_url="http://127.0.0.1"
+    ) as client:
+        assert client.put("/api/settings", json={"providers": {"anthropic": {"api_key": canary}}}).status_code == 200
+        ctx = client.app.state.nodestro  # type: ignore[attr-defined]
+        assert ctx.store.get_raw("settings", "app")["providers"]["anthropic"]["api_key"] == canary
+
+    app = create_app(AppConfig(data_dir=data, vault_key=KEY), integrations=[], scheduler=False)
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        ctx = client.app.state.nodestro  # type: ignore[attr-defined]
+        sealed = ctx.store.get_raw("settings", "app")["providers"]["anthropic"]["api_key"]
+        assert is_encrypted(sealed) and canary not in sealed
+        assert ctx.provider_settings("anthropic")["api_key"] == canary
+        shown = client.get("/api/settings")
+        assert shown.status_code == 200 and canary not in shown.text and sealed not in shown.text
+        anthropic = next(item for item in shown.json()["providers"] if item["id"] == "anthropic")
+        assert anthropic["key_stored"] is True
+        # The same key now also seals the secrets of service connections (before, they were kept for the session).
+        assert ctx.connections.vault.persistent and ctx.mcp.vault.persistent
+    assert handoff.VAULT_KEY_ENV not in os.environ
+
+
 def test_a_malformed_vault_key_stops_the_command(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     handoff.receive(pipe_with(json.dumps({"launch_secret": SECRET, "vault_key": "short"}).encode()))
     monkeypatch.setenv("NODESTRO_DATA_DIR", str(tmp_path / "data"))
