@@ -128,7 +128,9 @@ def test_stale_late_and_unknown_decisions_are_refused(gated: TestClient) -> None
     assert gated.get("/api/runs/run_missing/tool-approvals").status_code == 404
     run = finished(gated, run_id)
     [call] = run["nodes"]["a"]["tool_calls"]
-    assert call["is_error"] and "Wrong unit" in call["output"]
+    # The comment is for people: the model gets a fixed text, the approval keeps the comment (N-07, decision E-P-4).
+    assert call["is_error"] and call["output"] == "Tool call denied: A person rejected this call"
+    assert call["approval"]["comment"] == "Wrong unit"
     outcomes = [item["outcome"] for item in reversed(gated.get("/api/tool-approvals/audit").json())]
     assert outcomes == ["tool.approval_stale", "rejected", "tool.approval_decided", "tool.approval_not_found"]
 
