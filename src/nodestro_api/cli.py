@@ -101,7 +101,7 @@ def serve(factory: str, args: argparse.Namespace, ready: Callable[[], None] | No
     from .handoff import VAULT_KEY_ENV, received
     from .launch import check_secret
     from .local_access import require_loopback_only
-    from .local_container import require_safe_configuration
+    from .local_container import require_local_vault_key, require_safe_configuration
 
     try:
         config = AppConfig.from_env()
@@ -110,6 +110,7 @@ def serve(factory: str, args: argparse.Namespace, ready: Callable[[], None] | No
             require_loopback_only(args.host, config.allowed_hosts)
         elif kind == "local-container":
             require_safe_configuration(config.access_key, config.allowed_hosts, config.browser_host)
+            require_local_vault_key(received())
         check_secret(config.launch_secret)
         check_secret(config.access_key)
         if config.vault_key is not None:

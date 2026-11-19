@@ -119,9 +119,9 @@ _SECRET_SETTINGS = ("api_key",)
 #: The providers' keys (and base URLs with credentials in them) stay on this computer as well.
 _PROVIDER_SECRETS = "provider_keys"
 #: Collections that stay on this computer like the provider keys: the keys of published APIs
-#: (they are credentials, even hashed) and the API's idempotency records. A restore keeps the
-#: current ones.
-_LOCAL_COLLECTIONS = ("api_keys", "api_idempotency")
+#: (they are credentials, even hashed), the API's idempotency records and the check value of the
+#: data directory's key (nodestro_runtime.local_vault). A restore keeps the current ones.
+_LOCAL_COLLECTIONS = ("api_keys", "api_idempotency", "local_vault")
 
 
 #: Space that has to stay free on the disk after unpacking a backup.

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Security (LD-020): Nodestro Local Docker's key file on the host.
+  - New `nodestro-local boot serve|rekey|discard-unreadable` (`nodestro_api.local_boot`): runs as the container's
+    first process as root with only `DAC_READ_SEARCH`, `SETUID` and `SETGID`, reads the read-only mounted key file
+    (`NODESTRO_VAULT_KEY_FILE`, default `/run/secrets/nodestro-vault-key`; a regular file, no link, a valid key), drops
+    to 10001:10001 for good (no groups, no capability left, checked), then hands the key to
+    `nodestro-local serve --secrets-fd` through a pipe under tini, or rotates (`rekey`) or replaces a lost key
+    (`discard-unreadable`) with nodestro-runtime's `local_vault`.
+  - `nodestro-local serve` refuses to start without the handed-over key (`secrets.vault_key_missing`; an operator's
+    `NODESTRO_VAULT_KEY` does not count) and as root (`secrets.serve_as_root`), and the workspace refuses a key that
+    does not fit the sealed secrets (`secrets.vault_key_mismatch`). Needs nodestro-runtime with `local_vault`.
+  - A restore keeps the current key check value (`local_vault` joins the collections that stay on this computer).
 - Security (N-03): the desktop's keychain key (handoff or `NODESTRO_VAULT_KEY`) is handed to the workspace when it is
   created (`Workspace(vault_key=...)`), so it seals provider API keys and service connection secrets as well as MCP
   tokens; plain provider keys of earlier releases are encrypted when the backend starts. `NodestroContext.compose` no

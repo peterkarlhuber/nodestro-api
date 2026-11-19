@@ -199,6 +199,9 @@ class Nodestro(Workspace):
             # process would inherit it); it seals provider keys, MCP tokens and connection secrets. A server tenant
             # keeps its own secret box.
             vault_key=None if storage is not None else config.vault_key,
+            # Nodestro Local Docker (LD-020): a key that does not fit the sealed secrets is refused, never laid over
+            # them. `nodestro-local serve` refuses to start without one.
+            verify_vault_key=storage is None and config.profile_kind == "local-container" and bool(config.vault_key),
         )
 
     def file_catalog(self) -> FileCatalog:

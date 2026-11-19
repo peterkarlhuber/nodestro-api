@@ -43,6 +43,16 @@ None known.
 Tool approvals (`NODESTRO_TOOL_APPROVALS`, off by default and staying off) need the independent S-2 review tracked as
 nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes here. No separate entry in this file.
 
+### API-070 · Independent review of Local Docker's key handoff (LD-020)
+
+- **Priority:** P3 Low · **Status:** Needs external review · **Refs:** `nodestro_api.local_boot`,
+  `tests/test_local_boot.py`, nodestro-runtime RT-082, nodestro-local-docker LD-020
+- **What:** `nodestro-local boot` reads the host's key file as root with three capabilities, drops to 10001 and hands
+  the key over through a pipe; `serve` refuses to start without it or as root. Internal tests (here and the
+  end-to-end tests of nodestro-local-docker on rootful and rootless Docker) pass; they do not replace the independent
+  review (E-P-5, bundled with nodestro-runtime RT-081).
+- **Next step:** Add to the next bundled independent review brief.
+
 ### API-054 · Independent security review of the portable export
 
 - **Priority:** P2 Medium · **Status:** Needs external review · **Refs:** #85, #87, nodestro-studio #121,

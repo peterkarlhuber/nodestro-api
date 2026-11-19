@@ -24,7 +24,8 @@ not switched off but replaced by stricter ones:
   (:mod:`nodestro_runtime.sandbox_gateway`), never in this container.
 
 The ``nodestro-local`` command runs inside the container (the launcher on the host calls it with
-``docker compose exec``): ``serve`` starts the studio, ``link`` prints the browser link, ``rotate-key`` replaces the
+``docker compose exec``): ``serve`` starts the studio (with the vault key that ``boot`` hands over, see
+:mod:`nodestro_api.local_boot`), ``link`` prints the browser link, ``rotate-key`` replaces the
 access key and the browser host name, ``logout`` ends every browser session, ``backup`` and ``restore`` use the
 studio's own complete backups (:mod:`nodestro_api.backup`) through the running API, ``status`` and ``check`` report
 readiness, and ``gateway`` runs the sandbox gateway (the same image, another container).
@@ -254,6 +255,23 @@ def require_safe_configuration(access_key: str | None, extra_hosts: Iterable[str
         )
 
 
+def require_local_vault_key(received: Any) -> None:
+    """Refuse to serve without the vault key that ``nodestro-local boot`` hands over through a pipe, and as root
+    (``secrets.vault_key_missing``, ``secrets.serve_as_root``, LD-020). An operator's ``NODESTRO_VAULT_KEY`` is not
+    accepted here: the key comes from the key file on the host, never from an environment variable."""
+    if received is None or not getattr(received, "vault_key", None):
+        raise NodestroError(
+            "secrets.vault_key_missing",
+            "Nodestro Local Docker needs the key file on the host for its secrets and never stores them unencrypted; "
+            "start it with its launcher (./nodestro start, .\\nodestro.ps1 start) (nodestro-local boot serve)",
+        )
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        raise NodestroError(
+            "secrets.serve_as_root",
+            "nodestro-local serve does not run as root; nodestro-local boot serve drops to the studio's user first",
+        )
+
+
 def loopback_hosts(extra_hosts: Iterable[str]) -> frozenset[str]:
     """The host names answered besides the loopback addresses: the loopback names in ``NODESTRO_ALLOWED_HOSTS``."""
     return frozenset(split_host(item) for item in extra_hosts if item.strip())
@@ -383,8 +401,15 @@ def launch_link(key: str, *, host: str | None = None, port: int | None = None) -
 
 
 def _serve(args: argparse.Namespace) -> None:
+    from . import handoff
     from .cli import serve
 
+    # The vault key from `nodestro-local boot` (LD-020), read before anything else runs; serve refuses to start
+    # without it.
+    try:
+        handoff.receive(args.secrets_fd)
+    except NodestroError as error:
+        raise SystemExit(str(error)) from None
     path = key_file()
     create_access_key(path)
     create_browser_host(browser_host_file())
@@ -404,7 +429,19 @@ def _serve(args: argparse.Namespace) -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="nodestro-local", description="Nodestro Local Docker (inside the container)")
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("serve", help="Start the studio (the container's main process)")
+    run = commands.add_parser("serve", help="Start the studio (the container's main process)")
+    run.add_argument(
+        "--secrets-fd",
+        type=int,
+        default=None,
+        metavar="FD",
+        help="Read the vault key as one JSON object from this inherited descriptor (nodestro-local boot hands it over)",
+    )
+    boot = commands.add_parser(
+        "boot",
+        help="Read the key file as root, drop to the studio's user and serve, rekey or discard-unreadable (LD-020)",
+    )
+    boot.add_argument("action", choices=["serve", "rekey", "discard-unreadable"])
     link = commands.add_parser("link", help="Print the link that opens Nodestro in the browser")
     link.add_argument("--port", type=int, default=None, help=f"The published port (default: {ENV_HOST_PORT} or 8765)")
     link.add_argument("--host", default=None, help="The host's loopback name or address (default: the browser host)")
@@ -426,6 +463,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "serve":
         _serve(args)
         return 0
+    if args.command == "boot":
+        from . import local_boot
+
+        return local_boot.main([args.action])
     if args.command == "gateway":
         from nodestro_runtime import sandbox_gateway
 
@@ -488,6 +529,7 @@ __all__ = [
     "main",
     "read_access_key",
     "read_browser_host",
+    "require_local_vault_key",
     "require_safe_configuration",
     "session_hours_from_env",
 ]
