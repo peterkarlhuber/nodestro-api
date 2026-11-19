@@ -65,7 +65,7 @@ def test_backup_round_trip_restores_everything(make_app: Callable[..., TestClien
         assert b"sk-ant-secret" not in archive.read("nodestro.db")
         assert "tools/double_it/v1.json" in archive.namelist()
     assert manifest["contents"]["workflows"] == 1 and manifest["contents"]["runs"] == 1
-    assert manifest["excluded"] == ["api_key", "provider_keys", "api_keys", "api_idempotency"]
+    assert manifest["excluded"] == ["api_key", "provider_keys", "api_keys", "api_idempotency", "local_vault"]
 
     # Change everything, then restore into the same app.
     client.delete(f"/api/workflows/{workflow_id}")
