@@ -11,6 +11,7 @@ import base64
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 from typing import Any
@@ -86,16 +87,29 @@ def test_boot_refuses_to_run_without_root() -> None:
     assert refused.value.code == "secrets.boot_not_root"
 
 
-@pytest.mark.skipif(not sys.platform.startswith("linux") or os.geteuid() != 0, reason="needs root on Linux")
+def _as_root() -> list[str] | None:
+    """How to start a child process as root: directly as root, with password-less sudo (CI runners), or not at all."""
+    if not sys.platform.startswith("linux"):
+        return None
+    if os.geteuid() == 0:
+        return []
+    if shutil.which("sudo") and subprocess.run(["sudo", "-n", "true"], capture_output=True).returncode == 0:
+        return ["sudo", "-n"]
+    return None
+
+
+@pytest.mark.skipif(_as_root() is None, reason="needs root or password-less sudo on Linux")
 def test_root_is_dropped_for_good() -> None:
-    # In a child process: this one keeps running as root for the other tests.
+    # In a child process as root: this one keeps its user for the other tests.
     script = (
         "import os, json; from nodestro_api import local_boot; local_boot.drop_privileges(); "
         "status = dict(l.split(':', 1) for l in open('/proc/self/status').read().splitlines() if ':' in l); "
         "print(json.dumps({'ids': [os.getresuid(), os.getresgid()], 'groups': os.getgroups(), "
         "'caps': {n: int(status[n].strip(), 16) for n in ('CapPrm', 'CapEff', 'CapAmb', 'CapInh')}}))"
     )
-    done = subprocess.run([sys.executable, "-I", "-c", script], capture_output=True, text=True, check=True)
+    prefix = _as_root()
+    assert prefix is not None
+    done = subprocess.run([*prefix, sys.executable, "-I", "-c", script], capture_output=True, text=True, check=True)
     found = json.loads(done.stdout)
     assert found["ids"] == [[10001] * 3, [10001] * 3] and found["groups"] == []
     assert found["caps"] == {"CapPrm": 0, "CapEff": 0, "CapAmb": 0, "CapInh": 0}
