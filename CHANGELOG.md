@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Contract (N-06): the OpenAPI documents and `error_codes.json` follow nodestro-runtime's access grants (behind
+  `NODESTRO_ACCESS_GRANTS`, off): optional `ToolCallApproval.access_source`, four `access_*` audit kinds and the runtime's
+  `access.*` codes. No new route. Needs nodestro-runtime at or after 42ad387.
 - Security (LD-020): Nodestro Local Docker's key file on the host.
   - New `nodestro-local boot serve|rekey|discard-unreadable` (`nodestro_api.local_boot`): runs as the container's
     first process as root with only `DAC_READ_SEARCH`, `SETUID` and `SETGID`, reads the read-only mounted key file
