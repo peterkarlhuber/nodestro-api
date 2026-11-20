@@ -71,6 +71,13 @@ class AccessState(BaseModel):
     safety_limits: dict[str, str]
 
 
+class ToolExpected(BaseModel):
+    """The tool as the person saw it (an approval request's ``version`` and ``definition_hash``)."""
+
+    version: int | None = None
+    definition_hash: str | None = Field(default=None, max_length=200)
+
+
 class GrantIn(BaseModel):
     """A grant as a person gives it. The writer, the time and (for a tool) the tool's facts come from the server."""
 
@@ -83,6 +90,18 @@ class GrantIn(BaseModel):
     mode: AccessMode = "supervised"
     expires_at: AwareDatetime | None = None
     conversation_id: str | None = Field(default=None, max_length=200)
+    #: For a tool: the version and MCP definition the person saw (L-1). When the library holds another one now, the
+    #: grant is refused (``409 access.tool_changed``) instead of covering a tool the person never saw. The stored
+    #: facts still come from the library.
+    expected: ToolExpected | None = None
+
+
+class AccessRow(AccessExplanation):
+    """An explanation as this API serves it. ``connections_considered`` (tools only): whether the connection the
+    agent's tool settings name was counted. It is only known for one agent (``agent``); without it a deny on a
+    connection does not show in a tool's row (L-3)."""
+
+    connections_considered: bool | None = None
 
 
 class DenyIn(BaseModel):
@@ -112,17 +131,43 @@ def _rules(ctx: Ctx) -> AccessRules:
     return AccessRules(ctx.store)
 
 
-def _tool_now(ctx: Ctx, name: str) -> ToolNow:
-    """A tool as the gate sees it now: facts, kind and MCP server (unknown tools: no facts, so no grant matches)."""
+def _agent_connection(ctx: Ctx, agent: str | None, tool: str) -> str | None:
+    """The connection the agent ``<workflow id>/<node id>`` uses for ``tool`` in its saved workflow (its tool
+    settings), as the gate names it (``ToolGate.related``); ``None`` without one or for an unknown agent."""
+    if not agent or "/" not in agent:
+        return None
+    workflow_id, node_id = agent.rsplit("/", 1)
+    try:
+        workflow = ctx.workflow(workflow_id)
+    except (KeyError, ValueError, NodestroError):
+        return None
+    node = next((item for item in workflow.nodes if item.id == node_id), None)
+    settings = node.agent.tool_settings.get(tool) if node is not None and node.agent is not None else None
+    return settings.connection_id if settings is not None else None
+
+
+def _tool_now(ctx: Ctx, name: str, agent: str | None = None) -> ToolNow:
+    """A tool as the gate sees it now: facts, kind, MCP server and, for one agent, the connection its tool settings
+    name (unknown tools: no facts, so no grant matches)."""
     try:
         info = ctx.tools.get(name)
     except KeyError:
         return ToolNow()
     capability, version, kind, definition = tool_facts(ctx.tools, name)
-    related = (AccessResource(type="mcp_server", id=info.server_id),) if kind == "mcp" and info.server_id else ()
+    related: list[AccessResource] = []
+    if kind == "mcp" and info.server_id:
+        related.append(AccessResource(type="mcp_server", id=info.server_id))
+    connection = _agent_connection(ctx, agent, name)
+    if connection:
+        related.append(AccessResource(type="connection", id=connection))
     return ToolNow(
-        facts=ToolFacts.of(capability, version=version, definition_hash=definition), kind=kind, related=related
+        facts=ToolFacts.of(capability, version=version, definition_hash=definition), kind=kind, related=tuple(related)
     )
+
+
+def _row(found: AccessExplanation, agent: str | None) -> AccessRow:
+    considered = (agent is not None) if found.resource.type == "tool" else None
+    return AccessRow(**dict(found), connections_considered=considered)
 
 
 def _local_servers(ctx: Ctx) -> set[str]:
@@ -161,6 +206,16 @@ def create_grant(body: GrantIn, ctx: Ctx, request: Request) -> Grant:
         tool = _tool_now(ctx, body.resource_id).facts
         if tool is None:
             raise KeyError(body.resource_id)
+        seen = body.expected
+        if seen is not None and (seen.version != tool.version or seen.definition_hash != tool.definition_hash):
+            raise ApiError(
+                409,
+                "access.tool_changed",
+                "The tool changed since it was shown; look at it again before granting",
+                tool=body.resource_id,
+            )
+    elif body.expected is not None:
+        raise NodestroError("access.invalid", "Only a tool grant names the tool as it was seen")
     return _rules(ctx).grant(
         resource=AccessResource(type=body.resource_type, id=body.resource_id),
         actions=body.actions,
@@ -211,10 +266,10 @@ def _who_may(
     agent: str | None,
     mode: AccessMode | None,
     at: datetime,
-) -> list[AccessExplanation]:
+) -> list[AccessRow]:
     grants, denies = _rules(ctx).current()
     names = {item.resource.id for item in [*grants, *denies] if item.resource.type == "tool"}
-    return who_may(
+    found = who_may(
         grants,
         denies,
         at=at,
@@ -223,9 +278,10 @@ def _who_may(
         mode=mode,
         offline=ctx.strict_offline(),
         protected_folders=_protected(ctx),
-        tools={name: _tool_now(ctx, name) for name in names},
+        tools={name: _tool_now(ctx, name, agent) for name in names},
         local_servers=_local_servers(ctx),
     )
+    return [_row(item, agent) for item in found]
 
 
 def _resource(resource_type: ResourceType | None, resource_id: str | None) -> AccessResource | None:
@@ -243,8 +299,9 @@ def who_may_route(
     resource_id: Annotated[str | None, Query(max_length=4096)] = None,
     agent: Annotated[str | None, Query(max_length=400)] = None,
     mode: AccessMode | None = None,
-) -> list[AccessExplanation]:
-    """ "Who may do what and why": what decides each access an active grant or deny names, and its source."""
+) -> list[AccessRow]:
+    """ "Who may do what and why": what decides each access an active grant or deny names, and its source. A tool's
+    MCP server always counts; the connection of its agent only when ``agent`` names one (``connections_considered``)."""
     _require_enabled()
     from nodestro_runtime.schemas import now
 
@@ -259,7 +316,7 @@ def explain_route(
     action: AccessAction | None = None,
     agent: Annotated[str | None, Query(max_length=400)] = None,
     mode: AccessMode = "supervised",
-) -> AccessExplanation:
+) -> AccessRow:
     """Why one access is allowed or refused at its call site now (default action: the one the runtime checks there,
     ``read`` for folders). A tool is taken as it is now, with its MCP server."""
     _require_enabled()
@@ -267,7 +324,7 @@ def explain_route(
 
     resource = AccessResource(type=resource_type, id=resource_id)
     chosen: AccessAction = action or SITE_ACTIONS.get(resource_type, "read")
-    tool = _tool_now(ctx, resource_id) if resource_type == "tool" else ToolNow()
+    tool = _tool_now(ctx, resource_id, agent) if resource_type == "tool" else ToolNow()
     grants, denies = _rules(ctx).current()
     try:
         request = AccessRequest(
@@ -282,7 +339,7 @@ def explain_route(
         )
     except ValueError:
         raise NodestroError("access.invalid", "The access is not valid") from None
-    return explain(
+    found = explain(
         request,
         grants=grants,
         denies=denies,
@@ -291,6 +348,7 @@ def explain_route(
         related=tool.related,
         local_servers=_local_servers(ctx),
     )
+    return _row(found, agent)
 
 
-__all__ = ["AccessState", "DenyIn", "GrantIn", "router"]
+__all__ = ["AccessRow", "AccessState", "DenyIn", "GrantIn", "ToolExpected", "router"]
