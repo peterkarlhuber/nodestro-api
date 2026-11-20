@@ -148,7 +148,9 @@ Dieser Workflow hat {approvals}. Ein Lauf, der einen erreicht, pausiert mit dem 
 
 `approval_id` kann entfallen, wenn nur eine Freigabe wartet. Jede Entscheidung wird mit dem Lauf gespeichert
 (wer, wann, Kommentar); eine zweite Entscheidung zur selben Freigabe antwortet mit `409`. Wartende Läufe
-überstehen Neustarts.
+überstehen Neustarts. Der `comment` ist nur für Menschen; kein Modell liest ihn. `agent_note` (optional, höchstens
+2.000 Zeichen) ist der einzige Text einer Entscheidung, den spätere Agenten lesen; eine Freigabe, die ihn nicht
+zulässt (`allow_agent_note: false`), antwortet mit `422`.
 
 ## Ergebnisdateien und Daten
 

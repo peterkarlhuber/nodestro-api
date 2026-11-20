@@ -624,8 +624,11 @@ class ApprovalOut(BaseModel):
     workflow: str
     instructions: str = ""
     waiting_since: datetime | None = None
+    #: The comment is for people only: no model reads it (E-0R-1 A).
     allow_comment: bool = True
     require_comment_on_reject: bool = False
+    #: Whether the decision may carry ``agent_note``, the only text of it that later agents read (E-0R-1 A).
+    allow_agent_note: bool = True
     #: ``branch``: a rejection follows the rejected path; ``stop``: it ends the run.
     on_reject: str = "branch"
     review: list[ApprovalItemOut] = Field(default_factory=list)
@@ -664,7 +667,10 @@ class ApprovalDecisionIn(BaseModel):
     #: Which approval (from ``approvals``); may be left out when exactly one waits.
     approval_id: str | None = None
     decision: Literal["approved", "rejected"]
+    #: For people only (the run's view, the audit trail): no model ever reads it (E-0R-1 A).
     comment: str = Field(default="", max_length=4000)
+    #: The note to the later agents: the only text of the decision a model reads (plain text, E-0R-1 A).
+    agent_note: str = Field(default="", max_length=2000)
 
 
 class ResumeIn(BaseModel):
@@ -1084,6 +1090,7 @@ class ServingCore:
                     waiting_since=item.waiting_since,
                     allow_comment=item.allow_comment,
                     require_comment_on_reject=item.require_comment_on_reject,
+                    allow_agent_note=item.allow_agent_note,
                     on_reject=item.on_reject,
                     review=[ApprovalItemOut(label=entry.label, value=entry.value) for entry in item.items],
                 )
@@ -1422,7 +1429,14 @@ class ServingCore:
         if target_run not in tree:
             raise ApiError(404, "approval.not_found", "No approval with this id", approval_id=approval_id)
         try:
-            self.host.runs.decide(target_run, node_id, body.decision, body.comment, decided_by=f"api:{identity.id}")
+            self.host.runs.decide(
+                target_run,
+                node_id,
+                body.decision,
+                body.comment,
+                agent_note=body.agent_note,
+                decided_by=f"api:{identity.id}",
+            )
         except KeyError:
             raise ApiError(404, "approval.not_found", "No approval with this id", approval_id=approval_id) from None
         except NodestroError as exc:
@@ -1430,6 +1444,10 @@ class ServingCore:
                 raise ApiError(409, "approval.already_decided", "This approval was already decided") from None
             if exc.code == "approval.comment_required":
                 raise ApiError(422, exc.code, "A rejection needs a comment") from None
+            if exc.code == "approval.agent_note_too_long":
+                raise ApiError(422, exc.code, "The note to the agent is too long", **exc.params) from None
+            if exc.code == "approval.agent_note_disabled":
+                raise ApiError(422, exc.code, "This approval takes no note to the agent") from None
             raise
         return self.host.runs.get(run.id) or run
 

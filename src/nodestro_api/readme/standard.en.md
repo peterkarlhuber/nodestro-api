@@ -143,7 +143,9 @@ This workflow has {approvals}. A run that reaches one pauses with the status
 ```
 
 `approval_id` may be left out when only one approval waits. Every decision is stored with the run (who, when,
-comment); a second decision on the same approval answers `409`. Waiting runs survive restarts.
+comment); a second decision on the same approval answers `409`. Waiting runs survive restarts. The `comment` is for
+people only; no model reads it. `agent_note` (optional, at most 2,000 characters) is the only text of a decision that
+later agents read; an approval that does not allow it (`allow_agent_note: false`) answers `422`.
 
 ## Result files and data
 

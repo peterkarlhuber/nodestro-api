@@ -144,7 +144,10 @@ Este workflow tiene {approvals}. Una ejecución que llega a una se pausa con el 
 ```
 
 `approval_id` puede omitirse cuando solo hay una aprobación pendiente. Cada decisión se guarda con la ejecución (quién, cuándo,
-comentario); una segunda decisión sobre la misma aprobación responde `409`. Las ejecuciones en espera sobreviven a los reinicios.
+comentario); una segunda decisión sobre la misma aprobación responde `409`. Las ejecuciones en espera sobreviven a los
+reinicios. El `comment` es solo para personas; ningún modelo lo lee. `agent_note` (opcional, como máximo 2.000
+caracteres) es el único texto de una decisión que leen los agentes posteriores; una aprobación que no lo permite
+(`allow_agent_note: false`) responde `422`.
 
 ## Archivos de resultados y datos
 
