@@ -27,8 +27,9 @@ from .app import compose_app, install_guards, service_lifespan
 from .context import AppConfig
 from .router_groups import GROUPS, REQUIRED_GROUPS
 
-#: The version of the host interface; a breaking change of it (a signature, a field or a group name) raises it.
-HOST_API_VERSION = 1
+#: The version of the host interface; a change of it (a signature, a field or a group name) raises it.
+#: 1: N-01. 2: the group ``activity`` (N-13, the activity log); nothing else changed.
+HOST_API_VERSION = 2
 
 
 @dataclass(frozen=True)

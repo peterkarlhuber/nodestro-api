@@ -13,7 +13,7 @@
 | P1 High | 0 |
 | P2 Medium | 6 |
 | P3 Low | 11 |
-| P4 Optional | 6 |
+| P4 Optional | 7 |
 
 **Release blockers:** None for this repository; every entry below is not a release blocker. The next desktop
 preview is gated by nodestro-desktop DSK-001 (new candidate and Go/No-Go).
@@ -150,6 +150,18 @@ None known.
   per-backend refresh cookie name is derived from that id).
 - **Next step:** Fill `languages` once apps declare them; decide whether a restore onto another computer should get
   a new backend id (it would void paired devices).
+
+### API-072 · More sources for the activity log: the access audit trail and the assistant (N-13)
+
+- **Priority:** P4 Optional · **Status:** Open · **Refs:** N-13, `api_activity.py`, `access_audit.py`,
+  `docs/activity-log.md`, nodestro-runtime RT-084
+- **What:** The activity log (`GET /api/activity`) shows runtime sources only. The access audit trail (logins, tenant
+  switches, API key and member changes) stays its own record: the runtime's sources are a closed list without an
+  access source, and its events carry `details` that the activity log does not take. Assistant conversations write no
+  events, so `conversation_id` is never set.
+- **Next step:** Once the runtime offers an access source (ids, kind and outcome only), write one activity event per
+  access audit event in `access_audit.record`; let the assistant write its tool calls and file actions with its
+  conversation id.
 
 ### API-045 · Offline container image of a published workflow
 
@@ -376,6 +388,7 @@ removed by the change that completes its package here.
 | (done 2026-11-20, CI-FAST follow-up W0-1) | nodestro-studio, nodestro-sdk, nodestro-integrations | studio `platform/internal-server.txt`, same `scripts/studio_lock.sh` in sdk and integrations | A master push of a merge commit reads the lock of the studio branch of the merged PR's head branch while that branch is still ahead of the studio master (paired bump not merged yet, "lock lag"); otherwise the studio master's lock as before. Before, such pushes ran red against the old lock (14 of 23 master pushes from 2026-11-14 to 11-20). `tests/test_studio_lock.py` (curl stub, no network); the copies of the script stay identical |
 | (in review 2026-11-20, Welle 1, Peter 12:12Z) | nodestro-sdk, nodestro-integrations, nodestro-runtime, nodestro-studio | `scripts/studio_lock.sh` (same copy in all four), `GH_TOKEN` on each lock step | The lock-lag compare request is authenticated with the workflow token (`permissions: contents: read`); before, unauthenticated requests hit the shared rate limit and silently fell back to the master lock (runtime 511ab38). A 404 (branch gone) reads master; any other answer reads master with a "Lock lag unknown" warning naming the HTTP status. `tests/test_studio_lock.py` covers token, anonymous, 404, 403/500/network |
 | (in review, N-01, [#156](https://github.com/peterkarlhuber/nodestro-api/pull/156)) | nodestro-studio, embedding products | N-01 (product host), spike P0-9 | `nodestro_api.host.create_product_app` builds an app from named router groups (`router_groups`, one registry for the desktop, the server and product apps) with the studio's checks, guards, background services and fail-closed route check; `api.py` is split into groups along its sections. Host interface version 1, frozen by `tests/test_product_host.py`; see `docs/embedding.md`. The error-code catalog (`/api/error-codes`) stays one list for the package, not one per group |
+| (in review, N-13) | nodestro-runtime, nodestro-studio, nodestro-sdk | runtime #198 (`nodestro_runtime.activity`, RT-084) | `GET /api/activity` (filters, keyset paging, `limit` at most 1000) and `GET /api/activity/export?format=jsonl\|csv` (complete, streamed download), permission `admin`, per tenant on a server; new router group `activity` (host interface version 2). The scheduler-leading worker prunes every active tenant hourly (`NODESTRO_ACTIVITY_RETENTION_DAYS`), which closes the server half of RT-084's prune item. Needs the runtime at or after a8e54a9 in the studio lock. Follow-ups: the SDK syncs the two operations from `openapi/nodestro-api.json`; the studio shows the log; more sources (API-072) |
 | (pointer) | nodestro-studio | ST-052 (Dependabot policy: weekly groups, cooldown, manual merge; auto-merge prerequisites) | Full entry in studio |
 | (pointer) | nodestro-runtime | RT-001 (independent S-2 review, covers the approval routes here) | full entry in runtime |
 | API-005 | nodestro-runtime | RT-010 | runtime adds old-key decryption; the operator command lives here |

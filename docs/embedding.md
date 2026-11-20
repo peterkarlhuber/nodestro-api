@@ -4,7 +4,7 @@ nodestro-api can be embedded by a product that serves only part of the studio AP
 `nodestro_api.host.create_product_app` builds such an app from named **router groups**. It is the studio app with
 fewer routes, never with fewer protections, and it never imports `nodestro_studio`.
 
-Host interface version: **1** (`nodestro_api.host.HOST_API_VERSION`).
+Host interface version: **2** (`nodestro_api.host.HOST_API_VERSION`; 2 added the group `activity`).
 
 ## Entry point
 
@@ -105,6 +105,7 @@ its inbox or notifications last. `core` is always served. OpenAPI tags come from
 | `mcp` | `api_mcp` | `/api/mcp` (connected MCP services) |
 | `budget` | `api_budget` | `/api/budget-requests`, budget decisions of runs |
 | `approvals` | `api_tool_approvals` | `/api/tool-approvals`, `/api/tool-pre-grants`, tool decisions of runs |
+| `activity` | `api_activity` | `/api/activity`, `/api/activity/export` (the activity log, [activity-log.md](activity-log.md)) |
 | `runs` | `api_run_chat`, `api.runs_router` | `/api/runs`, `/api/approvals`, runs of a workflow |
 | `core` | `error_codes`, `api.core_router` | `/api/health`, `/api/meta`, `/api/error-codes` |
 | `settings` | `api.settings_router` | `/api/settings`, `/api/models`, `/api/sandbox` |
@@ -126,4 +127,5 @@ answer only with codes from that catalog.
 
 `tests/test_product_host.py` freezes the signature of `create_product_app`, the fields of `Branding` and
 `HostSwitches`, the group names and their order, and `REQUIRED_GROUPS`. Changing any of them is a change of the host
-interface: raise `HOST_API_VERSION` and update this page in the same PR. Adding a route to a group is not.
+interface: raise `HOST_API_VERSION` and update this page in the same PR; adding a group raises it too (a new name
+in the frozen list), although a product that selects groups by name keeps working. Adding a route to a group is not.

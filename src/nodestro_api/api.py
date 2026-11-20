@@ -347,6 +347,7 @@ PATH_TAGS: dict[str, str] = {
     "connections": "tools",
     "tool-approvals": "tool approvals",
     "tool-pre-grants": "tool approvals",
+    "activity": "activity",
     "python": "Python environments",
     "sandbox": "tools",
     "agents": "agents",

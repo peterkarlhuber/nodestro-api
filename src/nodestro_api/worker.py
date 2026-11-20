@@ -26,7 +26,9 @@ or more worker processes (:class:`ServerWorker`). Every worker:
   sessions and abandoned login starts, finished jobs after :attr:`WorkerSettings.job_retention` and run events after
   :attr:`WorkerSettings.event_retention` (the runs themselves stay); and, every
   :attr:`WorkerSettings.chat_file_every` seconds, the assistant chat files past the retention an administrator of the
-  tenant set (:meth:`ServerWorker.expire_chat_files`, API-066);
+  tenant set (:meth:`ServerWorker.expire_chat_files`, API-066); and, every :attr:`WorkerSettings.activity_every`
+  seconds, the activity events older than ``NODESTRO_ACTIVITY_RETENTION_DAYS`` days (default 90, ``0``: kept without
+  limit) of every active tenant (:meth:`ServerWorker.prune_activity`, N-13; the desktop prunes when it opens);
 - keeps the Docker sandbox's proof warm (:class:`DockerWatch`): from its start it reads the process's Docker monitor
   (:mod:`nodestro_runtime.docker_status`) every :attr:`WorkerSettings.docker_every` seconds, well within the proof's
   ``PROOF_TTL``, so a job after an idle spell is not refused with ``docker-checking`` only because the proof expired.
@@ -64,7 +66,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from nodestro_runtime import docker_status
+from nodestro_runtime import activity, docker_status
 from nodestro_runtime.docker_status import DockerMonitorLike, DockerStatus
 from nodestro_runtime.identity_store import IdentityStore, tenant_suspended
 from nodestro_runtime.jobs import (
@@ -122,6 +124,9 @@ class WorkerSettings:
     #: How often the scheduler leader removes assistant chat files past the retention an administrator of each
     #: tenant set (``PUT /api/assistant/files/retention``, API-056/API-066; nothing without a retention period).
     chat_file_every: float = 3600.0
+    #: How often the scheduler leader deletes each tenant's activity events past their retention (N-13; the days come
+    #: from ``NODESTRO_ACTIVITY_RETENTION_DAYS``, :func:`nodestro_runtime.activity.retention_days`).
+    activity_every: float = 3600.0
     #: How often the scheduler leader settles run usage and sweeps notifications into Axentra (seconds).
     platform_every: float = 30.0
     #: How often the worker reads the Docker monitor's status to keep the sandbox's proof fresh (seconds; at most
@@ -355,6 +360,30 @@ class ServerWorker:
                 removed[tenant_id] = count
         return removed
 
+    async def prune_activity(self) -> dict[str, int]:
+        """Delete the activity events past their retention (``NODESTRO_ACTIVITY_RETENTION_DAYS``, N-13) of every active
+        tenant while this worker leads; a suspended tenant's events stay until it is resumed, as its chat files.
+        Returns the events deleted per tenant (only tenants where some went; empty: another worker leads, or the
+        retention is switched off with ``0``). A tenant whose pass fails is logged and skipped."""
+        if not await asyncio.to_thread(self.leader.acquire):
+            return {}
+        days = activity.retention_days()
+        if days is None:
+            return {}
+        removed: dict[str, int] = {}
+        for tenant_id in await self._active_tenants():
+            try:
+                store = self.scheduling.get(tenant_id).store
+                count = await asyncio.to_thread(activity.prune, store, days=days)
+            except Exception:
+                logger.exception("Pruning the activity log of tenant %s failed", tenant_id)
+                continue
+            if count:
+                removed[tenant_id] = count
+        if removed:
+            logger.info("Activity log pruned (older than %s days): %s", days, removed)
+        return removed
+
     async def platform_duties(self) -> dict[str, Any]:
         """Settle finished runs' usage and send due inbox notifications while this worker leads (empty: off, or
         another worker leads). Both read what changed since their last pass and are idempotent per record."""
@@ -405,6 +434,11 @@ class ServerWorker:
         tasks.append(
             asyncio.create_task(
                 self._every(stop, self.settings.chat_file_every, self.expire_chat_files), name="worker-chat-files"
+            )
+        )
+        tasks.append(
+            asyncio.create_task(
+                self._every(stop, self.settings.activity_every, self.prune_activity), name="worker-activity"
             )
         )
         if self.settlement is not None or self.notifications is not None:
