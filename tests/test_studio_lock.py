@@ -34,7 +34,8 @@ case "$url" in
   https://api.github.com/*)
     status=${COMPARE_STATUS:-200}
     [ "$status" != 000 ] || { echo "curl: (6) Could not resolve host" >&2; echo 000; exit 6; }
-    if [ "$status" = 200 ]; then body="{\\"ahead_by\\": $AHEAD_BY}"; else body="{\\"message\\": \\"API rate limit exceeded\\"}"; fi
+    body="{\\"message\\": \\"API rate limit exceeded\\"}"
+    [ "$status" != 200 ] || body="{\\"ahead_by\\": $AHEAD_BY}"
     if [ -n "$out" ]; then echo "$body" > "$out"; else echo "$body"; fi
     [ -z "$write" ] || printf '%s' "$status" ;;
   */master/platform/internal-server.txt) echo "lock of master" > "$out" ;;
