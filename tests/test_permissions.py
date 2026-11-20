@@ -159,7 +159,8 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # read: + skill groups list and skill usage statistics (NAL-B4)
         # read: + the local inbox: notifications list and marking them read (NAL-A3; a member's own read state)
         # read: + whether the access model v2 is on, and the safety limits (N-06)
-        "read": 152,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
+        # read: + conversations with own agents: list, one, export, file content, message, events (N-04)
+        "read": 158,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
         # MCP status, servers, server, tools (WP-3); tool approval inbox, run questions, pre-grants, state (S-2b)
         # edit: + starting and cancelling a portable export job (like the synchronous export)
         # edit: + uploading and removing a conversation's files (assistant files)
@@ -168,12 +169,14 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # edit: + skill import, create, change, copy, status; copying a library skill and a building block (NAL-B3)
         # edit: + skill group create, change, delete (NAL-B4)
         # edit: + the platform pre-check of a portable package (NAL-C3; runs uv like a build)
-        "edit": 69,  # + the tool panel's test run (review H-1, was run); + semantic index rebuild, cancel, remove
+        # edit: + conversations: create, change, delete, upload and remove files (N-04)
+        "edit": 74,  # + the tool panel's test run (review H-1, was run); + semantic index rebuild, cancel, remove
         # run: + sending a live run chat message (LRC-1)
         # run: + deciding a run's budget request (BUDGET-1; the route also checks starter or admin)
         # run: + the readiness check of a local model before an action (missing local models)
         # run: + a tool draft from a skill script (NAL-B4; the same tool job as /tools/jobs)
-        "run": 35,  # + deciding a tool call (S-2b); - the tool panel's test run (review H-1)
+        # run: + sending a conversation message and cancelling its answer (N-04)
+        "run": 37,  # + deciding a tool call (S-2b); - the tool panel's test run (review H-1)
         # admin: + the Docker sandbox's self-test (A1)
         # admin: + adopting an AI-generated tool as one's own (R-4, desktop only)
         # admin: + the access audit trail (API-004)

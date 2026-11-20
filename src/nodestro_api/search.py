@@ -125,7 +125,12 @@ def _score(words: list[str], fields: list[tuple[str, float]]) -> tuple[float, st
     return total, snippet
 
 
-def search(nodestro: Nodestro, query: str, *, language: str = "en", limit: int = 40) -> list[SearchResult]:
+def search(
+    nodestro: Nodestro, query: str, *, owner: str | None, language: str = "en", limit: int = 40
+) -> list[SearchResult]:
+    """Workflows, agents, tools, examples and runs that match ``query``. ``owner`` is who searches (``None``: the
+    desktop's only person): the runs of another user's conversation with an own agent are left out (N-04 N-1), since
+    a run hit shows a snippet of its input, which is the conversation."""
     words = [word for word in fold(query).split() if word]
     if not words or max(len(word) for word in words) < 2:
         return []
@@ -261,14 +266,15 @@ def search(nodestro: Nodestro, query: str, *, language: str = "en", limit: int =
                     score=score * 0.9,
                 )
             )
-    results.extend(_runs(nodestro, words))
+    results.extend(_runs(nodestro, words, owner))
     # A stable sort: runs with the same score stay newest first.
     results.sort(key=lambda item: item.score, reverse=True)
     return results[:limit]
 
 
-def _runs(nodestro: Nodestro, words: list[str]) -> list[SearchResult]:
-    """Runs whose workflow name, input or id contain every word (API-052), newest first; ``id`` is the run id."""
+def _runs(nodestro: Nodestro, words: list[str], owner: str | None) -> list[SearchResult]:
+    """Runs whose workflow name, input or id contain every word (API-052), newest first; ``id`` is the run id. Not
+    the runs of a conversation ``owner`` does not see (an answer's input is the conversation)."""
     found: list[SearchResult] = []
     cursor = None
     seen = 0
@@ -282,6 +288,8 @@ def _runs(nodestro: Nodestro, words: list[str]) -> list[SearchResult]:
             summary=True,
         )
         for run in page:
+            if not nodestro.conversations.summary_visible(run, owner):
+                continue
             score, snippet = _score(words, [(run.workflow_name, 3), (run.id, 3), (run.input, 1)])
             if score and len(found) < RUN_SEARCH_HITS:
                 found.append(

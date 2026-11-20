@@ -10,7 +10,7 @@ from decimal import Decimal
 import hashlib
 import json
 import time
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, Literal, TypeVar, cast
 
 from fastapi import APIRouter, Depends, FastAPI, File, Form, Header, Query, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
@@ -125,11 +125,35 @@ knowledge_router = APIRouter(prefix="/api")  # knowledge files
 memory_router = APIRouter(prefix="/api")  # memory spaces
 
 
+_Item = TypeVar("_Item")
+
+
+def owner_of(request: Request) -> str | None:
+    """The server user a conversation belongs to; ``None`` for the desktop's (or Local Docker's) only person."""
+    principal = getattr(request.state, "principal", None)
+    if principal is None or principal.role is None:
+        return None
+    return str(principal.id)
+
+
 def app_context(request: Request) -> Nodestro:
     """The context a route works on: the desktop's one context, or the tenant of the request's principal.
 
     On a server (``app.state.tenants``) the tenant comes only from the principal that the route's access
-    requirement resolved, so a route can never reach another tenant's data."""
+    requirement resolved, so a route can never reach another tenant's data.
+
+    A route with a run id in its path (``{run_id}``) never reaches the run of another user's conversation with an own
+    agent (N-04 H-1): the run holds that conversation, so it answers ``404 run.not_found`` like a missing run. This is
+    the one place every run route passes (runs, export, files, cancel, resume, approvals, tool approvals, budget,
+    inputs, run chat, events), so a new run route is covered too."""
+    context = _tenant_context(request)
+    run_id = request.path_params.get("run_id")
+    if isinstance(run_id, str) and run_id and not context.conversations.run_visible(run_id, owner_of(request)):
+        raise KeyError(run_id)
+    return context
+
+
+def _tenant_context(request: Request) -> Nodestro:
     tenants = getattr(request.app.state, "tenants", None)
     if tenants is None:
         return request.app.state.nodestro  # type: ignore[no-any-return]
@@ -140,6 +164,27 @@ def app_context(request: Request) -> Nodestro:
     if hold is not None:  # held until the whole answer was sent (API-001, nodestro_api.tenant_contexts)
         return hold(request, principal.tenant_id)  # type: ignore[no-any-return]
     return tenants.get(principal.tenant_id)  # type: ignore[no-any-return]
+
+
+def visible_runs(ctx: Nodestro, request: Request, items: list[_Item]) -> list[_Item]:
+    """``items`` without the runs of another user's conversation (N-04 H-1): run summaries, or records of a run
+    (``run_id``, such as approval and budget requests).
+
+    A summary is checked as it is (N-2): a top-level run that is not an answer costs no read. A record is checked by its
+    run's summary, read once per run and request."""
+    owner = owner_of(request)
+    known: dict[str, bool] = {}
+
+    def shown(item: Any) -> bool:
+        if isinstance(item, RunSummary | Run):
+            return ctx.conversations.summary_visible(item, owner)
+        run_id = str(getattr(item, "run_id", "") or "")
+        if run_id not in known:
+            run = ctx.store.get("runs", run_id, RunSummary)
+            known[run_id] = run is None or ctx.conversations.summary_visible(run, owner)
+        return known[run_id]
+
+    return [item for item in items if shown(item)]
 
 
 Ctx = Annotated[Nodestro, Depends(app_context)]
@@ -172,6 +217,13 @@ NODESTRO_ERROR_STATUS = {
     "approval.agent_note_disabled": 422,
     # The access model v2 (N-06): a refused access, who may write, and grants or denies that cannot be stored.
     **ACCESS_ERROR_STATUS,
+    # Conversations with own agents (N-04): an unknown agent, a model that must be chosen, a running answer.
+    "conversation.agent_not_found": 404,
+    "conversation.model_required": 422,
+    "conversation.offline_cloud_model": 422,
+    "conversation.cloud_model_not_chosen": 422,
+    "conversation.answer_running": 409,
+    "conversation.budget_exhausted": 409,
 }
 
 
@@ -367,6 +419,7 @@ PATH_TAGS: dict[str, str] = {
     "models": "agents",
     "architect": "architect",
     "assistant": "assistant",
+    "conversations": "conversations",
     "knowledge": "knowledge",
     "inputs": "knowledge",
     "memory": "memory",
@@ -1351,16 +1404,20 @@ def check(body: WorkflowIn, ctx: Ctx, workflow_id: str | None = None) -> Workflo
 
 
 @library_router.post("/workflows/preview", dependencies=READ)
-def preview(body: PreviewRequest, ctx: Ctx) -> ContextPreview:
-    """What an agent would receive: prompt with filled placeholders, inputs and context."""
+def preview(body: PreviewRequest, ctx: Ctx, request: Request) -> ContextPreview:
+    """What an agent would receive: prompt with filled placeholders, inputs and context. A run of another user's
+    conversation with an own agent is not found (N-04: its input and outputs are the conversation)."""
     workflow = Workflow(**body.workflow.model_dump(), id=body.workflow_id or "preview")
+    owner = owner_of(request)
     run = None
     if body.run_id:
         run = ctx.runs.get(body.run_id)
-        if run is None:
+        if run is None or not ctx.conversations.summary_visible(run, owner):
             raise MissingReference("run", body.run_id)
     elif body.workflow_id:
         run = latest_run(ctx, body.workflow_id)
+        if run is not None and not ctx.conversations.summary_visible(run, owner):
+            run = None
     return build_preview(ctx, workflow, body.node_id, given_input=body.input, run=run, given_values=body.values)
 
 
@@ -1374,6 +1431,8 @@ def refuse_chat_files(ctx: Nodestro, request: Request, file_ids: Iterable[str]) 
     catalog (:class:`nodestro_api.context.RunFileCatalog`)."""
     for file_id in file_ids:
         item = ctx.inputs.find(file_id) if is_input_id(file_id) else None
+        if item is not None and item.origin == "conversation" and item.uploaded_by != actor_id(request):
+            raise KeyError(file_id)  # another person's file of a conversation with an own agent (N-04)
         if item is None or item.origin != "assistant":
             continue
         if item.uploaded_by != actor_id(request):
@@ -1461,6 +1520,7 @@ async def start_run(
 )
 def list_runs(
     ctx: Ctx,
+    request: Request,
     response: Response,
     workflow_id: str | None = None,
     limit: int = Query(100, ge=1, le=500),
@@ -1503,9 +1563,10 @@ def list_runs(
         more = len(ordered) > len(page)
     response.headers["X-Has-More"] = "true" if more else "false"
     if more and page:
-        last = page[-1]
+        last = page[-1]  # the cursor continues after the whole page, also after runs left out below
         response.headers["X-Next-Before"] = f"{_iso(last.created_at)}|{last.id}"
-    return page
+    # The runs of another user's conversation (N-04 H-1) are left out; a page can be shorter than ``limit`` then.
+    return visible_runs(ctx, request, page)
 
 
 def _iso(value: datetime) -> str:
@@ -1653,9 +1714,9 @@ async def resume_run(run_id: str, body: ResumeRequest, ctx: Ctx, request: Reques
 
 
 @runs_router.get("/approvals", dependencies=READ)
-def list_approvals(ctx: Ctx) -> list[PendingApproval]:
+def list_approvals(ctx: Ctx, request: Request) -> list[PendingApproval]:
     """Every approval that waits for a person, oldest first (also after a restart)."""
-    return pending_approvals(ctx)
+    return visible_runs(ctx, request, pending_approvals(ctx))
 
 
 @runs_router.post("/runs/{run_id}/approvals/{node_id}", dependencies=RUN)

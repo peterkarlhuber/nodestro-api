@@ -152,11 +152,12 @@ def cleanup_inputs(body: CleanupRequest, ctx: Ctx) -> InputCleanupResult:
 
 
 def visible(ctx: Ctx, request: Request, file_id: str) -> None:
-    """Another user's assistant file does not exist for this request (``KeyError``, answered with 404)."""
+    """Another user's file of an assistant conversation or of a conversation with an own agent (N-04) does not exist
+    for this request (``KeyError``, answered with 404)."""
     if not is_input_id(file_id):
         return
     item = ctx.inputs.find(file_id)
-    if item is not None and item.origin == "assistant" and item.uploaded_by != actor_id(request):
+    if item is not None and item.origin in ("assistant", "conversation") and item.uploaded_by != actor_id(request):
         raise KeyError(file_id)
 
 

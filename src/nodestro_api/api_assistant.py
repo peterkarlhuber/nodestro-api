@@ -24,7 +24,7 @@ from nodestro_runtime.schemas import Language, WorkflowIn
 from pydantic import BaseModel, Field
 
 from . import model_readiness
-from .api import Ctx, _sse, actor_id, uploaded_file_headers
+from .api import Ctx, _sse, actor_id, owner_of, uploaded_file_headers
 from .api_inputs import FileText, read_text
 from .assistant import (
     ChatMessage,
@@ -39,6 +39,7 @@ from .assistant_context import AttachRequest, Snapshot
 from .assistant_files import FileSupport, FileView
 from .docs_index import DocsIndex
 from .permissions import ADMIN, EDIT, READ, RUN, StreamAccess
+from .serving import ApiError
 
 _Body = TypeVar("_Body", SendRequest, RetryRequest)
 
@@ -72,14 +73,6 @@ class FileUpload(BaseModel):
     name: str
     file: FileView | None = None
     problem: Problem | None = None
-
-
-def owner_of(request: Request) -> str | None:
-    """The server user a conversation belongs to; ``None`` for the desktop's (or Local Docker's) only person."""
-    principal = getattr(request.state, "principal", None)
-    if principal is None or principal.role is None:
-        return None
-    return str(principal.id)
 
 
 def _own(ctx: Ctx, request: Request, conversation_id: str) -> None:
@@ -121,6 +114,9 @@ def delete_conversation(conversation_id: str, ctx: Ctx, request: Request) -> Res
 def attach(conversation_id: str, body: AttachRequest, ctx: Ctx, request: Request) -> ConversationDetail:
     """The user's explicit choice: take a snapshot of the object for the following messages."""
     _own(ctx, request, conversation_id)
+    if body.kind == "run" and not ctx.conversations.run_visible(body.ref_id, owner_of(request)):
+        # The run of another user's conversation with an own agent (N-04 H-1) is not found, like a missing run.
+        raise ApiError(404, "run.not_found", f"Run {body.ref_id!r} does not exist", id=body.ref_id, kind="run")
     return ctx.assistant.attach(conversation_id, body)
 
 

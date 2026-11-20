@@ -41,7 +41,7 @@ from nodestro_runtime.tool_legacy import LegacyReport
 from nodestro_runtime.tool_policy import PreGrantScope, ToolCapability, ToolPreGrant
 from pydantic import BaseModel, Field
 
-from .api import Ctx
+from .api import Ctx, visible_runs
 from .permissions import ADMIN, READ, RUN, AccessError, Permission, Principal
 from .serving import ApiError
 
@@ -104,9 +104,10 @@ class ToolApprovalDecision(BaseModel):
 
 
 @router.get("/tool-approvals", dependencies=READ)
-def open_tool_approvals(ctx: Ctx) -> list[ToolApprovalRequest]:
-    """Every question that waits for a person, oldest first (also after a restart)."""
-    return ToolApprovals(ctx.store).open()
+def open_tool_approvals(ctx: Ctx, request: Request) -> list[ToolApprovalRequest]:
+    """Every question that waits for a person, oldest first (also after a restart); not the questions of another
+    user's conversation with an own agent (N-04)."""
+    return visible_runs(ctx, request, ToolApprovals(ctx.store).open())
 
 
 @router.get("/runs/{run_id}/tool-approvals", dependencies=READ)

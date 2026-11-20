@@ -252,7 +252,7 @@ def test_unknown_groups_and_other_objects_are_refused(tmp_path: Path) -> None:
 
 def test_the_host_interface_is_frozen() -> None:
     """A change of the composition interface breaks this test: raise HOST_API_VERSION and update docs/embedding.md."""
-    assert HOST_API_VERSION == 2  # 2: the group "activity" (N-13)
+    assert HOST_API_VERSION == 3  # 2: the group "activity" (N-13), 3: the group "conversations" (N-04)
     assert str(inspect.signature(create_product_app)) == (
         "(profile: 'ProfileKind', data_dir: 'Path | str', routers: 'Sequence[str | APIRouter]', "
         "branding: 'Branding | None' = None, switches: 'HostSwitches | None' = None, *, "
@@ -268,6 +268,7 @@ def test_the_host_interface_is_frozen() -> None:
         "python",
         "automation",
         "assistant",
+        "conversations",
         "knowledge",
         "usage",
         "local_models",

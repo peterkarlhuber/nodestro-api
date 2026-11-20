@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, StrictBool
 from starlette.background import BackgroundTask
 
-from .api import Ctx, request_language
+from .api import Ctx, owner_of, request_language
 from .backup import (
     BackupError,
     BackupInfo,
@@ -42,7 +42,7 @@ router = APIRouter(prefix="/api")
 def global_search(
     request: Request, ctx: Ctx, q: str = Query("", max_length=200), limit: int = Query(40, ge=1, le=100)
 ) -> list[SearchResult]:
-    return search(ctx, q, language=request_language(request), limit=limit)
+    return search(ctx, q, owner=owner_of(request), language=request_language(request), limit=limit)
 
 
 # ---- favorites and tags ---------------------------------------------------------

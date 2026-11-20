@@ -30,7 +30,7 @@ from nodestro_runtime.run_budget import BudgetRequest, BudgetRequests
 from nodestro_runtime.schemas import BudgetRaise, Run, RunStatus
 from pydantic import BaseModel, Field
 
-from .api import Ctx
+from .api import Ctx, visible_runs
 from .permissions import READ, RUN, AccessError, Permission, Principal
 from .serving import ApiError
 
@@ -183,7 +183,8 @@ async def decide_run_budget(run_id: str, body: BudgetDecisionIn, ctx: Ctx, reque
 
 
 @router.get("/budget-requests", dependencies=READ)
-def budget_requests(ctx: Ctx, status: Literal["pending"] = "pending") -> list[BudgetRequest]:
-    """The tenant's open budget requests, oldest first (also after a restart)."""
+def budget_requests(ctx: Ctx, request: Request, status: Literal["pending"] = "pending") -> list[BudgetRequest]:
+    """The tenant's open budget requests, oldest first (also after a restart); not those of another user's
+    conversation with an own agent (N-04)."""
     del status  # only open requests are listed
-    return BudgetRequests(ctx.store).pending()
+    return visible_runs(ctx, request, BudgetRequests(ctx.store).pending())

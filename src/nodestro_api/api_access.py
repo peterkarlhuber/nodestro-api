@@ -25,6 +25,9 @@ store); ids of other tenants are not found. No route here is reachable with an A
 contract and Nodestro's MCP server have their own routes, and none of them writes grants or denies. Every change is
 audited by the runtime (``access_*`` in the tool approval audit and the activity log). The HTTP status of each
 ``access.*`` problem code is in :data:`nodestro_api.serving.ACCESS_ERROR_STATUS`.
+
+One more writer, outside these routes: deleting a conversation with an own agent (N-04 L-2) revokes its grants for
+"this conversation" through :func:`revoke_conversation_grants`, in the name of the person who deleted it.
 """
 
 from __future__ import annotations
@@ -125,6 +128,18 @@ def _person(request: Request) -> Person:
     """The signed-in person of the request; anything else is refused (``access.person_required``)."""
     principal: Principal = request.state.principal
     return Person(principal.id)
+
+
+def revoke_conversation_grants(ctx: Ctx, request: Request, conversation_id: str, owner: str | None) -> None:
+    """Revoke the grants for "this conversation" of a deleted conversation (N-04 L-2), whether or not the access model
+    is switched on now. The writer is the request's person; for a principal that is not one (an API key on a desktop)
+    the conversation's owner, or ``local`` (the desktop's only person)."""
+    principal: Principal | None = getattr(request.state, "principal", None)
+    try:
+        by = Person(principal.id if principal is not None else "local")
+    except NodestroError:
+        by = Person(owner or "local")
+    AccessRules(ctx.store).revoke_conversation(conversation_id, by=by)
 
 
 def _rules(ctx: Ctx) -> AccessRules:
@@ -351,4 +366,4 @@ def explain_route(
     return _row(found, agent)
 
 
-__all__ = ["AccessRow", "AccessState", "DenyIn", "GrantIn", "ToolExpected", "router"]
+__all__ = ["AccessRow", "AccessState", "DenyIn", "GrantIn", "ToolExpected", "revoke_conversation_grants", "router"]

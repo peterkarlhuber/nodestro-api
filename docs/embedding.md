@@ -4,7 +4,8 @@ nodestro-api can be embedded by a product that serves only part of the studio AP
 `nodestro_api.host.create_product_app` builds such an app from named **router groups**. It is the studio app with
 fewer routes, never with fewer protections, and it never imports `nodestro_studio`.
 
-Host interface version: **2** (`nodestro_api.host.HOST_API_VERSION`; 2 added the group `activity`).
+Host interface version: **3** (`nodestro_api.host.HOST_API_VERSION`; 2 added the group `activity`, 3 the group
+`conversations`).
 
 ## Entry point
 
@@ -95,6 +96,7 @@ its inbox or notifications last. `core` is always served. OpenAPI tags come from
 | `python` | `api_python` | `/api/python` |
 | `automation` | `api_automation` | `/api/batches`, `/api/benchmarks`, `/api/benchmark-runs`, `/api/schedules` |
 | `assistant` | `api_assistant` | `/api/assistant` (conversations, files, documentation search) |
+| `conversations` | `api_conversations` | `/api/conversations` (conversations with own agents, N-04; off by default: `NODESTRO_CONVERSATIONS`, [conversations.md](conversations.md)) |
 | `knowledge` | `api_inputs`, `api.knowledge_router` | `/api/inputs`, `/api/knowledge` |
 | `usage` | `api_pricing`, `api.usage_router` | `/api/pricing`, `/api/usage` |
 | `local_models` | `api_local_models` | `/api/local-models`, `/api/knowledge/index` |
