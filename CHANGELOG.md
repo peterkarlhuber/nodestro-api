@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Added (N-04, behind `NODESTRO_CONVERSATIONS`, off by default; `docs/conversations.md`): conversations with own
+  agents under `/api/conversations`, in the new router group `conversations` (host interface version 3).
+  - Routes: list, create, read, `PATCH` (rename, switch agent or model, offline flag, budget), delete, Markdown
+    export, files (upload, content, remove), send a message (`run`), read and cancel an answer, and the answer's
+    Server-Sent Events in the run's event format. While the switch is off, every route answers
+    `404 conversation.disabled`.
+  - Every answer is a run of the runtime's engine (trigger `conversation`), so its cost is in the usage ledger and
+    its tool approvals use the existing routes. Cancelling an answer cancels its run.
+  - A conversation is its owner's on a server (`404 conversation.not_found` for others), per tenant as everywhere.
+    Files of a conversation (input files of origin `conversation`) are another member's only to their uploader.
+  - `conversation.*` codes answer `404`, `409` or `422`. The OpenAPI documents (additive: the run trigger
+    `conversation` and the input file origin `conversation`), `error_codes.json` and the backup's document checks
+    follow. Needs nodestro-runtime with N-04 (#204).
+
 - Added (N-06 review, low findings; still off by default):
   - L-1: `POST /api/access/grants` takes an optional `expected` (`version`, `definition_hash`), the tool as the
     person saw it. If the library differs now, the grant is refused with `409 access.tool_changed`, and nothing

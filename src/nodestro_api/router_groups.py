@@ -29,6 +29,7 @@ from .api_assistant import router as assistant_router
 from .api_automation import router as automation_router
 from .api_budget import router as budget_router
 from .api_connections import router as connections_router
+from .api_conversations import router as conversations_router
 from .api_data import router as data_router
 from .api_inbox import router as inbox_router
 from .api_inputs import router as inputs_router
@@ -87,6 +88,8 @@ SLOTS: tuple[RouterSlot, ...] = (
     _static("python", python_router),
     _static("automation", automation_router),
     _static("assistant", assistant_router),
+    # Conversations with own agents (N-04; NODESTRO_CONVERSATIONS, off by default).
+    _static("conversations", conversations_router),
     _static("knowledge", inputs_router),  # before the knowledge files (/api/knowledge/adopt, /collections)
     _static("usage", pricing_router),
     _static("local_models", local_models_router),  # before the knowledge files (/api/knowledge/index)

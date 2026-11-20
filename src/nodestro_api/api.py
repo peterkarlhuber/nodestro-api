@@ -172,6 +172,12 @@ NODESTRO_ERROR_STATUS = {
     "approval.agent_note_disabled": 422,
     # The access model v2 (N-06): a refused access, who may write, and grants or denies that cannot be stored.
     **ACCESS_ERROR_STATUS,
+    # Conversations with own agents (N-04): an unknown agent, a model that must be chosen, a running answer.
+    "conversation.agent_not_found": 404,
+    "conversation.model_required": 422,
+    "conversation.offline_cloud_model": 422,
+    "conversation.answer_running": 409,
+    "conversation.budget_exhausted": 409,
 }
 
 
@@ -367,6 +373,7 @@ PATH_TAGS: dict[str, str] = {
     "models": "agents",
     "architect": "architect",
     "assistant": "assistant",
+    "conversations": "conversations",
     "knowledge": "knowledge",
     "inputs": "knowledge",
     "memory": "memory",
@@ -1374,6 +1381,8 @@ def refuse_chat_files(ctx: Nodestro, request: Request, file_ids: Iterable[str]) 
     catalog (:class:`nodestro_api.context.RunFileCatalog`)."""
     for file_id in file_ids:
         item = ctx.inputs.find(file_id) if is_input_id(file_id) else None
+        if item is not None and item.origin == "conversation" and item.uploaded_by != actor_id(request):
+            raise KeyError(file_id)  # another person's file of a conversation with an own agent (N-04)
         if item is None or item.origin != "assistant":
             continue
         if item.uploaded_by != actor_id(request):

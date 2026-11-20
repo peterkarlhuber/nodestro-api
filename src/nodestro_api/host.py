@@ -28,8 +28,9 @@ from .context import AppConfig
 from .router_groups import GROUPS, REQUIRED_GROUPS
 
 #: The version of the host interface; a change of it (a signature, a field or a group name) raises it.
-#: 1: N-01. 2: the group ``activity`` (N-13, the activity log); nothing else changed.
-HOST_API_VERSION = 2
+#: 1: N-01. 2: the group ``activity`` (N-13, the activity log); nothing else changed. 3: the group ``conversations``
+#: (N-04, conversations with own agents); nothing else changed.
+HOST_API_VERSION = 3
 
 
 @dataclass(frozen=True)

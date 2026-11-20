@@ -1,0 +1,292 @@
+"""The API of conversations with own agents (N-04): the switch, the routes, the run behind each answer, its events in
+the run's format, cancel, export, files and owners. Tenants on a server: ``test_conversations_api_server``. The
+runtime's own tests cover the model rules, cancelling a local model request and images in detail."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+import json
+import struct
+import threading
+import time
+from typing import Any
+import zlib
+
+from fastapi.testclient import TestClient
+from nodestro_runtime.conversations import CONVERSATIONS_ENV
+import pytest
+
+from nodestro_api.permissions import ALL_PERMISSIONS, Principal
+
+from conftest import text, tool_use
+
+BASE = "/api/conversations"
+CLOUD = "anthropic:claude-sonnet-5-5"
+
+
+def png() -> bytes:
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+    header = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(b"\x00\xff\x00\x00"))
+        + chunk(b"IEND", b"")
+    )
+
+
+@pytest.fixture
+def chatting(make_app: Callable[..., TestClient], monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    monkeypatch.setenv(CONVERSATIONS_ENV, "1")
+    return make_app({"AGENT": [tool_use("calculator", {"expression": "6 * 7"}), text("It is 42."), text("Bye.")]})
+
+
+def template(client: TestClient, **agent: Any) -> str:
+    created = client.post(
+        "/api/agents/templates", json={"agent": {"name": "Helper", "system_prompt": "AGENT", **agent}}
+    )
+    assert created.status_code == 201, created.text
+    return str(created.json()["id"])
+
+
+def conversation(client: TestClient, **fields: Any) -> dict[str, Any]:
+    body = {"agent": {"template_id": template(client, tools=["calculator"])}, "model": CLOUD, **fields}
+    created = client.post(BASE, json=body)
+    assert created.status_code == 201, created.text
+    return created.json()  # type: ignore[no-any-return]
+
+
+def wait(client: TestClient, run_id: str) -> None:
+    ctx = client.app.state.nodestro  # type: ignore[attr-defined]
+    client.portal.call(ctx.wait, run_id)  # type: ignore[union-attr]
+
+
+def events(body: str) -> list[tuple[str, Any]]:
+    found = []
+    for block in body.strip().split("\n\n"):
+        lines = dict(line.split(": ", 1) for line in block.splitlines() if ": " in line and not line.startswith(":"))
+        if "event" in lines:
+            found.append((lines["event"], json.loads(lines["data"])))
+    return found
+
+
+def _as(client: TestClient, principal: Principal) -> None:
+    client.app.state.principal_resolver = lambda _connection: principal  # type: ignore[attr-defined]
+
+
+def test_without_the_switch_every_route_is_not_found(make_app: Callable[..., TestClient]) -> None:
+    client = make_app()
+    for method, path in [
+        ("get", BASE),
+        ("post", BASE),
+        ("get", f"{BASE}/conv_x"),
+        ("patch", f"{BASE}/conv_x"),
+        ("delete", f"{BASE}/conv_x"),
+        ("get", f"{BASE}/conv_x/export"),
+        ("post", f"{BASE}/conv_x/messages"),
+        ("get", f"{BASE}/conv_x/messages/msg_x"),
+        ("post", f"{BASE}/conv_x/messages/msg_x/cancel"),
+        ("get", f"{BASE}/conv_x/messages/msg_x/events"),
+        ("delete", f"{BASE}/conv_x/files/in_x"),
+        ("get", f"{BASE}/conv_x/files/in_x/content"),
+    ]:
+        body = {"agent": {"template_id": "tpl_x"}} if path == BASE else {}
+        kwargs: dict[str, Any] = {"json": body} if method in ("post", "patch") else {}
+        response = getattr(client, method)(path, **kwargs)
+        assert (response.status_code, response.json()["code"]) == (404, "conversation.disabled"), (method, path)
+    uploaded = client.post(f"{BASE}/conv_x/files", files=[("files", ("a.txt", b"x", "text/plain"))])
+    assert (uploaded.status_code, uploaded.json()["code"]) == (404, "conversation.disabled")
+
+
+def test_create_send_follow_rename_export_and_delete(chatting: TestClient) -> None:
+    client = chatting
+    created = conversation(client)
+    conversation_id = created["id"]
+    assert (created["model"], created["offline"], created["provenance"], created["messages"]) == (
+        CLOUD,
+        False,
+        "unchecked",
+        [],
+    )
+    sent = client.post(f"{BASE}/{conversation_id}/messages", json={"content": "What is 6 times 7?"})
+    assert sent.status_code == 201, sent.text
+    answer = sent.json()["assistant"]
+    wait(client, answer["run_id"])
+
+    # The answer is a run of the engine, with the conversation as its trigger.
+    run = client.get(f"/api/runs/{answer['run_id']}").json()
+    assert (run["trigger"], run["trigger_ref"], run["status"]) == ("conversation", conversation_id, "succeeded")
+    message = client.get(f"{BASE}/{conversation_id}/messages/{answer['id']}").json()
+    assert (message["status"], message["content"]) == ("succeeded", "It is 42.")
+    [call] = message["tool_calls"]
+    assert call["name"] == "calculator" and call["arguments"] == {"expression": "6 * 7"}
+    assert "42" in call["result"] and call["duration_ms"] is not None
+    assert message["cost_usd"] == run["usage"]["estimated_cost_usd"]
+
+    # The events of a finished answer: its snapshot, then the end.
+    stream = client.get(f"{BASE}/{conversation_id}/messages/{answer['id']}/events")
+    assert stream.headers["content-type"].startswith("text/event-stream")
+    assert [kind for kind, _ in events(stream.text)] == ["snapshot", "end"]
+    assert events(stream.text)[1][1] == {"status": "succeeded"}
+
+    detail = client.get(f"{BASE}/{conversation_id}").json()
+    assert detail["title"] == "What is 6 times 7?" and detail["usage"]["estimated_cost_usd"] == pytest.approx(
+        run["usage"]["estimated_cost_usd"]
+    )
+    renamed = client.patch(f"{BASE}/{conversation_id}", json={"title": "Arithmetic"})
+    assert renamed.status_code == 200 and renamed.json()["title"] == "Arithmetic"
+    assert [item["title"] for item in client.get(BASE).json()] == ["Arithmetic"]
+
+    exported = client.get(f"{BASE}/{conversation_id}/export")
+    assert exported.headers["content-type"].startswith("text/markdown")
+    assert "attachment" in exported.headers["content-disposition"]
+    assert exported.text.startswith("# Arithmetic\n") and "It is 42." in exported.text
+
+    assert client.delete(f"{BASE}/{conversation_id}").status_code == 204
+    missing = client.get(f"{BASE}/{conversation_id}")
+    assert (missing.status_code, missing.json()["code"]) == (404, "conversation.not_found")
+    assert client.get(f"/api/runs/{answer['run_id']}").status_code == 200  # the run stays
+
+
+def test_a_live_answer_streams_the_run_events_and_can_be_cancelled(
+    make_app: Callable[..., TestClient], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(CONVERSATIONS_ENV, "1")
+    gate = threading.Event()
+
+    def held(_request: dict[str, Any]) -> Any:
+        assert gate.wait(10)
+        return text("Late.")
+
+    client = make_app({"AGENT": [held, held]})
+    conversation_id = conversation(client)["id"]
+
+    # A live answer: the stream sends its snapshot, then the run's events in their format, then the end.
+    sent = client.post(f"{BASE}/{conversation_id}/messages", json={"content": "Hi"}).json()["assistant"]
+    received: list[str] = []
+
+    def follow() -> None:
+        with client.stream("GET", f"{BASE}/{conversation_id}/messages/{sent['id']}/events") as stream:
+            received.append(stream.read().decode())
+
+    reader = threading.Thread(target=follow)
+    reader.start()
+    time.sleep(0.5)
+    gate.set()
+    reader.join(15)
+    found = events(received[0])
+    assert found[0][0] == "snapshot" and found[0][1]["id"] == sent["id"]
+    assert found[-1] == ("end", {"status": "succeeded"})
+    streamed = [data for kind, data in found if kind == "event"]
+    assert streamed and all(item["run_id"] == sent["run_id"] for item in streamed)
+    assert "node_finished" in {item["type"] for item in streamed}
+
+    # A running answer is cancelled through its run.
+    gate.clear()
+    second = client.post(f"{BASE}/{conversation_id}/messages", json={"content": "Again"}).json()["assistant"]
+    busy = client.post(f"{BASE}/{conversation_id}/messages", json={"content": "Third"})
+    assert (busy.status_code, busy.json()["code"]) == (409, "conversation.answer_running")
+    time.sleep(0.3)
+    assert client.post(f"{BASE}/{conversation_id}/messages/{second['id']}/cancel").status_code == 200
+    gate.set()
+    wait(client, second["run_id"])
+    ended = client.get(f"{BASE}/{conversation_id}/messages/{second['id']}").json()
+    assert ended["status"] == "cancelled"
+    assert client.get(f"/api/runs/{second['run_id']}").json()["status"] == "cancelled"
+
+
+def test_refusals_of_a_message(chatting: TestClient) -> None:
+    client = chatting
+    conversation_id = conversation(client, budget_usd=0)["id"]
+    empty = client.post(f"{BASE}/{conversation_id}/messages", json={"content": " "})
+    assert (empty.status_code, empty.json()["code"]) == (400, "conversation.empty_message")
+    spent = client.post(f"{BASE}/{conversation_id}/messages", json={"content": "Hi"})
+    assert (spent.status_code, spent.json()["code"]) == (409, "conversation.budget_exhausted")
+    unknown = client.post(f"{BASE}/{conversation_id}/messages", json={"content": "Hi", "file_ids": ["in_000000000000"]})
+    assert (unknown.status_code, unknown.json()["code"]) == (404, "conversation.not_found")
+    assert client.get(f"{BASE}/{conversation_id}").json()["messages"] == []
+    agent = client.post(BASE, json={"agent": {"template_id": "tpl_missing"}, "model": CLOUD})
+    assert (agent.status_code, agent.json()["code"]) == (404, "conversation.agent_not_found")
+    offline = client.post(BASE, json={"agent": {"template_id": template(client)}, "model": CLOUD, "offline": True})
+    assert (offline.status_code, offline.json()["code"]) == (422, "conversation.offline_cloud_model")
+
+
+def test_no_cloud_model_is_chosen_without_being_asked(
+    make_app: Callable[..., TestClient], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(CONVERSATIONS_ENV, "1")
+    cloud_defaults = make_app()  # the cloud defaults of an existing installation
+    refused = cloud_defaults.post(BASE, json={"agent": {"template_id": template(cloud_defaults, model=CLOUD)}})
+    assert (refused.status_code, refused.json()["code"]) == (422, "conversation.model_required")
+    local_defaults = make_app(local_defaults=True)
+    created = local_defaults.post(BASE, json={"agent": {"template_id": template(local_defaults, model=CLOUD)}})
+    assert created.status_code == 201 and created.json()["model"].startswith("ollama:")
+
+
+def test_switching_agent_and_model(chatting: TestClient) -> None:
+    client = chatting
+    created = conversation(client)
+    other = template(client, name="Other")
+    switched = client.patch(
+        f"{BASE}/{created['id']}", json={"agent": {"template_id": other}, "model": "anthropic:claude-opus-5-5"}
+    )
+    assert switched.status_code == 200
+    assert (switched.json()["agent"], switched.json()["model"]) == (
+        {"template_id": other, "version": 1},
+        "anthropic:claude-opus-5-5",
+    )
+    assert switched.json()["title"] == created["title"]
+
+
+def test_files_of_a_conversation(chatting: TestClient) -> None:
+    client = chatting
+    conversation_id = conversation(client)["id"]
+    uploaded = client.post(
+        f"{BASE}/{conversation_id}/files",
+        files=[("files", ("dot.png", png(), "image/png")), ("files", ("empty.txt", b"", "text/plain"))],
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    first, refused = uploaded.json()
+    assert first["file"]["name"] == "dot.png" and refused["problem"]["code"].startswith("input.")
+    file_id = first["file"]["id"]
+    content = client.get(f"{BASE}/{conversation_id}/files/{file_id}/content")
+    assert content.status_code == 200 and content.content == png()
+    assert "attachment" in content.headers["content-disposition"]
+    assert client.get(f"/api/inputs/{file_id}").json()["origin"] == "conversation"
+    removed = client.delete(f"{BASE}/{conversation_id}/files/{file_id}")
+    assert removed.status_code == 200 and removed.json()["files"] == []
+    again = client.delete(f"{BASE}/{conversation_id}/files/{file_id}")
+    assert (again.status_code, again.json()["code"]) == (404, "conversation.not_found")
+
+
+def test_another_users_conversation_and_files_do_not_exist(chatting: TestClient) -> None:
+    """On a server a conversation is its owner's: another member gets 404 on every route, its files included."""
+    client = chatting
+    alice = Principal(id="usr_alice", role="owner", permissions=ALL_PERMISSIONS)
+    bob = Principal(id="usr_bob", role="owner", permissions=ALL_PERMISSIONS)
+    _as(client, alice)
+    conversation_id = conversation(client)["id"]
+    uploaded = client.post(f"{BASE}/{conversation_id}/files", files=[("files", ("a.txt", b"hello", "text/plain"))])
+    file_id = uploaded.json()[0]["file"]["id"]
+    _as(client, bob)
+    assert client.get(BASE).json() == []
+    for method, path in [
+        ("get", f"{BASE}/{conversation_id}"),
+        ("patch", f"{BASE}/{conversation_id}"),
+        ("delete", f"{BASE}/{conversation_id}"),
+        ("get", f"{BASE}/{conversation_id}/export"),
+        ("post", f"{BASE}/{conversation_id}/messages"),
+        ("get", f"{BASE}/{conversation_id}/files/{file_id}/content"),
+    ]:
+        kwargs: dict[str, Any] = (
+            {"json": {"content": "x"} if method == "post" else {}} if method in ("post", "patch") else {}
+        )
+        response = getattr(client, method)(path, **kwargs)
+        assert (response.status_code, response.json()["code"]) == (404, "conversation.not_found"), (method, path)
+    # Nor is the file reachable as an input file, nor usable as another person's run input.
+    assert client.get(f"/api/inputs/{file_id}").status_code == 404
+    _as(client, alice)
+    assert client.get(f"/api/inputs/{file_id}").status_code == 200
+    assert client.get(f"{BASE}/{conversation_id}").status_code == 200

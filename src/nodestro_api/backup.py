@@ -347,6 +347,10 @@ def _document_models() -> dict[str, type[BaseModel]]:
 
     Collections not named here (settings, caches, keys of mixed documents) are checked for valid JSON only.
     Imported here: these modules import much of the app, and the backup module is imported early."""
+    from nodestro_runtime.conversations import COLLECTION as OWN_CONVERSATIONS
+    from nodestro_runtime.conversations import MESSAGES as OWN_MESSAGES
+    from nodestro_runtime.conversations import Conversation as OwnConversation
+    from nodestro_runtime.conversations import ConversationMessage as OwnMessage
     from nodestro_runtime.input_files import InputFile
     from nodestro_runtime.python_envs import PythonEnvironment
     from nodestro_runtime.run_chat import RunMessage
@@ -393,6 +397,8 @@ def _document_models() -> dict[str, type[BaseModel]]:
         "tool_provenance": AuthoredVersions,
         "tool_approvals": ToolApprovalRequest,
         "run_messages": RunMessage,
+        OWN_CONVERSATIONS: OwnConversation,
+        OWN_MESSAGES: OwnMessage,
     }
 
 
