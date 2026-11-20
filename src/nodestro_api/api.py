@@ -167,14 +167,24 @@ def _tenant_context(request: Request) -> Nodestro:
 
 
 def visible_runs(ctx: Nodestro, request: Request, items: list[_Item]) -> list[_Item]:
-    """``items`` (anything with a ``run_id`` or an ``id`` of a run) without the runs of another user's conversation
-    (N-04 H-1)."""
+    """``items`` without the runs of another user's conversation (N-04 H-1): run summaries, or records of a run
+    (``run_id``, such as approval and budget requests).
+
+    A summary is checked as it is (N-2): a top-level run that is not an answer costs no read. A record is checked by its
+    run's summary, read once per run and request."""
     owner = owner_of(request)
-    return [
-        item
-        for item in items
-        if ctx.conversations.run_visible(str(getattr(item, "run_id", None) or getattr(item, "id", "")), owner)
-    ]
+    known: dict[str, bool] = {}
+
+    def shown(item: Any) -> bool:
+        if isinstance(item, RunSummary | Run):
+            return ctx.conversations.summary_visible(item, owner)
+        run_id = str(getattr(item, "run_id", "") or "")
+        if run_id not in known:
+            run = ctx.store.get("runs", run_id, RunSummary)
+            known[run_id] = run is None or ctx.conversations.summary_visible(run, owner)
+        return known[run_id]
+
+    return [item for item in items if shown(item)]
 
 
 Ctx = Annotated[Nodestro, Depends(app_context)]
@@ -1394,16 +1404,20 @@ def check(body: WorkflowIn, ctx: Ctx, workflow_id: str | None = None) -> Workflo
 
 
 @library_router.post("/workflows/preview", dependencies=READ)
-def preview(body: PreviewRequest, ctx: Ctx) -> ContextPreview:
-    """What an agent would receive: prompt with filled placeholders, inputs and context."""
+def preview(body: PreviewRequest, ctx: Ctx, request: Request) -> ContextPreview:
+    """What an agent would receive: prompt with filled placeholders, inputs and context. A run of another user's
+    conversation with an own agent is not found (N-04: its input and outputs are the conversation)."""
     workflow = Workflow(**body.workflow.model_dump(), id=body.workflow_id or "preview")
+    owner = owner_of(request)
     run = None
     if body.run_id:
         run = ctx.runs.get(body.run_id)
-        if run is None:
+        if run is None or not ctx.conversations.summary_visible(run, owner):
             raise MissingReference("run", body.run_id)
     elif body.workflow_id:
         run = latest_run(ctx, body.workflow_id)
+        if run is not None and not ctx.conversations.summary_visible(run, owner):
+            run = None
     return build_preview(ctx, workflow, body.node_id, given_input=body.input, run=run, given_values=body.values)
 
 

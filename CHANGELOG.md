@@ -25,6 +25,10 @@
     - L-5: an answer's event stream ends with `reason` `deleted` when the conversation is deleted.
     - New code `conversation.cloud_model_not_chosen` (`422`, H-2). L-3 (multipart parsed before the switch answers)
       is documented.
+    - Second review: N-1, `GET /api/search` shows no run hit (with its input snippet) of another member's
+      conversation, and the context preview answers `404 run.not_found` for such a run. N-2, the run list checks a
+      run's own trigger first; only an answer's run costs a read. N-3 (the usage report and the skill statistics
+      count the answers' runs, without content) is documented.
 
 - Added (N-06 review, low findings; still off by default):
   - L-1: `POST /api/access/grants` takes an optional `expected` (`version`, `definition_hash`), the tool as the

@@ -344,6 +344,67 @@ def test_h1_another_users_answer_run_does_not_exist_on_any_run_route(chatting: T
     assert run.status_code == 200 and run.json()["status"] == "succeeded"
 
 
+def test_n1_another_users_answer_run_is_no_preview_context(chatting: TestClient) -> None:
+    """N-1: the context preview reads a run's input and outputs. Another member's answer run is not found there, by
+    its id or as the latest run of the conversation id."""
+    client = chatting
+    alice = Principal(id="usr_alice", role="owner", permissions=ALL_PERMISSIONS)
+    bob = Principal(id="usr_bob", role="owner", permissions=ALL_PERMISSIONS)
+    _as(client, alice)
+    conversation_id = conversation(client)["id"]
+    sent = client.post(f"{BASE}/{conversation_id}/messages", json={"content": "What is 6 times 7?"}).json()
+    run_id = sent["assistant"]["run_id"]
+    wait(client, run_id)
+    workflow = {
+        "name": "W",
+        "nodes": [
+            {"id": "agent", "type": "agent", "agent": {"name": "A", "system_prompt": "S", "task": "{{run.input}}"}}
+        ],
+        "edges": [],
+    }
+
+    def preview(**body: Any) -> Any:
+        return client.post("/api/workflows/preview", json={"workflow": workflow, "node_id": "agent", **body})
+
+    own = preview(run_id=run_id)
+    assert own.status_code == 200, own.text
+    assert own.json()["run_id"] == run_id
+    assert preview(workflow_id=conversation_id).json()["run_id"] == run_id
+
+    _as(client, bob)
+    other = preview(run_id=run_id)
+    assert (other.status_code, other.json()["code"]) == (404, "run.not_found")
+    latest = preview(workflow_id=conversation_id)
+    assert latest.status_code == 200 and latest.json()["run_id"] is None
+    assert "6 times 7" not in latest.text
+
+
+def test_n2_listing_runs_reads_no_conversation_for_a_run_that_is_no_answer(
+    make_app: Callable[..., TestClient], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """N-2: the run list checks each run's own trigger first. Only an answer's run costs a read of its
+    conversation."""
+    from test_runs import agent_node, create, start
+
+    monkeypatch.setenv(CONVERSATIONS_ENV, "1")
+    client = make_app({"R": [text("one"), text("two"), text("three")]})
+    workflow_id = create(client, [agent_node("research", "R")], [])
+    for word in ("a", "b", "c"):
+        start(client, workflow_id, word)
+    ctx = client.app.state.nodestro  # type: ignore[attr-defined]
+    reads: list[str] = []
+    real = type(ctx.store).get
+
+    def counting(store: Any, collection: str, *args: Any, **kwargs: Any) -> Any:
+        reads.append(collection)
+        return real(store, collection, *args, **kwargs)
+
+    monkeypatch.setattr(type(ctx.store), "get", counting)
+    assert len(client.get("/api/runs").json()) == 3
+    assert "conversations" not in reads
+    assert reads.count("runs") == 0
+
+
 def test_l2_deleting_a_conversation_revokes_its_grants(chatting: TestClient) -> None:
     from nodestro_runtime.tool_approvals import AccessRules, Person
     from nodestro_runtime.tool_policy import AccessResource, ToolFacts

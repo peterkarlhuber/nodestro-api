@@ -47810,7 +47810,7 @@
     },
     "/api/workflows/preview": {
       "post": {
-        "description": "What an agent would receive: prompt with filled placeholders, inputs and context.",
+        "description": "What an agent would receive: prompt with filled placeholders, inputs and context. A run of another user's\nconversation with an own agent is not found (N-04: its input and outputs are the conversation).",
         "operationId": "preview_api_workflows_preview_post",
         "requestBody": {
           "content": {
