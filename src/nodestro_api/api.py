@@ -110,7 +110,19 @@ from .serving import PREFIX as PUBLISHED_PREFIX
 from .serving import ApiError
 from .tool_versions import ToolVersion, tool_versions
 
-router = APIRouter(prefix="/api")
+# The routes of this module in named parts, one per section (the router groups of nodestro_api.router_groups); the
+# sections' paths start with different words, so no part's route can take another part's request.
+core_router = APIRouter(prefix="/api")  # health and meta
+settings_router = APIRouter(prefix="/api")  # settings, models, sandbox
+workflows_router = APIRouter(prefix="/api")  # workflows and their versions
+library_router = APIRouter(prefix="/api")  # the example library
+runs_router = APIRouter(prefix="/api")  # runs, their files, events and approvals
+usage_router = APIRouter(prefix="/api")  # tokens and cost
+agents_router = APIRouter(prefix="/api")  # agent checks, design and tests
+tools_router = APIRouter(prefix="/api")  # the tool library
+references_router = APIRouter(prefix="/api")  # where a record is used
+knowledge_router = APIRouter(prefix="/api")  # knowledge files
+memory_router = APIRouter(prefix="/api")  # memory spaces
 
 
 def app_context(request: Request) -> Nodestro:
@@ -417,7 +429,7 @@ class Meta(BaseModel):
 
 # Whether this API process serves; on a server also whether it reaches its database (``503`` if not, D-10).
 # (A comment, not a docstring: the OpenAPI contract of this route stays as it was.)
-@router.get("/health", dependencies=PUBLIC)
+@core_router.get("/health", dependencies=PUBLIC)
 async def health(request: Request, response: Response) -> dict[str, str]:
     check = getattr(request.app.state, "health_check", None)
     if check is None:
@@ -428,7 +440,7 @@ async def health(request: Request, response: Response) -> dict[str, str]:
     return {"status": "ok", "database": "ok"}
 
 
-@router.get("/meta", dependencies=READ)
+@core_router.get("/meta", dependencies=READ)
 def meta(ctx: Ctx) -> Meta:
     return Meta(
         version=__version__,
@@ -459,7 +471,7 @@ class ModelCapabilities(BaseModel):
 
 # No existing response fits a single typed model id: /api/meta lists only the catalog, /agents/validate answers a
 # list of issues and /workflows/check a schema the Workflow Architect shares. Free, local, no request to AWS.
-@router.get("/models/capabilities", dependencies=READ)
+@settings_router.get("/models/capabilities", dependencies=READ)
 def get_model_capabilities(model: Annotated[str, Query(min_length=1, max_length=2048)], ctx: Ctx) -> ModelCapabilities:
     """Orkexa's capabilities of one qualified model id (``bedrock:eu.anthropic...-v1:0``, an ARN; colons kept)."""
     reasoning = model_reasoning(ctx.builder, model, summaries=ctx.settings().reasoning_summaries)
@@ -470,7 +482,7 @@ def get_model_capabilities(model: Annotated[str, Query(min_length=1, max_length=
 # capabilities with this workspace's declared values, the documented or declared token limits, which model-dependent
 # options apply (with a reason when not) and the provider-native tools. The capabilities route above stays for older
 # clients (Bedrock only). Free and local: no request to any provider.
-@router.get("/models/profile", dependencies=READ)
+@settings_router.get("/models/profile", dependencies=READ)
 def get_model_profile(model: Annotated[str, Query(min_length=1, max_length=2048)], ctx: Ctx) -> ModelProfile:
     """Capabilities, limits (context window, maximum output, efforts, thinking modes) and agent options of a model."""
     return ctx.builder.profile(model)
@@ -482,7 +494,7 @@ def _is_admin(request: Request) -> bool:
     return principal is not None and principal.allows(Permission.ADMIN)
 
 
-@router.get("/settings", dependencies=READ)
+@settings_router.get("/settings", dependencies=READ)
 def get_settings(request: Request, ctx: Ctx) -> Settings:
     """The settings; the Docker rows come from the background check (``Workspace.docker_status``) and never wait
     for the daemon (``checking`` until the first check after the start finished). Without the permission ``admin``
@@ -522,7 +534,7 @@ class SettingsDefaults(BaseModel):
     reasoning_summaries: bool = False
 
 
-@router.get("/settings/defaults", dependencies=READ)
+@settings_router.get("/settings/defaults", dependencies=READ)
 def get_settings_defaults(ctx: Ctx) -> SettingsDefaults:
     """The default of every setting that ``PUT /api/settings`` changes (see :class:`SettingsDefaults`)."""
     local = ctx.settings().model_defaults == "local"
@@ -547,7 +559,7 @@ def _sandbox_answer(
     return sandbox_status.SandboxStatus(**row.model_dump(), redacted=not admin, **facts)
 
 
-@router.get("/sandbox/status", dependencies=READ)
+@settings_router.get("/sandbox/status", dependencies=READ)
 def get_sandbox_status(
     request: Request,
     ctx: Ctx,
@@ -582,7 +594,7 @@ def get_sandbox_status(
     )
 
 
-@router.post("/sandbox/self-test", dependencies=ADMIN)
+@settings_router.post("/sandbox/self-test", dependencies=ADMIN)
 def post_sandbox_self_test(
     ctx: Ctx, timeout: Annotated[float, Query(ge=0, le=SANDBOX_SELF_TEST_MAX_WAIT)] = 30.0
 ) -> sandbox_status.SandboxStatus:
@@ -615,7 +627,7 @@ def post_sandbox_self_test(
     return _sandbox_answer(ctx, row, admin=True, check_started=True, wait_skipped=skipped)
 
 
-@router.put("/settings", dependencies=ADMIN)
+@settings_router.put("/settings", dependencies=ADMIN)
 def put_settings(update: SettingsIn, ctx: Ctx) -> Settings:
     return ctx.update_settings(update)
 
@@ -627,7 +639,7 @@ class ProviderVerifyIn(BaseModel):
     model: str | None = Field(default=None, max_length=2048)
 
 
-@router.post(
+@settings_router.post(
     "/settings/providers/bedrock/verify",
     dependencies=ADMIN,
     responses={429: {"description": "Checked a moment ago (provider.verify_rate_limited, Retry-After)"}},
@@ -696,7 +708,7 @@ class WorkflowSummary(RuntimeWorkflowSummary):
     contract_fields: list[ContractFieldSummary] = Field(default_factory=list)
 
 
-@router.get("/workflows", dependencies=READ)
+@workflows_router.get("/workflows", dependencies=READ)
 def list_workflows(ctx: Ctx) -> list[WorkflowSummary]:
     last_status: dict[str, Any] = {}
     recent = readable_documents(ctx.store, "runs", RunSummary, newest_first=lambda run: run.created_at, limit=500)
@@ -750,7 +762,7 @@ def _checked(body: WorkflowIn, request: Request | None = None) -> WorkflowIn:
     return body
 
 
-@router.post("/workflows", status_code=201, dependencies=EDIT)
+@workflows_router.post("/workflows", status_code=201, dependencies=EDIT)
 def create_workflow(body: WorkflowIn, request: Request, ctx: Ctx) -> Workflow:
     """Create a workflow. A connection to a node that does not exist is refused (400 ``workflow.edge_dangling``),
     as are two nodes with one id (``workflow.node_duplicate``)."""
@@ -762,7 +774,7 @@ class WorkflowImport(WorkflowIn):
     python: ExportedDefinition | None = None
 
 
-@router.post("/workflows/import", status_code=201, dependencies=EDIT)
+@workflows_router.post("/workflows/import", status_code=201, dependencies=EDIT)
 def import_workflow(body: WorkflowImport, request: Request, ctx: Ctx) -> Workflow:
     """Import an exported workflow as a new copy (new id).
 
@@ -780,12 +792,12 @@ def import_workflow(body: WorkflowImport, request: Request, ctx: Ctx) -> Workflo
     return workflow
 
 
-@router.get("/workflows/{workflow_id}", dependencies=READ)
+@workflows_router.get("/workflows/{workflow_id}", dependencies=READ)
 def get_workflow(workflow_id: str, ctx: Ctx) -> Workflow:
     return _workflow(ctx, workflow_id)
 
 
-@router.put(
+@workflows_router.put(
     "/workflows/{workflow_id}",
     dependencies=EDIT,
     responses={409: {"description": "``workflow.conflict``: the workflow changed since the revision in If-Match"}},
@@ -894,7 +906,7 @@ def _replace_workflow(
 _EXECUTING = ("queued", "running")
 
 
-@router.delete("/workflows/{workflow_id}", status_code=204, dependencies=EDIT)
+@workflows_router.delete("/workflows/{workflow_id}", status_code=204, dependencies=EDIT)
 def delete_workflow(workflow_id: str, ctx: Ctx) -> Response:
     """Delete a workflow with its versions, schedules, test series and published APIs.
 
@@ -948,24 +960,24 @@ class VersionNote(BaseModel):
     description: str = Field(default="", max_length=200)
 
 
-@router.get("/workflows/{workflow_id}/versions", dependencies=READ)
+@workflows_router.get("/workflows/{workflow_id}/versions", dependencies=READ)
 def list_versions(workflow_id: str, ctx: Ctx) -> list[VersionSummary]:
     return ctx.versions.summaries(_workflow(ctx, workflow_id))
 
 
-@router.get("/workflows/{workflow_id}/versions/{number}", dependencies=READ)
+@workflows_router.get("/workflows/{workflow_id}/versions/{number}", dependencies=READ)
 def get_version(workflow_id: str, number: int, ctx: Ctx) -> WorkflowVersion:
     _workflow(ctx, workflow_id)
     return ctx.versions.get(workflow_id, number)
 
 
-@router.patch("/workflows/{workflow_id}/versions/{number}", dependencies=EDIT)
+@workflows_router.patch("/workflows/{workflow_id}/versions/{number}", dependencies=EDIT)
 def describe_version(workflow_id: str, number: int, body: VersionNote, ctx: Ctx) -> WorkflowVersion:
     _workflow(ctx, workflow_id)
     return ctx.versions.describe(workflow_id, number, body.description)
 
 
-@router.post("/workflows/{workflow_id}/versions/{number}/restore", dependencies=EDIT)
+@workflows_router.post("/workflows/{workflow_id}/versions/{number}/restore", dependencies=EDIT)
 def restore_version(workflow_id: str, number: int, ctx: Ctx) -> Workflow:
     """Make a saved version current again; it is saved as a new version, nothing is lost."""
     current = _workflow(ctx, workflow_id)
@@ -979,7 +991,7 @@ def restore_version(workflow_id: str, number: int, ctx: Ctx) -> Workflow:
 _COPY = {"de": "Kopie", "en": "copy", "es": "copia", "fr": "copie", "pt-BR": "cópia", "it": "copia"}
 
 
-@router.post("/workflows/{workflow_id}/duplicate", status_code=201, dependencies=EDIT)
+@workflows_router.post("/workflows/{workflow_id}/duplicate", status_code=201, dependencies=EDIT)
 def duplicate_workflow(workflow_id: str, request: Request, ctx: Ctx) -> Workflow:
     source = _workflow(ctx, workflow_id)
     body = WorkflowIn(**source.model_dump(exclude={"id", "created_at", "updated_at"}))
@@ -994,7 +1006,7 @@ def duplicate_workflow(workflow_id: str, request: Request, ctx: Ctx) -> Workflow
 # ---- example library ------------------------------------------------------------
 
 
-@router.get("/library", dependencies=READ)
+@library_router.get("/library", dependencies=READ)
 def list_library(request: Request, language: Language | None = None) -> list[library.TemplateSummary]:
     """The example templates in one language (default: the interface language); nothing is stored."""
     return library.summaries(language or request_language(request))
@@ -1003,13 +1015,13 @@ def list_library(request: Request, language: Language | None = None) -> list[lib
 # The building blocks (parts) as gallery entries of their own (NAL-B3); before ``/library/{template_id}``.
 
 
-@router.get("/library/parts", dependencies=READ)
+@library_router.get("/library/parts", dependencies=READ)
 def list_library_parts(request: Request, language: Language | None = None) -> list[library.PartSummary]:
     """The building blocks templates run as teams or sub-workflows, in one language; nothing is stored."""
     return library.part_summaries(language or request_language(request))
 
 
-@router.get("/library/parts/{part_id}", dependencies=READ)
+@library_router.get("/library/parts/{part_id}", dependencies=READ)
 def get_library_part(part_id: str, request: Request, language: Language | None = None) -> library.PartDetail:
     """One building block with the workflow a copy would get (a preview, never a run)."""
     return library.part_detail(part_id, language or request_language(request))
@@ -1020,7 +1032,7 @@ class LibraryPartCopy(BaseModel):
     language: Language | None = None
 
 
-@router.post("/library/parts/{part_id}/copy", status_code=201, dependencies=EDIT)
+@library_router.post("/library/parts/{part_id}/copy", status_code=201, dependencies=EDIT)
 def copy_library_part(part_id: str, body: LibraryPartCopy, request: Request, ctx: Ctx) -> Workflow:
     """Create an ordinary, independent workflow from a building block; agents get the workspace's model tiers.
 
@@ -1040,7 +1052,7 @@ def copy_library_part(part_id: str, body: LibraryPartCopy, request: Request, ctx
     return copy
 
 
-@router.get("/library/{template_id}", dependencies=READ)
+@library_router.get("/library/{template_id}", dependencies=READ)
 def get_library_template(
     template_id: str, request: Request, language: Language | None = None
 ) -> library.TemplateDetail:
@@ -1048,7 +1060,7 @@ def get_library_template(
     return library.detail(template_id, language or request_language(request))
 
 
-@router.get("/library/{template_id}/samples/{sample_id}", dependencies=READ)
+@library_router.get("/library/{template_id}/samples/{sample_id}", dependencies=READ)
 def download_library_sample(
     template_id: str, sample_id: str, request: Request, language: Language | None = None
 ) -> Response:
@@ -1222,7 +1234,7 @@ def service_connections(ctx: Nodestro, chosen: dict[str, str]) -> dict[str, str]
     return dict(chosen)
 
 
-@router.get("/library/{template_id}/models", dependencies=READ)
+@library_router.get("/library/{template_id}/models", dependencies=READ)
 def library_template_models(
     template_id: str, request: Request, ctx: Ctx, language: Language | None = None
 ) -> library_models.LibraryModelPlan:
@@ -1232,7 +1244,7 @@ def library_template_models(
     return library_models.plan(ctx, template_id, language or request_language(request))
 
 
-@router.post("/library/{template_id}/copy", status_code=201, dependencies=EDIT)
+@library_router.post("/library/{template_id}/copy", status_code=201, dependencies=EDIT)
 def copy_library_template(template_id: str, body: LibraryCopy, request: Request, ctx: Ctx) -> Workflow:
     """Create an ordinary, independent workflow from a template; the template itself never changes.
 
@@ -1301,7 +1313,7 @@ def copy_library_template(template_id: str, body: LibraryCopy, request: Request,
     return copy
 
 
-@router.post("/workflows/check", dependencies=READ)
+@library_router.post("/workflows/check", dependencies=READ)
 def check(body: WorkflowIn, ctx: Ctx, workflow_id: str | None = None) -> WorkflowCheck:
     """Everything that blocks or affects a run; free, no request to the API.
 
@@ -1313,7 +1325,7 @@ def check(body: WorkflowIn, ctx: Ctx, workflow_id: str | None = None) -> Workflo
     return preflight(ctx, workflow)
 
 
-@router.post("/workflows/preview", dependencies=READ)
+@library_router.post("/workflows/preview", dependencies=READ)
 def preview(body: PreviewRequest, ctx: Ctx) -> ContextPreview:
     """What an agent would receive: prompt with filled placeholders, inputs and context."""
     workflow = Workflow(**body.workflow.model_dump(), id=body.workflow_id or "preview")
@@ -1349,7 +1361,7 @@ def refuse_chat_files(ctx: Nodestro, request: Request, file_ids: Iterable[str]) 
         )
 
 
-@router.post(
+@runs_router.post(
     "/workflows/{workflow_id}/runs",
     status_code=201,
     dependencies=RUN,
@@ -1404,7 +1416,7 @@ async def start_run(
     return run
 
 
-@router.get(
+@runs_router.get(
     "/runs",
     dependencies=READ,
     responses={
@@ -1499,7 +1511,7 @@ class TraceImport(BaseModel):
     duplicate: bool
 
 
-@router.post("/runs/import", dependencies=EDIT)
+@runs_router.post("/runs/import", dependencies=EDIT)
 async def import_run(request: Request, response: Response, ctx: Ctx) -> TraceImport:
     """Store an exported trace (the JSON of ``GET /runs/{id}``) for viewing; nothing runs."""
     length = request.headers.get("content-length")
@@ -1510,7 +1522,7 @@ async def import_run(request: Request, response: Response, ctx: Ctx) -> TraceImp
     return TraceImport(run=RunSummary.model_validate(run.model_dump()), duplicate=duplicate)
 
 
-@router.get("/runs/{run_id}", dependencies=READ)
+@runs_router.get("/runs/{run_id}", dependencies=READ)
 def get_run(run_id: str, ctx: Ctx) -> Run:
     run = ctx.runs.get(run_id)
     if run is None:
@@ -1518,7 +1530,7 @@ def get_run(run_id: str, ctx: Ctx) -> Run:
     return run
 
 
-@router.get("/runs/{run_id}/export", dependencies=READ)
+@runs_router.get("/runs/{run_id}/export", dependencies=READ)
 def export_run(
     run_id: str,
     ctx: Ctx,
@@ -1542,7 +1554,7 @@ def export_run(
     return JSONResponse(data, headers={"Content-Disposition": f'attachment; filename="run_{run.id}{suffix}.json"'})
 
 
-@router.get("/runs/{run_id}/files", dependencies=READ)
+@runs_router.get("/runs/{run_id}/files", dependencies=READ)
 def list_result_files(run_id: str, ctx: Ctx) -> list[ResultFile]:
     """The result files of a run (written by its result nodes or created later)."""
     if ctx.runs.get(run_id) is None:
@@ -1550,7 +1562,7 @@ def list_result_files(run_id: str, ctx: Ctx) -> list[ResultFile]:
     return ctx.files.list(run_id)
 
 
-@router.post("/runs/{run_id}/files", status_code=201, dependencies=EDIT)
+@runs_router.post("/runs/{run_id}/files", status_code=201, dependencies=EDIT)
 async def create_result_file(run_id: str, body: FileRequest, ctx: Ctx) -> ResultFile:
     """Write the run's result (or one result node's) as a file; the run must have finished."""
     run = ctx.runs.get(run_id)
@@ -1561,7 +1573,7 @@ async def create_result_file(run_id: str, body: FileRequest, ctx: Ctx) -> Result
     return await asyncio.to_thread(ctx.files.create, run, body)
 
 
-@router.get("/runs/{run_id}/files/{file_id}", dependencies=READ)
+@runs_router.get("/runs/{run_id}/files/{file_id}", dependencies=READ)
 def download_result_file(run_id: str, file_id: str, ctx: Ctx, inline: bool = False) -> Response:
     entry, data = ctx.files.content(run_id, file_id)
     disposition = "inline" if inline and entry.format in INLINE_FORMATS else "attachment"
@@ -1572,13 +1584,13 @@ def download_result_file(run_id: str, file_id: str, ctx: Ctx, inline: bool = Fal
     return Response(content=data, media_type=entry.media_type, headers=headers)
 
 
-@router.delete("/runs/{run_id}/files/{file_id}", status_code=204, dependencies=EDIT)
+@runs_router.delete("/runs/{run_id}/files/{file_id}", status_code=204, dependencies=EDIT)
 def delete_result_file(run_id: str, file_id: str, ctx: Ctx) -> Response:
     ctx.files.delete(run_id, file_id)
     return Response(status_code=204)
 
 
-@router.post("/runs/{run_id}/cancel", dependencies=RUN)
+@runs_router.post("/runs/{run_id}/cancel", dependencies=RUN)
 async def cancel_run(run_id: str, ctx: Ctx) -> dict[str, bool]:
     """``cancelled``: whether the run was still going; an unknown run is ``404`` (API2-07)."""
     if ctx.runs.get(run_id) is None:
@@ -1598,13 +1610,13 @@ class ResumeRequest(BaseModel):
     confirm_side_effects: bool = False
 
 
-@router.get("/runs/{run_id}/resume", dependencies=READ)
+@runs_router.get("/runs/{run_id}/resume", dependencies=READ)
 def resume_plan(run_id: str, ctx: Ctx) -> ResumePlan:
     """What continuing a failed run would reuse and run again; nothing starts."""
     return plan_resume(ctx, run_id)
 
 
-@router.post("/runs/{run_id}/resume", status_code=201, dependencies=RUN)
+@runs_router.post("/runs/{run_id}/resume", status_code=201, dependencies=RUN)
 async def resume_run(run_id: str, body: ResumeRequest, ctx: Ctx, request: Request) -> Run:
     """A new run linked to the failed one, reusing its safe results (the failed run stays as it was)."""
     return await resume_from(
@@ -1612,13 +1624,13 @@ async def resume_run(run_id: str, body: ResumeRequest, ctx: Ctx, request: Reques
     )
 
 
-@router.get("/approvals", dependencies=READ)
+@runs_router.get("/approvals", dependencies=READ)
 def list_approvals(ctx: Ctx) -> list[PendingApproval]:
     """Every approval that waits for a person, oldest first (also after a restart)."""
     return pending_approvals(ctx)
 
 
-@router.post("/runs/{run_id}/approvals/{node_id}", dependencies=RUN)
+@runs_router.post("/runs/{run_id}/approvals/{node_id}", dependencies=RUN)
 async def decide_approval(run_id: str, node_id: str, body: ApprovalDecision, request: Request, ctx: Ctx) -> Run:
     """Approve or reject at an approval node; the run (its top-level run) continues right away.
 
@@ -1627,7 +1639,7 @@ async def decide_approval(run_id: str, node_id: str, body: ApprovalDecision, req
     return ctx.runs.decide(run_id, node_id, body.decision, body.comment, decided_by=actor_id(request))
 
 
-@router.delete("/runs/{run_id}", status_code=204, dependencies=EDIT)
+@runs_router.delete("/runs/{run_id}", status_code=204, dependencies=EDIT)
 def delete_run(run_id: str, ctx: Ctx) -> Response:
     if ctx.runs.is_live(run_id) or ctx.runs.get(run_id) in ctx.runs.live_runs():
         raise NodestroError("run.delete_running", "A running run cannot be deleted")
@@ -1673,7 +1685,7 @@ def _sse(kind: str, data: Any) -> str:
     return f"event: {kind}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
 
 
-@router.get("/runs/{run_id}/events", dependencies=READ)
+@runs_router.get("/runs/{run_id}/events", dependencies=READ)
 async def run_events(run_id: str, request: Request, ctx: Ctx) -> StreamingResponse:
     """Server-Sent Events: a ``snapshot`` first, then every event until ``run_finished``."""
     run = ctx.runs.get(run_id)
@@ -1838,7 +1850,7 @@ def _add(bucket: UsageBucket, usage: Any, *, run: bool = False) -> None:
         bucket.cost_state = "unknown" if bucket.unpriced >= bucket.requests and not bucket.known_cost_usd else "partial"
 
 
-@router.get("/usage", dependencies=READ)
+@usage_router.get("/usage", dependencies=READ)
 def usage(ctx: Ctx, days: int = Query(30, ge=1, le=365)) -> UsageReport:
     """Tokens and cost of every AI request Nodestro made: workflow runs plus everything else.
 
@@ -2088,7 +2100,7 @@ def _runs_since(ctx: Nodestro, cutoff: float) -> list[_UsageRun]:
 # ---- agents ---------------------------------------------------------------------
 
 
-@router.post("/agents/validate", dependencies=READ)
+@agents_router.post("/agents/validate", dependencies=READ)
 def validate_agent(config: AgentConfig, ctx: Ctx) -> list[ConfigIssue]:
     return ctx.builder.validate(config)
 
@@ -2100,7 +2112,7 @@ class DesignRequest(BaseModel):
     language: Language = "en"
 
 
-@router.post("/agents/design", dependencies=RUN)
+@agents_router.post("/agents/design", dependencies=RUN)
 def design_agent(body: DesignRequest, ctx: Ctx, request: Request) -> AgentDraft:
     settings = ctx.settings()
     model_readiness.require_local_now(ctx, request, settings.assistant_model, "agent_design")
@@ -2136,7 +2148,7 @@ def _is_saved_agent(ctx: Nodestro, body: AgentTestIn) -> bool:
     )
 
 
-@router.post("/agents/test", dependencies=RUN)
+@agents_router.post("/agents/test", dependencies=RUN)
 async def test_agent(body: AgentTestIn, ctx: Ctx, request: Request) -> AgentTestResult:
     """Run one agent with its current configuration on a test task; not a workflow run.
 
@@ -2210,24 +2222,24 @@ class Decision(BaseModel):
     approved: bool
 
 
-@router.get("/tools", dependencies=READ)
+@tools_router.get("/tools", dependencies=READ)
 def list_tools(ctx: Ctx) -> list[ToolInfo]:
     return ctx.tools.all()
 
 
-@router.get("/tools/template", dependencies=READ)
+@tools_router.get("/tools/template", dependencies=READ)
 def tool_template() -> ToolSource:
     return ToolSource(function_name="celsius_to_fahrenheit", code=CUSTOM_TOOL_TEMPLATE, tests=CUSTOM_TESTS_TEMPLATE)
 
 
-@router.post("/tools/check", dependencies=RUN)
+@tools_router.post("/tools/check", dependencies=RUN)
 async def check_tool(body: ToolSource, ctx: Ctx) -> CheckResult:
     return await asyncio.to_thread(
         check_with_dependencies, ctx.tools, ctx.python, body.code, body.tests, body.function_name
     )
 
 
-@router.post("/tools", dependencies=RUN)
+@tools_router.post("/tools", dependencies=RUN)
 async def save_tool(body: ToolSource, ctx: Ctx) -> SaveResult:
     result, tool = await asyncio.to_thread(
         save_with_dependencies, ctx.tools, ctx.python, body.code, body.tests, body.function_name
@@ -2235,12 +2247,12 @@ async def save_tool(body: ToolSource, ctx: Ctx) -> SaveResult:
     return SaveResult(check=result, tool=tool)
 
 
-@router.get("/tools/jobs", dependencies=READ)
+@tools_router.get("/tools/jobs", dependencies=READ)
 def list_jobs(ctx: Ctx) -> list[ToolJob]:
     return ctx.tools.list_jobs()
 
 
-@router.post("/tools/jobs", status_code=201, dependencies=RUN)
+@tools_router.post("/tools/jobs", status_code=201, dependencies=RUN)
 def start_job(body: JobRequest, ctx: Ctx, request: Request) -> ToolJob:
     model = ctx.settings().assistant_model
     model_readiness.require_local_now(ctx, request, model, "agent_design")
@@ -2254,7 +2266,7 @@ def start_job(body: JobRequest, ctx: Ctx, request: Request) -> ToolJob:
     )
 
 
-@router.get("/tools/jobs/{job_id}", dependencies=READ)
+@tools_router.get("/tools/jobs/{job_id}", dependencies=READ)
 def get_job(job_id: str, ctx: Ctx) -> ToolJob:
     job = ctx.tools.jobs.get(job_id)
     if job is None:
@@ -2262,7 +2274,7 @@ def get_job(job_id: str, ctx: Ctx) -> ToolJob:
     return job
 
 
-@router.post("/tools/jobs/{job_id}/decision", dependencies=EDIT)
+@tools_router.post("/tools/jobs/{job_id}/decision", dependencies=EDIT)
 def decide_job(job_id: str, body: Decision, ctx: Ctx) -> ToolJob:
     return ctx.tools.decide(job_id, body.approved)
 
@@ -2272,17 +2284,17 @@ class DependencyDecision(BaseModel):
     choice: DependencyChoice
 
 
-@router.post("/tools/jobs/{job_id}/dependencies", dependencies=ADMIN)
+@tools_router.post("/tools/jobs/{job_id}/dependencies", dependencies=ADMIN)
 def decide_job_dependencies(job_id: str, body: DependencyDecision, ctx: Ctx) -> ToolJob:
     return ctx.tools.decide_dependencies(job_id, body.choice)
 
 
-@router.get("/tools/{name}", dependencies=READ)
+@tools_router.get("/tools/{name}", dependencies=READ)
 def get_tool(name: str, ctx: Ctx) -> ToolInfo:
     return ctx.tools.get(name)
 
 
-@router.get("/tools/{name}/versions", dependencies=READ)
+@tools_router.get("/tools/{name}/versions", dependencies=READ)
 def get_tool_versions(name: str, ctx: Ctx) -> list[ToolVersion]:
     """Every stored version of a tool, newest first, with its code, tests and who wrote it (ST-036): ``editor``
     (the tool editor), ``adopted`` (an AI version adopted as one's own with exactly that content) or ``ai``. Empty for
@@ -2290,7 +2302,7 @@ def get_tool_versions(name: str, ctx: Ctx) -> list[ToolVersion]:
     return tool_versions(ctx.tools, ctx.store, name)
 
 
-@router.delete("/tools/{name}", status_code=204, dependencies=EDIT)
+@tools_router.delete("/tools/{name}", status_code=204, dependencies=EDIT)
 def delete_tool(name: str, ctx: Ctx) -> Response:
     ctx.tools.delete(name)
     ctx.organize.forget("tool", name)
@@ -2298,7 +2310,7 @@ def delete_tool(name: str, ctx: Ctx) -> Response:
     return Response(status_code=204)
 
 
-@router.post("/tools/{name}/run", dependencies=EDIT)
+@tools_router.post("/tools/{name}/run", dependencies=EDIT)
 def run_tool(name: str, body: ToolRunRequest, ctx: Ctx, request: Request) -> ToolRunResult:
     """The tool editor's test panel: run one tool with free input, outside any run and without asking anybody.
 
@@ -2335,7 +2347,7 @@ def adopter_role(principal: Principal | None) -> str:
     return principal.role or ""
 
 
-@router.post("/tools/{name}/adopt", dependencies=ADMIN)
+@tools_router.post("/tools/{name}/adopt", dependencies=ADMIN)
 def adopt_tool(name: str, body: ToolAdoptRequest, ctx: Ctx, request: Request) -> ToolInfo:
     """Adopt an AI-generated tool as your own code (ADR-0006, decision R-4): after this it is ``user-authored`` and
     may run on this computer without isolation.
@@ -2367,7 +2379,7 @@ def adopt_tool(name: str, body: ToolAdoptRequest, ctx: Ctx, request: Request) ->
 # ---- references -----------------------------------------------------------------
 
 
-@router.get("/used-by", dependencies=READ)
+@references_router.get("/used-by", dependencies=READ)
 def used_by(ctx: Ctx, kind: ReferenceKind, ref: str | None = None) -> list[Reference]:
     """Where knowledge files, tools or memory spaces are used: saved workflows, library agents and published APIs.
 
@@ -2394,12 +2406,12 @@ class SearchHit(BaseModel):
     ranks: dict[str, int] = {}
 
 
-@router.get("/knowledge", dependencies=READ)
+@knowledge_router.get("/knowledge", dependencies=READ)
 def list_knowledge(ctx: Ctx, q: str | None = None) -> list[KnowledgeFile]:
     return ctx.knowledge.files(q)
 
 
-@router.post("/knowledge", status_code=201, dependencies=EDIT)
+@knowledge_router.post("/knowledge", status_code=201, dependencies=EDIT)
 async def upload_knowledge(
     ctx: Ctx,
     files: Annotated[list[UploadFile], File()],
@@ -2435,7 +2447,7 @@ SEARCH_MAX_HITS = 50
 SEARCH_QUERY_CHARS = 2000
 
 
-@router.get("/knowledge/search", dependencies=READ)
+@knowledge_router.get("/knowledge/search", dependencies=READ)
 def search_knowledge(
     ctx: Ctx,
     q: Annotated[str, Query(max_length=SEARCH_QUERY_CHARS)],
@@ -2455,24 +2467,24 @@ def search_knowledge(
     ]
 
 
-@router.patch("/knowledge/{file_id}", dependencies=EDIT)
+@knowledge_router.patch("/knowledge/{file_id}", dependencies=EDIT)
 def update_knowledge(file_id: str, body: KnowledgeUpdate, ctx: Ctx) -> KnowledgeFile:
     return ctx.knowledge.update(file_id, description=body.description, collection=body.collection)
 
 
-@router.delete("/knowledge/{file_id}", status_code=204, dependencies=EDIT)
+@knowledge_router.delete("/knowledge/{file_id}", status_code=204, dependencies=EDIT)
 def delete_knowledge(file_id: str, ctx: Ctx) -> Response:
     ctx.knowledge.delete(file_id)
     return Response(status_code=204)
 
 
-@router.post("/knowledge/{file_id}/ocr", dependencies=EDIT)
+@knowledge_router.post("/knowledge/{file_id}/ocr", dependencies=EDIT)
 async def recognise_knowledge(file_id: str, ctx: Ctx) -> KnowledgeFile:
     """Recognise the text of a scanned PDF with local OCR (tesseract), now."""
     return await asyncio.to_thread(ctx.knowledge.recognise, file_id)
 
 
-@router.get("/knowledge/{file_id}/content", dependencies=READ)
+@knowledge_router.get("/knowledge/{file_id}/content", dependencies=READ)
 def knowledge_content(file_id: str, ctx: Ctx) -> Response:
     # Documents and images open in the browser; active content (HTML, SVG, XML) is downloaded.
     entry = ctx.knowledge.store.info(file_id)
@@ -2531,12 +2543,12 @@ class MemoryProposal(BaseModel):
     cost_usd: float | None
 
 
-@router.get("/memory", dependencies=READ)
+@memory_router.get("/memory", dependencies=READ)
 def list_spaces(ctx: Ctx) -> list[MemorySpaceInfo]:
     return ctx.memory.all()
 
 
-@router.post("/memory/propose", dependencies=RUN)
+@memory_router.post("/memory/propose", dependencies=RUN)
 def propose_memory(body: MemoryProposalRequest, ctx: Ctx) -> MemoryProposal:
     model = ctx.settings().assistant_model
     connection = ctx.connect_model(model)
@@ -2555,29 +2567,48 @@ def propose_memory(body: MemoryProposalRequest, ctx: Ctx) -> MemoryProposal:
     return MemoryProposal(seed=seed, cost_usd=cost)
 
 
-@router.get("/memory/{space}", dependencies=READ)
+@memory_router.get("/memory/{space}", dependencies=READ)
 def list_memory(space: str, ctx: Ctx) -> list[MemoryFile]:
     return ctx.memory.open(check_space_name(space)).entries()
 
 
-@router.get("/memory/{space}/file", dependencies=READ)
+@memory_router.get("/memory/{space}/file", dependencies=READ)
 def read_memory(space: str, path: str, ctx: Ctx) -> MemoryText:
     return MemoryText(path=path, content=ctx.memory.open(space).read(path))
 
 
-@router.put("/memory/{space}/file", dependencies=EDIT)
+@memory_router.put("/memory/{space}/file", dependencies=EDIT)
 def write_memory(space: str, body: MemoryText, ctx: Ctx) -> MemoryText:
     ctx.memory.open(space).write(body.path, body.content)
     return body
 
 
-@router.delete("/memory/{space}/file", status_code=204, dependencies=EDIT)
+@memory_router.delete("/memory/{space}/file", status_code=204, dependencies=EDIT)
 def delete_memory(space: str, path: str, ctx: Ctx) -> Response:
     ctx.memory.open(space).remove(path)
     return Response(status_code=204)
 
 
-@router.delete("/memory/{space}", status_code=204, dependencies=EDIT)
+@memory_router.delete("/memory/{space}", status_code=204, dependencies=EDIT)
 def clear_memory(space: str, ctx: Ctx) -> Response:
     ctx.memory.open(space).clear()
     return Response(status_code=204)
+
+
+#: Every part of this module, in the order of the file; ``router`` serves them all.
+ROUTERS = {
+    "core": core_router,
+    "settings": settings_router,
+    "workflows": workflows_router,
+    "library": library_router,
+    "runs": runs_router,
+    "usage": usage_router,
+    "agents": agents_router,
+    "tools": tools_router,
+    "references": references_router,
+    "knowledge": knowledge_router,
+    "memory": memory_router,
+}
+router = APIRouter()
+for _part in ROUTERS.values():
+    router.include_router(_part)

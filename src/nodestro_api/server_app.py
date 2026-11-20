@@ -58,28 +58,11 @@ from nodestro_runtime.server_settings import TenantSecrets
 from nodestro_runtime.storage_postgres import PostgresDatabase
 
 from . import __version__
-from .api import install_error_handlers, router
-from .api_agent_templates import router as agent_templates_router
-from .api_architect import router as architect_router
-from .api_assistant import router as assistant_router
-from .api_automation import router as automation_router
-from .api_budget import router as budget_router
-from .api_connections import router as connections_router
-from .api_data import router as data_router
-from .api_inputs import router as inputs_router
-from .api_local_models import router as local_models_router
-from .api_mcp import router as mcp_router
+from .api import install_error_handlers
 from .api_members import members_router
-from .api_pricing import router as pricing_router
-from .api_publish import router as publish_router
-from .api_python import router as python_router
 from .api_reference import install_api_reference
-from .api_run_chat import router as run_chat_router
-from .api_skills import router as skills_router
-from .api_tool_approvals import router as tool_approvals_router
 from .body_limit import BodyLimitMiddleware, BodyLimits
 from .context import AppConfig, Nodestro
-from .error_codes import router as error_codes_router
 from .export_jobs import QueuedExports
 from .frontend import mount_frontend
 from .identity import (
@@ -95,11 +78,18 @@ from .identity import (
 from .observability import RequestIdMiddleware
 from .permissions import PUBLIC, READ, check_routes
 from .pricing_setup import PRICE_REFERENCE_TENANT
+from .router_groups import GROUPS, include_groups
 from .security_headers import SecurityHeadersMiddleware
 from .serving import PREFIX as PUBLISHED_PREFIX
 from .tenant_contexts import TenantContexts, TenantLeases
 
 logger = logging.getLogger(__name__)
+
+#: The router groups of a server (nodestro_api.router_groups): all but the desktop's own and the inbox, which the
+#: server includes after them (or its notifications in place of it).
+SERVER_GROUPS: tuple[str, ...] = tuple(
+    group for group in GROUPS if group not in {"mcp_server", "published", "app_contract", "inbox"}
+)
 
 #: How long an unused tenant context stays open in an API process by default (API-001;
 #: ``NODESTRO_TENANT_IDLE_MINUTES``).
@@ -370,24 +360,9 @@ def create_tenant_app(composition: TenantComposition) -> FastAPI:
     app.include_router(auth_router(composition.identity, composition.oidc, audit))
     # Members and roles for the tenant's administrators (API-019); the server only.
     app.include_router(members_router(composition.identity))
-    app.include_router(publish_router)
-    app.include_router(architect_router)
-    app.include_router(python_router)
-    app.include_router(automation_router)
-    app.include_router(assistant_router)
-    app.include_router(inputs_router)
-    app.include_router(pricing_router)
-    app.include_router(local_models_router)
-    app.include_router(agent_templates_router)  # before the main router (/api/library/agents)
-    app.include_router(skills_router)  # before the main router (/api/library/skills)
-    app.include_router(connections_router)
-    app.include_router(mcp_router)
-    app.include_router(budget_router)
-    app.include_router(tool_approvals_router)
-    app.include_router(run_chat_router)
-    app.include_router(error_codes_router)
-    app.include_router(router)
-    app.include_router(data_router)
+    # The registry's routers (nodestro_api.router_groups) except the desktop's own: the published APIs, Nodestro's
+    # MCP server and the app contract's discovery are not served on a server yet; the inbox follows below.
+    include_groups(app, SERVER_GROUPS, None)
     if composition.notifications is not None:
         from .api_notifications import notifications_router
 
