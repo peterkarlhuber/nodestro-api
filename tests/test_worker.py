@@ -571,6 +571,49 @@ def test_a_failing_tenant_does_not_stop_the_chat_file_retention_of_others(
     assert leader.call(leader.worker.expire_chat_files()) == {"globex": 1}
 
 
+def test_each_tenant_reads_and_prunes_only_its_own_activity_log(
+    server: Server, make_worker: Callable[..., Background], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """N-13: ``/api/activity`` answers the tenant's own events to its admins only; the leading worker prunes every
+    active tenant's events past ``NODESTRO_ACTIVITY_RETENTION_DAYS``."""
+    from nodestro_runtime import activity
+    from nodestro_runtime.activity import ActivityEvent
+
+    alice = server.member("acme", "alice", "admin")
+    editor = server.member("acme", "erin", "editor")
+    bob = server.member("globex", "bob", "owner")
+    uploaded = alice.post("/api/inputs", files=[("files", ("acme.txt", b"acme notes"))])
+    assert uploaded.status_code == 201, uploaded.text
+    file_id = uploaded.json()[0]["file"]["id"]
+    acme = server.app.state.tenants.get("acme").store
+    globex = server.app.state.tenants.get("globex").store
+    old = datetime.now(UTC) - timedelta(days=40)
+    activity.record(acme, ActivityEvent(source="file", action="file.deleted", resource_id="in_old", at=old))
+    activity.record(globex, ActivityEvent(source="file", action="file.deleted", resource_id="in_globex", at=old))
+
+    mine = alice.get("/api/activity").json()["events"]
+    assert [(event["action"], event["resource_id"]) for event in mine] == [
+        ("file.uploaded", file_id),
+        ("file.deleted", "in_old"),
+    ]
+    assert mine[0]["actor"] == server.identity.login(stub_oidc.ISSUER, "alice").id
+    assert file_id not in bob.get("/api/activity").text and file_id not in bob.get("/api/activity/export").text
+    assert [event["resource_id"] for event in bob.get("/api/activity").json()["events"]] == ["in_globex"]
+    assert bob.get("/api/activity", params={"resource_id": file_id}).json()["events"] == []
+    for path in ("/api/activity", "/api/activity/export"):
+        refused = editor.get(path)
+        assert refused.status_code == 403 and refused.json()["code"] == "access.forbidden", path
+
+    monkeypatch.setenv(activity.RETENTION_ENV, "30")
+    leader, other = make_worker(), make_worker()
+    assert leader.call(leader.worker.fire_schedules()) == []  # takes the scheduler lock
+    assert other.call(other.worker.prune_activity()) == {}  # only the leader prunes
+    assert leader.call(leader.worker.prune_activity()) == {"acme": 1, "globex": 1}
+    assert leader.call(leader.worker.prune_activity()) == {}
+    assert [event["resource_id"] for event in alice.get("/api/activity").json()["events"]] == [file_id]
+    assert bob.get("/api/activity").json()["events"] == []
+
+
 class _Embeddings:
     """A deterministic embedding model (the runtime's ``EmbeddingModel`` interface), so no model server is needed."""
 
@@ -788,9 +831,14 @@ def test_a_serving_worker_writes_its_heartbeat_and_removes_it_when_it_stops(
             time.sleep(0.02)
         beat = json.loads(path.read_text(encoding="utf-8"))
         assert beat["worker"] == worker.worker.name and beat["database"] == "ok"
-        assert {"worker-runs", "worker-reindex", "worker-exports", "worker-reaper", "worker-scheduler"} <= set(
-            beat["duties"]
-        )
+        assert {
+            "worker-runs",
+            "worker-reindex",
+            "worker-exports",
+            "worker-reaper",
+            "worker-scheduler",
+            "worker-activity",  # the activity log's retention (N-13)
+        } <= set(beat["duties"])
         assert set(beat["duties"].values()) == {"running"}
         # A duty loop that ends while the worker serves (here: cancelled from outside) makes it unhealthy.
         worker.loop.call_soon_threadsafe(worker.worker.duties["worker-exports"].cancel)
