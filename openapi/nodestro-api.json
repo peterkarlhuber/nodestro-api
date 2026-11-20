@@ -25570,7 +25570,11 @@
               "switch_off",
               "tool_adopted",
               "tool_adoption_refused",
-              "tool_adoption_revoked"
+              "tool_adoption_revoked",
+              "access_granted",
+              "access_grant_revoked",
+              "access_denied",
+              "access_deny_revoked"
             ],
             "title": "Kind",
             "type": "string"
@@ -25914,6 +25918,17 @@
       "ToolCallApproval": {
         "description": "What the per-call approval rules did with one call.",
         "properties": {
+          "access_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Access Source"
+          },
           "capability": {
             "additionalProperties": {
               "type": "string"
