@@ -243,15 +243,15 @@ jobs:
           repository=https://github.com/peterkarlhuber/nodestro-runtime.git
           python -m venv "$RUNNER_TEMP/runtime-master"
           # The checker needs the standard library, pglast (the range of the dev extra) and, since MUP-ONA B6, its rule
-          # engine orkexa.testing.sqlcheck: orkexa with its own dependencies and the sqlcheck extra, at the commit of
-          # the studio lock (the runtime only declares a version range for it).
+          # engine orkexa.testing.sqlcheck: orkexa with its own dependencies at the commit of the studio lock (the runtime
+          # only declares a version range for it). pglast is installed above: orkexa names it in no public extra (W0-4).
           "$RUNNER_TEMP/runtime-master/bin/python" -m pip install "pip>=26.1"
           "$RUNNER_TEMP/runtime-master/bin/pip" install --no-deps "nodestro-runtime @ git+$repository@master"
           "$RUNNER_TEMP/runtime-master/bin/pip" install "pglast>=7,<9"
           # orkexa's core requires tabrion (MIG-ORK-3), which comes only from the lock's pinned commit (V-B0).
           grep -E '^(orkexa|tabrion) ' "$RUNNER_TEMP/lock.txt" > "$RUNNER_TEMP/orkexa-lock.txt"
           echo "orkexa and tabrion of the studio lock: $(cat "$RUNNER_TEMP/orkexa-lock.txt")"
-          "$RUNNER_TEMP/runtime-master/bin/pip" install -c "$RUNNER_TEMP/orkexa-lock.txt" "orkexa[sqlcheck]"
+          "$RUNNER_TEMP/runtime-master/bin/pip" install -c "$RUNNER_TEMP/orkexa-lock.txt" orkexa
           master="$(git ls-remote "$repository" refs/heads/master | cut -f1)"
           test -n "$master" || { echo "::error::runtime master not found with git ls-remote"; exit 1; }
           echo "runtime master: $master"
