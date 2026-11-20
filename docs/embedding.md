@@ -68,7 +68,9 @@ blocks `create_product_app` and the studio app share; `GROUPS` and `REQUIRED_GRO
   (`access.network_needs_login`), a local container needs its access key (`access.key_required`), a launch secret or
   access key must be long enough (`access.launch_secret_weak`).
 - The same guards in the same order: body limits, development CORS only with `NODESTRO_DEV_CORS=1`, the launch secret
-  or Local Docker's access key, the host and origin check, the contract header and the security headers.
+  or Local Docker's access key, the host and origin check, the contract header and the security headers. The session
+  store, the loopback rules and the secret comparisons under them come from the shared library `nodestro-session`
+  (N-02).
 - The same error answers (`{"detail", "code", "params"}`) and the documented error schema on every operation.
 - Fail closed: every route, the product's own included, must declare its access requirement
   (`nodestro_api.permissions`); otherwise the app is not built (`RouteAccessError`).
