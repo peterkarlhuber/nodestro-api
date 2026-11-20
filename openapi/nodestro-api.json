@@ -85,6 +85,238 @@
         "title": "AccessEvent",
         "type": "object"
       },
+      "AccessExplanation": {
+        "description": "Why an access is allowed or refused at its call site (BER-1, spec 7.3 (8)): the request, what the access model\ndoes there (``outcome``) and what decided it.\n\nFor the person and the administration only; a model never gets it (N-07).",
+        "properties": {
+          "action": {
+            "enum": [
+              "read",
+              "write",
+              "move",
+              "trash",
+              "delete",
+              "execute",
+              "send",
+              "submit"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent"
+          },
+          "allowed": {
+            "title": "Allowed",
+            "type": "boolean"
+          },
+          "also": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Also",
+            "type": "array"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "default_rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Rule"
+          },
+          "deny": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Deny"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effect": {
+            "enum": [
+              "read_internal",
+              "write_internal",
+              "read_external",
+              "write_external",
+              "destructive"
+            ],
+            "title": "Effect",
+            "type": "string"
+          },
+          "grant": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Grant"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "grant_enforced": {
+            "default": false,
+            "title": "Grant Enforced",
+            "type": "boolean"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "missing_grant",
+                  "denied",
+                  "safety_limit"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit"
+          },
+          "limit_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit Text"
+          },
+          "mode": {
+            "default": "supervised",
+            "enum": [
+              "supervised",
+              "unattended"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "refused",
+              "granted",
+              "allowed",
+              "per_call_rules"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "resource": {
+            "$ref": "#/components/schemas/AccessResource"
+          },
+          "source": {
+            "default": "none",
+            "title": "Source",
+            "type": "string"
+          },
+          "stale": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Stale",
+            "type": "array"
+          }
+        },
+        "required": [
+          "resource",
+          "action",
+          "effect",
+          "allowed",
+          "outcome"
+        ],
+        "title": "AccessExplanation",
+        "type": "object"
+      },
+      "AccessResource": {
+        "description": "What a record or a request is about: a type and its id (a tool name, an absolute folder path, a workflow id,\nan MCP server id, a connection id, a provider name).",
+        "properties": {
+          "id": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "tool",
+              "folder",
+              "workflow",
+              "mcp_server",
+              "connection",
+              "cloud_provider"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ],
+        "title": "AccessResource",
+        "type": "object"
+      },
+      "AccessState": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "safety_limits": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Safety Limits",
+            "type": "object"
+          }
+        },
+        "required": [
+          "enabled",
+          "safety_limits"
+        ],
+        "title": "AccessState",
+        "type": "object"
+      },
       "ActivateIn": {
         "properties": {
           "number": {
@@ -7226,6 +7458,242 @@
         "title": "DecisionRecord",
         "type": "object"
       },
+      "Deny": {
+        "description": "An explicit block (spec 7.1), addressed like a :class:`Grant`. Holds for a folder and every folder below it,\nalso against a grant of a subfolder; folders compare case-insensitively here, so a deny never misses because of\nthe spelling. A tool deny holds for every version of the tool. ``mode`` ``None`` blocks in both modes.",
+        "properties": {
+          "actions": {
+            "items": {
+              "enum": [
+                "read",
+                "write",
+                "move",
+                "trash",
+                "delete",
+                "execute",
+                "send",
+                "submit"
+              ],
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Actions",
+            "type": "array"
+          },
+          "agents": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Agents",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "denied_by": {
+            "title": "Denied By",
+            "type": "string"
+          },
+          "duration": {
+            "default": "until_revoked",
+            "enum": [
+              "until",
+              "until_revoked"
+            ],
+            "title": "Duration",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "supervised",
+                  "unattended"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "resource": {
+            "$ref": "#/components/schemas/AccessResource"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "revoked_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked By"
+          },
+          "scope": {
+            "default": "all",
+            "enum": [
+              "agent",
+              "agents",
+              "all"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "status": {
+            "default": "active",
+            "enum": [
+              "active",
+              "revoked"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "resource",
+          "actions",
+          "created_at",
+          "denied_by"
+        ],
+        "title": "Deny",
+        "type": "object"
+      },
+      "DenyIn": {
+        "properties": {
+          "actions": {
+            "items": {
+              "enum": [
+                "read",
+                "write",
+                "move",
+                "trash",
+                "delete",
+                "execute",
+                "send",
+                "submit"
+              ],
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Actions",
+            "type": "array"
+          },
+          "agents": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Agents",
+            "type": "array"
+          },
+          "duration": {
+            "default": "until_revoked",
+            "enum": [
+              "until",
+              "until_revoked"
+            ],
+            "title": "Duration",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "supervised",
+                  "unattended"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "resource_id": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "resource_type": {
+            "enum": [
+              "tool",
+              "folder",
+              "workflow",
+              "mcp_server",
+              "connection",
+              "cloud_provider"
+            ],
+            "title": "Resource Type",
+            "type": "string"
+          },
+          "scope": {
+            "default": "all",
+            "enum": [
+              "agent",
+              "agents",
+              "all"
+            ],
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_type",
+          "resource_id",
+          "actions"
+        ],
+        "title": "DenyIn",
+        "type": "object"
+      },
       "DependencyDecision": {
         "properties": {
           "choice": {
@@ -9084,6 +9552,269 @@
           "status"
         ],
         "title": "GateReport",
+        "type": "object"
+      },
+      "Grant": {
+        "description": "A person's permission (spec 7.1): resource, actions, scope, duration and mode. Written only by a person\n(through the rule store of :mod:`~nodestro_runtime.tool_approvals`), never by a model. Holds for a folder and\nevery folder below it; a subfolder can be granted without its parent. A tool grant holds only for the tool as it\nwas (``tool``).",
+        "properties": {
+          "actions": {
+            "items": {
+              "enum": [
+                "read",
+                "write",
+                "move",
+                "trash",
+                "delete",
+                "execute",
+                "send",
+                "submit"
+              ],
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Actions",
+            "type": "array"
+          },
+          "agents": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Agents",
+            "type": "array"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "duration": {
+            "enum": [
+              "once",
+              "conversation",
+              "until",
+              "until_revoked"
+            ],
+            "title": "Duration",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "granted_by": {
+            "title": "Granted By",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "mode": {
+            "default": "supervised",
+            "enum": [
+              "supervised",
+              "unattended"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "resource": {
+            "$ref": "#/components/schemas/AccessResource"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "revoked_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked By"
+          },
+          "scope": {
+            "default": "all",
+            "enum": [
+              "agent",
+              "agents",
+              "all"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "status": {
+            "default": "active",
+            "enum": [
+              "active",
+              "used",
+              "revoked"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolFacts"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "resource",
+          "actions",
+          "created_at",
+          "duration",
+          "granted_by"
+        ],
+        "title": "Grant",
+        "type": "object"
+      },
+      "GrantIn": {
+        "description": "A grant as a person gives it. The writer, the time and (for a tool) the tool's facts come from the server.",
+        "properties": {
+          "actions": {
+            "items": {
+              "enum": [
+                "read",
+                "write",
+                "move",
+                "trash",
+                "delete",
+                "execute",
+                "send",
+                "submit"
+              ],
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Actions",
+            "type": "array"
+          },
+          "agents": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Agents",
+            "type": "array"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "duration": {
+            "enum": [
+              "once",
+              "conversation",
+              "until",
+              "until_revoked"
+            ],
+            "title": "Duration",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "mode": {
+            "default": "supervised",
+            "enum": [
+              "supervised",
+              "unattended"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "resource_id": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "resource_type": {
+            "enum": [
+              "tool",
+              "folder",
+              "workflow",
+              "mcp_server",
+              "connection",
+              "cloud_provider"
+            ],
+            "title": "Resource Type",
+            "type": "string"
+          },
+          "scope": {
+            "default": "all",
+            "enum": [
+              "agent",
+              "agents",
+              "all"
+            ],
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_type",
+          "resource_id",
+          "actions",
+          "duration"
+        ],
+        "title": "GrantIn",
         "type": "object"
       },
       "GuidanceRef": {
@@ -25574,7 +26305,8 @@
               "access_granted",
               "access_grant_revoked",
               "access_denied",
-              "access_deny_revoked"
+              "access_deny_revoked",
+              "access_refused"
             ],
             "title": "Kind",
             "type": "string"
@@ -26369,6 +27101,56 @@
           "draft"
         ],
         "title": "ToolDraftDecision",
+        "type": "object"
+      },
+      "ToolFacts": {
+        "description": "The tool a grant was given for: its version, classification and MCP definition hash. A tool grant matches only\nwhile the tool is still exactly this one, like a pre-grant (:func:`matching_pre_grant`): a new version, a changed\nclassification or another MCP definition ends it.",
+        "properties": {
+          "access": {
+            "enum": [
+              "read",
+              "write",
+              "destructive"
+            ],
+            "title": "Access",
+            "type": "string"
+          },
+          "definition_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Definition Hash"
+          },
+          "reach": {
+            "enum": [
+              "internal",
+              "external"
+            ],
+            "title": "Reach",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "access",
+          "reach"
+        ],
+        "title": "ToolFacts",
         "type": "object"
       },
       "ToolInfo": {
@@ -28667,6 +29449,507 @@
         "summary": "Access Audit Events",
         "tags": [
           "workspace"
+        ]
+      }
+    },
+    "/api/access/denies": {
+      "get": {
+        "operationId": "list_denies_api_access_denies_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Deny"
+                  },
+                  "title": "Response List Denies Api Access Denies Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Denies",
+        "tags": [
+          "access grants"
+        ]
+      },
+      "post": {
+        "description": "Block an access, whatever is granted (a deny for a folder also blocks every folder below it).",
+        "operationId": "create_deny_api_access_denies_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DenyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deny"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Create Deny",
+        "tags": [
+          "access grants"
+        ]
+      }
+    },
+    "/api/access/denies/{deny_id}": {
+      "delete": {
+        "operationId": "revoke_deny_api_access_denies__deny_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deny_id",
+            "required": true,
+            "schema": {
+              "title": "Deny Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deny"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Revoke Deny",
+        "tags": [
+          "access grants"
+        ]
+      }
+    },
+    "/api/access/explain": {
+      "get": {
+        "description": "Why one access is allowed or refused at its call site now (default action: the one the runtime checks there,\n``read`` for folders). A tool is taken as it is now, with its MCP server.",
+        "operationId": "explain_route_api_access_explain_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "resource_type",
+            "required": true,
+            "schema": {
+              "enum": [
+                "tool",
+                "folder",
+                "workflow",
+                "mcp_server",
+                "connection",
+                "cloud_provider"
+              ],
+              "title": "Resource Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "title": "Resource Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "action",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "read",
+                    "write",
+                    "move",
+                    "trash",
+                    "delete",
+                    "execute",
+                    "send",
+                    "submit"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action"
+            }
+          },
+          {
+            "in": "query",
+            "name": "agent",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "default": "supervised",
+              "enum": [
+                "supervised",
+                "unattended"
+              ],
+              "title": "Mode",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessExplanation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Explain Route",
+        "tags": [
+          "access grants"
+        ]
+      }
+    },
+    "/api/access/grants": {
+      "get": {
+        "operationId": "list_grants_api_access_grants_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Grant"
+                  },
+                  "title": "Response List Grants Api Access Grants Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Grants",
+        "tags": [
+          "access grants"
+        ]
+      },
+      "post": {
+        "description": "Grant an access. A tool grant holds for the tool as it is now and ends with a new version, another\nclassification or another MCP definition; deleting for good is never granted (``access.grant_destructive``).",
+        "operationId": "create_grant_api_access_grants_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Grant"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Create Grant",
+        "tags": [
+          "access grants"
+        ]
+      }
+    },
+    "/api/access/grants/{grant_id}": {
+      "delete": {
+        "description": "Revoke a grant; it no longer applies from the next access on, also for running tasks.",
+        "operationId": "revoke_grant_api_access_grants__grant_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_id",
+            "required": true,
+            "schema": {
+              "title": "Grant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Grant"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Revoke Grant",
+        "tags": [
+          "access grants"
+        ]
+      }
+    },
+    "/api/access/state": {
+      "get": {
+        "operationId": "access_state_api_access_state_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Access State",
+        "tags": [
+          "access grants"
+        ]
+      }
+    },
+    "/api/access/who-may": {
+      "get": {
+        "description": "\"Who may do what and why\": what decides each access an active grant or deny names, and its source.",
+        "operationId": "who_may_route_api_access_who_may_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "resource_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "tool",
+                    "folder",
+                    "workflow",
+                    "mcp_server",
+                    "connection",
+                    "cloud_provider"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resource Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resource_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resource Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "agent",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "supervised",
+                    "unattended"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mode"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AccessExplanation"
+                  },
+                  "title": "Response Who May Route Api Access Who May Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Who May Route",
+        "tags": [
+          "access grants"
         ]
       }
     },

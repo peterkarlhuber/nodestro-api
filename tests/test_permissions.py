@@ -158,7 +158,8 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # read: + skills list, one, versions, file, usage, export, check; library skills list and detail (NAL-B3)
         # read: + skill groups list and skill usage statistics (NAL-B4)
         # read: + the local inbox: notifications list and marking them read (NAL-A3; a member's own read state)
-        "read": 151,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
+        # read: + whether the access model v2 is on, and the safety limits (N-06)
+        "read": 152,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
         # MCP status, servers, server, tools (WP-3); tool approval inbox, run questions, pre-grants, state (S-2b)
         # edit: + starting and cancelling a portable export job (like the synchronous export)
         # edit: + uploading and removing a conversation's files (assistant files)
@@ -181,7 +182,8 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # admin: + service connections: create, change, delete, secret, check, events (NAL-A1)
         # admin: + archiving and deleting a skill (NAL-B3)
         # admin: + a person's connection test send (NAL-A4)
-        "admin": 58,  # + price sync, reviews, overrides, billing keys and reconciliation (PRICING-1); gate (Q-3);
+        # admin: + grants and denies: list, create, revoke (2 each), who-may, explain (N-06)
+        "admin": 66,  # + price sync, reviews, overrides, billing keys and reconciliation (PRICING-1); gate (Q-3);
         # MCP add, change, remove, discover, decision, events (WP-3); pre-grants, audit, activation (S-2b);
         # MCP OAuth start, callback, sign-out (WP-6); MCP stdio package plan (WP-8); MCP stats (WP-7);
         # Amazon Bedrock verification (a settings action)

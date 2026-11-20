@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, FastAPI
 
 from . import api
+from .api_access import router as access_router
 from .api_activity import router as activity_router
 from .api_agent_templates import router as agent_templates_router
 from .api_architect import router as architect_router
@@ -96,6 +97,7 @@ SLOTS: tuple[RouterSlot, ...] = (
     _static("mcp", mcp_router),
     _static("budget", budget_router),
     _static("approvals", tool_approvals_router),
+    _static("approvals", access_router),
     _static("activity", activity_router),
     _static("runs", run_chat_router),
     _static("core", error_codes_router),

@@ -45,7 +45,7 @@ from orkexa.skills import (
 from pydantic import BaseModel, Field
 
 from . import model_readiness
-from .api import Ctx, request_language
+from .api import Ctx, actor_id, request_language
 from .permissions import ADMIN, EDIT, READ, RUN
 from .serving import ApiError
 
@@ -526,7 +526,7 @@ def draft_tool_from_script(skill_id: str, version: int, body: ScriptDraftIn, ctx
         raise ApiError(status, code, "The script cannot become a tool") from None
     model = ctx.settings().assistant_model
     model_readiness.require_local_now(ctx, request, model, "agent_design")
-    connection = ctx.connect_model(model)
+    connection = ctx.connect_model(model, actor=actor_id(request))
 
     def record(job: ToolJob, tracker: UsageTracker) -> None:
         ctx.usage_log.record("tool_generation", tracker.records, label=job.origin or "", ref=job.id, tracker=tracker)

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Added (N-06, behind `NODESTRO_ACCESS_GRANTS` together with `NODESTRO_TOOL_APPROVALS`, both off; `docs/access-grants.md`):
+  - `/api/access` routes: `state` (`read`; always answers) and, for `admin`, list, create and revoke grants and
+    denies, `who-may` and `explain` ("who may do what and why"). Every route works per tenant. While the switch is
+    off, each of these answers `404 access.grants_disabled`.
+  - The writer of a record is the signed-in person. An API key or another machine principal is refused
+    (`403 access.person_required`).
+  - A tool grant takes the tool's version, classification and MCP definition from the tool library.
+  - `access.*` codes answer `403`, `404` or `422` instead of `400`, also on the published APIs. Those APIs never
+    serve the deciding record (`source`) in errors, run status or run events.
+  - The assistants, architect, API guide, tool generation, memory proposals and run chat pass the signed-in person
+    to `connect_model`. The benchmark judge connects unattended, and model choice only probes.
+  - Needs nodestro-runtime at or after #203.
+
 - Contract (N-06): the OpenAPI documents and `error_codes.json` follow nodestro-runtime's access grants (behind
   `NODESTRO_ACCESS_GRANTS`, off): optional `ToolCallApproval.access_source`, four `access_*` audit kinds and the runtime's
   `access.*` codes. No new route. Needs nodestro-runtime at or after 42ad387.

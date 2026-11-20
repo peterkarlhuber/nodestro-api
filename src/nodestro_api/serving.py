@@ -161,6 +161,37 @@ def _with_local_model_hint(params: dict[str, Any], codes: Iterable[str | None]) 
     return params
 
 
+#: Problem codes of the access model v2 (runtime, N-06) and the HTTP status they are answered with, here and in the
+#: studio API. Their ``source`` param (the grant or deny that decided) is never served on this API: a key is no person.
+ACCESS_ERROR_STATUS: dict[str, int] = {
+    # A refused access (spec 7.6): a run start, a sub-workflow or a cloud model request.
+    "access.denied": 403,
+    "access.safety_limit": 403,
+    "access.missing_grant": 403,
+    # Who writes: only a signed-in person, never from a tool call.
+    "access.person_required": 403,
+    "access.in_tool_call": 403,
+    "access.not_found": 404,
+    # A grant or deny that cannot be stored as asked.
+    "access.grant_destructive": 422,
+    "access.tool_facts_required": 422,
+    "access.unattended_scope": 422,
+    "access.unattended_too_long": 422,
+    "access.unattended_expiry": 422,
+    "access.deny_not_enforced": 422,
+    "access.expiry": 422,
+    "access.conversation_required": 422,
+    "access.folder_path": 422,
+    "access.invalid": 422,
+}
+
+
+def _without_source(params: dict[str, Any]) -> dict[str, Any]:
+    """Error params as this API serves them: without the ``source`` of an access decision (the runtime already
+    leaves it out for runs no person started; this keeps it out of every run a key reads, L-3)."""
+    return {key: value for key, value in params.items() if key != "source"}
+
+
 def _error_of(exc: BaseException) -> ApiError:
     """Turn what the engine or a check raised into an API error (never leaking internals)."""
     if isinstance(exc, ApiError):
@@ -172,6 +203,8 @@ def _error_of(exc: BaseException) -> ApiError:
         return ApiError(status, exc.code, safe_text(str(exc)), **exc.params)
     if isinstance(exc, WorkflowError):
         return ApiError(409, "release.invalid", "The published workflow cannot run; publish it again", detail=exc.code)
+    if isinstance(exc, NodestroError) and exc.code in ACCESS_ERROR_STATUS:
+        return ApiError(ACCESS_ERROR_STATUS[exc.code], exc.code, safe_text(str(exc)), **_without_source(exc.params))
     if isinstance(exc, NodestroError):
         problems = exc.params.get("problems")
         codes = [exc.code, *(item.get("code") for item in problems or [] if isinstance(item, dict))]
@@ -1107,7 +1140,7 @@ class ServingCore:
             ErrorOut(
                 code=run.error_code or "run.failed",
                 message=safe_text(run.error),
-                params=_with_local_model_hint(dict(run.error_params), failed_codes),
+                params=_with_local_model_hint(_without_source(run.error_params), failed_codes),
             )
             if run.error_code or run.error
             else None
@@ -1544,6 +1577,8 @@ class ServingCore:
         if fields is None:
             return None
         data = {key: event.data[key] for key in fields if key in event.data}
+        if isinstance(data.get("error_params"), dict):
+            data["error_params"] = _without_source(data["error_params"])
         return {"type": event.type, "node_id": event.node_id, "at": event.at.isoformat(), **data}
 
     async def events(self, request: Request, slug: str, run: Run, *, text: bool) -> StreamingResponse:

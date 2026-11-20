@@ -77,12 +77,18 @@ def _facts(publication: Publication, release: Release, samples: ApiExamples) -> 
 
 
 def generate(
-    ctx: Nodestro, publication: Publication, release: Release, samples: ApiExamples, language: str
+    ctx: Nodestro,
+    publication: Publication,
+    release: Release,
+    samples: ApiExamples,
+    language: str,
+    *,
+    actor: str = "system",
 ) -> ApiGuide:
-    """Ask the assistant model for a guide (one request, recorded as ``api_docs``)."""
+    """Ask the assistant model for a guide (one request, recorded as ``api_docs``); ``actor``: who asks."""
     model = ctx.settings().assistant_model
     tracker = ctx.tracker()
-    connection = ctx.connect_model(model)
+    connection = ctx.connect_model(model, actor=actor)
     agent: Agent[_GuideText] = Agent(
         name="api-guide",
         model=model_id(model),

@@ -24,7 +24,7 @@ from nodestro_runtime.schemas import LANGUAGES, RunSummary, Workflow
 from pydantic import BaseModel, Field
 
 from . import access_audit, api_guide, exporter, portable_build
-from .api import Ctx, _quote
+from .api import Ctx, _quote, actor_id
 from .api_examples import ApiExamples, examples
 from .api_guide import ApiGuide
 from .api_keys import ApiKeyOut, NewApiKey
@@ -511,7 +511,9 @@ def create_guide(publication_id: str, body: GuideIn, request: Request, ctx: Ctx)
         raise ValueError(f"Unknown language: {body.language}")
     publication = ctx.publications.get(publication_id)
     release, served = _served(ctx, publication, body.number)
-    return api_guide.generate(ctx, publication, release, examples(served, _base_url(request)), body.language)
+    return api_guide.generate(
+        ctx, publication, release, examples(served, _base_url(request)), body.language, actor=actor_id(request)
+    )
 
 
 @router.get("/publications/{publication_id}/guides", dependencies=READ)
