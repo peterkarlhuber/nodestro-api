@@ -15,6 +15,16 @@
   - `conversation.*` codes answer `404`, `409` or `422`. The OpenAPI documents (additive: the run trigger
     `conversation` and the input file origin `conversation`), `error_codes.json` and the backup's document checks
     follow. Needs nodestro-runtime with N-04 (#204).
+  - Review fixes:
+    - H-1: an answer's run is its conversation owner's. Every route with `{run_id}` answers `404 run.not_found` to
+      another member (checked once in `app_context`). The run list, the pending approvals, the tool approval inbox,
+      the budget requests and the assistant's run attachments leave such runs out. Deleting a conversation deletes
+      its runs.
+    - L-2: deleting a conversation revokes its grants for "this conversation"
+      (`api_access.revoke_conversation_grants`).
+    - L-5: an answer's event stream ends with `reason` `deleted` when the conversation is deleted.
+    - New code `conversation.cloud_model_not_chosen` (`422`, H-2). L-3 (multipart parsed before the switch answers)
+      is documented.
 
 - Added (N-06 review, low findings; still off by default):
   - L-1: `POST /api/access/grants` takes an optional `expected` (`version`, `definition_hash`), the tool as the

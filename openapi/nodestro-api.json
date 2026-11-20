@@ -34792,7 +34792,7 @@
     },
     "/api/budget-requests": {
       "get": {
-        "description": "The tenant's open budget requests, oldest first (also after a restart).",
+        "description": "The tenant's open budget requests, oldest first (also after a restart); not those of another user's\nconversation with an own agent (N-04).",
         "operationId": "budget_requests_api_budget_requests_get",
         "parameters": [
           {
@@ -35410,7 +35410,7 @@
     },
     "/api/conversations/{conversation_id}": {
       "delete": {
-        "description": "Delete it with its messages and files; a running answer is cancelled. The answers' runs stay.",
+        "description": "Delete it with its messages, files and the answers' runs (a running answer is cancelled first), and revoke its\ngrants for \"this conversation\". The usage ledger keeps the cost.",
         "operationId": "delete_conversation_api_conversations__conversation_id__delete",
         "parameters": [
           {
@@ -46405,7 +46405,7 @@
     },
     "/api/tool-approvals": {
       "get": {
-        "description": "Every question that waits for a person, oldest first (also after a restart).",
+        "description": "Every question that waits for a person, oldest first (also after a restart); not the questions of another\nuser's conversation with an own agent (N-04).",
         "operationId": "open_tool_approvals_api_tool_approvals_get",
         "responses": {
           "200": {

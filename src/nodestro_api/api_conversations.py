@@ -18,6 +18,11 @@ written.
 On a server a conversation belongs to the user who started it: every route with a conversation id answers
 ``404 conversation.not_found`` for another user's conversation, and the list shows only the user's own ones. Tenants are
 separated as everywhere (each tenant's workspace and store); a stored conversation of another tenant is never read.
+The answers' runs belong to the conversation too: every run route answers ``404 run.not_found`` for another user's
+answer run, and the run lists leave it out (:func:`nodestro_api.api.app_context`, H-1).
+
+With the switch off, the upload route still reads its multipart body before it answers ``404 conversation.disabled``
+(FastAPI parses the body before the route runs; the server's request size limit applies). Nothing is stored.
 """
 
 from __future__ import annotations
@@ -45,8 +50,8 @@ from nodestro_runtime.problems import NodestroError, Problem
 from pydantic import BaseModel
 
 from . import model_readiness
-from .api import Ctx, _sse, actor_id, uploaded_file_headers
-from .api_assistant import owner_of
+from .api import Ctx, _sse, actor_id, owner_of, uploaded_file_headers
+from .api_access import revoke_conversation_grants
 from .permissions import EDIT, READ, RUN, StreamAccess
 from .serving import ApiError
 
@@ -106,10 +111,16 @@ def change_conversation(
 
 
 @router.delete("/{conversation_id}", status_code=204, dependencies=EDIT)
-def delete_conversation(conversation_id: str, ctx: Ctx, request: Request) -> Response:
-    """Delete it with its messages and files; a running answer is cancelled. The answers' runs stay."""
+async def delete_conversation(conversation_id: str, ctx: Ctx, request: Request) -> Response:
+    """Delete it with its messages, files and the answers' runs (a running answer is cancelled first), and revoke its
+    grants for "this conversation". The usage ledger keeps the cost."""
     owner = _owner(request)
-    _found(lambda: ctx.conversations.delete(conversation_id, owner))
+    try:
+        await ctx.conversations.delete(conversation_id, owner)
+    except ConversationNotFound as missing:
+        name = str(missing.args[0]) if missing.args else ""
+        raise ApiError(404, "conversation.not_found", "The conversation or its part does not exist", id=name) from None
+    revoke_conversation_grants(ctx, request, conversation_id, owner)
     return Response(status_code=204)
 
 
@@ -225,6 +236,14 @@ async def message_events(conversation_id: str, message_id: str, ctx: Ctx, reques
         found = ctx.conversations.message(conversation_id, owner, message_id)
         return _sse("snapshot", found.model_dump(mode="json"))
 
+    def gone() -> bool:
+        """The conversation was deleted (or is no longer the caller's) while the stream ran (L-5)."""
+        try:
+            ctx.conversations.get(conversation_id, owner)
+        except ConversationNotFound:
+            return True
+        return False
+
     async def stream() -> AsyncIterator[str]:
         if not ctx.runs.is_live(run_id):
             yield snapshot()
@@ -240,12 +259,18 @@ async def message_events(conversation_id: str, message_id: str, ctx: Ctx, reques
                 if await access.lost():
                     yield _sse("end", {"reason": "access_ended"})
                     return
+                if gone():
+                    yield _sse("end", {"reason": "deleted"})
+                    return
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=access.wait)
                 except TimeoutError:
                     yield ": keep-alive\n\n"
                     continue
                 if event is None:
+                    if gone():
+                        yield _sse("end", {"reason": "deleted"})
+                        return
                     found = ctx.conversations.message(conversation_id, owner, message_id)
                     yield _sse("end", {"status": found.status})
                     return

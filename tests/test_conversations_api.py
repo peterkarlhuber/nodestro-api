@@ -147,7 +147,8 @@ def test_create_send_follow_rename_export_and_delete(chatting: TestClient) -> No
     assert client.delete(f"{BASE}/{conversation_id}").status_code == 204
     missing = client.get(f"{BASE}/{conversation_id}")
     assert (missing.status_code, missing.json()["code"]) == (404, "conversation.not_found")
-    assert client.get(f"/api/runs/{answer['run_id']}").status_code == 200  # the run stays
+    # The answer's run went with it (H-1): it held the conversation.
+    assert client.get(f"/api/runs/{answer['run_id']}").status_code == 404
 
 
 def test_a_live_answer_streams_the_run_events_and_can_be_cancelled(
@@ -290,3 +291,108 @@ def test_another_users_conversation_and_files_do_not_exist(chatting: TestClient)
     _as(client, alice)
     assert client.get(f"/api/inputs/{file_id}").status_code == 200
     assert client.get(f"{BASE}/{conversation_id}").status_code == 200
+
+
+# ---- review fixes (independent review of N-04) ---------------------------------------------------------------------
+
+
+def _run_routes(client: TestClient) -> list[tuple[str, str]]:
+    """Every studio route with a run id in its path (not the published APIs, not benchmark runs)."""
+    from nodestro_api.permissions import check_routes
+
+    return sorted(
+        {
+            (item.method, item.path)
+            for item in check_routes(client.app)  # type: ignore[arg-type]
+            if "{run_id}" in item.path and not item.path.startswith(("/api/published", "/api/benchmark-runs"))
+        }
+    )
+
+
+def test_h1_another_users_answer_run_does_not_exist_on_any_run_route(chatting: TestClient) -> None:
+    """H-1: an answer's run holds the conversation (input), the answer (output) and its files. Another member gets
+    404 on every route with a run id, and the run is left out of the run list and of the assistant's attachments."""
+    client = chatting
+    alice = Principal(id="usr_alice", role="owner", permissions=ALL_PERMISSIONS)
+    bob = Principal(id="usr_bob", role="owner", permissions=ALL_PERMISSIONS)
+    _as(client, alice)
+    conversation_id = conversation(client)["id"]
+    sent = client.post(f"{BASE}/{conversation_id}/messages", json={"content": "What is 6 times 7?"}).json()
+    run_id = sent["assistant"]["run_id"]
+    wait(client, run_id)
+    assert client.get(f"/api/runs/{run_id}").status_code == 200
+    assert run_id in {item["id"] for item in client.get("/api/runs").json()}
+
+    _as(client, bob)
+    routes = _run_routes(client)
+    assert len(routes) >= 20  # runs, export, files, cancel, resume, approvals, tool approvals, budget, chat, events
+    for method, path in routes:
+        url = path.format(run_id=run_id, file_id="f_1", node_id="agent", request_id="tap_1", message_id="m_1")
+        response = client.request(method, url, json={})
+        assert response.status_code == 404, (method, path, response.status_code)
+        assert response.json()["code"] == "run.not_found", (method, path)
+    assert run_id not in {item["id"] for item in client.get("/api/runs").json()}
+    assert client.get("/api/runs", params={"trigger_ref": conversation_id}).json() == []
+    assistant = client.post("/api/assistant/conversations", json={}).json()
+    attached = client.post(
+        f"/api/assistant/conversations/{assistant['id']}/attachments", json={"kind": "run", "ref_id": run_id}
+    )
+    assert (attached.status_code, attached.json()["code"]) == (404, "run.not_found")
+
+    _as(client, alice)  # nothing was changed by the other member
+    run = client.get(f"/api/runs/{run_id}")
+    assert run.status_code == 200 and run.json()["status"] == "succeeded"
+
+
+def test_l2_deleting_a_conversation_revokes_its_grants(chatting: TestClient) -> None:
+    from nodestro_runtime.tool_approvals import AccessRules, Person
+    from nodestro_runtime.tool_policy import AccessResource, ToolFacts
+
+    client = chatting
+    conversation_id = conversation(client)["id"]
+    ctx = client.app.state.nodestro  # type: ignore[attr-defined]
+    info = ctx.tools.get("calculator")
+    granted = AccessRules(ctx.store).grant(
+        resource=AccessResource(type="tool", id="calculator"),
+        tool=ToolFacts.of(info.capability, version=info.version),
+        actions=["execute"],
+        duration="conversation",
+        conversation_id=conversation_id,
+        by=Person("local"),
+    )
+    assert client.delete(f"{BASE}/{conversation_id}").status_code == 204
+    [stored] = [item for item in AccessRules(ctx.store).grants() if item.id == granted.id]
+    assert (stored.status, stored.revoked_by) == ("revoked", "local")
+
+
+def test_l5_the_answer_stream_ends_when_the_conversation_is_deleted(
+    make_app: Callable[..., TestClient], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(CONVERSATIONS_ENV, "1")
+    gate = threading.Event()
+
+    def held(_request: dict[str, Any]) -> Any:
+        assert gate.wait(10)
+        return text("Late.")
+
+    client = make_app({"AGENT": [held]})
+    conversation_id = conversation(client)["id"]
+    sent = client.post(f"{BASE}/{conversation_id}/messages", json={"content": "Hi"}).json()["assistant"]
+    received: list[str] = []
+
+    def follow() -> None:
+        with client.stream("GET", f"{BASE}/{conversation_id}/messages/{sent['id']}/events") as stream:
+            received.append(stream.read().decode())
+
+    reader = threading.Thread(target=follow)
+    reader.start()
+    time.sleep(0.3)
+    deleting = threading.Thread(target=lambda: client.delete(f"{BASE}/{conversation_id}"))
+    deleting.start()
+    time.sleep(0.3)
+    gate.set()
+    deleting.join(20)
+    reader.join(20)
+    found = events(received[0])
+    assert found[0][0] == "snapshot"
+    assert found[-1] == ("end", {"reason": "deleted"})
