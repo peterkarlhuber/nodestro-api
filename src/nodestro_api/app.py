@@ -9,49 +9,29 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Callable, Iterable
-from contextlib import asynccontextmanager, suppress
+from contextlib import AbstractAsyncContextManager, asynccontextmanager, suppress
 import logging
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from nodestro_runtime.extensions import Integration
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.workspace import DataDirectoryLock
 
 from . import __version__, recovery
-from .api import install_error_handlers, router
-from .api_agent_templates import router as agent_templates_router
-from .api_architect import router as architect_router
-from .api_assistant import router as assistant_router
-from .api_automation import router as automation_router
-from .api_budget import router as budget_router
-from .api_connections import router as connections_router
-from .api_data import router as data_router
-from .api_inbox import router as inbox_router
-from .api_inputs import router as inputs_router
-from .api_local_models import router as local_models_router
-from .api_mcp import router as mcp_router
-from .api_pricing import router as pricing_router
-from .api_publish import router as publish_router
-from .api_python import router as python_router
+from .api import install_error_handlers
 from .api_reference import install_api_reference
-from .api_run_chat import router as run_chat_router
-from .api_skills import router as skills_router
-from .api_tool_approvals import router as tool_approvals_router
 from .app_contract import ContractHeaderMiddleware
-from .app_discovery import build_app_router
 from .body_limit import BodyLimitMiddleware, BodyLimits
 from .context import AppConfig, Nodestro
-from .error_codes import router as error_codes_router
 from .launch import LOCAL_COOKIE, LaunchSecretMiddleware, check_secret
 from .local_access import LocalAccessMiddleware, allowed_hosts, listens_everywhere, require_loopback_only
 from .local_container import CONTAINER_PORT, loopback_hosts, require_safe_configuration
 from .local_container import REFUSAL as LOCAL_REFUSAL
-from .mcp_server import build_mcp_router
 from .permissions import check_routes, resolver_for
+from .router_groups import GROUPS, REQUIRED_GROUPS, check_groups, include_groups
 from .security_headers import SecurityHeadersMiddleware
-from .serving import build_router
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +58,35 @@ def create_app(
     A desktop database that the runtime refuses but the user may repair (``storage.unsafe_file`` with ``fixable``),
     or a start the desktop shell asked for with ``NODESTRO_RECOVERY``, gives the recovery app instead: the same guards
     and only the confirmed repair of the database's permissions (:mod:`nodestro_api.recovery`, TABRION MIG-NOD-9)."""
-    config = config or AppConfig.from_env()
+    return compose_app(
+        config or AppConfig.from_env(),
+        GROUPS,
+        client_factory=client_factory,
+        python_runner=python_runner,
+        ocr_runner=ocr_runner,
+        integrations=integrations,
+        scheduler=scheduler,
+    )
+
+
+def compose_app(
+    config: AppConfig,
+    groups: Iterable[str],
+    *,
+    routers: Iterable[APIRouter] = (),
+    title: str = "Nodestro",
+    version: str = __version__,
+    description: str = "",
+    client_factory: Callable[[str], Any] | None = None,
+    python_runner: Any | None = None,
+    ocr_runner: Any | None = None,
+    integrations: Iterable[Integration] | None = None,
+    scheduler: bool = True,
+) -> FastAPI:
+    """The app of :func:`create_app` with only the router ``groups`` of :mod:`nodestro_api.router_groups` (the
+    required ones always) and then ``routers``: the same checks of the configuration, guards, error answers,
+    background services and fail-closed access check (:func:`nodestro_api.host.create_product_app` documents it)."""
+    selected = check_groups(groups) | REQUIRED_GROUPS
     profile = config.profile.validate()
     if profile.kind == "desktop":
         require_loopback_only(config.host, config.allowed_hosts)
@@ -101,6 +109,38 @@ def create_app(
         if not recovery.recoverable(config, error):
             raise
         return _recovery_app(config, error)
+
+    # /docs belongs to the built-in user documentation; the API reference lives under /api (its page with the
+    # vendored Swagger UI: nodestro_api.api_reference).
+    app = FastAPI(
+        title=title,
+        version=version,
+        description=description,
+        lifespan=service_lifespan(nodestro, scheduler=scheduler),
+        docs_url=None,
+        redoc_url=None,
+        openapi_url="/api/openapi.json",
+    )
+    app.state.nodestro = nodestro
+    # Who sends a request: on the desktop always the local owner (every permission).
+    app.state.principal_resolver = resolver_for(profile)
+    install_guards(app, config)
+    # One registry keeps the order rules between routers whose paths overlap (nodestro_api.router_groups).
+    include_groups(app, selected, nodestro)
+    for extra in routers:
+        app.include_router(extra)
+    install_api_reference(app, "/api/openapi.json")
+    # Fail closed: an application with a route that declares no access requirement is not built.
+    check_routes(app)
+    return app
+
+
+def service_lifespan(
+    nodestro: Nodestro, *, scheduler: bool = True
+) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
+    """The background services of an app on one workspace, as a FastAPI ``lifespan``: schedules (unless
+    ``scheduler=False``), the network listener, the managed local models, the reference-price sync, the sweep of
+    paused runs and the retention of chat files; at the end every service is stopped and the workspace closed."""
 
     async def shutdown() -> None:
         # Every service is stopped even when one of them fails, and the database is closed last.
@@ -155,56 +195,13 @@ def create_app(
                         await asyncio.wait_for(task, timeout=5)
             await shutdown()
 
-    # /docs belongs to the built-in user documentation; the API reference lives under /api (its page with the
-    # vendored Swagger UI: nodestro_api.api_reference).
-    app = FastAPI(
-        title="Nodestro",
-        version=__version__,
-        lifespan=lifespan,
-        docs_url=None,
-        redoc_url=None,
-        openapi_url="/api/openapi.json",
-    )
-    app.state.nodestro = nodestro
-    # Who sends a request: on the desktop always the local owner (every permission).
-    app.state.principal_resolver = resolver_for(profile)
-    _install_guards(app, config)
-    # Before the main router: /api/tools/drafts must not be taken for a tool named "drafts".
-    # Published workflows (``/api/published``): key-protected, answered only on this computer here;
-    # the network listener (``nodestro_api.network``) serves them separately when switched on.
-    # Nodestro's MCP server (WP-11, off by default) before ``/{slug}``, which would also match ``_mcp``.
-    app.include_router(build_mcp_router(nodestro.mcp_server))
-    app.include_router(build_router(nodestro.serving, channel="local"))
-    # The app contract's discovery (NAL-C1, docs/app-api/v1.md): public, more with a published API's key.
-    app.include_router(build_app_router(nodestro.serving, channel="local"))
-    app.include_router(publish_router)
-    app.include_router(architect_router)
-    app.include_router(python_router)
-    app.include_router(automation_router)
-    app.include_router(assistant_router)
-    app.include_router(inputs_router)
-    app.include_router(pricing_router)
-    app.include_router(local_models_router)
-    # Before the main router: /api/library/agents must not be taken for an example named "agents".
-    app.include_router(agent_templates_router)
-    app.include_router(skills_router)  # before the main router (/api/library/skills)
-    app.include_router(inbox_router)
-    app.include_router(connections_router)
-    app.include_router(mcp_router)
-    app.include_router(budget_router)
-    app.include_router(tool_approvals_router)
-    app.include_router(run_chat_router)
-    app.include_router(error_codes_router)
-    app.include_router(router)
-    app.include_router(data_router)
-    install_api_reference(app, "/api/openapi.json")
-    # Fail closed: an application with a route that declares no access requirement is not built.
-    check_routes(app)
-    return app
+    return lifespan
 
 
-def _install_guards(app: FastAPI, config: AppConfig) -> None:
-    """The guards of every studio API app, the recovery app's included, and its error answers."""
+def install_guards(app: FastAPI, config: AppConfig) -> None:
+    """The guards of every studio API app, the recovery app's and every product app's included, and its error
+    answers: the body limits, the launch secret or access key, the host and origin checks, the contract and security
+    headers, by the configuration's profile."""
     # Innermost of the guards: a request the host, origin or launch checks refuse is never read (API2-03).
     app.add_middleware(BodyLimitMiddleware, limits=BodyLimits.from_env())
     local = config.profile_kind == "local-container"
@@ -269,7 +266,7 @@ def _recovery_app(config: AppConfig, error: NodestroError | None) -> FastAPI:
     )
     app.state.recovery = True
     app.state.principal_resolver = resolver_for(config.profile)
-    _install_guards(app, config)
+    install_guards(app, config)
     app.include_router(
         recovery.build_router(
             recovery.database_path(config),
