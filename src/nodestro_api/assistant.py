@@ -825,16 +825,25 @@ class Assistant:
     # ---- messages ----------------------------------------------------------------------
 
     def send(
-        self, conversation_id: str, body: SendRequest, *, loop: asyncio.AbstractEventLoop | None = None
+        self,
+        conversation_id: str,
+        body: SendRequest,
+        *,
+        loop: asyncio.AbstractEventLoop | None = None,
+        actor: str = "system",
     ) -> SentMessage:
-        """Store the user's message with its context and files and start the answer in the background."""
+        """Store the user's message with its context and files and start the answer in the background; ``actor``:
+        who asks (the access model v2 checks the cloud model for that person, N-06)."""
         if not body.content.strip() and not body.file_ids:
             raise NodestroError("assistant.message_empty", "Please write a message")
-        self.nodestro.connect_model(body.model or self.nodestro.settings().assistant_model)  # nothing stored then
+        model = body.model or self.nodestro.settings().assistant_model
+        self.nodestro.connect_model(model, actor=actor)  # nothing stored then
         with self._lock:
-            return self._send(conversation_id, body, loop)
+            return self._send(conversation_id, body, loop, actor)
 
-    def _send(self, conversation_id: str, body: SendRequest, loop: asyncio.AbstractEventLoop | None) -> SentMessage:
+    def _send(
+        self, conversation_id: str, body: SendRequest, loop: asyncio.AbstractEventLoop | None, actor: str
+    ) -> SentMessage:
         conversation = self._conversation(conversation_id)
         if self._busy(conversation_id):
             raise NodestroError("assistant.busy", "The assistant is still answering in this conversation")
@@ -896,7 +905,7 @@ class Assistant:
         self.store.put(_MESSAGES, _key(conversation_id, user.seq), user)
         self.store.put(_MESSAGES, _key(conversation_id, assistant.seq), assistant)
         self._save(conversation)
-        self._start(conversation_id, assistant, user, loop)
+        self._start(conversation_id, assistant, user, loop, actor)
         return SentMessage(user=user, assistant=assistant)
 
     def retry(
@@ -906,12 +915,13 @@ class Assistant:
         body: RetryRequest,
         *,
         loop: asyncio.AbstractEventLoop | None = None,
+        actor: str = "system",
     ) -> ChatMessage:
         """Answer a failed or cancelled message again, with the same question and context."""
-        self.nodestro.connect_model(body.model or self.nodestro.settings().assistant_model)
+        self.nodestro.connect_model(body.model or self.nodestro.settings().assistant_model, actor=actor)
         # Checked and started under the lock, like a new message: two retries never both start.
         with self._lock:
-            return self._retry(conversation_id, message_id, body, loop)
+            return self._retry(conversation_id, message_id, body, loop, actor)
 
     def _retry(
         self,
@@ -919,6 +929,7 @@ class Assistant:
         message_id: str,
         body: RetryRequest,
         loop: asyncio.AbstractEventLoop | None,
+        actor: str,
     ) -> ChatMessage:
         history = self.messages(conversation_id)
         message = next((item for item in history if item.id == message_id), None)
@@ -945,7 +956,7 @@ class Assistant:
         message.language = body.language
         message.model = body.model or self.nodestro.settings().assistant_model
         self.store.put(_MESSAGES, _key(conversation_id, message.seq), message)
-        self._start(conversation_id, message, user, loop)
+        self._start(conversation_id, message, user, loop, actor)
         return message
 
     def cancel(self, conversation_id: str, message_id: str) -> ChatMessage:
@@ -1052,6 +1063,7 @@ class Assistant:
         message: ChatMessage,
         user: ChatMessage,
         loop: asyncio.AbstractEventLoop | None,
+        actor: str = "system",
     ) -> None:
         cancelled = threading.Event()
         message.attempts += 1
@@ -1062,7 +1074,7 @@ class Assistant:
             self._subscribers.setdefault(message.id, [])
         if loop is not None:
             self._loop = loop
-        reply = _Reply(self, conversation_id, message, user, cancelled)
+        reply = _Reply(self, conversation_id, message, user, cancelled, actor=actor)
         threading.Thread(target=reply.run, name=f"assistant-{message.id}", daemon=True).start()
 
     def _finish(self, message: ChatMessage, status: MessageStatus, error: Problem | None = None) -> bool:
@@ -1134,9 +1146,13 @@ class _Reply:
         message: ChatMessage,
         user: ChatMessage,
         cancelled: threading.Event,
+        *,
+        actor: str = "system",
     ) -> None:
         self.service = service
         self.nodestro = service.nodestro
+        #: Who asked (the access model v2 checks the cloud model for that person, N-06).
+        self.actor = actor
         self.conversation_id = conversation_id
         self.message = message
         self.user = user
@@ -1417,7 +1433,7 @@ class _Reply:
         status: MessageStatus
         error: Problem | None
         try:
-            connection = self.nodestro.connect_model(model)
+            connection = self.nodestro.connect_model(model, actor=self.actor)
             prompt = self.prompt()
             files = self.files(model)
             self.agent = Agent(

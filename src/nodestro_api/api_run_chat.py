@@ -244,7 +244,7 @@ async def send_run_chat_message(
     model = ctx.settings().assistant_model
     if body.kind == "question":
         # No key for the answer model: refused before anything is stored (asked off the event loop, RT3-04 pattern).
-        await asyncio.to_thread(ctx.connect_model, model)
+        await asyncio.to_thread(ctx.connect_model, model, actor=principal.id)
 
     def check() -> str | None:
         # Read again inside the conversation's transaction: the run may have ended since the request came in.

@@ -510,7 +510,10 @@ class WorkflowArchitect:
 
     # ---- public API ----------------------------------------------------------------
 
-    def start(self, request: ArchitectRequest, *, loop: asyncio.AbstractEventLoop | None = None) -> ArchitectJob:
+    def start(
+        self, request: ArchitectRequest, *, loop: asyncio.AbstractEventLoop | None = None, actor: str = "system"
+    ) -> ArchitectJob:
+        """Start a job in its own thread; ``actor``: who asks (the access model v2 checks its cloud model, N-06)."""
         if not request.description.strip():
             raise NodestroError("architect.description_missing", "Please describe the workflow")
         if request.mode == "revise" and request.workflow is None:
@@ -534,7 +537,7 @@ class WorkflowArchitect:
             self._subscribers[job.id] = []
         if loop is not None:
             self._loop = loop
-        session = _Session(self, job, request, cancelled)
+        session = _Session(self, job, request, cancelled, actor=actor)
         threading.Thread(target=session.run, name=f"architect-{job.id}", daemon=True).start()
         return job
 
@@ -704,9 +707,16 @@ class _Session:
     """Carries out one job in its thread."""
 
     def __init__(
-        self, service: WorkflowArchitect, job: ArchitectJob, request: ArchitectRequest, cancelled: threading.Event
+        self,
+        service: WorkflowArchitect,
+        job: ArchitectJob,
+        request: ArchitectRequest,
+        cancelled: threading.Event,
+        *,
+        actor: str = "system",
     ) -> None:
         self.service = service
+        self.actor = actor
         self.nodestro = service.nodestro
         self.job = job
         self.request = request
@@ -984,7 +994,7 @@ class _Session:
 
     def _connection(self) -> Connection:
         if self.connection is None:
-            self.connection = self.nodestro.connect_model(self.model)
+            self.connection = self.nodestro.connect_model(self.model, actor=self.actor)
         return self.connection
 
     # ---- the steps -----------------------------------------------------------------

@@ -106,8 +106,8 @@ from .permissions import (
 from .publishing import PUBLICATIONS, RELEASES
 from .references import Reference, ReferenceKind, references
 from .search import readable_documents, stored_workflows
+from .serving import ACCESS_ERROR_STATUS, ApiError
 from .serving import PREFIX as PUBLISHED_PREFIX
-from .serving import ApiError
 from .tool_versions import ToolVersion, tool_versions
 
 # The routes of this module in named parts, one per section (the router groups of nodestro_api.router_groups); the
@@ -170,6 +170,8 @@ NODESTRO_ERROR_STATUS = {
     # A note to the agent the approval cannot take: too long once cleaned, or turned off there (E-0R-1 A).
     "approval.agent_note_too_long": 422,
     "approval.agent_note_disabled": 422,
+    # The access model v2 (N-06): a refused access, who may write, and grants or denies that cannot be stored.
+    **ACCESS_ERROR_STATUS,
 }
 
 
@@ -355,6 +357,7 @@ PATH_TAGS: dict[str, str] = {
     "tool-approvals": "tool approvals",
     "tool-pre-grants": "tool approvals",
     "activity": "activity",
+    "access": "access grants",
     "python": "Python environments",
     "sandbox": "tools",
     "agents": "agents",
@@ -2144,7 +2147,7 @@ class DesignRequest(BaseModel):
 def design_agent(body: DesignRequest, ctx: Ctx, request: Request) -> AgentDraft:
     settings = ctx.settings()
     model_readiness.require_local_now(ctx, request, settings.assistant_model, "agent_design")
-    connection = ctx.connect_model(settings.assistant_model)
+    connection = ctx.connect_model(settings.assistant_model, actor=actor_id(request))
     tracker = ctx.tracker()
     try:
         return ctx.assistants.design_agent(
@@ -2284,7 +2287,7 @@ def list_jobs(ctx: Ctx) -> list[ToolJob]:
 def start_job(body: JobRequest, ctx: Ctx, request: Request) -> ToolJob:
     model = ctx.settings().assistant_model
     model_readiness.require_local_now(ctx, request, model, "agent_design")
-    connection = ctx.connect_model(model)  # fail fast without provider settings
+    connection = ctx.connect_model(model, actor=actor_id(request))  # fail fast without provider settings
 
     def record(job: ToolJob, tracker: UsageTracker) -> None:
         ctx.usage_log.record("tool_generation", tracker.records, label=job.requirement, ref=job.id, tracker=tracker)
@@ -2577,9 +2580,9 @@ def list_spaces(ctx: Ctx) -> list[MemorySpaceInfo]:
 
 
 @memory_router.post("/memory/propose", dependencies=RUN)
-def propose_memory(body: MemoryProposalRequest, ctx: Ctx) -> MemoryProposal:
+def propose_memory(body: MemoryProposalRequest, ctx: Ctx, request: Request) -> MemoryProposal:
     model = ctx.settings().assistant_model
-    connection = ctx.connect_model(model)
+    connection = ctx.connect_model(model, actor=actor_id(request))
     tracker = ctx.tracker()
     try:
         seed, cost = ctx.assistants.propose_memory(

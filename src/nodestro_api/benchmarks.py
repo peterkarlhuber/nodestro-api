@@ -711,7 +711,8 @@ class Benchmarks:
         verdict = JudgeVerdict(model=model, passed=False, score=0.0)
         try:
             judge = check_model(model)
-            connection = self.ctx.connect_model(judge)
+            # Nobody waits for the judge: unattended denies and limits apply (N-06).
+            connection = self.ctx.connect_model(judge, attended=False)
             evaluator = Evaluator(
                 model=model_id(judge),
                 options=connection.options(),

@@ -274,7 +274,7 @@ def recommend(ctx: Nodestro, suite: Suite, runs: list[BenchmarkRun], node_id: st
 def _available(ctx: Nodestro, model: str) -> bool:
     """Whether the model's provider is configured and reachable under the operator's endpoint rules."""
     try:
-        ctx.connect_model(model)
+        ctx.connect_model(model, probe=True)
     except NodestroError:
         return False
     return True

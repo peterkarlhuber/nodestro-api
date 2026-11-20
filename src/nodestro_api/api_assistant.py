@@ -233,7 +233,7 @@ async def send_message(conversation_id: str, body: SendRequest, ctx: Ctx, reques
     body = await _ready(ctx, request, body)
     # send() checks the model's connection (a local model server is asked): off the event loop (RT3-04 pattern).
     loop = asyncio.get_running_loop()
-    return await asyncio.to_thread(ctx.assistant.send, conversation_id, body, loop=loop)
+    return await asyncio.to_thread(ctx.assistant.send, conversation_id, body, loop=loop, actor=actor_id(request))
 
 
 @router.post("/conversations/{conversation_id}/messages/{message_id}/retry", dependencies=RUN)
@@ -243,7 +243,9 @@ async def retry_message(
     _own(ctx, request, conversation_id)
     body = await _ready(ctx, request, body)
     loop = asyncio.get_running_loop()
-    return await asyncio.to_thread(ctx.assistant.retry, conversation_id, message_id, body, loop=loop)
+    return await asyncio.to_thread(
+        ctx.assistant.retry, conversation_id, message_id, body, loop=loop, actor=actor_id(request)
+    )
 
 
 async def _ready(ctx: Ctx, request: Request, body: _Body) -> _Body:
