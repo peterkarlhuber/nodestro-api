@@ -1913,6 +1913,17 @@
       "ApprovalConfig": {
         "description": "A pause for a person who approves or rejects the results that arrive here.",
         "properties": {
+          "allow_agent_note": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Agent Note"
+          },
           "allow_comment": {
             "default": true,
             "title": "Allow Comment",
@@ -1950,6 +1961,12 @@
       },
       "ApprovalDecision": {
         "properties": {
+          "agent_note": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Agent Note",
+            "type": "string"
+          },
           "comment": {
             "default": "",
             "maxLength": 4000,
@@ -1974,6 +1991,12 @@
       "ApprovalDecisionIn": {
         "additionalProperties": false,
         "properties": {
+          "agent_note": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Agent Note",
+            "type": "string"
+          },
           "approval_id": {
             "anyOf": [
               {
@@ -2025,6 +2048,11 @@
       "ApprovalOut": {
         "description": "An approval that waits for a decision: what to review and how to answer.",
         "properties": {
+          "allow_agent_note": {
+            "default": true,
+            "title": "Allow Agent Note",
+            "type": "boolean"
+          },
           "allow_comment": {
             "default": true,
             "title": "Allow Comment",
@@ -2088,6 +2116,11 @@
       "ApprovalRecord": {
         "description": "A person's decision at an approval node; nothing is ever approved automatically.",
         "properties": {
+          "agent_note": {
+            "default": "",
+            "title": "Agent Note",
+            "type": "string"
+          },
           "comment": {
             "default": "",
             "title": "Comment",
@@ -15386,6 +15419,11 @@
       },
       "PendingApproval": {
         "properties": {
+          "allow_agent_note": {
+            "default": true,
+            "title": "Allow Agent Note",
+            "type": "boolean"
+          },
           "allow_comment": {
             "default": true,
             "title": "Allow Comment",
@@ -40987,7 +41025,7 @@
     },
     "/api/runs/{run_id}/approvals/{node_id}": {
       "post": {
-        "description": "Approve or reject at an approval node; the run (its top-level run) continues right away.\n\nAnswers the top-level run as it goes on: ``queued`` (or already ``running``/finished), never the ``paused`` state\nthe decision ended (X-01).",
+        "description": "Approve or reject at an approval node; the run (its top-level run) continues right away.\n\nAnswers the top-level run as it goes on: ``queued`` (or already ``running``/finished), never the ``paused`` state\nthe decision ended (X-01). ``comment`` is for people only; ``agent_note`` is the only text later agents read\n(E-0R-1 A): a note the approval does not take, or one too long once cleaned, answers ``422``.",
         "operationId": "decide_approval_api_runs__run_id__approvals__node_id__post",
         "parameters": [
           {

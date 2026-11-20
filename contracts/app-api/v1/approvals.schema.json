@@ -41,6 +41,10 @@
         "require_comment_on_reject": {
           "type": "boolean"
         },
+        "allow_agent_note": {
+          "type": "boolean",
+          "description": "Whether the decision may carry agent_note, the only text of a decision that later agents read; the comment is for people only. Absent in older backends: treat as false."
+        },
         "on_reject": {
           "type": "string"
         },

@@ -163,7 +163,14 @@ def _error(status_code: int, code: str, detail: str, **params: Any) -> JSONRespo
 #: Runtime error codes that are not a plain bad request (any other: ``400``): a conflict with work in progress
 #: (``409``), or a well-formed file the runtime refuses to process, such as a PDF over the PDF limits (``422``,
 #: MUP-ONA A1).
-NODESTRO_ERROR_STATUS = {"local.job_running": 409, "lease.lost": 409, "document.too_complex": 422}
+NODESTRO_ERROR_STATUS = {
+    "local.job_running": 409,
+    "lease.lost": 409,
+    "document.too_complex": 422,
+    # A note to the agent the approval cannot take: too long once cleaned, or turned off there (E-0R-1 A).
+    "approval.agent_note_too_long": 422,
+    "approval.agent_note_disabled": 422,
+}
 
 
 def install_error_handlers(app: FastAPI) -> None:
@@ -1046,7 +1053,7 @@ def copy_library_part(part_id: str, body: LibraryPartCopy, request: Request, ctx
     host = _LibraryHost(ctx)
     try:
         made = library.instantiate_part(part_id, language, host, models=models)
-        copy = ctx.save_workflow(_checked(made.workflow))
+        copy = ctx.save_workflow(_checked(_new_approvals(made.workflow)))
     except Exception:
         host.undo()
         raise
@@ -1101,6 +1108,20 @@ class LibraryCopy(BaseModel):
 _LIBRARY_DIGEST = "library_sha256"
 
 
+def _new_approvals(workflow: WorkflowIn) -> WorkflowIn:
+    """A new workflow from the library: its approvals take the note to the agent explicitly (E-0R-1 A).
+
+    ``allow_agent_note`` left open (``None``) marks a workflow saved before the note existed, which the check warns
+    about once; a fresh copy has no earlier behavior to point out. The reviewer's comment stays with people."""
+    nodes = [
+        node.model_copy(update={"approval": node.approval.model_copy(update={"allow_agent_note": True})})
+        if node.approval is not None and node.approval.allow_agent_note is None
+        else node
+        for node in workflow.nodes
+    ]
+    return workflow.model_copy(update={"nodes": nodes})
+
+
 class _LibraryHost:
     """Stores what a copy of a template needs in the workspace (:class:`nodestro_examples.CopyHost`).
 
@@ -1113,7 +1134,7 @@ class _LibraryHost:
         self.inputs: list[str] = []
 
     def save_workflow(self, workflow: WorkflowIn) -> tuple[str, int | None]:
-        saved = self.ctx.save_workflow(_checked(workflow))
+        saved = self.ctx.save_workflow(_checked(_new_approvals(workflow)))
         self.workflows.append(saved.id)
         return saved.id, self.ctx.current_version(saved)
 
@@ -1295,7 +1316,7 @@ def copy_library_template(template_id: str, body: LibraryCopy, request: Request,
             offline=[item.id for item in spec.integrations if item.id not in connections],
             connected=[item.id for item in spec.integrations if item.id in connections],
         )
-        copy = ctx.save_workflow(Workflow(**_checked(made.workflow).model_dump(), origin=origin))
+        copy = ctx.save_workflow(Workflow(**_checked(_new_approvals(made.workflow)).model_dump(), origin=origin))
         host.workflows.append(copy.id)
         if body.tests and spec.tests:
             text = library.texts(template_id, language)
@@ -1601,7 +1622,10 @@ async def cancel_run(run_id: str, ctx: Ctx) -> dict[str, bool]:
 
 class ApprovalDecision(BaseModel):
     decision: Literal["approved", "rejected"]
+    #: For people only (the run's view, the audit trail): no model ever reads it (E-0R-1 A).
     comment: str = Field(default="", max_length=4000)
+    #: The note to the later agents: the only text of the decision a model reads (plain text, E-0R-1 A).
+    agent_note: str = Field(default="", max_length=2000)
 
 
 class ResumeRequest(BaseModel):
@@ -1636,8 +1660,11 @@ async def decide_approval(run_id: str, node_id: str, body: ApprovalDecision, req
     """Approve or reject at an approval node; the run (its top-level run) continues right away.
 
     Answers the top-level run as it goes on: ``queued`` (or already ``running``/finished), never the ``paused`` state
-    the decision ended (X-01)."""
-    return ctx.runs.decide(run_id, node_id, body.decision, body.comment, decided_by=actor_id(request))
+    the decision ended (X-01). ``comment`` is for people only; ``agent_note`` is the only text later agents read
+    (E-0R-1 A): a note the approval does not take, or one too long once cleaned, answers ``422``."""
+    return ctx.runs.decide(
+        run_id, node_id, body.decision, body.comment, agent_note=body.agent_note, decided_by=actor_id(request)
+    )
 
 
 @runs_router.delete("/runs/{run_id}", status_code=204, dependencies=EDIT)

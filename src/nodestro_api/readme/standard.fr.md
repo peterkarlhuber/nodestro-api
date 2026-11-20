@@ -144,7 +144,10 @@ Ce workflow comporte {approvals}. Une exécution qui en atteint une se met en pa
 ```
 
 `approval_id` peut être omis lorsqu’une seule approbation est en attente. Chaque décision est enregistrée avec l’exécution (qui, quand,
-commentaire) ; une seconde décision sur la même approbation répond `409`. Les exécutions en attente survivent aux redémarrages.
+commentaire) ; une seconde décision sur la même approbation répond `409`. Les exécutions en attente survivent aux
+redémarrages. Le `comment` est réservé aux personnes ; aucun modèle ne le lit. `agent_note` (facultatif, 2 000
+caractères au plus) est le seul texte d’une décision que lisent les agents suivants ; une approbation qui ne
+l’autorise pas (`allow_agent_note: false`) répond `422`.
 
 ## Fichiers de résultats et données
 

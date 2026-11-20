@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import itertools
+import json
 from pathlib import Path
 import time
 from typing import Any
@@ -352,7 +353,8 @@ def test_approval_pauses_and_continues_after_approval(make_app: Callable[..., Te
     assert client.get(f"/api/runs/{paused['id']}").json()["status"] == "paused"
     assert not any("SEND" in system for system in systems(client))
     response = client.post(
-        f"/api/runs/{paused['id']}/approvals/check", json={"decision": "approved", "comment": "Rabatt ok"}
+        f"/api/runs/{paused['id']}/approvals/check",
+        json={"decision": "approved", "comment": "Rabatt ok", "agent_note": "Rabatt nennen"},
     )
     assert response.status_code == 200, response.text
     # The answer is the run as it goes on (X-01, API-018): not the pause that just ended.
@@ -364,7 +366,11 @@ def test_approval_pauses_and_continues_after_approval(make_app: Callable[..., Te
     assert done["nodes"]["check"]["approval"]["decision"] == "approved"
     assert done["nodes"]["revise"]["status"] == "skipped"
     prompt = done["nodes"]["send"]["prompt"]
-    assert "Angebot 1000 EUR" in prompt and "Rabatt ok" in prompt
+    # The comment is for people only; the later agent reads the note to the agent (E-0R-1 A).
+    assert "Angebot 1000 EUR" in prompt and "Rabatt nennen" in prompt
+    assert "Rabatt ok" not in json.dumps(client.fake.messages.calls, default=str)  # type: ignore[attr-defined]
+    assert done["nodes"]["check"]["approval"]["comment"] == "Rabatt ok"
+    assert done["nodes"]["check"]["approval"]["agent_note"] == "Rabatt nennen"
     assert done["output"] == "Final"
     assert client.get("/api/approvals").json() == []
     # The same approval cannot be decided twice.

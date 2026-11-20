@@ -556,6 +556,9 @@ def test_create_plans_decisions_approvals_and_a_form(make_app: Callable[..., Tes
     # The branch agents get their data through the decision, not around it.
     assert (ids["Klassifizierer"], ids["Beschwerden"], None) not in edges
     assert (ids["Antwort"], ids["Antwort prüfen"], None) in edges
+    # A new approval takes the note to the agent explicitly: no warning meant for older workflows (E-0R-1 A).
+    assert nodes["Antwort prüfen"]["approval"]["allow_agent_note"] is True
+    assert "check.approval_comment_not_forwarded" not in {item["code"] for item in job["check"]["problems"]}
     fields = nodes["Start"]["start"]["fields"]
     assert [field["name"] for field in fields] == ["message", "priority"]
     assert fields[0]["default"] == "Hallo" and fields[1]["options"] == ["hoch", "normal"]

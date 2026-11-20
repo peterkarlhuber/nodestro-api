@@ -2124,7 +2124,9 @@ def _flow_nodes(
                 id=own,
                 type="approval",
                 label=_plain(approval.name, 60) or own,
-                approval=ApprovalConfig(instructions=_plain(approval.instructions, 1000)),
+                # A new workflow: the reviewer's note to the agents is allowed explicitly (the comment stays with
+                # people), so the check has no older workflow to warn about (E-0R-1 A).
+                approval=ApprovalConfig(instructions=_plain(approval.instructions, 1000), allow_agent_note=True),
             )
         )
         edges += [(source, own, None) for source in sources]
