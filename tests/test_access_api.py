@@ -276,3 +276,88 @@ def test_only_the_admin_routes_write_grants_and_denies() -> None:
             if isinstance(node, ast.Name) and node.id in ("AccessRules", "Person"):
                 writers.add(source.name)
     assert writers == {"api_access.py"}
+
+
+def test_a_tool_grant_is_refused_when_the_tool_changed_since_it_was_shown(granting: TestClient) -> None:
+    """L-1: the card sends the tool as the person saw it; another version or MCP definition in the library now is a
+    conflict, and the stored facts still come from the library."""
+    ctx = granting.app.state.nodestro  # type: ignore[attr-defined]
+    info = ctx.tools.get(TOOL)
+    body = {"resource_type": "tool", "resource_id": TOOL, "actions": ["execute"], "duration": "until_revoked"}
+    seen = {"version": info.version, "definition_hash": info.definition_hash}
+    changed = granting.post(f"{ACCESS}/grants", json={**body, "expected": {**seen, "version": (info.version or 0) + 1}})
+    assert (changed.status_code, changed.json()["code"]) == (409, "access.tool_changed")
+    assert changed.json()["params"] == {"tool": TOOL}
+    other = granting.post(f"{ACCESS}/grants", json={**body, "expected": {**seen, "definition_hash": "other"}})
+    assert other.status_code == 409
+    assert AccessRules(ctx.store).grants() == []
+    stored = granting.post(f"{ACCESS}/grants", json={**body, "expected": seen})
+    assert stored.status_code == 201, stored.text
+    assert stored.json()["tool"]["version"] == info.version
+    wrong = granting.post(
+        f"{ACCESS}/grants",
+        json={
+            "resource_type": "workflow",
+            "resource_id": "wf_1",
+            "actions": ["execute"],
+            "duration": "once",
+            "expected": seen,
+        },
+    )
+    assert (wrong.status_code, wrong.json()["code"]) == (422, "access.invalid")
+
+
+def test_the_connection_of_an_agent_counts_only_when_the_agent_is_named(
+    granting: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """L-3: a deny on the connection an agent's tool settings name refuses that agent's tool in ``explain`` and
+    ``who-may`` for the agent; without an agent the tool rows say that connections were not considered."""
+    from nodestro_runtime.connections import ConnectionIn
+
+    monkeypatch.setenv("NODESTRO_VAULT_KEY", "a" * 44)
+    ctx = granting.app.state.nodestro  # type: ignore[attr-defined]
+    made = ctx.connections.create(ConnectionIn(type="search", name="Search", provider="ddgs"))
+    agent_node = {
+        "id": "a",
+        "type": "agent",
+        "agent": {
+            "system_prompt": "AGENT",
+            "tools": ["search_web"],
+            "tool_settings": {"search_web": {"connection_id": made.id}},
+        },
+    }
+    created = granting.post(
+        "/api/workflows",
+        json={
+            "name": "Connected",
+            "nodes": [{"id": "start", "type": "start"}, agent_node],
+            "edges": [{"id": "e", "source": "start", "target": "a"}],
+        },
+    )
+    assert created.status_code == 201, created.text
+    agent = f"{created.json()['id']}/a"
+    deny = granting.post(
+        f"{ACCESS}/denies", json={"resource_type": "connection", "resource_id": made.id, "actions": ["execute"]}
+    ).json()
+    granting.post(
+        f"{ACCESS}/grants",
+        json={
+            "resource_type": "tool",
+            "resource_id": "search_web",
+            "actions": ["execute"],
+            "duration": "until_revoked",
+        },
+    )
+    query = {"resource_type": "tool", "resource_id": "search_web"}
+    unnamed = granting.get(f"{ACCESS}/explain", params=query).json()
+    assert unnamed["connections_considered"] is False and unnamed["source"] != f"deny:{deny['id']}"
+    named = granting.get(f"{ACCESS}/explain", params={**query, "agent": agent}).json()
+    assert named["connections_considered"] is True
+    assert (named["allowed"], named["source"]) == (False, f"deny:{deny['id']}")
+    rows = granting.get(f"{ACCESS}/who-may", params=query).json()
+    assert rows and all(row["connections_considered"] is False for row in rows)
+    for_agent = granting.get(f"{ACCESS}/who-may", params={**query, "agent": agent}).json()
+    assert for_agent and all(row["connections_considered"] is True for row in for_agent)
+    assert any(row["source"] == f"deny:{deny['id']}" for row in for_agent)
+    other = granting.get(f"{ACCESS}/who-may", params={"resource_type": "connection", "resource_id": made.id}).json()
+    assert other and all(row["connections_considered"] is None for row in other)

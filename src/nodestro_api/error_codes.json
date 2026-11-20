@@ -29,6 +29,7 @@
   "access.not_found": {"params": ["id"], "source": "both"},
   "access.person_required": {"params": [], "source": "both"},
   "access.safety_limit": {"params": ["resource_id", "resource_type", "source"], "source": "both"},
+  "access.tool_changed": {"params": ["tool"], "source": "api"},
   "access.tool_facts_required": {"params": [], "source": "both"},
   "access.unattended_expiry": {"params": ["duration"], "source": "both"},
   "access.unattended_scope": {"params": [], "source": "both"},

@@ -85,8 +85,37 @@
         "title": "AccessEvent",
         "type": "object"
       },
-      "AccessExplanation": {
-        "description": "Why an access is allowed or refused at its call site (BER-1, spec 7.3 (8)): the request, what the access model\ndoes there (``outcome``) and what decided it.\n\nFor the person and the administration only; a model never gets it (N-07).",
+      "AccessResource": {
+        "description": "What a record or a request is about: a type and its id (a tool name, an absolute folder path, a workflow id,\nan MCP server id, a connection id, a provider name).",
+        "properties": {
+          "id": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "tool",
+              "folder",
+              "workflow",
+              "mcp_server",
+              "connection",
+              "cloud_provider"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ],
+        "title": "AccessResource",
+        "type": "object"
+      },
+      "AccessRow": {
+        "description": "An explanation as this API serves it. ``connections_considered`` (tools only): whether the connection the\nagent's tool settings name was counted. It is only known for one agent (``agent``); without it a deny on a\nconnection does not show in a tool's row (L-3).",
         "properties": {
           "action": {
             "enum": [
@@ -135,6 +164,17 @@
               }
             ],
             "title": "Code"
+          },
+          "connections_considered": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connections Considered"
           },
           "default_rule": {
             "anyOf": [
@@ -264,36 +304,7 @@
           "allowed",
           "outcome"
         ],
-        "title": "AccessExplanation",
-        "type": "object"
-      },
-      "AccessResource": {
-        "description": "What a record or a request is about: a type and its id (a tool name, an absolute folder path, a workflow id,\nan MCP server id, a connection id, a provider name).",
-        "properties": {
-          "id": {
-            "maxLength": 4096,
-            "minLength": 1,
-            "title": "Id",
-            "type": "string"
-          },
-          "type": {
-            "enum": [
-              "tool",
-              "folder",
-              "workflow",
-              "mcp_server",
-              "connection",
-              "cloud_provider"
-            ],
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "type",
-          "id"
-        ],
-        "title": "AccessResource",
+        "title": "AccessRow",
         "type": "object"
       },
       "AccessState": {
@@ -9757,6 +9768,16 @@
             ],
             "title": "Duration",
             "type": "string"
+          },
+          "expected": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolExpected"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "expires_at": {
             "anyOf": [
@@ -27103,6 +27124,36 @@
         "title": "ToolDraftDecision",
         "type": "object"
       },
+      "ToolExpected": {
+        "description": "The tool as the person saw it (an approval request's ``version`` and ``definition_hash``).",
+        "properties": {
+          "definition_hash": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Definition Hash"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "title": "ToolExpected",
+        "type": "object"
+      },
       "ToolFacts": {
         "description": "The tool a grant was given for: its version, classification and MCP definition hash. A tool grant matches only\nwhile the tool is still exactly this one, like a pre-grant (:func:`matching_pre_grant`): a new version, a changed\nclassification or another MCP definition ends it.",
         "properties": {
@@ -29665,7 +29716,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AccessExplanation"
+                  "$ref": "#/components/schemas/AccessRow"
                 }
               }
             },
@@ -29839,7 +29890,7 @@
     },
     "/api/access/who-may": {
       "get": {
-        "description": "\"Who may do what and why\": what decides each access an active grant or deny names, and its source.",
+        "description": "\"Who may do what and why\": what decides each access an active grant or deny names, and its source. A tool's\nMCP server always counts; the connection of its agent only when ``agent`` names one (``connections_considered``).",
         "operationId": "who_may_route_api_access_who_may_get",
         "parameters": [
           {
@@ -29927,7 +29978,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/AccessExplanation"
+                    "$ref": "#/components/schemas/AccessRow"
                   },
                   "title": "Response Who May Route Api Access Who May Get",
                   "type": "array"

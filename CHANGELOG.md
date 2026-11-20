@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Added (N-06 review, low findings; still off by default):
+  - L-1: `POST /api/access/grants` takes an optional `expected` (`version`, `definition_hash`), the tool as the
+    person saw it. If the library differs now, the grant is refused with `409 access.tool_changed`, and nothing
+    is stored. The stored facts still come from the library.
+  - L-3: `who-may` and `explain` count the connection an agent's tool settings name, when `agent` is given. Their
+    rows say whether connections were considered (`connections_considered`, schema `AccessRow`).
+
 - Added (N-06, behind `NODESTRO_ACCESS_GRANTS` together with `NODESTRO_TOOL_APPROVALS`, both off; `docs/access-grants.md`):
   - `/api/access` routes: `state` (`read`; always answers) and, for `admin`, list, create and revoke grants and
     denies, `who-may` and `explain` ("who may do what and why"). Every route works per tenant. While the switch is

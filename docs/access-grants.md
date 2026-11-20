@@ -27,7 +27,21 @@ every route but `GET /api/access/state` answers `404 access.grants_disabled`, an
   rule store.
 - A tool grant names the tool as it is now: its version, classification and MCP definition come from the tool library,
   never from the body. The grant ends when any of them changes.
+- A grant can name the tool as the person saw it: `expected` holds the `version` and `definition_hash` of the
+  approval request. If the library holds another version or MCP definition now, the grant is refused with
+  `409 access.tool_changed`, and nothing is stored. The stored facts still come from the library.
 - Deleting for good is never granted (`422 access.grant_destructive`).
+
+## Connections in `who-may` and `explain`
+
+A tool's MCP server always counts. A connection belongs to one agent: it is the one that agent's tool settings name
+in its saved workflow, as at the gate.
+
+- With `agent` (`<workflow id>/<node id>`), a deny on that connection shows in the tool's row, and the row says
+  `connections_considered: true`.
+- Without `agent`, connections are not considered, and tool rows say `connections_considered: false`. A deny on a
+  connection still has its own row.
+- Rows of other resources carry `connections_considered: null`.
 
 Every route works on the request's tenant only. On a server, ids of another tenant are not found.
 
