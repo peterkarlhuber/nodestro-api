@@ -3,15 +3,36 @@
 # to the file given as the only argument. CI calls it before every install with the lock.
 #
 # A pull request reads the lock of the studio branch with its own head branch's name when there is one (a change that
-# needs newer components and the studio bump that moves them land as a pair), else the studio master's. Pushes, the
-# nightly and dispatched runs have no head branch and read the studio master's lock only. A paired lock is made
-# visible: a warning names the studio branch, and the job summary shows its diff against the studio master's lock.
+# needs newer components and the studio bump that moves them land as a pair), else the studio master's. A push of a
+# merge commit to master ("Merge pull request #N from owner/<branch>") reads the lock of the studio branch <branch>
+# while that branch is still ahead of the studio master, that is, while its paired bump is not merged yet (lock lag);
+# once the bump is merged (or the branch is gone, or GitHub cannot be asked) it reads the studio master's lock as before.
+# The nightly and dispatched runs read the studio master's lock only. A paired lock is made visible: a warning names the
+# studio branch, and the job summary shows its diff against the studio master's lock.
 set -euo pipefail
 
 out=${1:?usage: studio_lock.sh <output file>}
 base=https://raw.githubusercontent.com/peterkarlhuber/nodestro-studio
 path=platform/internal-server.txt
 branch=${GITHUB_HEAD_REF:-}
+
+if [ -z "$branch" ] && [ "${GITHUB_EVENT_NAME:-}" = push ] && [ "${GITHUB_REF:-}" = refs/heads/master ] \
+  && [ -f "${GITHUB_EVENT_PATH:-}" ]; then
+  merged=$(python3 -I -c 'import json, os, re, sys
+message = (json.load(open(os.environ["GITHUB_EVENT_PATH"])).get("head_commit") or {}).get("message") or ""
+match = re.match(r"Merge pull request #[0-9]+ from [^/\s]+/(\S+)", message)
+print(match[1] if match else "")')
+  if [ -n "$merged" ]; then
+    # Ahead of the studio master: the paired bump is still open. Any other answer (merged, gone, rate limit) keeps master.
+    ahead=$(curl -fsS -H "Accept: application/vnd.github+json" \
+      "https://api.github.com/repos/peterkarlhuber/nodestro-studio/compare/master...$merged" 2>/dev/null \
+      | python3 -I -c 'import json, sys; print(json.load(sys.stdin).get("ahead_by", 0))' 2>/dev/null || echo 0)
+    if [ "${ahead:-0}" -gt 0 ]; then
+      echo "Lock lag: the studio bump paired with '$merged' is not merged yet ($ahead commit(s) ahead of master)."
+      branch=$merged
+    fi
+  fi
+fi
 
 if [ -n "$branch" ] && curl -fsSL "$base/$branch/$path" -o "$out.paired"; then
   curl -fsSL "$base/master/$path" -o "$out.master"
