@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Security (NS-002, the hardening steps of nodestro-session `docs/design.md` 5.2): six switches of the desktop launch,
+  each off by default (README, "Hardening switches of the desktop launch"). With every switch off the answers stay
+  byte for byte the ones before (`tests/test_launch_hardening.py` against answers recorded from 6783a52).
+  - `NODESTRO_LAUNCH_TTL`: the launch secret expires (`access.launch_expired`; `access.launch_ttl_invalid`).
+  - `NODESTRO_LAUNCH_CSRF`: changes need `Origin`, a JSON or form body and `X-Nodestro-CSRF` (`request.origin_required`,
+    `request.json_only`, `access.csrf_invalid`); the launch page hands the value to the studio.
+  - `NODESTRO_DESKTOP_LOGOUT`: `POST /api/logout` on the desktop.
+  - `NODESTRO_TERMINAL_LAUNCH`: the command line issues a launch secret when none is given (`cli.terminal_launch`,
+    `launch.write_launch_file`).
+  - `NODESTRO_LAUNCH_FRAGMENT`: the secret in the URL fragment, exchanged by the launch page with `POST /api/launch`.
+  - `NODESTRO_BIND_LOOPBACK`: `nodestro_session.bind_loopback` for the command line's listener.
+  - New in `AppConfig`: `hardening` (`LaunchHardening`, every switch off by default). No route and no OpenAPI change.
 - Security (N-02, step 1): the local session's protection uses the shared library `nodestro-session`
   (`>=0.1.0.dev0,<0.2`, standard library only; the studio lock pins its commit). No contract change: paths, codes,
   texts, cookie names and the open paths stay as they were.

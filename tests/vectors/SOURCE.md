@@ -18,3 +18,12 @@ Replace `security-vectors.json` with the canonical file unchanged (never edit it
 commit, `Version` and `SHA-256` above (`sha256sum tests/vectors/security-vectors.json`) and run
 `pytest tests/test_security_vectors_jwt.py`. A deviation of Nodestro's OIDC client is fixed, or listed with its
 reason in the canonical file's `known_differences` (platform `nodestro`) first.
+
+# The desktop launch with every NS-002 switch off
+
+`launch-switches-off.json` holds the answers of the request matrix of `tests/launch_matrix.py` (desktop product app
+with and without a launch secret: launch, logout, sessions, changes with and without `Origin`, body types and CSRF
+header, rebinding and proxy headers), recorded from nodestro-api master `6783a527db2f95f3839418d13ac7dd1d41898b05`,
+before the NS-002 switches existed. `tests/test_launch_hardening.py` checks that the code with every switch off still
+gives these answers byte for byte (only the random session cookie values are replaced). Never regenerate it from a
+commit with NS-002: a difference means the switches changed the behavior while off.

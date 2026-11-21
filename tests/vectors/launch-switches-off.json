@@ -1,0 +1,1930 @@
+{
+ "desktop with a launch secret": [
+  {
+   "request": "health",
+   "status": 200,
+   "headers": [
+    [
+     "content-length",
+     "15"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"status\":\"ok\"}"
+  },
+  {
+   "request": "app discovery",
+   "status": 404,
+   "headers": [
+    [
+     "content-length",
+     "84"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "nodestro-app-contract",
+     "1"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\":\"There is no API route at this path\",\"code\":\"route.not_found\",\"params\":{}}"
+  },
+  {
+   "request": "read without session",
+   "status": 401,
+   "headers": [
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-length",
+     "146"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\": \"This Nodestro belongs to the desktop app that started it; open Nodestro from the app\", \"code\": \"access.launch_required\", \"params\": {}}"
+  },
+  {
+   "request": "change without session",
+   "status": 401,
+   "headers": [
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-length",
+     "146"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\": \"This Nodestro belongs to the desktop app that started it; open Nodestro from the app\", \"code\": \"access.launch_required\", \"params\": {}}"
+  },
+  {
+   "request": "launch without token",
+   "status": 403,
+   "headers": [
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-length",
+     "89"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\": \"The launch link is not valid\", \"code\": \"access.launch_invalid\", \"params\": {}}"
+  },
+  {
+   "request": "launch with a wrong token",
+   "status": 403,
+   "headers": [
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-length",
+     "89"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\": \"The launch link is not valid\", \"code\": \"access.launch_invalid\", \"params\": {}}"
+  },
+  {
+   "request": "launch by post with the token in the query",
+   "status": 403,
+   "headers": [
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-length",
+     "89"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\": \"The launch link is not valid\", \"code\": \"access.launch_invalid\", \"params\": {}}"
+  },
+  {
+   "request": "launch by post with the token in json",
+   "status": 403,
+   "headers": [
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-length",
+     "89"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\": \"The launch link is not valid\", \"code\": \"access.launch_invalid\", \"params\": {}}"
+  },
+  {
+   "request": "logout page before the launch",
+   "status": 401,
+   "headers": [
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-length",
+     "146"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\": \"This Nodestro belongs to the desktop app that started it; open Nodestro from the app\", \"code\": \"access.launch_required\", \"params\": {}}"
+  },
+  {
+   "request": "logout before the launch",
+   "status": 401,
+   "headers": [
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-length",
+     "146"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\": \"This Nodestro belongs to the desktop app that started it; open Nodestro from the app\", \"code\": \"access.launch_required\", \"params\": {}}"
+  },
+  {
+   "request": "launch",
+   "status": 200,
+   "headers": [
+    [
+     "content-type",
+     "text/html; charset=utf-8"
+    ],
+    [
+     "set-cookie",
+     "nodestro_session=<random>; HttpOnly; SameSite=Strict; Path=/"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'none'"
+    ],
+    [
+     "content-length",
+     "105"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ]
+   ],
+   "body": "<!doctype html><meta charset=\"utf-8\"><meta http-equiv=\"refresh\" content=\"0;url=/\"><title>Nodestro</title>"
+  },
+  {
+   "request": "read with session",
+   "status": 200,
+   "headers": [
+    [
+     "content-length",
+     "17"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"read\":\"Matrix\"}"
+  },
+  {
+   "request": "change with session, no origin",
+   "status": 200,
+   "headers": [
+    [
+     "content-length",
+     "20"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"changed\":\"Matrix\"}"
+  },
+  {
+   "request": "change with session and origin",
+   "status": 200,
+   "headers": [
+    [
+     "content-length",
+     "20"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"changed\":\"Matrix\"}"
+  },
+  {
+   "request": "change as text/plain",
+   "status": 200,
+   "headers": [
+    [
+     "content-length",
+     "20"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"changed\":\"Matrix\"}"
+  },
+  {
+   "request": "change as a urlencoded form",
+   "status": 200,
+   "headers": [
+    [
+     "content-length",
+     "20"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"changed\":\"Matrix\"}"
+  },
+  {
+   "request": "change without a body",
+   "status": 200,
+   "headers": [
+    [
+     "content-length",
+     "20"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"changed\":\"Matrix\"}"
+  },
+  {
+   "request": "change with a wrong csrf header",
+   "status": 200,
+   "headers": [
+    [
+     "content-length",
+     "20"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"changed\":\"Matrix\"}"
+  },
+  {
+   "request": "change from a foreign origin",
+   "status": 403,
+   "headers": [
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-length",
+     "199"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\": \"Changes from the web page 'http://evil.example' are not accepted; use Nodestro itself or an API client\", \"code\": \"request.origin_not_allowed\", \"params\": {\"origin\": \"http://evil.example\"}}"
+  },
+  {
+   "request": "change from another port",
+   "status": 403,
+   "headers": [
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-length",
+     "197"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\": \"Changes from the web page 'http://127.0.0.1:9' are not accepted; use Nodestro itself or an API client\", \"code\": \"request.origin_not_allowed\", \"params\": {\"origin\": \"http://127.0.0.1:9\"}}"
+  },
+  {
+   "request": "delete",
+   "status": 405,
+   "headers": [
+    [
+     "content-length",
+     "95"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "allow",
+     "GET"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\":\"This API route does not accept this method\",\"code\":\"method.not_allowed\",\"params\":{}}"
+  },
+  {
+   "request": "rebinding host",
+   "status": 403,
+   "headers": [
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-length",
+     "220"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\": \"Requests for the host name 'evil.example' are not answered (add it to NODESTRO_ALLOWED_HOSTS when Nodestro is reached under this name)\", \"code\": \"request.host_not_allowed\", \"params\": {\"host\": \"evil.example\"}}"
+  },
+  {
+   "request": "forwarded",
+   "status": 403,
+   "headers": [
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-length",
+     "203"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\": \"Requests forwarded by a proxy are not answered: the studio API has no login yet (headers: x-forwarded-for)\", \"code\": \"request.forwarded_not_allowed\", \"params\": {\"headers\": \"x-forwarded-for\"}}"
+  },
+  {
+   "request": "launch again",
+   "status": 403,
+   "headers": [
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-length",
+     "136"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\": \"The launch link was already used; restart the desktop app to open a new window\", \"code\": \"access.launch_used\", \"params\": {}}"
+  },
+  {
+   "request": "launch again by post",
+   "status": 403,
+   "headers": [
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-length",
+     "89"
+    ],
+    [
+     "cache-control",
+     "no-store"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\": \"The launch link is not valid\", \"code\": \"access.launch_invalid\", \"params\": {}}"
+  },
+  {
+   "request": "logout page",
+   "status": 404,
+   "headers": [
+    [
+     "content-length",
+     "84"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\":\"There is no API route at this path\",\"code\":\"route.not_found\",\"params\":{}}"
+  },
+  {
+   "request": "logout without origin",
+   "status": 404,
+   "headers": [
+    [
+     "content-length",
+     "84"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\":\"There is no API route at this path\",\"code\":\"route.not_found\",\"params\":{}}"
+  },
+  {
+   "request": "logout",
+   "status": 404,
+   "headers": [
+    [
+     "content-length",
+     "84"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\":\"There is no API route at this path\",\"code\":\"route.not_found\",\"params\":{}}"
+  },
+  {
+   "request": "read after the logout",
+   "status": 200,
+   "headers": [
+    [
+     "content-length",
+     "17"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"read\":\"Matrix\"}"
+  },
+  {
+   "request": "change after the logout",
+   "status": 200,
+   "headers": [
+    [
+     "content-length",
+     "20"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"changed\":\"Matrix\"}"
+  }
+ ],
+ "desktop without a launch secret": [
+  {
+   "request": "health",
+   "status": 200,
+   "headers": [
+    [
+     "content-length",
+     "15"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"status\":\"ok\"}"
+  },
+  {
+   "request": "app discovery",
+   "status": 404,
+   "headers": [
+    [
+     "content-length",
+     "84"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "nodestro-app-contract",
+     "1"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\":\"There is no API route at this path\",\"code\":\"route.not_found\",\"params\":{}}"
+  },
+  {
+   "request": "read without session",
+   "status": 200,
+   "headers": [
+    [
+     "content-length",
+     "17"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"read\":\"Matrix\"}"
+  },
+  {
+   "request": "change without session",
+   "status": 200,
+   "headers": [
+    [
+     "content-length",
+     "20"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"changed\":\"Matrix\"}"
+  },
+  {
+   "request": "launch without token",
+   "status": 404,
+   "headers": [
+    [
+     "content-length",
+     "84"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\":\"There is no API route at this path\",\"code\":\"route.not_found\",\"params\":{}}"
+  },
+  {
+   "request": "launch with a wrong token",
+   "status": 404,
+   "headers": [
+    [
+     "content-length",
+     "84"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\":\"There is no API route at this path\",\"code\":\"route.not_found\",\"params\":{}}"
+  },
+  {
+   "request": "launch by post with the token in the query",
+   "status": 404,
+   "headers": [
+    [
+     "content-length",
+     "84"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\":\"There is no API route at this path\",\"code\":\"route.not_found\",\"params\":{}}"
+  },
+  {
+   "request": "launch by post with the token in json",
+   "status": 404,
+   "headers": [
+    [
+     "content-length",
+     "84"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\":\"There is no API route at this path\",\"code\":\"route.not_found\",\"params\":{}}"
+  },
+  {
+   "request": "logout page before the launch",
+   "status": 404,
+   "headers": [
+    [
+     "content-length",
+     "84"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\":\"There is no API route at this path\",\"code\":\"route.not_found\",\"params\":{}}"
+  },
+  {
+   "request": "logout before the launch",
+   "status": 404,
+   "headers": [
+    [
+     "content-length",
+     "84"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\":\"There is no API route at this path\",\"code\":\"route.not_found\",\"params\":{}}"
+  },
+  {
+   "request": "launch",
+   "status": 404,
+   "headers": [
+    [
+     "content-length",
+     "84"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\":\"There is no API route at this path\",\"code\":\"route.not_found\",\"params\":{}}"
+  },
+  {
+   "request": "read with session",
+   "status": 200,
+   "headers": [
+    [
+     "content-length",
+     "17"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"read\":\"Matrix\"}"
+  },
+  {
+   "request": "change with session, no origin",
+   "status": 200,
+   "headers": [
+    [
+     "content-length",
+     "20"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"changed\":\"Matrix\"}"
+  },
+  {
+   "request": "change with session and origin",
+   "status": 200,
+   "headers": [
+    [
+     "content-length",
+     "20"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"changed\":\"Matrix\"}"
+  },
+  {
+   "request": "change as text/plain",
+   "status": 200,
+   "headers": [
+    [
+     "content-length",
+     "20"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"changed\":\"Matrix\"}"
+  },
+  {
+   "request": "change as a urlencoded form",
+   "status": 200,
+   "headers": [
+    [
+     "content-length",
+     "20"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"changed\":\"Matrix\"}"
+  },
+  {
+   "request": "change without a body",
+   "status": 200,
+   "headers": [
+    [
+     "content-length",
+     "20"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"changed\":\"Matrix\"}"
+  },
+  {
+   "request": "change with a wrong csrf header",
+   "status": 200,
+   "headers": [
+    [
+     "content-length",
+     "20"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"changed\":\"Matrix\"}"
+  },
+  {
+   "request": "change from a foreign origin",
+   "status": 403,
+   "headers": [
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-length",
+     "199"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\": \"Changes from the web page 'http://evil.example' are not accepted; use Nodestro itself or an API client\", \"code\": \"request.origin_not_allowed\", \"params\": {\"origin\": \"http://evil.example\"}}"
+  },
+  {
+   "request": "change from another port",
+   "status": 403,
+   "headers": [
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-length",
+     "197"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\": \"Changes from the web page 'http://127.0.0.1:9' are not accepted; use Nodestro itself or an API client\", \"code\": \"request.origin_not_allowed\", \"params\": {\"origin\": \"http://127.0.0.1:9\"}}"
+  },
+  {
+   "request": "delete",
+   "status": 405,
+   "headers": [
+    [
+     "content-length",
+     "95"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "allow",
+     "GET"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\":\"This API route does not accept this method\",\"code\":\"method.not_allowed\",\"params\":{}}"
+  },
+  {
+   "request": "rebinding host",
+   "status": 403,
+   "headers": [
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-length",
+     "220"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\": \"Requests for the host name 'evil.example' are not answered (add it to NODESTRO_ALLOWED_HOSTS when Nodestro is reached under this name)\", \"code\": \"request.host_not_allowed\", \"params\": {\"host\": \"evil.example\"}}"
+  },
+  {
+   "request": "forwarded",
+   "status": 403,
+   "headers": [
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-length",
+     "203"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\": \"Requests forwarded by a proxy are not answered: the studio API has no login yet (headers: x-forwarded-for)\", \"code\": \"request.forwarded_not_allowed\", \"params\": {\"headers\": \"x-forwarded-for\"}}"
+  },
+  {
+   "request": "launch again",
+   "status": 404,
+   "headers": [
+    [
+     "content-length",
+     "84"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\":\"There is no API route at this path\",\"code\":\"route.not_found\",\"params\":{}}"
+  },
+  {
+   "request": "launch again by post",
+   "status": 404,
+   "headers": [
+    [
+     "content-length",
+     "84"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\":\"There is no API route at this path\",\"code\":\"route.not_found\",\"params\":{}}"
+  },
+  {
+   "request": "logout page",
+   "status": 404,
+   "headers": [
+    [
+     "content-length",
+     "84"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\":\"There is no API route at this path\",\"code\":\"route.not_found\",\"params\":{}}"
+  },
+  {
+   "request": "logout without origin",
+   "status": 404,
+   "headers": [
+    [
+     "content-length",
+     "84"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\":\"There is no API route at this path\",\"code\":\"route.not_found\",\"params\":{}}"
+  },
+  {
+   "request": "logout",
+   "status": 404,
+   "headers": [
+    [
+     "content-length",
+     "84"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"detail\":\"There is no API route at this path\",\"code\":\"route.not_found\",\"params\":{}}"
+  },
+  {
+   "request": "read after the logout",
+   "status": 200,
+   "headers": [
+    [
+     "content-length",
+     "17"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"read\":\"Matrix\"}"
+  },
+  {
+   "request": "change after the logout",
+   "status": 200,
+   "headers": [
+    [
+     "content-length",
+     "20"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "content-security-policy",
+     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ],
+    [
+     "x-frame-options",
+     "DENY"
+    ],
+    [
+     "x-content-type-options",
+     "nosniff"
+    ],
+    [
+     "referrer-policy",
+     "no-referrer"
+    ]
+   ],
+   "body": "{\"changed\":\"Matrix\"}"
+  }
+ ]
+}

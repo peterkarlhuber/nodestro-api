@@ -31,7 +31,7 @@ from .assistants import Assistants
 from .batches import Batches
 from .benchmarks import Benchmarks
 from .docs_index import DocsIndex
-from .launch import launch_secret_from_env
+from .launch import LaunchHardening, launch_secret_from_env
 from .local_container import access_key_from_env, browser_host_from_env, host_port_from_env, session_hours_from_env
 from .mcp_server import McpServerEndpoint
 from .network import NetworkListener
@@ -103,6 +103,10 @@ class AppConfig:
     #: shell sets it for one start after the diagnosis asked for the repair of the database's permissions
     #: (:mod:`nodestro_api.recovery`). Desktop profile only.
     recovery: bool = False
+    #: The hardening of the desktop launch (NS-002; ``NODESTRO_LAUNCH_TTL``, ``NODESTRO_LAUNCH_CSRF``,
+    #: ``NODESTRO_DESKTOP_LOGOUT``, ``NODESTRO_TERMINAL_LAUNCH``, ``NODESTRO_LAUNCH_FRAGMENT``,
+    #: ``NODESTRO_BIND_LOOPBACK``), every switch off by default, see :class:`nodestro_api.launch.LaunchHardening`.
+    hardening: LaunchHardening = field(default_factory=LaunchHardening)
 
     @property
     def profile(self) -> RuntimeProfile:
@@ -139,6 +143,7 @@ class AppConfig:
             price_sync=PriceSyncConfig.from_env(),
             dev_cors=os.environ.get("NODESTRO_DEV_CORS", "").strip() == "1",
             recovery=os.environ.get("NODESTRO_RECOVERY", "").strip() == "database-permissions",
+            hardening=LaunchHardening() if local else LaunchHardening.from_env(),
         )
 
 
