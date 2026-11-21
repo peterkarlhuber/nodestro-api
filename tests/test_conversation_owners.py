@@ -128,7 +128,28 @@ DSN = os.environ.get("NODESTRO_TEST_POSTGRES", "")
 
 
 @pytest.fixture
-def command_schema(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[str]:
+def process_logging() -> Iterator[None]:
+    """``server.main`` sets up the logging of a whole server process (the database error redaction as the log record
+    factory and on ``logging.lastResort``, the root handler): put it back, so later tests in the same worker see the
+    logging as it was (``test_db_error_texts``)."""
+    import logging
+
+    factory = logging.getLogRecordFactory()
+    resort = list(logging.lastResort.filters) if logging.lastResort is not None else []
+    root = logging.getLogger()
+    handlers, level = list(root.handlers), root.level
+    try:
+        yield
+    finally:
+        logging.setLogRecordFactory(factory)
+        if logging.lastResort is not None:
+            logging.lastResort.filters[:] = resort
+        root.handlers[:] = handlers
+        root.setLevel(level)
+
+
+@pytest.fixture
+def command_schema(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, process_logging: None) -> Iterator[str]:
     import base64
 
     postgres_support.require_postgres()
