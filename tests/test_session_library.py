@@ -5,6 +5,7 @@ the contract; these tests show that the library is the one in use, and repeat th
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, FastAPI, Request
@@ -13,6 +14,7 @@ from nodestro_runtime.problems import NodestroError
 import nodestro_session
 from nodestro_session.sessions import SessionStore
 import pytest
+from starlette.types import Receive, Scope, Send
 
 from nodestro_api import handoff, launch, local_access
 from nodestro_api.context import AppConfig
@@ -146,3 +148,101 @@ def test_exported_projects_do_not_need_the_library() -> None:
                 continue
             source = (dirs[package] / f"{module}.py").read_text(encoding="utf-8")
             assert "nodestro_session" not in source, name
+
+
+# The same protections through the library, on the middleware itself (desktop: one launch; reusable key: the local
+# container and the Local Docker profile). The values are the ones of launch.py before N-02: these tests (all but the
+# ones that look for the library) also pass against launch.py and local_access.py of the API before this change.
+
+
+def _guarded(**options: object) -> TestClient:
+    async def app(scope: Scope, receive: Receive, send: Send) -> None:
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    middleware = launch.LaunchSecretMiddleware(app, secret=SECRET, **options)  # type: ignore[arg-type]
+    return TestClient(middleware, base_url=ORIGIN)
+
+
+def test_the_cookie_headers_are_byte_for_byte_the_old_ones() -> None:
+    desktop = _guarded()
+    answer = desktop.get("/api/launch", params={"token": SECRET})
+    session = desktop.cookies.get(launch.COOKIE)
+    assert answer.headers["set-cookie"] == f"{launch.COOKIE}={session}; HttpOnly; SameSite=Strict; Path=/"
+    reusable = _guarded(reusable=True, bearer=True, cookie=launch.LOCAL_COOKIE, max_age=24 * 3600)
+    answer = reusable.get("/api/launch", params={"token": SECRET})
+    session = reusable.cookies.get(launch.LOCAL_COOKIE)
+    assert answer.headers["set-cookie"] == (
+        f"{launch.LOCAL_COOKIE}={session}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400"
+    )
+    out = reusable.post("/api/logout", headers={"Origin": ORIGIN})
+    assert out.headers["set-cookie"] == f"{launch.LOCAL_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"
+    assert reusable.get("/api/data").status_code == 401
+
+
+def test_the_session_count_stays_bounded_and_the_oldest_ends_first() -> None:
+    client = _guarded(reusable=True, bearer=True)
+    sessions = []
+    for _ in range(launch.MAX_SESSIONS + 1):
+        client.cookies.clear()
+        assert client.get("/api/launch", params={"token": SECRET}).status_code == 200
+        sessions.append(client.cookies.get(launch.COOKIE))
+    client.cookies.clear()
+    middleware = client.app
+    assert isinstance(middleware, launch.LaunchSecretMiddleware)
+    assert len(middleware._sessions) == launch.MAX_SESSIONS
+    assert client.get("/api/data", headers={"Cookie": f"{launch.COOKIE}={sessions[0]}"}).status_code == 401
+    for session in (sessions[1], sessions[-1]):
+        assert client.get("/api/data", headers={"Cookie": f"{launch.COOKIE}={session}"}).status_code == 200
+
+
+@pytest.mark.parametrize(
+    "value",
+    [SECRET, SECRET[:-1], SECRET + "s", "s" * 129, "s" * 100_000, "", "a b", '"quoted"', "é" * 43],
+)
+def test_no_cookie_value_but_an_issued_session_opens_the_api(value: str) -> None:
+    client = _guarded(reusable=True, bearer=True)
+    client.get("/api/launch", params={"token": SECRET})
+    client.cookies.clear()
+    cookie = f"{launch.COOKIE}={value}".encode()
+    assert client.get("/api/data", headers={b"Cookie": cookie}).status_code == 401
+
+
+@pytest.mark.parametrize(
+    "authorization",
+    ["", "Bearer", f"Bearer {SECRET[:-1]}", f"Bearer {SECRET}x", f"Basic {SECRET}", f"Token {SECRET}"],
+)
+def test_only_the_exact_key_as_bearer_opens_the_api(authorization: str) -> None:
+    client = _guarded(reusable=True, bearer=True)
+    assert client.get("/api/data", headers={"Authorization": authorization}).status_code == 401
+    assert client.get("/api/data", headers={"Authorization": f"bearer  {SECRET} "}).status_code == 200
+
+
+def test_a_wrong_or_repeated_launch_opens_no_desktop_session() -> None:
+    client = _guarded()
+    for token in ("", SECRET[:-1], SECRET.upper()):
+        assert client.get("/api/launch", params={"token": token}).json()["code"] == "access.launch_invalid"
+    assert client.post("/api/launch", params={"token": SECRET}).json()["code"] == "access.launch_invalid"
+    assert client.get("/api/data").status_code == 401
+    assert client.get("/api/launch", params={"token": SECRET}).status_code == 200
+    first = client.cookies.get(launch.COOKIE)
+    client.cookies.clear()
+    assert client.get("/api/launch", params={"token": SECRET}).json()["code"] == "access.launch_used"
+    assert client.cookies.get(launch.COOKIE) is None
+    assert client.get("/api/data", headers={"Cookie": f"{launch.COOKIE}={first}"}).status_code == 200
+
+
+def test_the_log_filter_redacts_the_secret_and_every_token_parameter() -> None:
+    record = logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        __file__,
+        1,
+        '%s - "%s %s"',
+        ("127.0.0.1", "GET", f"/api/launch?token=abc&x={SECRET}"),
+        None,
+    )
+    assert launch.RedactLaunchToken(SECRET).filter(record)
+    text = record.getMessage()
+    assert SECRET not in text and "abc" not in text
+    assert "token=[redacted]" in text
