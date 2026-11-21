@@ -12,7 +12,7 @@
 | P0 Critical | 0 |
 | P1 High | 0 |
 | P2 Medium | 6 |
-| P3 Low | 11 |
+| P3 Low | 12 |
 | P4 Optional | 7 |
 
 **Release blockers:** None for this repository; every entry below is not a release blocker. The next desktop
@@ -42,6 +42,29 @@ None known.
 
 Tool approvals (`NODESTRO_TOOL_APPROVALS`, off by default and staying off) need the independent S-2 review tracked as
 nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes here. No separate entry in this file.
+
+### API-073 · Conversation access: residual points after the W3-S1 audit
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** W3-S1, `docs/conversations.md` ("Who has an owner
+  identity"), `tests/test_conversation_access_audit.py`, `tests/test_conversation_access_audit_server.py`,
+  nodestro-runtime RT-089
+- **What:** The audit closed the principal without a role (`NO_OWNER`), knowledge adoption from another person's
+  answer run and conversation files as run, batch and form inputs. What remains, none of it a content leak:
+  - Done (owner's decision A): a conversation without an owner is nobody's on a server, administrators included,
+    until the operator assigns an owner with `nodestro-server assistant backfill-owners --tenant --user
+    --conversation` (member only, never over an owner, audited as `conversation_owner_assigned`;
+    `tests/test_conversation_owners.py`).
+  - A `POST`/`PUT` route with `{run_id}` answers another person's answer run with `404` before it checks the body,
+    and an unknown id with `422` when the body is invalid: the difference shows that the id exists (never what it
+    holds). Run ids are random; the administrator's activity log names them anyway.
+  - The administrator's activity log names the answers' runs, conversation ids and the tools called (no contents,
+    by design of N-13); the usage and skill statistics count answers (N-3).
+  - Done (review): an answer no longer writes into a shared memory space (run memory). An agent that answers in a
+    conversation and proposes knowledge still shares what a person adopts, as in any run.
+  - Done (review): a grant for "this conversation" names only a conversation the caller sees.
+  - The resume plan of a failed answer run lists its conversation files as missing (they are no run file catalog
+    entries any more); resuming is not a conversation feature, an answer is sent again instead.
+- **Next step:** Include the conversation routes and the owner assignment in the next independent review.
 
 ### API-071 · Independent review of Local Docker's key handoff (LD-020)
 
@@ -245,8 +268,8 @@ None known.
 - **Priority:** P4 Optional · **Status:** Open · **Refs:** backend audit round 2 API2-15 (by design)
 - **What:** Inside a tenant, a member with run permission may approve the approval node of their own run, and the
   edit permission can delete a run with its approval record. This is the documented role model, not a defect.
-  (Assistant conversations have an owner on the server since the settings/providers round; older ones get one with
-  `nodestro-server assistant backfill-owners`.)
+  (Assistant conversations have an owner on the server since the settings/providers round; older ones are nobody's
+  until the operator assigns one with `nodestro-server assistant backfill-owners`, API-073.)
 - **Next step:** Decide whether approval nodes get a "needs another member" option.
 
 ### API-060 · Internal assistants on Anthropic use the default thinking display

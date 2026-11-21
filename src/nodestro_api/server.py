@@ -34,9 +34,16 @@ sentence listing every problem (``profile.invalid``); nothing has a default that
     keyring (``NODESTRO_AXENTRA=on``, ``NODESTRO_SECRETS_FORMAT=axs1``), or back to v1 with
     ``NODESTRO_SECRETS_FORMAT=v1`` (the rollback, before Axentra is switched off). Resumable and idempotent; a value
     that cannot be decrypted is left unchanged and reported (exit code 2).
-``nodestro-server assistant backfill-owners [--dry-run] [--tenant TENANT]``
-    Give assistant conversations from before the owner field the owner their files name (every file uploaded by the
-    same person); the others stay visible to their whole tenant. Idempotent.
+``nodestro-server assistant backfill-owners [--tenant TENANT]``
+    List the conversations without an owner (assistant conversations from before the owner field, conversations with
+    own agents restored from a desktop) per tenant, with the person their files name as a suggestion. On a server
+    nobody sees them, administrators included (W3-S1). Reads only.
+``nodestro-server assistant backfill-owners --tenant TENANT --user USER --conversation ID [--conversation ID ...]
+[--dry-run]``
+    Give exactly these conversations exactly this owner, a member of the tenant (USER as for ``set-role``). Only a
+    conversation without an owner gets one; an existing owner is never replaced, and nothing is deleted. Each
+    assignment is recorded in the tenant's access audit trail (``conversation_owner_assigned``, actor
+    ``operator``). Run by the server's operator, who holds the database settings (API-073).
 ``nodestro-server axentra status``
     The embedding state: switches, package version, schema state of both runners, keyring key ids (never keys),
     stored secrets by format, identity backend and its readiness, and the reconciliation backlog (counts only).
@@ -975,33 +982,76 @@ def reencrypt_secrets(server: ServerEnvironment, *, dry_run: bool, tenant: str |
     return result
 
 
-def backfill_conversation_owners(server: ServerEnvironment, *, dry_run: bool, tenant: str | None) -> dict[str, Any]:
-    """``nodestro-server assistant backfill-owners``: give assistant conversations from before the owner field an
-    owner where their files name exactly one person (:func:`nodestro_api.assistant.backfill_owners`, API-057); the
-    others stay visible to their whole tenant."""
-    from .assistant import backfill_owners
+def _owner_options_problem(tenant: str | None, user: str | None, conversations: list[str] | None) -> str:
+    """Why the options of ``assistant backfill-owners`` do not name exactly what to assign ("" when they do)."""
+    if user is None:
+        return "--conversation needs --user (the new owner)" if conversations else ""
+    if tenant is None:
+        return "--user needs --tenant"
+    if not conversations:
+        return "--user needs at least one --conversation (there is no wildcard)"
+    return ""
 
+
+def backfill_conversation_owners(
+    server: ServerEnvironment,
+    *,
+    dry_run: bool,
+    tenant: str | None,
+    user: str | None = None,
+    conversations: list[str] | None = None,
+    confirm: Confirm | None = None,
+) -> dict[str, Any]:
+    """``nodestro-server assistant backfill-owners`` (W3-S1, :mod:`nodestro_api.conversation_owners`).
+
+    Without ``user``: report the conversations without an owner per tenant, with suggestions; nothing is written.
+    With ``user``: ``tenant`` and at least one conversation id are required; the user must be a member of the tenant
+    (``identity.not_a_member``). Only conversations without an owner get one; each is recorded in the access audit
+    trail. There is no default user and no wildcard."""
+    from .conversation_owners import assign, report
+
+    problem = _owner_options_problem(tenant, user, conversations)
+    if problem:
+        raise ValueError(problem)
     database = _database(server)
-    report: dict[str, Any] = {"dry_run": dry_run, "tenants": {}}
+    result: dict[str, Any] = {"dry_run": dry_run, "tenants": {}}
     try:
         database.require_current_schema()
         with _identity(server, database) as identity:
             if tenant is not None:
                 _require_tenant(identity, tenant)
-            tenants = [tenant] if tenant is not None else [item.id for item in identity.tenants()]
-        for tenant_id in tenants:
-            found = backfill_owners(database.store(tenant_id), dry_run=dry_run)
-            report["tenants"][tenant_id] = {
-                "without_owner": found.without_owner,
-                "assigned": len(found.assigned),
-                "ambiguous": len(found.ambiguous),
-                "unknown": found.unknown,
-            }
+            if user is None:
+                tenants = [tenant] if tenant is not None else [item.id for item in identity.tenants()]
+            else:
+                assert tenant is not None
+                found = find_user(server, database, user, confirm=confirm)
+                if identity.role(tenant, found.id) is None:
+                    raise NodestroError(
+                        "identity.not_a_member", f"{found.id} is not a member of {tenant}", tenant=tenant
+                    )
+        if user is None:
+            for tenant_id in tenants:
+                ownerless = report(database.store(tenant_id))
+                result["tenants"][tenant_id] = {
+                    "without_owner": ownerless.conversations,
+                    "suggested_owners": ownerless.suggested,
+                }
+        else:
+            assert tenant is not None and conversations
+            done = assign(database.store(tenant), found.id, conversations, dry_run=dry_run)
+            result["tenants"][tenant] = done.model_dump()
     finally:
         database.close()
-    assigned = sum(item["assigned"] for item in report["tenants"].values())
-    logger.info("Conversation owners%s: %d assigned", " (dry run)" if dry_run else "", assigned)
-    return report
+    if user is not None:
+        assigned = sum(len(item["assigned"]) for item in result["tenants"].values())
+        logger.info(
+            "Operator assigned conversation owners%s in tenant %s: %d to %s",
+            " (dry run)" if dry_run else "",
+            tenant,
+            assigned,
+            found.id,
+        )
+    return result
 
 
 def reconcile_mirrors(server: ServerEnvironment, *, dry_run: bool, tenant: str | None) -> dict[str, Any]:
@@ -1712,10 +1762,17 @@ def parser() -> argparse.ArgumentParser:
     assistant_commands = assistant.add_subparsers(dest="assistant_command", required=True)
     owners = assistant_commands.add_parser(
         "backfill-owners",
-        help="Give conversations from before the owner field the owner their files name (others stay shared)",
+        help=(
+            "List conversations without an owner (nobody sees them on a server), or give the named ones an owner "
+            "(--tenant, --user and --conversation; never replaces an owner; audited)"
+        ),
     )
     owners.add_argument("--dry-run", action="store_true", help="Only report what would change")
-    owners.add_argument("--tenant", help="Only this tenant")
+    owners.add_argument("--tenant", help="Only this tenant (required with --user)")
+    owners.add_argument("--user", help="The new owner, a member of the tenant: " + user_help)
+    owners.add_argument(
+        "--conversation", action="append", default=[], help="A conversation id (chat_... or conv_...); repeat it"
+    )
     platform = commands.add_parser("axentra", help="Axentra platform services")
     platform_commands = platform.add_subparsers(dest="axentra_command", required=True)
     platform_commands.add_parser(
@@ -1765,7 +1822,12 @@ def parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    args = parser().parse_args(argv)
+    found_parser = parser()
+    args = found_parser.parse_args(argv)
+    if args.command == "assistant":
+        problem = _owner_options_problem(args.tenant, args.user, args.conversation)
+        if problem:
+            found_parser.error(problem)
     from .db_log_redaction import install_db_error_redaction
     from .observability import configure_logging
 
@@ -1846,7 +1908,15 @@ def main(argv: Sequence[str] | None = None) -> None:
         elif args.command == "assistant":
             import json
 
-            print(json.dumps(backfill_conversation_owners(server, dry_run=args.dry_run, tenant=args.tenant), indent=2))
+            report = backfill_conversation_owners(
+                server,
+                dry_run=args.dry_run,
+                tenant=args.tenant,
+                user=args.user,
+                conversations=args.conversation,
+                confirm=_confirm_on_terminal,
+            )
+            print(json.dumps(report, indent=2))
         elif args.command == "axentra" and args.axentra_command == "reconcile":
             import json
 

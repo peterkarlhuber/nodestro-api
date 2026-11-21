@@ -18,6 +18,39 @@
   - `NODESTRO_BIND_LOOPBACK`: `nodestro_session.bind_loopback` for the command line's listener.
   - New in `AppConfig`: `hardening` (`LaunchHardening`, every switch off by default; read in the `desktop` profile
     only, review I-1). No route and no OpenAPI change.
+- Security (W3-S1, conversations with own agents and the Nodestro Assistant; still behind `NODESTRO_CONVERSATIONS`,
+  off by default; `docs/conversations.md`):
+  - A principal without a role (no member of the tenant) no longer counts as the desktop's single person: on a server
+    it sees no conversation, message, file, answer run, search hit or preview, and starts no conversation
+    (`403 access.person_required`, an existing code). Only the local owner of a single-user app sees every
+    conversation (`owner_of`, runtime `conversations.NO_OWNER`). The same holds for assistant conversations and their
+    files. Server logins always carry a role, so members see no change.
+  - Knowledge adoption (`/api/knowledge/adopt/check`, `/api/knowledge/adopt`) answers `404 run.not_found` for the
+    run of another person's conversation; before, a member who knew the run id could read and adopt the answer.
+  - A conversation's file is no longer in the run file catalog (like an assistant file): a form field, batch row,
+    schedule or test case that names it is refused (`form.file_missing`). Before, another member who knew the file
+    id could hand it to an agent of their own run.
+  - New audit tests scan every route of the desktop and the server app for another person's conversation
+    (`tests/test_conversation_access_audit.py`, `tests/test_conversation_access_audit_server.py`).
+  - Needs nodestro-runtime with `conversations.NO_OWNER` (studio lock).
+  - Review fixes (W3-S1 review):
+    - The audit's agent template has persistent memory and writes a note with the marker; every path parameter of
+      the scan gets the owner's real value where one exists (memory space and file, workflow id, template, tools,
+      the assistant's attachment and snapshot of the answer run). It found answers writing into the shared memory
+      space, which every member reads; the runtime now gives answers run memory (needs the pinned runtime).
+    - `POST /api/access/grants` with a `conversation_id` answers `404 conversation.not_found` (or
+      `run.not_found`) for a conversation or run the caller does not see; before, an administrator could grant tools
+      for another member's conversation.
+  - Conversations without an owner (owner's decision A): on a server an assistant conversation from before owners
+    were recorded, or a conversation with an own agent restored from a desktop, is seen by nobody, administrators
+    included, on every path; before, an ownerless assistant conversation was visible, renamable and deletable for
+    every member. The desktop's single person is not affected. Nothing is deleted and nothing is assigned by itself.
+  - `nodestro-server assistant backfill-owners` (changed): without `--user` it only lists conversations without an
+    owner, with suggestions (before, it assigned the owner the files named by itself); with `--tenant`, `--user`
+    (a member of the tenant) and one `--conversation` per id it assigns exactly those, only where no owner is, and
+    records each assignment in the access audit trail. Contract (additive): the access audit kind
+    `conversation_owner_assigned` (OpenAPI documents regenerated; the SDK syncs).
+
 - Security (N-02, step 1): the local session's protection uses the shared library `nodestro-session`
   (`>=0.1.0.dev0,<0.2`, standard library only; the studio lock pins its commit). No contract change: paths, codes,
   texts, cookie names and the open paths stay as they were.

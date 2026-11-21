@@ -148,16 +148,21 @@ class AppConfig:
         )
 
 
+#: The origins of input files that belong to a conversation: the Nodestro Assistant's and an own agent's (N-04).
+_CHAT_ORIGINS = frozenset({"assistant", "conversation"})
+
+
 class RunFileCatalog(FileCatalog):
     """The files a run, batch, schedule or test case may reference: the runtime's catalog without the files of
-    assistant conversations (API-055). A chat file stays in its conversation; a run takes it only after it was
-    uploaded as an input file (or saved to knowledge) on purpose."""
+    assistant conversations (API-055) and of conversations with own agents (W3-S1). A chat file stays in its
+    conversation; a run takes it only after it was uploaded as an input file (or saved to knowledge) on purpose. An
+    answer's run gets the files of its message without this catalog (its start has no form)."""
 
     def _chat_file(self, file_id: str) -> bool:
         if not is_input_id(file_id) or self.inputs is None:
             return False
         item = self.inputs.find(file_id)
-        return item is not None and item.origin == "assistant"
+        return item is not None and item.origin in _CHAT_ORIGINS
 
     def __getitem__(self, file_id: str) -> FileRef:
         if self._chat_file(file_id):
@@ -170,7 +175,7 @@ class RunFileCatalog(FileCatalog):
     def __iter__(self) -> Iterator[str]:
         yield from (entry.id for entry in self.knowledge.list())
         if self.inputs is not None:
-            yield from (item.id for item in self.inputs.all() if item.origin != "assistant")
+            yield from (item.id for item in self.inputs.all() if item.origin not in _CHAT_ORIGINS)
 
 
 class Nodestro(Workspace):

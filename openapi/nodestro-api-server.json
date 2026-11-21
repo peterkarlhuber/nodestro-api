@@ -47,7 +47,8 @@
               "tenant_status_changed",
               "role_changed",
               "member_removed",
-              "sessions_revoked"
+              "sessions_revoked",
+              "conversation_owner_assigned"
             ],
             "title": "Kind",
             "type": "string"
@@ -29423,7 +29424,8 @@
                     "tenant_status_changed",
                     "role_changed",
                     "member_removed",
-                    "sessions_revoked"
+                    "sessions_revoked",
+                    "conversation_owner_assigned"
                   ],
                   "type": "string"
                 },

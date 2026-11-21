@@ -299,8 +299,9 @@ Commands:
   and open reviews, a sync now, and the decision on a review.
 - Members and tenants (`members`, `set-role`, `remove-member`, `revoke-sessions`, `suspend-tenant`, `resume-tenant`),
   tenant secrets (`secrets reencrypt`), Axentra platform services (`axentra`), input file storage (`files`),
-  owners of assistant conversations from before the owner field (`assistant backfill-owners [--dry-run]`: the owner
-  their files name; conversations without files or with files of several people stay visible to the whole tenant)
+  owners of conversations without an owner, which nobody sees on a server (`assistant backfill-owners`: lists
+  them with suggestions; with `--tenant`, `--user` and `--conversation` it assigns exactly those to that member,
+  never over an owner, and audits each assignment)
   and database roles (`db`): `nodestro-server <command> --help` shows the arguments, and the runbook in the
   `nodestro-server` repository (`docs/RUNBOOK.md`) describes when to use them.
 
