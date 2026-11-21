@@ -11,9 +11,9 @@ is on and the app serves that group, so an interface (the studio's conversation 
 | Method and path | Permission | What |
 |---|---|---|
 | `GET /api/conversations` | `read` | The caller's conversations, most recently changed first |
-| `POST /api/conversations` | `edit` | Create: `agent` (`template_id`, optional `version`), optional `model`, `title`, `offline`, `budget_usd` |
+| `POST /api/conversations` | `edit` | Create: `agent` (`template_id`, optional `version`), optional `model`, `title`, `offline`, `budget_usd`, `history`, `summary_model` |
 | `GET /api/conversations/{id}` | `read` | The conversation with its messages, usage and the answer being written |
-| `PATCH /api/conversations/{id}` | `edit` | Rename, switch the agent or model, the offline flag or the budget (only the fields sent) |
+| `PATCH /api/conversations/{id}` | `edit` | Rename, switch the agent or model, the offline flag, the budget, `history` or `summary_model` (only the fields sent; `summary_model` `""` clears it) |
 | `DELETE /api/conversations/{id}` | `edit` | Delete it with its messages, files and the answers' runs (a running answer is cancelled first); revokes its grants for "this conversation" |
 | `GET /api/conversations/{id}/export` | `read` | Markdown, as a download |
 | `POST /api/conversations/{id}/files` | `edit` | Upload files (multipart `files`); refused files come back with their problem |
@@ -23,6 +23,13 @@ is on and the app serves that group, so an interface (the studio's conversation 
 | `GET /api/conversations/{id}/messages/{message_id}` | `read` | One message; an answer as its run is now |
 | `POST /api/conversations/{id}/messages/{message_id}/cancel` | `run` | Cancel a running answer (its run) |
 | `GET /api/conversations/{id}/messages/{message_id}/events` | `read` | Server-Sent Events: `snapshot` (the message), `event` (each `RunEvent` of the answer's run), `end` (`status`, or `reason` `deleted` when the conversation is deleted meanwhile) |
+
+Long conversations (N-05, nodestro-runtime `docs/conversations.md`, "Long conversations"): `history` is `trim`
+(default) or `summarize`; `summary_model` is the helper model of `summarize` (`null`: the conversation's model; a
+cloud model is refused while the conversation or its agent is offline, `conversation.offline_cloud_model`). Each
+answer carries `summary` (`HistorySummary`: `method` `trimmed` or `summarized`, `first_seq`, `last_seq`, `text`,
+`model`, `run_id`, `usage`, `sources`, `error`) when earlier messages did not fit the model's context window, and
+`null` otherwise. A summary run is a run of the conversation like an answer's, so the run routes treat it the same.
 
 Rules:
 

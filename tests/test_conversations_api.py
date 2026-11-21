@@ -241,6 +241,35 @@ def test_switching_agent_and_model(chatting: TestClient) -> None:
     assert switched.json()["title"] == created["title"]
 
 
+def test_the_history_strategy_of_a_conversation(chatting: TestClient) -> None:
+    """N-05: ``history`` (``trim`` by default, or ``summarize``) and the helper ``summary_model`` are set on create and
+    change; an offline conversation refuses a cloud helper. An answer whose history fits has no ``summary``."""
+    client = chatting
+    created = conversation(client)
+    assert (created["history"], created["summary_model"]) == ("trim", None)
+    changed = client.patch(f"{BASE}/{created['id']}", json={"history": "summarize", "summary_model": CLOUD})
+    assert changed.status_code == 200, changed.text
+    assert (changed.json()["history"], changed.json()["summary_model"]) == ("summarize", CLOUD)
+    cleared = client.patch(f"{BASE}/{created['id']}", json={"summary_model": ""})
+    assert cleared.json()["summary_model"] is None and cleared.json()["history"] == "summarize"
+    assert client.patch(f"{BASE}/{created['id']}", json={"history": "forget"}).status_code == 422
+    refused = client.post(
+        BASE,
+        json={
+            "agent": {"template_id": template(client)},
+            "model": "ollama:qwen3.5:4b",
+            "offline": True,
+            "summary_model": CLOUD,
+        },
+    )
+    assert refused.status_code >= 400 and refused.json()["code"] == "conversation.offline_cloud_model"
+    sent = client.post(f"{BASE}/{created['id']}/messages", json={"content": "What is 6 * 7?"})
+    assert sent.status_code in (200, 201, 202), sent.text
+    wait(client, sent.json()["assistant"]["run_id"])
+    answer = client.get(f"{BASE}/{created['id']}").json()["messages"][-1]
+    assert answer["status"] == "succeeded" and answer["summary"] is None
+
+
 def test_files_of_a_conversation(chatting: TestClient) -> None:
     client = chatting
     conversation_id = conversation(client)["id"]
