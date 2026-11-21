@@ -12,7 +12,7 @@ With ``NODESTRO_IDENTITY_BACKEND=mirror|axentra`` Axentra's own audit log also r
 changes; this trail is Nodestro's record and the one tenant admins read.
 
 On a server the operator's commands (``create-tenant``, ``set-role``, ``remove-member``, ``revoke-sessions``,
-``tenant suspend|resume``) are recorded with the actor ``operator``.
+``tenant suspend|resume``, ``assistant backfill-owners``) are recorded with the actor ``operator``.
 """
 
 from __future__ import annotations
@@ -46,6 +46,8 @@ AccessKind = Literal[
     "role_changed",
     "member_removed",
     "sessions_revoked",
+    # The operator gave a conversation without an owner its owner (target: the new owner; details: the conversation).
+    "conversation_owner_assigned",
 ]
 
 

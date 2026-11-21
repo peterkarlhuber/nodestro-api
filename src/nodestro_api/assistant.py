@@ -145,7 +145,8 @@ class Conversation(BaseModel):
     attachments: list[Attachment] = Field(default_factory=list)
     #: The user's own files of this conversation (see :mod:`nodestro_api.assistant_files`).
     files: list[ConversationFile] = Field(default_factory=list)
-    #: The server user who started it; only they see it (``None``: everyone of the workspace, as on the desktop).
+    #: The server user who started it; only they see it. ``None``: made on the desktop (its single person sees it) or
+    #: on a server before owners were recorded (nobody sees it there until the operator assigns an owner, W3-S1).
     owner: str | None = None
     #: All requests of this conversation, failed and cancelled ones included (as in the usage ledger).
     usage: Usage = Field(default_factory=Usage)
@@ -456,50 +457,6 @@ def _estimated_input_tokens(request: ModelRequest) -> int:
     return (len(messages) + len(request.system or "") + len(tools)) // 4
 
 
-class OwnerBackfill(BaseModel):
-    """What :func:`backfill_owners` found (API-057)."""
-
-    #: Conversations without an owner before the backfill.
-    without_owner: int = 0
-    #: Conversation id -> the owner it got (or would get, in a dry run).
-    assigned: dict[str, str] = Field(default_factory=dict)
-    #: Files of several people: the conversation stays visible to the whole tenant.
-    ambiguous: list[str] = Field(default_factory=list)
-    #: No file says who wrote in it: the conversation stays visible to the whole tenant.
-    unknown: int = 0
-
-
-def backfill_owners(store: Any, *, dry_run: bool = False) -> OwnerBackfill:
-    """Give conversations from before the owner field (``owner`` ``None``, visible to the whole tenant) an owner
-    where the conversation itself says who it belongs to: every file in it was uploaded by the same server user.
-    Messages record no author, so a conversation without files, or with files of several people, stays visible to
-    the whole tenant, as before. Idempotent; ``dry_run`` only reports."""
-    from nodestro_runtime.input_files import COLLECTION, InputFile
-
-    found = OwnerBackfill()
-    for conversation in store.list(_CONVERSATIONS, Conversation):
-        if conversation.owner is not None:
-            continue
-        found.without_owner += 1
-        uploaders = set()
-        for item in conversation.files:
-            stored = store.get(COLLECTION, item.id, InputFile)
-            if stored is not None and stored.origin == "assistant":
-                uploaders.add(stored.uploaded_by)
-        people = {who for who in uploaders if who and who != "local"}
-        if len(people) == 1 and len(uploaders) == 1:
-            owner = people.pop()
-            found.assigned[conversation.id] = owner
-            if not dry_run:
-                conversation.owner = owner
-                store.put(_CONVERSATIONS, conversation.id, conversation)
-        elif len(people) > 1:
-            found.ambiguous.append(conversation.id)
-        else:
-            found.unknown += 1
-    return found
-
-
 class Assistant:
     """Conversations, attachments and live replies of the Nodestro Assistant."""
 
@@ -531,12 +488,14 @@ class Assistant:
         self.store.put(_CONVERSATIONS, conversation.id, conversation)
 
     def conversations(self, actor: str | None = None) -> list[ConversationSummary]:
-        """The conversations ``actor`` may see (a server user's own and the shared ones); all without ``actor``; none
-        for :data:`~nodestro_runtime.conversations.NO_OWNER` (a request without an owner identity, W3-S1)."""
+        """The conversations ``actor`` may see: a server user's own ones; all without ``actor`` (the desktop's single
+        person); none for :data:`~nodestro_runtime.conversations.NO_OWNER` (a request without an owner identity). A
+        conversation without an owner is nobody's on a server until the operator assigns one (W3-S1,
+        :mod:`nodestro_api.conversation_owners`)."""
         if actor == NO_OWNER:
             return []
         items = sorted(self.store.list(_CONVERSATIONS, Conversation), key=lambda c: c.updated_at, reverse=True)
-        items = [item for item in items if actor is None or item.owner in (None, actor)]
+        items = [item for item in items if actor is None or item.owner == actor]
         return [
             ConversationSummary(
                 id=item.id,
@@ -552,10 +511,10 @@ class Assistant:
         ]
 
     def check_owner(self, conversation_id: str, actor: str | None) -> None:
-        """Another server user's conversation does not exist for ``actor`` (``KeyError``, answered with 404), and no
-        conversation exists for :data:`~nodestro_runtime.conversations.NO_OWNER` (W3-S1)."""
+        """Another server user's conversation does not exist for ``actor`` (``KeyError``, answered with 404), nor does
+        one without an owner, nor any for :data:`~nodestro_runtime.conversations.NO_OWNER` (W3-S1)."""
         conversation = self._conversation(conversation_id)
-        if actor == NO_OWNER or (actor is not None and conversation.owner not in (None, actor)):
+        if actor == NO_OWNER or (actor is not None and conversation.owner != actor):
             raise KeyError(conversation_id)
 
     def create(self, title: str = "", owner: str | None = None) -> ConversationDetail:

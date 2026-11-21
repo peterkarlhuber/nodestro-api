@@ -51,6 +51,24 @@ Rules:
   on every route, its files included (also under `/api/inputs`, and as a run input). Every route works on the
   request's tenant only. A conversation without an owner (made on a desktop and restored into a server) is seen by
   nobody there (fail closed).
+- **Conversations without an owner on a server (W3-S1, owner's decision).** An assistant conversation from before
+  owners were recorded and a conversation with an own agent restored from a desktop (`owner` `None`) are nobody's on
+  a server: no member sees them, administrators included, on any path (lists, detail, files and `/api/inputs`,
+  search, preview, adoption, export, answer runs with their child runs, events and files). Before, an ownerless
+  assistant conversation was visible, renamable and deletable for every member. Reading never assigns an owner, and
+  nothing is deleted. The desktop's single person still sees them. The server's operator gives such a conversation
+  an owner (`nodestro_api.conversation_owners`):
+  - `nodestro-server assistant backfill-owners [--tenant TENANT]` lists them per tenant, with the person their
+    files name as a suggestion; it writes nothing.
+  - `nodestro-server assistant backfill-owners --tenant TENANT --user USER --conversation ID [...] [--dry-run]`
+    assigns exactly these conversations to exactly this user, who must be a member of the tenant
+    (`identity.not_a_member`). There is no default user and no wildcard. A conversation that has an owner keeps it
+    (reported as `owned`). Each assignment is one entry of the tenant's access audit trail (kind
+    `conversation_owner_assigned`, actor `operator`, target the new owner, details the conversation id and kind,
+    the time; never a title or content), readable by the tenant's administrators (`GET /api/access-audit`).
+  - Why a command and not a route: the operator already holds the database and the tenants' membership
+    (`set-role`); an administrator route would let a tenant administrator assign another person's conversation to
+    themselves and read it. Only who runs `nodestro-server` with the database settings can run it.
 - **Who has an owner identity (W3-S1).** `owner_of(request)` decides whose conversations a request sees, per
   principal:
 

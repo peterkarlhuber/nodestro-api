@@ -17,6 +17,15 @@
   - New audit tests scan every route of the desktop and the server app for another person's conversation
     (`tests/test_conversation_access_audit.py`, `tests/test_conversation_access_audit_server.py`).
   - Needs nodestro-runtime with `conversations.NO_OWNER` (studio lock).
+  - Conversations without an owner (owner's decision A): on a server an assistant conversation from before owners
+    were recorded, or a conversation with an own agent restored from a desktop, is seen by nobody, administrators
+    included, on every path; before, an ownerless assistant conversation was visible, renamable and deletable for
+    every member. The desktop's single person is not affected. Nothing is deleted and nothing is assigned by itself.
+  - `nodestro-server assistant backfill-owners` (changed): without `--user` it only lists conversations without an
+    owner, with suggestions (before, it assigned the owner the files named by itself); with `--tenant`, `--user`
+    (a member of the tenant) and one `--conversation` per id it assigns exactly those, only where no owner is, and
+    records each assignment in the access audit trail. Contract (additive): the access audit kind
+    `conversation_owner_assigned` (OpenAPI documents regenerated; the SDK syncs).
 
 - Security (N-02, step 1): the local session's protection uses the shared library `nodestro-session`
   (`>=0.1.0.dev0,<0.2`, standard library only; the studio lock pins its commit). No contract change: paths, codes,

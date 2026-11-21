@@ -50,9 +50,10 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
   nodestro-runtime RT-089
 - **What:** The audit closed the principal without a role (`NO_OWNER`), knowledge adoption from another person's
   answer run and conversation files as run, batch and form inputs. What remains, none of it a content leak:
-  - An assistant conversation from before owners were recorded (`owner` `None`) is still seen by every member of its
-    tenant (documented; `nodestro-server assistant backfill-owners` gives it its owner). Changing that default would
-    hide such conversations from everyone, so it stays a decision for the owner of the plan.
+  - Done (owner's decision A): a conversation without an owner is nobody's on a server, administrators included,
+    until the operator assigns an owner with `nodestro-server assistant backfill-owners --tenant --user
+    --conversation` (member only, never over an owner, audited as `conversation_owner_assigned`;
+    `tests/test_conversation_owners.py`).
   - A `POST`/`PUT` route with `{run_id}` answers another person's answer run with `404` before it checks the body,
     and an unknown id with `422` when the body is invalid: the difference shows that the id exists (never what it
     holds). Run ids are random; the administrator's activity log names them anyway.
@@ -62,8 +63,7 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
     writes with the workspace, as in any run (the agent's configuration decides).
   - The resume plan of a failed answer run lists its conversation files as missing (they are no run file catalog
     entries any more); resuming is not a conversation feature, an answer is sent again instead.
-- **Next step:** Decide the default for owner-less assistant conversations on a server; include the conversation
-  routes in the next independent review.
+- **Next step:** Include the conversation routes and the owner assignment in the next independent review.
 
 ### API-071 · Independent review of Local Docker's key handoff (LD-020)
 
@@ -267,8 +267,8 @@ None known.
 - **Priority:** P4 Optional · **Status:** Open · **Refs:** backend audit round 2 API2-15 (by design)
 - **What:** Inside a tenant, a member with run permission may approve the approval node of their own run, and the
   edit permission can delete a run with its approval record. This is the documented role model, not a defect.
-  (Assistant conversations have an owner on the server since the settings/providers round; older ones get one with
-  `nodestro-server assistant backfill-owners`.)
+  (Assistant conversations have an owner on the server since the settings/providers round; older ones are nobody's
+  until the operator assigns one with `nodestro-server assistant backfill-owners`, API-073.)
 - **Next step:** Decide whether approval nodes get a "needs another member" option.
 
 ### API-060 · Internal assistants on Anthropic use the default thinking display

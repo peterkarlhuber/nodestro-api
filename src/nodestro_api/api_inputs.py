@@ -13,7 +13,6 @@ from typing import Annotated, Any
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import Response
 from nodestro_runtime.adoption import AdoptCheck, AdoptConfirm, AdoptOutcome, AdoptRequest, adopt, check
-from nodestro_runtime.conversations import NO_OWNER
 from nodestro_runtime.file_delivery import INLINE_FILE_CHARS, INLINE_TOTAL_CHARS
 from nodestro_runtime.file_formats import (
     DEFAULT_FIELD_MB,
@@ -31,6 +30,7 @@ from nodestro_runtime.problems import Problem
 from pydantic import BaseModel, Field
 
 from .api import Ctx, actor_id, owner_of, uploaded_file_headers
+from .conversation_owners import chat_file_visible
 from .permissions import EDIT, READ
 from .serving import ApiError
 
@@ -155,14 +155,15 @@ def cleanup_inputs(body: CleanupRequest, ctx: Ctx) -> InputCleanupResult:
 
 def visible(ctx: Ctx, request: Request, file_id: str) -> None:
     """Another user's file of an assistant conversation or of a conversation with an own agent (N-04) does not exist
-    for this request (``KeyError``, answered with 404); nor does any such file for a request without an owner
-    identity on a server (W3-S1)."""
+    for this request (``KeyError``, answered with 404); nor does a file of a conversation without an owner on a
+    server, nor any such file for a request without an owner identity (W3-S1,
+    :func:`nodestro_api.conversation_owners.chat_file_visible`)."""
     if not is_input_id(file_id):
         return
     item = ctx.inputs.find(file_id)
     if item is None or item.origin not in ("assistant", "conversation"):
         return
-    if item.uploaded_by != actor_id(request) or owner_of(request) == NO_OWNER:
+    if item.uploaded_by != actor_id(request) or not chat_file_visible(ctx.store, item, owner_of(request)):
         raise KeyError(file_id)
 
 
