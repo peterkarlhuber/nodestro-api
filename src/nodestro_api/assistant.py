@@ -39,6 +39,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from nodestro_runtime.conversations import NO_OWNER
 from nodestro_runtime.engine import usage_of
+from nodestro_runtime.offline import OfflineScope, check_provider
 from nodestro_runtime.problems import NodestroError, Problem, library_problem, problem
 from nodestro_runtime.providers import MAX_RETRIES, model_id, provider_of
 from nodestro_runtime.reasoning import ReasoningKind, ReasoningTrace, reasoning_hook
@@ -717,6 +718,10 @@ class Assistant:
         """Take a snapshot and attach it; the same object (and variant) replaces its earlier attachment."""
         self._conversation(conversation_id)
         snapshot = build_snapshot(self.nodestro, request, conversation_id=conversation_id)
+        if snapshot.offline is not None:
+            # N-09: a run of an offline agent or conversation is attached only while the assistant model is local;
+            # every answer checks again (offline_scope), also with another model per message.
+            check_provider(provider_of(self.nodestro.settings().assistant_model), snapshot.offline)
         self.store.put(_SNAPSHOTS, f"{conversation_id}:{snapshot.id}", snapshot)
         attachment = Attachment(
             kind=snapshot.kind,
@@ -788,6 +793,29 @@ class Assistant:
             self._save(conversation)
         return self.detail(conversation_id)
 
+    def offline_scope(self, conversation_id: str) -> OfflineScope | None:
+        """Whether the answers of this conversation may only use a local model (N-09), and why: an attached run, or
+        one sent with an earlier message (the history repeats its answers), is a run of an offline agent or
+        conversation. The snapshot keeps what was true when it was taken; an attached run that still exists is
+        asked again (``RunManager.content_offline_scope``), so a conversation switched offline later counts too."""
+        conversation = self._conversation(conversation_id)
+        refs = [(item.kind, item.ref_id, item.snapshot_id) for item in conversation.attachments]
+        for message in self.messages(conversation_id):
+            if message.role == "user":
+                refs += [(item.kind, item.ref_id, item.snapshot_id) for item in message.context]
+        for kind, ref_id, snapshot_id in dict.fromkeys(refs):
+            if kind != "run":
+                continue
+            with suppress(KeyError):
+                found = self.snapshot(conversation_id, snapshot_id).offline
+                if found is not None:
+                    return found
+            run = self.nodestro.runs.get(ref_id)
+            scope = self.nodestro.runs.content_offline_scope(run) if run is not None else None
+            if scope is not None:
+                return scope
+        return None
+
     # ---- messages ----------------------------------------------------------------------
 
     def send(
@@ -803,7 +831,8 @@ class Assistant:
         if not body.content.strip() and not body.file_ids:
             raise NodestroError("assistant.message_empty", "Please write a message")
         model = body.model or self.nodestro.settings().assistant_model
-        self.nodestro.connect_model(model, actor=actor)  # nothing stored then
+        # Nothing stored then; N-09: local models only after a run of an offline agent or conversation.
+        self.nodestro.connect_model(model, actor=actor, offline=self.offline_scope(conversation_id))
         with self._lock:
             return self._send(conversation_id, body, loop, actor)
 
@@ -884,7 +913,11 @@ class Assistant:
         actor: str = "system",
     ) -> ChatMessage:
         """Answer a failed or cancelled message again, with the same question and context."""
-        self.nodestro.connect_model(body.model or self.nodestro.settings().assistant_model, actor=actor)
+        self.nodestro.connect_model(
+            body.model or self.nodestro.settings().assistant_model,
+            actor=actor,
+            offline=self.offline_scope(conversation_id),
+        )
         # Checked and started under the lock, like a new message: two retries never both start.
         with self._lock:
             return self._retry(conversation_id, message_id, body, loop, actor)
@@ -1399,7 +1432,10 @@ class _Reply:
         status: MessageStatus
         error: Problem | None
         try:
-            connection = self.nodestro.connect_model(model, actor=self.actor)
+            # N-09: the attached runs decide at the answer itself, whatever was checked when it was sent.
+            connection = self.nodestro.connect_model(
+                model, actor=self.actor, offline=self.service.offline_scope(self.conversation_id)
+            )
             prompt = self.prompt()
             files = self.files(model)
             self.agent = Agent(

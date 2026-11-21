@@ -114,4 +114,20 @@ Rules:
   `conversation.cloud_model_not_chosen` (the answer would use a cloud model nobody chose, such as a cloud judge)
   `422`; the others `400`.
 
+- **Offline (N-09).** With `offline`, every call of an answer and of the runs below it follows the runtime's
+  offline rules (runtime `docs/offline.md`): local models only, no server tools, and a tool that is not available
+  offline is refused (`offline.tool_unavailable` on the call). An agent template with `offline` answers with local
+  models only in every conversation.
+- **Offline content outside the run (N-09 review).** A run of an offline agent or conversation (in the run, above
+  it or below it; runtime `RunManager.content_offline_scope`, fails closed) only reaches local models elsewhere too:
+  - The Nodestro Assistant: attaching such a run is refused while the assistant model is a cloud model
+    (`400 offline.cloud_model`, `scope` `agent` or `conversation`, nothing stored). Its snapshot records it
+    (`Snapshot.offline`). Every message, retry and answer of an assistant conversation that has such a run attached,
+    or sent one with an earlier message (the history repeats the answers about it, so detaching does not free the
+    conversation), uses a local model on this computer only (`offline.cloud_model`, `offline.remote_endpoint`),
+    also when a message asks for another model or the settings change later.
+  - A test series' AI judge: the output of a case whose run has offline content goes to a local judge only; a cloud
+    judge is not asked and the case's verdict has `error_code` `offline.cloud_model` (the case stays open). A run that
+    cannot be read counts as offline.
+
 Open: the studio has no UI for it yet (runtime RT-089).

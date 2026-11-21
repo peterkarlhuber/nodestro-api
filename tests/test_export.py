@@ -161,7 +161,12 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     # + nodestro_runtime.activity (N-13, runtime a8e54a9): the engine, input files and knowledge write one activity
     # event per action; it needs only platform_events (the hook protocol, exported already), never Axentra itself.
     expected.add("nodestro_runtime.activity")
-    assert len(modules) == 78 + with_error_texts and expected | {"nodestro_runtime.local_models"} <= set(modules)
+    # + nodestro_runtime.offline with nodestro-runtime claude/w3-n09 and later (N-09): the agent builder, the engine and
+    # run chat check an offline agent's calls with it; counted from the installed runtime, before and after the bump.
+    with_offline = (Path(nodestro_runtime.__file__).parent / "offline.py").is_file()
+    assert ("nodestro_runtime.offline" in modules) is with_offline
+    assert len(modules) == 78 + with_error_texts + with_offline
+    assert expected | {"nodestro_runtime.local_models"} <= set(modules)
     assert "nodestro_runtime.local_service" not in modules
     # The audit/usage hook protocol is exported (tool approvals and the usage log import it); the Axentra
     # integration itself is server-only and never part of an export.
