@@ -12,6 +12,12 @@
   - `output_folder.py` takes its system folders from the path guard (`orkexa.fs.system_folders`,
     `orkexa.fs.allowed_folders`) instead of its own list; it now also refuses `/root` (unless it is the home folder).
 
+- Conversations (N-05, contract only; nodestro-runtime `claude/w3-n05`): the conversation fields `history` (`trim`
+  default, `summarize`) and `summary_model`, and `summary` (`HistorySummary`) on each answer, in both OpenAPI
+  documents. Long conversations are fitted into the model's context window by the runtime. The error catalog gains
+  `agent.FsError` and `run.agent.FsError` (Orkexa's path guard error class, from the newer Orkexa pin). Behind
+  `NODESTRO_CONVERSATIONS` (off). See `docs/conversations.md`. A test keeps `.orig`/`.rej` leftovers out of the
+  repository (N-05 review L4).
 - Contract (N-09, runtime `claude/w3-n09`): `AgentConfig.offline` (default `false`, additive) in both OpenAPI
   documents: the strict offline mode's rules for one agent, checked by the runtime at every call (local models only,
   no server tools, no tool with external reach). The conversation's existing `offline` flag now covers every call

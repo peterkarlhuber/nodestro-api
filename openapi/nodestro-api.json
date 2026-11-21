@@ -1193,6 +1193,15 @@
             "title": "Files",
             "type": "array"
           },
+          "history": {
+            "default": "trim",
+            "enum": [
+              "trim",
+              "summarize"
+            ],
+            "title": "History",
+            "type": "string"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -1234,6 +1243,17 @@
             "default": "unchecked",
             "title": "Provenance",
             "type": "string"
+          },
+          "summary_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary Model"
           },
           "tenant_id": {
             "title": "Tenant Id",
@@ -7369,6 +7389,21 @@
             ],
             "title": "Budget Usd"
           },
+          "history": {
+            "anyOf": [
+              {
+                "enum": [
+                  "trim",
+                  "summarize"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "History"
+          },
           "model": {
             "anyOf": [
               {
@@ -7391,6 +7426,18 @@
               }
             ],
             "title": "Offline"
+          },
+          "summary_model": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary Model"
           },
           "title": {
             "anyOf": [
@@ -7603,6 +7650,15 @@
             ],
             "title": "Budget Usd"
           },
+          "history": {
+            "default": "trim",
+            "enum": [
+              "trim",
+              "summarize"
+            ],
+            "title": "History",
+            "type": "string"
+          },
           "model": {
             "anyOf": [
               {
@@ -7619,6 +7675,18 @@
             "default": false,
             "title": "Offline",
             "type": "boolean"
+          },
+          "summary_model": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary Model"
           },
           "title": {
             "default": "",
@@ -7775,6 +7843,16 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HistorySummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "tool_calls": {
             "items": {
@@ -11134,6 +11212,101 @@
           "cpus"
         ],
         "title": "Hardware",
+        "type": "object"
+      },
+      "HistorySummary": {
+        "description": "What replaced the earlier messages of a conversation for one answer (N-05), shown in its history.\n\n``method`` ``trimmed``: the messages ``first_seq`` to ``last_seq`` were left out; ``summarized``: a helper model\n(``model``, in run ``run_id`` with its ``usage``) summarized them. ``text`` is exactly what the answer's model\nread; it keeps untrusted data in ``<untrusted_data>`` frames with their ``sources``. ``error``: why summarizing\nfailed (the history was trimmed instead).",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "first_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Seq"
+          },
+          "last_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seq"
+          },
+          "method": {
+            "enum": [
+              "trimmed",
+              "summarized"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Usage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "method",
+          "text"
+        ],
+        "title": "HistorySummary",
         "type": "object"
       },
       "ImportIn": {
