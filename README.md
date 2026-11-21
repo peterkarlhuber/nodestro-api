@@ -122,6 +122,21 @@ to the studio from the backend's own origin (the token is redacted in the access
 programs and users of the same computer and web pages in the browser out of the desktop's studio API. It is not a
 user login and does not lift the loopback-only rule. Without the variable (the `nodestro` command) nothing changes.
 
+**Hardening switches of the desktop launch (NS-002, all off).** Each step of nodestro-session `docs/design.md` 5.2
+sits behind its own switch, off by default; with every switch off the answers are byte for byte the earlier ones
+(`tests/test_launch_hardening.py` against `tests/vectors/launch-switches-off.json`). Each waits for its counterpart
+(the desktop shell or the studio frontend) before it may be turned on. They apply to the desktop profile only: the `server`
+profile and Nodestro Local Docker neither read nor refuse them (`nodestro_api.launch.LaunchHardening`):
+
+| Variable | Effect when set |
+|---|---|
+| `NODESTRO_LAUNCH_TTL=<seconds>` (above 0, at most 3600) | The launch secret works only that long after the backend's first answer (`403 access.launch_expired`), on the monotonic and on the wall clock, whichever ends it first (the monotonic clock may stop while the computer sleeps). No limit: unset, empty, any number equal to zero (`0`, `0.0`, `00`) or `false`, `off`, `no` (any case). Any other value stops the start (`access.launch_ttl_invalid`, whose message lists these values) rather than run without the limit that was meant. Sessions opened in time are not affected. |
+| `NODESTRO_LAUNCH_CSRF=1` | Every change (`POST`, `PUT`, `PATCH`, `DELETE`) of the window's session needs an `Origin` (`403 request.origin_required`), a JSON or `multipart/form-data` body or none (`415 request.json_only`: no `text/plain`, no urlencoded form, no body without a type) and the session's CSRF value in `X-Nodestro-CSRF` (`403 access.csrf_invalid`). The launch page leaves the value in the page's `sessionStorage` (`nodestro.session`), where the studio reads it; another local program that receives the cookie (cookies are not port-scoped) never gets it, so it cannot change anything. Reads need no CSRF value: such a program can still read with the cookie alone. A WebSocket of the window's session needs an `Origin` (closed with `1008` otherwise); a browser cannot send the CSRF header there, but always sends its `Origin`. Reading requests, open paths and published APIs are unchanged. |
+| `NODESTRO_DESKTOP_LOGOUT=1` | `POST /api/logout` (with `Origin`, and with the CSRF value under `NODESTRO_LAUNCH_CSRF`) ends the window's session and deletes its cookie (`{"ended": 1}`); other methods answer `405 access.logout_method`. The launch secret stays used, so a new window needs a restart. The launch page tells the studio to offer the sign-out. |
+| `NODESTRO_TERMINAL_LAUNCH=1` | The `nodestro` and `nodestro-api` commands issue a launch secret of their own when neither the desktop app nor the operator gave one (256 bits, in memory only). `nodestro` opens the browser with the `file://` path of a 0600 redirect file in `<data dir>/launch` (removed once the link is used and at exit), never with the link on a command line; both commands print the link once. `--reload` is refused, as with any secret. |
+| `NODESTRO_LAUNCH_FRAGMENT=1` | The launch link carries the secret in its fragment (`/api/launch#token=<secret>`), which no server log or `Referer` ever sees. `GET /api/launch` answers the launch page (no secret in it, script allowed by its hash only), which sends the secret with `POST /api/launch` `{"token": ...}` (needs `Origin` and JSON, at most 4 KiB) and removes it from the address bar. `?token=` is refused and does not use the secret up. |
+| `NODESTRO_BIND_LOOPBACK=1` | The command line listens on a random `127.a.b.c` and holds `[::1]` on the same port (`nodestro_session.bind_loopback`; on macOS `127.0.0.1`), when `--host` is the default `127.0.0.1` or `localhost`; the printed URL names that address. A taken port stops the start with exit code 2, `--reload` with one sentence. |
+
 **Server logins.** `nodestro_api.server_app.create_tenant_app` builds the studio API for many tenants with logins;
 `nodestro-server api` starts it (see [The server](#the-server-nodestro-server)). What it does
 (`nodestro_api.identity`, needs the `server` extra, see [The server](#the-server-nodestro-server)):

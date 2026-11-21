@@ -229,7 +229,7 @@ def install_guards(app: FastAPI, config: AppConfig) -> None:
         )
     elif config.launch_secret is not None:
         # The desktop app's window only (nodestro_api.launch); inside the host and origin checks.
-        app.add_middleware(LaunchSecretMiddleware, secret=config.launch_secret)
+        app.add_middleware(LaunchSecretMiddleware, secret=config.launch_secret, hardening=config.hardening)
     # Outermost: web pages in the user's browser must not use the key-less studio API.
     app.add_middleware(
         LocalAccessMiddleware,

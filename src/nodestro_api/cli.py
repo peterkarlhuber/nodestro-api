@@ -12,6 +12,11 @@ import os
 from pathlib import Path
 import socket
 import sys
+from typing import Any
+
+#: The sockets of ``NODESTRO_BIND_LOOPBACK`` (:func:`prepare`): the listener and the ``[::1]`` guard, held while the
+#: process runs.
+_bound: Any = None
 
 
 def parser(prog: str, description: str) -> argparse.ArgumentParser:
@@ -45,6 +50,11 @@ def prepare(args: argparse.Namespace) -> str:
     another Nodestro process already uses the data directory.
 
     The secrets on ``--secrets-fd`` are read first, before anything else runs (:mod:`nodestro_api.handoff`).
+
+    Two hardening switches of the desktop profile act here (NS-002, both off by default):
+    ``NODESTRO_TERMINAL_LAUNCH=1`` issues a launch secret when there is none (:func:`terminal_launch`), and
+    ``NODESTRO_BIND_LOOPBACK=1`` listens on a random ``127.a.b.c`` with ``[::1]`` held on the same port; the URL
+    returned is then that address.
     """
     _receive_secrets(getattr(args, "secrets_fd", None))
     if args.data_dir:
@@ -56,7 +66,84 @@ def prepare(args: argparse.Namespace) -> str:
     load_dotenv(Path.cwd() / ".env")
     _refuse_an_unavailable_profile()
     _refuse_a_used_data_directory()
+    hardening = _desktop_hardening()
+    if hardening is not None and hardening.terminal:
+        _issue_terminal_secret()
+    if hardening is not None and hardening.bind_loopback and args.host in ("127.0.0.1", "localhost"):
+        return _bind_loopback(args)
     return f"http://{'localhost' if args.host in ('127.0.0.1', '0.0.0.0') else args.host}:{args.port}"
+
+
+def _desktop_hardening() -> Any:
+    """The NS-002 switches of the desktop profile (:class:`nodestro_api.launch.LaunchHardening`); ``None`` in another
+    profile. Stops with one sentence when a switch has an invalid value."""
+    from nodestro_runtime.problems import NodestroError
+
+    from .context import AppConfig
+
+    try:
+        config = AppConfig.from_env()
+    except NodestroError as error:
+        raise SystemExit(str(error)) from None
+    return config.hardening if config.profile_kind == "desktop" else None
+
+
+def _issue_terminal_secret() -> None:
+    """``NODESTRO_TERMINAL_LAUNCH``: without the desktop app's or an operator's secret, this process issues its own,
+    so that only the browser that opens the launch link (:func:`terminal_launch`) can use the studio."""
+    from . import launch
+
+    if launch.launch_secret_from_env() is None:
+        launch.issue_terminal_secret()
+
+
+def terminal_launch(url: str, *, write_file: bool) -> tuple[str, Path | None] | None:
+    """The launch link of the secret this process issued (``NODESTRO_TERMINAL_LAUNCH``), and with ``write_file`` a
+    0600 redirect file that opens it (``None`` when the data directory's ``launch`` folder is not private); ``None``
+    without such a secret. Open the browser with the file's ``file://`` path, never with the link: a browser's command
+    line is readable by every local user."""
+    from nodestro_runtime.problems import NodestroError
+    from nodestro_session.private import UnsafePathError
+
+    from . import launch
+    from .context import AppConfig
+
+    secret = launch._terminal
+    if secret is None or launch.launch_secret_from_env() != secret:
+        return None
+    try:
+        config = AppConfig.from_env()
+    except NodestroError:
+        return None
+    link = launch.launch_link(url, secret, fragment=config.hardening.fragment)
+    if not write_file:
+        return link, None
+    try:
+        return link, launch.write_launch_file(link, config.data_dir)
+    except (OSError, UnsafePathError) as error:
+        print(f"No launch file was written ({error}); open the link below yourself.", file=sys.stderr)
+        return link, None
+
+
+def _bind_loopback(args: argparse.Namespace) -> str:
+    """``NODESTRO_BIND_LOOPBACK``: listen on a random ``127.a.b.c:<port>`` and hold ``[::1]:<port>``
+    (``nodestro_session.bind_loopback``); a fresh origin on each start, and no other program can answer for this port
+    on ``localhost``. Stops with exit code 2 when the port is taken, and with one sentence together with ``--reload``
+    (the reloading child process would bind on its own)."""
+    from nodestro_session.bind import PortUnavailableError, bind_loopback
+
+    global _bound
+    if args.reload:
+        raise SystemExit("NODESTRO_BIND_LOOPBACK=1 cannot be used with --reload")
+    try:
+        _bound = bind_loopback(args.port)
+    except PortUnavailableError as error:
+        print(f"Port {args.port} is not available on the loopback addresses ({error}).", file=sys.stderr)
+        raise SystemExit(2) from None
+    args.host = _bound.host
+    args.port = _bound.port
+    os.environ["NODESTRO_HOST"] = _bound.host
+    return f"http://{_bound.host}:{_bound.port}"
 
 
 def port_problem(host: str, port: int) -> str | None:
@@ -125,9 +212,11 @@ def serve(factory: str, args: argparse.Namespace, ready: Callable[[], None] | No
         raise SystemExit(str(error)) from None
     # After the refusals above (a network address without a login is refused as such, not as a busy port) and
     # before anything says "running": a taken port stops here with one sentence, exit code 2 (DX handover B2).
-    require_free_port(args)
+    # With NODESTRO_BIND_LOOPBACK the port is held already (prepare).
+    if _bound is None:
+        require_free_port(args)
 
-    if args.reload or ready is None:
+    if (args.reload or ready is None) and _bound is None:
         if ready is not None:
             ready()  # the reloader binds in another process
         uvicorn.run(factory, factory=True, host=args.host, port=args.port, reload=args.reload, log_level="info")
@@ -137,7 +226,7 @@ def serve(factory: str, args: argparse.Namespace, ready: Callable[[], None] | No
 
     async def started(sockets: list[socket.socket] | None = None) -> None:
         await startup(sockets=sockets)
-        if server.started:
+        if server.started and ready is not None:
             ready()
 
     server.startup = started  # type: ignore[method-assign]
@@ -145,7 +234,10 @@ def serve(factory: str, args: argparse.Namespace, ready: Callable[[], None] | No
     # the application's shutdown runs, and the process ends with the requested code for the desktop shell.
     recovery.EXIT.bind(lambda: setattr(server, "should_exit", True))
     try:
-        server.run()
+        if _bound is not None:
+            server.run(sockets=[_bound.listener])
+        else:
+            server.run()
     finally:
         code = recovery.EXIT.code
         recovery.EXIT.bind(None)
@@ -204,10 +296,16 @@ def main(argv: list[str] | None = None) -> None:
         "nodestro_api.app:create_app",
         args,
         # flush: a parent that reads the output through a pipe (the desktop, a script) sees it at once.
-        ready=lambda: print(
-            f"Nodestro API is running at {url}/api  (reference: {url}/api/docs, stop with Ctrl+C)", flush=True
-        ),
+        ready=lambda: _announce(url),
     )
+
+
+def _announce(url: str) -> None:
+    print(f"Nodestro API is running at {url}/api  (reference: {url}/api/docs, stop with Ctrl+C)", flush=True)
+    found = terminal_launch(url, write_file=False)
+    if found is not None:
+        # NODESTRO_TERMINAL_LAUNCH: the link works once; it is printed to this terminal only.
+        print(f"Open it once with this link: {found[0]}", flush=True)
 
 
 def load_dotenv(path: Path) -> None:
