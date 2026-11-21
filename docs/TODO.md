@@ -12,7 +12,7 @@
 | P0 Critical | 0 |
 | P1 High | 0 |
 | P2 Medium | 6 |
-| P3 Low | 11 |
+| P3 Low | 12 |
 | P4 Optional | 7 |
 
 **Release blockers:** None for this repository; every entry below is not a release blocker. The next desktop
@@ -42,6 +42,28 @@ None known.
 
 Tool approvals (`NODESTRO_TOOL_APPROVALS`, off by default and staying off) need the independent S-2 review tracked as
 nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes here. No separate entry in this file.
+
+### API-073 · Conversation access: residual points after the W3-S1 audit
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** W3-S1, `docs/conversations.md` ("Who has an owner
+  identity"), `tests/test_conversation_access_audit.py`, `tests/test_conversation_access_audit_server.py`,
+  nodestro-runtime RT-089
+- **What:** The audit closed the principal without a role (`NO_OWNER`), knowledge adoption from another person's
+  answer run and conversation files as run, batch and form inputs. What remains, none of it a content leak:
+  - An assistant conversation from before owners were recorded (`owner` `None`) is still seen by every member of its
+    tenant (documented; `nodestro-server assistant backfill-owners` gives it its owner). Changing that default would
+    hide such conversations from everyone, so it stays a decision for the owner of the plan.
+  - A `POST`/`PUT` route with `{run_id}` answers another person's answer run with `404` before it checks the body,
+    and an unknown id with `422` when the body is invalid: the difference shows that the id exists (never what it
+    holds). Run ids are random; the administrator's activity log names them anyway.
+  - The administrator's activity log names the answers' runs, conversation ids and the tools called (no contents,
+    by design of N-13); the usage and skill statistics count answers (N-3).
+  - An agent that answers in a conversation and writes to a shared memory space or proposes knowledge shares what it
+    writes with the workspace, as in any run (the agent's configuration decides).
+  - The resume plan of a failed answer run lists its conversation files as missing (they are no run file catalog
+    entries any more); resuming is not a conversation feature, an answer is sent again instead.
+- **Next step:** Decide the default for owner-less assistant conversations on a server; include the conversation
+  routes in the next independent review.
 
 ### API-071 · Independent review of Local Docker's key handoff (LD-020)
 

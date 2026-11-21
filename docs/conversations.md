@@ -51,6 +51,35 @@ Rules:
   on every route, its files included (also under `/api/inputs`, and as a run input). Every route works on the
   request's tenant only. A conversation without an owner (made on a desktop and restored into a server) is seen by
   nobody there (fail closed).
+- **Who has an owner identity (W3-S1).** `owner_of(request)` decides whose conversations a request sees, per
+  principal:
+
+  | Principal | Owner | Sees |
+  |---|---|---|
+  | Tenant member on a server (any role: `owner`, `admin`, `editor`, `operator`, `viewer`) | its user id | its own conversations only |
+  | The local owner of a single-user app (desktop, Local Docker) | `None` | every conversation of the workspace |
+  | Any other principal without a role: a server principal that is no member (a service, a machine), a principal other than the local owner in a single-user app, a request without a principal | `NO_OWNER` | nothing: no conversation, message, file, answer run (nor a run below one), search hit or preview; it starts no conversation (`403 access.person_required`) |
+
+  Before W3-S1, every principal without a role counted as the desktop's person and saw every conversation of its
+  tenant. The server's own login (`SessionResolver`) always yields a role, so no such principal reached a server so
+  far; a later one (service tokens) is closed by default. The same rule applies to the Nodestro Assistant's
+  conversations and to the input files of both kinds of conversation.
+- **Administrators.** The `admin` role grants no read of another member's conversation: there is no export path for
+  administrators. What they read is the activity log (`/api/activity`, N-13: ids, names, kinds and outcomes, never
+  contents) and the aggregates above. The desktop backup (`GET /api/backup`, permission `install`) holds every
+  conversation, but `install` exists only for the desktop's single person and is never granted on a server; a server
+  backup is the operator's `pg_dump` of the whole database, outside the API.
+- **Runs and files by id in a body (W3-S1).** Knowledge adoption (`/api/knowledge/adopt/check` and
+  `/api/knowledge/adopt`) reads a run's step output, proposals and result files: another person's answer run answers
+  `404 run.not_found` there, like the preview and the assistant's run attachments. A conversation's file is no input
+  of a run, batch, schedule, test case or form field by its id (the run file catalog leaves it out, like an assistant
+  file; `form.file_missing`), also for its owner, who uploads it as an input file on purpose. An answer's run gets the
+  files of its message without the catalog.
+- **Audit tests.** `tests/test_conversation_access_audit.py` (desktop app, several principals) and
+  `tests/test_conversation_access_audit_server.py` (PostgreSQL server: two members, a viewer, another tenant, a
+  principal without a role) scan every route of the app (`check_routes`): no `GET` route answers anything of another
+  person's conversation, and every route with its run, conversation or file id in the path answers `404` (or refuses
+  the body alike for an unknown id).
 - **Switched off.** The upload route reads its multipart body before it answers `404 conversation.disabled`, because
   FastAPI parses the body before the route runs (the server's request size limit applies); nothing is stored (L-3).
 - **Codes.** `conversation.not_found` and `conversation.agent_not_found` answer `404`; `conversation.answer_running`

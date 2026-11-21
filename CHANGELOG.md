@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Security (W3-S1, conversations with own agents and the Nodestro Assistant; still behind `NODESTRO_CONVERSATIONS`,
+  off by default; `docs/conversations.md`):
+  - A principal without a role (no member of the tenant) no longer counts as the desktop's single person: on a server
+    it sees no conversation, message, file, answer run, search hit or preview, and starts no conversation
+    (`403 access.person_required`, an existing code). Only the local owner of a single-user app sees every
+    conversation (`owner_of`, runtime `conversations.NO_OWNER`). The same holds for assistant conversations and their
+    files. Server logins always carry a role, so members see no change.
+  - Knowledge adoption (`/api/knowledge/adopt/check`, `/api/knowledge/adopt`) answers `404 run.not_found` for the
+    run of another person's conversation; before, a member who knew the run id could read and adopt the answer.
+  - A conversation's file is no longer in the run file catalog (like an assistant file): a form field, batch row,
+    schedule or test case that names it is refused (`form.file_missing`). Before, another member who knew the file
+    id could hand it to an agent of their own run.
+  - New audit tests scan every route of the desktop and the server app for another person's conversation
+    (`tests/test_conversation_access_audit.py`, `tests/test_conversation_access_audit_server.py`).
+  - Needs nodestro-runtime with `conversations.NO_OWNER` (studio lock).
+
 - Security (N-02, step 1): the local session's protection uses the shared library `nodestro-session`
   (`>=0.1.0.dev0,<0.2`, standard library only; the studio lock pins its commit). No contract change: paths, codes,
   texts, cookie names and the open paths stay as they were.

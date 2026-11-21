@@ -22,6 +22,7 @@ from nodestro_runtime.agent_builder import ConfigIssue
 from nodestro_runtime.agent_test import AgentTestIn, AgentTestResult
 from nodestro_runtime.catalog import SERVER_TOOLS, ModelInfo, ServerToolInfo, model_capabilities, models
 from nodestro_runtime.contracts import contract_of
+from nodestro_runtime.conversations import NO_OWNER
 from nodestro_runtime.engine import add_usage, check_workflow
 from nodestro_runtime.input_files import is_input_id
 from nodestro_runtime.knowledge import KnowledgeFile
@@ -129,11 +130,32 @@ _Item = TypeVar("_Item")
 
 
 def owner_of(request: Request) -> str | None:
-    """The server user a conversation belongs to; ``None`` for the desktop's (or Local Docker's) only person."""
+    """Whose conversations a request sees (N-04; the Nodestro Assistant's too): the user id of a tenant member (any
+    role: an administrator sees only their own conversations as well), ``None`` only for the single person of a
+    single-user application (the desktop's or Local Docker's local owner, who sees every conversation of the
+    workspace).
+
+    Everything else fails closed (W3-S1) with :data:`~nodestro_runtime.conversations.NO_OWNER`, which sees no
+    conversation, no answer run and no file of a conversation and starts none: a principal without a role on a server
+    (no member of the tenant: a service, a machine), a principal other than the local owner in a single-user
+    application, and a request without a principal. Before, every principal without a role counted as the desktop's
+    person and saw every conversation of its tenant."""
     principal = getattr(request.state, "principal", None)
-    if principal is None or principal.role is None:
+    if principal is not None and principal.role is not None:
+        return str(principal.id)
+    if principal is not None and _single_user(request) and _is_local_owner(principal):
         return None
-    return str(principal.id)
+    return NO_OWNER
+
+
+def _single_user(request: Request) -> bool:
+    """Whether the request reaches a single-user application: the desktop or Local Docker (``create_app`` refuses the
+    server profile), never the server (``app.state.tenants``)."""
+    return getattr(request.app.state, "tenants", None) is None
+
+
+def _is_local_owner(principal: Principal) -> bool:
+    return principal.id == LOCAL_OWNER.id and principal.role is None and principal.tenant_id == LOCAL_OWNER.tenant_id
 
 
 def app_context(request: Request) -> Nodestro:
@@ -2434,7 +2456,7 @@ def adopter_role(principal: Principal | None) -> str:
     otherwise (only ``admin`` may adopt; the runtime refuses everything else with ``tool.adoption_forbidden``)."""
     if principal is None:
         return ""
-    if principal.id == LOCAL_OWNER.id and principal.role is None and principal.tenant_id == LOCAL_OWNER.tenant_id:
+    if _is_local_owner(principal):
         return "owner"
     return principal.role or ""
 

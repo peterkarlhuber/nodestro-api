@@ -37,6 +37,7 @@ import re
 import threading
 from typing import TYPE_CHECKING, Any, Literal
 
+from nodestro_runtime.conversations import NO_OWNER
 from nodestro_runtime.engine import usage_of
 from nodestro_runtime.problems import NodestroError, Problem, library_problem, problem
 from nodestro_runtime.providers import MAX_RETRIES, model_id, provider_of
@@ -530,7 +531,10 @@ class Assistant:
         self.store.put(_CONVERSATIONS, conversation.id, conversation)
 
     def conversations(self, actor: str | None = None) -> list[ConversationSummary]:
-        """The conversations ``actor`` may see (a server user's own and the shared ones); all without ``actor``."""
+        """The conversations ``actor`` may see (a server user's own and the shared ones); all without ``actor``; none
+        for :data:`~nodestro_runtime.conversations.NO_OWNER` (a request without an owner identity, W3-S1)."""
+        if actor == NO_OWNER:
+            return []
         items = sorted(self.store.list(_CONVERSATIONS, Conversation), key=lambda c: c.updated_at, reverse=True)
         items = [item for item in items if actor is None or item.owner in (None, actor)]
         return [
@@ -548,12 +552,15 @@ class Assistant:
         ]
 
     def check_owner(self, conversation_id: str, actor: str | None) -> None:
-        """Another server user's conversation does not exist for ``actor`` (``KeyError``, answered with 404)."""
+        """Another server user's conversation does not exist for ``actor`` (``KeyError``, answered with 404), and no
+        conversation exists for :data:`~nodestro_runtime.conversations.NO_OWNER` (W3-S1)."""
         conversation = self._conversation(conversation_id)
-        if actor is not None and conversation.owner not in (None, actor):
+        if actor == NO_OWNER or (actor is not None and conversation.owner not in (None, actor)):
             raise KeyError(conversation_id)
 
     def create(self, title: str = "", owner: str | None = None) -> ConversationDetail:
+        if owner == NO_OWNER:  # a conversation always belongs to a person (W3-S1)
+            raise NodestroError("access.person_required", "Only a member of the tenant can start a conversation")
         conversation = Conversation(title=title.strip()[:120], auto_title=not title.strip(), owner=owner)
         self._save(conversation)
         return self.detail(conversation.id)
