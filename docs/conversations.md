@@ -114,4 +114,9 @@ Rules:
   `conversation.cloud_model_not_chosen` (the answer would use a cloud model nobody chose, such as a cloud judge)
   `422`; the others `400`.
 
+- **Offline (N-09).** With `offline`, every call of an answer and of the runs below it follows the runtime's
+  offline rules (runtime `docs/offline.md`): local models only, no server tools, and a tool that is not available
+  offline is refused (`offline.tool_unavailable` on the call). An agent template with `offline` answers with local
+  models only in every conversation.
+
 Open: the studio has no UI for it yet (runtime RT-089).

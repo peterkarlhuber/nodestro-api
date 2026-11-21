@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Contract (N-09, runtime `claude/w3-n09`): `AgentConfig.offline` (default `false`, additive) in both OpenAPI
+  documents: the strict offline mode's rules for one agent, checked by the runtime at every call (local models only,
+  no server tools, no tool with external reach). The conversation's existing `offline` flag now covers every call
+  of its answers too. The problem code list (`/api/error-codes`) has the runtime's new codes `offline.cloud_model`,
+  `offline.remote_endpoint`, `offline.server_tools` and `offline.tool_unavailable` (each `400` where a route
+  raises one). No route changed.
+
 - Security (W3-S1, conversations with own agents and the Nodestro Assistant; still behind `NODESTRO_CONVERSATIONS`,
   off by default; `docs/conversations.md`):
   - A principal without a role (no member of the tenant) no longer counts as the desktop's single person: on a server
