@@ -96,6 +96,10 @@ Rules:
 - **Memory (W3-S1 review).** An answer never writes into a shared memory space: the runtime turns a template's
   persistent memory into run memory for answers, because every member reads a space (`/api/memory`). The audit's
   template has persistent memory, and its answer writes a note with the marker.
+- **Grants for "this conversation" (W3-S1 review).** `POST /api/access/grants` with a `conversation_id` names only a
+  conversation the caller sees: another member's conversation with an own agent answers `404
+  conversation.not_found` (as an unknown one), and a run the caller does not see `404 run.not_found`. An
+  administrator does not change which tools another person's answers may use.
 - **Audit tests.** `tests/test_conversation_access_audit.py` (desktop app, several principals) and
   `tests/test_conversation_access_audit_server.py` (PostgreSQL server: two members, a viewer, another tenant, a
   principal without a role) scan every route of the app (`check_routes`): no `GET` route answers anything of another

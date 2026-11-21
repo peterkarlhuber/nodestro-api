@@ -36,6 +36,7 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Request
+from nodestro_runtime.conversations import ConversationNotFound
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.tool_approvals import AccessRules, Person, access_grants_enabled, tool_facts
 from nodestro_runtime.tool_policy import (
@@ -60,7 +61,7 @@ from nodestro_runtime.tool_policy import (
 )
 from pydantic import AwareDatetime, BaseModel, Field
 
-from .api import Ctx
+from .api import Ctx, owner_of
 from .permissions import ADMIN, READ, Principal
 from .serving import ApiError
 
@@ -210,12 +211,31 @@ def list_denies(ctx: Ctx) -> list[Deny]:
     return _rules(ctx).denies()
 
 
+def _conversation_seen(ctx: Ctx, request: Request, conversation_id: str) -> None:
+    """The conversation a ``conversation`` grant names is one the caller sees: a conversation with an own agent
+    (``conv_…``) only its owner (``404 conversation.not_found``, also for an unknown one), and the root run of a
+    workflow run (the conversation of a run chat) only who sees that run (``404 run.not_found``). An administrator
+    changes no other member's conversation this way."""
+    owner = owner_of(request)
+    if conversation_id.startswith("conv_"):
+        try:
+            ctx.conversations.get(conversation_id, owner)
+        except ConversationNotFound:
+            raise ApiError(
+                404, "conversation.not_found", "The conversation or its part does not exist", id=conversation_id
+            ) from None
+    elif not ctx.conversations.run_visible(conversation_id, owner):
+        raise ApiError(404, "run.not_found", f"Run {conversation_id!r} does not exist", id=conversation_id, kind="run")
+
+
 @router.post("/grants", status_code=201, dependencies=ADMIN)
 def create_grant(body: GrantIn, ctx: Ctx, request: Request) -> Grant:
     """Grant an access. A tool grant holds for the tool as it is now and ends with a new version, another
     classification or another MCP definition; deleting for good is never granted (``access.grant_destructive``)."""
     _require_enabled()
     by = _person(request)
+    if body.conversation_id:  # only a conversation the caller sees (W3-S1 review)
+        _conversation_seen(ctx, request, body.conversation_id)
     tool: ToolFacts | None = None
     if body.resource_type == "tool":
         tool = _tool_now(ctx, body.resource_id).facts

@@ -379,3 +379,37 @@ def test_the_activity_log_and_the_statistics_name_the_answers_without_their_cont
         response = client.get(path)
         assert response.status_code == 200 and SECRET not in response.text, path
 
+
+def test_an_administrator_grants_nothing_for_another_persons_conversation(
+    owned_app: tuple[TestClient, Owned], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """W3-S1 review (low): a grant for "this conversation" changes which tools the conversation's answers may use.
+    Only who sees the conversation names it; for an administrator, another member's conversation (or its answer run)
+    does not exist, as an unknown one. The owner herself still grants for it."""
+    from nodestro_runtime.tool_approvals import ACCESS_ENV, ENABLE_ENV
+
+    monkeypatch.setenv(ENABLE_ENV, "1")
+    monkeypatch.setenv(ACCESS_ENV, "1")
+    client, owned = owned_app
+
+    def grant(conversation_id: str) -> Any:
+        body = {
+            "resource_type": "tool",
+            "resource_id": "calculator",
+            "actions": ["execute"],
+            "duration": "conversation",
+            "conversation_id": conversation_id,
+        }
+        return client.post("/api/access/grants", json=body)
+
+    as_principal(client, BOB)
+    for conversation_id, code in (
+        (owned.conversation_id, "conversation.not_found"),
+        ("conv_unknown", "conversation.not_found"),
+        (owned.run_id, "run.not_found"),
+    ):
+        refused = grant(conversation_id)
+        assert (refused.status_code, refused.json()["code"]) == (404, code), refused.text
+    assert client.get("/api/access/grants").json() == []
+    as_principal(client, ALICE)
+    assert grant(owned.conversation_id).status_code == 201

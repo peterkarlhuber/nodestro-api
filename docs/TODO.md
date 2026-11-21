@@ -61,6 +61,7 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
     by design of N-13); the usage and skill statistics count answers (N-3).
   - Done (review): an answer no longer writes into a shared memory space (run memory). An agent that answers in a
     conversation and proposes knowledge still shares what a person adopts, as in any run.
+  - Done (review): a grant for "this conversation" names only a conversation the caller sees.
   - The resume plan of a failed answer run lists its conversation files as missing (they are no run file catalog
     entries any more); resuming is not a conversation feature, an answer is sent again instead.
 - **Next step:** Include the conversation routes and the owner assignment in the next independent review.

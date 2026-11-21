@@ -22,6 +22,9 @@
       the scan gets the owner's real value where one exists (memory space and file, workflow id, template, tools,
       the assistant's attachment and snapshot of the answer run). It found answers writing into the shared memory
       space, which every member reads; the runtime now gives answers run memory (needs the pinned runtime).
+    - `POST /api/access/grants` with a `conversation_id` answers `404 conversation.not_found` (or
+      `run.not_found`) for a conversation or run the caller does not see; before, an administrator could grant tools
+      for another member's conversation.
   - Conversations without an owner (owner's decision A): on a server an assistant conversation from before owners
     were recorded, or a conversation with an own agent restored from a desktop, is seen by nobody, administrators
     included, on every path; before, an ownerless assistant conversation was visible, renamable and deletable for
