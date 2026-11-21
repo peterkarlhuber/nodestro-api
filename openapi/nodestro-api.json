@@ -9877,6 +9877,472 @@
         "title": "FileView",
         "type": "object"
       },
+      "FolderAccessEntry": {
+        "description": "One entry of a grant's access log (an activity event, without paths).",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          },
+          "agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent"
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "outcome": {
+            "title": "Outcome",
+            "type": "string"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          }
+        },
+        "required": [
+          "at",
+          "action",
+          "outcome"
+        ],
+        "title": "FolderAccessEntry",
+        "type": "object"
+      },
+      "FolderGrant": {
+        "additionalProperties": false,
+        "description": "A folder granted for reading (see the module documentation). Never deleted: it ends with its access grant.",
+        "properties": {
+          "access": {
+            "const": "read",
+            "default": "read",
+            "title": "Access",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "exclude": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Exclude",
+            "type": "array"
+          },
+          "grant_id": {
+            "title": "Grant Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "identity": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Identity",
+            "type": "array"
+          },
+          "include": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Include",
+            "type": "array"
+          },
+          "index": {
+            "default": false,
+            "title": "Index",
+            "type": "boolean"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/FolderLimits",
+            "default": {
+              "max_chars": 50000,
+              "max_entries": 2000,
+              "max_file_bytes": 10485760,
+              "max_results": 50,
+              "max_search_files": 2000,
+              "pdf_memory_mb": 256,
+              "pdf_pages": 200,
+              "pdf_seconds": 20.0
+            }
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "path",
+          "identity",
+          "grant_id",
+          "created_by",
+          "created_at"
+        ],
+        "title": "FolderGrant",
+        "type": "object"
+      },
+      "FolderGrantIn": {
+        "description": "A folder grant as a person gives it. The writer and the time come from the server.",
+        "properties": {
+          "agents": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Agents",
+            "type": "array"
+          },
+          "exclude": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Exclude",
+            "type": "array"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "include": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Include",
+            "type": "array"
+          },
+          "index": {
+            "default": false,
+            "title": "Index",
+            "type": "boolean"
+          },
+          "limits": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FolderLimits"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mode": {
+            "default": "supervised",
+            "enum": [
+              "supervised",
+              "unattended"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "scope": {
+            "default": "all",
+            "enum": [
+              "all",
+              "agents"
+            ],
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path"
+        ],
+        "title": "FolderGrantIn",
+        "type": "object"
+      },
+      "FolderGrantView": {
+        "description": "A folder grant with the state of its access grant, as the administration shows it.",
+        "properties": {
+          "agents": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Agents",
+            "type": "array"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "folder": {
+            "$ref": "#/components/schemas/FolderGrant"
+          },
+          "mode": {
+            "enum": [
+              "supervised",
+              "unattended"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "revoked_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked By"
+          },
+          "scope": {
+            "enum": [
+              "agent",
+              "agents",
+              "all"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "revoked",
+              "expired"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "folder",
+          "status",
+          "scope",
+          "agents",
+          "mode"
+        ],
+        "title": "FolderGrantView",
+        "type": "object"
+      },
+      "FolderLimitBounds": {
+        "properties": {
+          "highest": {
+            "title": "Highest",
+            "type": "number"
+          },
+          "lowest": {
+            "title": "Lowest",
+            "type": "number"
+          }
+        },
+        "required": [
+          "lowest",
+          "highest"
+        ],
+        "title": "FolderLimitBounds",
+        "type": "object"
+      },
+      "FolderLimits": {
+        "additionalProperties": false,
+        "description": "What one call of the folder tools may read. The defaults are the limits a grant gets unless the person sets\nlower or higher ones within the bounds.",
+        "properties": {
+          "max_chars": {
+            "default": 50000,
+            "maximum": 500000.0,
+            "minimum": 1000.0,
+            "title": "Max Chars",
+            "type": "integer"
+          },
+          "max_entries": {
+            "default": 2000,
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Max Entries",
+            "type": "integer"
+          },
+          "max_file_bytes": {
+            "default": 10485760,
+            "maximum": 52428800.0,
+            "minimum": 1.0,
+            "title": "Max File Bytes",
+            "type": "integer"
+          },
+          "max_results": {
+            "default": 50,
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Max Results",
+            "type": "integer"
+          },
+          "max_search_files": {
+            "default": 2000,
+            "maximum": 20000.0,
+            "minimum": 1.0,
+            "title": "Max Search Files",
+            "type": "integer"
+          },
+          "pdf_memory_mb": {
+            "default": 256,
+            "maximum": 1024.0,
+            "minimum": 64.0,
+            "title": "Pdf Memory Mb",
+            "type": "integer"
+          },
+          "pdf_pages": {
+            "default": 200,
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Pdf Pages",
+            "type": "integer"
+          },
+          "pdf_seconds": {
+            "default": 20.0,
+            "exclusiveMinimum": 0.0,
+            "maximum": 60.0,
+            "title": "Pdf Seconds",
+            "type": "number"
+          }
+        },
+        "title": "FolderLimits",
+        "type": "object"
+      },
+      "FolderState": {
+        "properties": {
+          "bounds": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FolderLimitBounds"
+            },
+            "title": "Bounds",
+            "type": "object"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/FolderLimits"
+          }
+        },
+        "required": [
+          "enabled",
+          "limits",
+          "bounds"
+        ],
+        "title": "FolderState",
+        "type": "object"
+      },
       "FormField": {
         "description": "One field of an app's input form, in the order the form shows them (``InfoOut.form``, form version 1).\n\n``type`` is one of :data:`FORM_FIELD_TYPES`; a later form version may add types, which a client that does not know\nthem renders as JSON input. A field's value goes into ``values.<name>`` of a run request.",
         "properties": {
@@ -27841,6 +28307,7 @@
               "author",
               "admin",
               "derived",
+              "folder",
               "default"
             ],
             "title": "Source",
@@ -36449,6 +36916,253 @@
         "summary": "Download Export",
         "tags": [
           "publications"
+        ]
+      }
+    },
+    "/api/folders": {
+      "get": {
+        "operationId": "list_folders_api_folders_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FolderGrantView"
+                  },
+                  "title": "Response List Folders Api Folders Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Folders",
+        "tags": [
+          "access grants"
+        ]
+      },
+      "post": {
+        "description": "Grant a folder for reading. Agents see its name, never its path.",
+        "operationId": "grant_folder_api_folders_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderGrantIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderGrantView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Grant Folder",
+        "tags": [
+          "access grants"
+        ]
+      }
+    },
+    "/api/folders/state": {
+      "get": {
+        "operationId": "folder_state_api_folders_state_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Folder State",
+        "tags": [
+          "access grants"
+        ]
+      }
+    },
+    "/api/folders/{folder_id}": {
+      "delete": {
+        "description": "Revoke a folder grant: every later call of the folder tools on it is refused.",
+        "operationId": "revoke_folder_api_folders__folder_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "folder_id",
+            "required": true,
+            "schema": {
+              "title": "Folder Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderGrantView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Revoke Folder",
+        "tags": [
+          "access grants"
+        ]
+      },
+      "get": {
+        "operationId": "get_folder_api_folders__folder_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "folder_id",
+            "required": true,
+            "schema": {
+              "title": "Folder Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderGrantView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Folder",
+        "tags": [
+          "access grants"
+        ]
+      }
+    },
+    "/api/folders/{folder_id}/accesses": {
+      "get": {
+        "operationId": "folder_accesses_api_folders__folder_id__accesses_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "folder_id",
+            "required": true,
+            "schema": {
+              "title": "Folder Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FolderAccessEntry"
+                  },
+                  "title": "Response Folder Accesses Api Folders  Folder Id  Accesses Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Folder Accesses",
+        "tags": [
+          "access grants"
         ]
       }
     },

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Granted folders (N-10, runtime `claude/w3-n10`), off by default (`NODESTRO_FOLDER_GRANTS=1`; never on a server):
+  `/api/folders` (`state` for `read`; list, grant, get, access log and revoke for `admin`). The writer is always the
+  signed-in person; API keys and machines get `403 access.person_required`. System folders, the home folder and the
+  data folder are refused (`422 folder.not_grantable` with `reason`). See [docs/folders.md](docs/folders.md).
+  - Contract: the new routes and models (`FolderGrantView`, `FolderGrantIn`, `FolderState`, `FolderAccessEntry`)
+    in both OpenAPI documents; the tool capability source `folder` (the runtime's tools `list_folder`, `read_file`,
+    `search_files`). The problem code list has the new `folder.*` codes and the path guard's `fs.*` codes.
+  - `output_folder.py` takes its system folders from the path guard (`orkexa.fs.system_folders`,
+    `orkexa.fs.allowed_folders`) instead of its own list; it now also refuses `/root` (unless it is the home folder).
+
 - Conversations (N-05, contract only; nodestro-runtime `claude/w3-n05`): the conversation fields `history` (`trim`
   default, `summarize`) and `summary_model`, and `summary` (`HistorySummary`) on each answer, in both OpenAPI
   documents. Long conversations are fitted into the model's context window by the runtime. The error catalog gains

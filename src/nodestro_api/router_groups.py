@@ -31,6 +31,7 @@ from .api_budget import router as budget_router
 from .api_connections import router as connections_router
 from .api_conversations import router as conversations_router
 from .api_data import router as data_router
+from .api_folders import router as folders_router
 from .api_inbox import router as inbox_router
 from .api_inputs import router as inputs_router
 from .api_local_models import router as local_models_router
@@ -101,6 +102,8 @@ SLOTS: tuple[RouterSlot, ...] = (
     _static("budget", budget_router),
     _static("approvals", tool_approvals_router),
     _static("approvals", access_router),
+    # Granted folders (N-10; NODESTRO_FOLDER_GRANTS, off by default; never on a server).
+    _static("approvals", folders_router),
     _static("activity", activity_router),
     _static("runs", run_chat_router),
     _static("core", error_codes_router),
