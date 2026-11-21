@@ -93,11 +93,16 @@ Rules:
   of a run, batch, schedule, test case or form field by its id (the run file catalog leaves it out, like an assistant
   file; `form.file_missing`), also for its owner, who uploads it as an input file on purpose. An answer's run gets the
   files of its message without the catalog.
+- **Memory (W3-S1 review).** An answer never writes into a shared memory space: the runtime turns a template's
+  persistent memory into run memory for answers, because every member reads a space (`/api/memory`). The audit's
+  template has persistent memory, and its answer writes a note with the marker.
 - **Audit tests.** `tests/test_conversation_access_audit.py` (desktop app, several principals) and
   `tests/test_conversation_access_audit_server.py` (PostgreSQL server: two members, a viewer, another tenant, a
   principal without a role) scan every route of the app (`check_routes`): no `GET` route answers anything of another
-  person's conversation, and every route with its run, conversation or file id in the path answers `404` (or refuses
-  the body alike for an unknown id).
+  person's conversation, and every route with its run, conversation, file, attachment or snapshot id in the path
+  answers `404` (or refuses the body alike for an unknown id). Every path parameter gets the owner's real value where
+  one exists (the answer's workflow id, the agent template, its memory space and note, the tools called, the
+  assistant's attachment of the answer run and its snapshot); only resources of their own keep an unknown id.
 - **Switched off.** The upload route reads its multipart body before it answers `404 conversation.disabled`, because
   FastAPI parses the body before the route runs (the server's request size limit applies); nothing is stored (L-3).
 - **Codes.** `conversation.not_found` and `conversation.agent_not_found` answer `404`; `conversation.answer_running`

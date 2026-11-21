@@ -17,6 +17,7 @@ from test_conversation_access_audit import (
     BASE,
     MEMBER_PERMISSIONS,
     SECRET,
+    agent_script,
     leaking_reads,
     make_owned,
     reachable_by_id,
@@ -25,8 +26,6 @@ from test_identity import _wait
 from test_worker import Background, connect, make_worker, schema, server  # noqa: F401  (PostgreSQL fixtures)
 
 from nodestro_api.permissions import Principal
-
-from conftest import text, tool_use
 
 #: The request header that makes a browser of the test the principal without a role.
 _NO_ROLE = "x-test-no-role"
@@ -56,9 +55,7 @@ def test_two_members_and_a_principal_without_a_role_see_nothing_of_anothers_conv
     victor = server.member("acme", "victor", "viewer")
     mallory = server.member("globex", "mallory", "owner")
     owned = make_owned(alice)
-    worker = make_worker(
-        {"AGENT": [tool_use("calculator", {"expression": "6 * 7"}), text(f"It is 42. {SECRET} answer")]}
-    )
+    worker = make_worker({"AGENT": agent_script()})
     job = worker.call(worker.worker.runner.run_once())
     assert job is not None and job.ref == owned.run_id
     finished = _wait(alice, owned.run_id)

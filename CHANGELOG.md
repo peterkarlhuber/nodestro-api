@@ -17,6 +17,11 @@
   - New audit tests scan every route of the desktop and the server app for another person's conversation
     (`tests/test_conversation_access_audit.py`, `tests/test_conversation_access_audit_server.py`).
   - Needs nodestro-runtime with `conversations.NO_OWNER` (studio lock).
+  - Review fixes (W3-S1 review):
+    - The audit's agent template has persistent memory and writes a note with the marker; every path parameter of
+      the scan gets the owner's real value where one exists (memory space and file, workflow id, template, tools,
+      the assistant's attachment and snapshot of the answer run). It found answers writing into the shared memory
+      space, which every member reads; the runtime now gives answers run memory (needs the pinned runtime).
   - Conversations without an owner (owner's decision A): on a server an assistant conversation from before owners
     were recorded, or a conversation with an own agent restored from a desktop, is seen by nobody, administrators
     included, on every path; before, an ownerless assistant conversation was visible, renamable and deletable for

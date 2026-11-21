@@ -20,7 +20,7 @@ from nodestro_runtime.conversations import CONVERSATIONS_ENV
 from nodestro_runtime.schemas import TemplateRef
 import postgres_support
 import pytest
-from test_conversation_access_audit import SECRET, Owned, leaking_reads, make_owned, reachable_by_id
+from test_conversation_access_audit import SECRET, Owned, agent_script, leaking_reads, make_owned, reachable_by_id
 from test_identity import _wait
 from test_worker import Background, connect, make_worker, schema, server  # noqa: F401  (PostgreSQL fixtures)
 
@@ -28,7 +28,7 @@ from nodestro_api import access_audit
 from nodestro_api.assistant import Conversation as AssistantConversation
 from nodestro_api.conversation_owners import ASSISTANT, assign
 
-from conftest import text, tool_use
+from conftest import text
 
 BASE = "/api/conversations"
 
@@ -63,9 +63,7 @@ def test_a_conversation_without_owner_is_nobodys_on_a_server_until_the_operator_
     victor = server.member("acme", "victor", "viewer")
     mallory = server.member("globex", "mallory", "owner")
     owned = make_owned(alice)
-    worker = make_worker(
-        {"AGENT": [tool_use("calculator", {"expression": "6 * 7"}), text(f"It is 42. {SECRET} answer")]}
-    )
+    worker = make_worker({"AGENT": agent_script()})
     worker.call(worker.worker.runner.run_once())
     assert _wait(alice, owned.run_id)["status"] == "succeeded"
     # The assistant conversation holds a file too (the files route of an assistant conversation, /api/inputs).
@@ -189,11 +187,12 @@ def test_the_operator_assigns_owners_explicitly_audited_and_never_over_an_owner(
         capsys.readouterr()
 
         def owners() -> dict[str, Any]:
-            return {
-                legacy.id: store.get_raw(ASSISTANT, legacy.id)["owner"],
-                owned.id: store.get_raw(ASSISTANT, owned.id)["owner"],
-                restored.id: store.get_raw(own.COLLECTION, restored.id)["owner"],
-            }
+            found: dict[str, Any] = {}
+            for collection, item_id in ((ASSISTANT, legacy.id), (ASSISTANT, owned.id), (own.COLLECTION, restored.id)):
+                raw = store.get_raw(collection, item_id)
+                assert raw is not None, item_id  # never deleted
+                found[item_id] = raw["owner"]
+            return found
 
         def assigned_events() -> list[access_audit.AccessEvent]:
             return access_audit.events(store, kind="conversation_owner_assigned")

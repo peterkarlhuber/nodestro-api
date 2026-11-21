@@ -54,8 +54,14 @@ class Owned:
     message_id: str
     file_id: str
     assistant_id: str
+    template_id: str = "x_unknown"
+    #: The assistant conversation's attachment of the answer run, and its snapshot (the run's content).
+    attachment_id: str = "x_unknown"
+    snapshot_id: str = "x_unknown"
 
     def path_values(self, path: str) -> dict[str, str]:
+        """The owner's real value for every path parameter that names something of the conversation or used by it;
+        only resources of their own (publications, jobs, suites, connections ...) keep an unknown id."""
         values = {
             "run_id": self.run_id,
             "conversation_id": self.assistant_id if path.startswith("/api/assistant/") else self.conversation_id,
@@ -64,6 +70,17 @@ class Owned:
             "node_id": "agent",
             "input_id": self.file_id,
             "request_id": "tap_x",
+            # An answer's run has the conversation's id as its workflow id.
+            "workflow_id": self.conversation_id,
+            "template_id": self.template_id,
+            "agent_id": self.template_id,
+            "version": "1",
+            "number": "1",
+            # The template's (persistent) memory space and the tools the answer called.
+            "space": MEMORY_SPACE,
+            "name": "memory" if path.startswith("/api/tools/") else MEMORY_SPACE,
+            "attachment_id": self.attachment_id,
+            "snapshot_id": self.snapshot_id,
         }
         return values
 
@@ -77,7 +94,20 @@ class Owned:
             "trigger_ref": self.conversation_id,
             "workflow_id": self.conversation_id,
             "resource_id": self.run_id,
+            # The note the answer's agent writes (agent_script), for the memory file route.
+            "path": MEMORY_NOTE,
         }
+
+
+#: The memory space of the owner's agent template (persistent): an answer must never write the conversation into it.
+MEMORY_SPACE = "Team"
+MEMORY_NOTE = "/memories/n.md"
+
+
+def agent_script() -> list[Any]:
+    """The answer: a tool call, a note to the agent's memory with the marker, then the text with the marker."""
+    note = tool_use("memory", {"command": "create", "path": MEMORY_NOTE, "file_text": f"{SECRET} from chat"})
+    return [tool_use("calculator", {"expression": "6 * 7"}), note, text(f"It is 42. {SECRET} answer")]
 
 
 def as_principal(client: TestClient, principal: Principal | None) -> None:
@@ -85,10 +115,18 @@ def as_principal(client: TestClient, principal: Principal | None) -> None:
 
 
 def make_owned(client: TestClient, *, wait: Callable[[str], None] | None = None) -> Owned:
-    """The owner's conversation: title, a file and a message with the marker, answered with a tool call."""
+    """The owner's conversation: title, a file and a message with the marker, answered with a tool call and a note
+    to the agent's persistent memory (:func:`agent_script`); an assistant conversation that attached the answer."""
     template = client.post(
         "/api/agents/templates",
-        json={"agent": {"name": "Helper", "system_prompt": "AGENT", "tools": ["calculator"]}},
+        json={
+            "agent": {
+                "name": "Helper",
+                "system_prompt": "AGENT",
+                "tools": ["calculator"],
+                "memory": {"mode": "persistent", "space": MEMORY_SPACE},
+            }
+        },
     )
     assert template.status_code == 201, template.text
     created = client.post(
@@ -112,7 +150,22 @@ def make_owned(client: TestClient, *, wait: Callable[[str], None] | None = None)
         wait(answer["run_id"])
     assistant = client.post("/api/assistant/conversations", json={"title": f"{SECRET} assistant"})
     assert assistant.status_code == 201, assistant.text
-    return Owned(conversation_id, answer["run_id"], answer["id"], file_id, assistant.json()["id"])
+    assistant_id = assistant.json()["id"]
+    attached = client.post(
+        f"/api/assistant/conversations/{assistant_id}/attachments", json={"kind": "run", "ref_id": answer["run_id"]}
+    )
+    assert attached.status_code == 200, attached.text
+    [attachment] = attached.json()["attachments"]
+    return Owned(
+        conversation_id,
+        answer["run_id"],
+        answer["id"],
+        file_id,
+        assistant_id,
+        template_id=template.json()["id"],
+        attachment_id=attachment["id"],
+        snapshot_id=attachment["snapshot_id"],
+    )
 
 
 def _routes(client: TestClient) -> list[tuple[str, str, str]]:
@@ -147,7 +200,8 @@ def reachable_by_id(client: TestClient, owned: Owned) -> list[tuple[str, str, in
     nothing either."""
     found = []
     for method, path, _access in _routes(client):
-        if not any(name in path for name in ("{run_id}", "{conversation_id}", "{file_id}", "{input_id}")):
+        names = ("{run_id}", "{conversation_id}", "{file_id}", "{input_id}", "{attachment_id}", "{snapshot_id}")
+        if not any(name in path for name in names):
             continue
         if path.startswith(("/api/benchmark-runs", "/api/knowledge/")):
             continue  # benchmark runs and knowledge files have ids of their own
@@ -184,7 +238,7 @@ def owned_app(
     make_app: Callable[..., TestClient], monkeypatch: pytest.MonkeyPatch
 ) -> Iterator[tuple[TestClient, Owned]]:
     monkeypatch.setenv(CONVERSATIONS_ENV, "1")
-    client = make_app({"AGENT": [tool_use("calculator", {"expression": "6 * 7"}), text(f"It is 42. {SECRET} answer")]})
+    client = make_app({"AGENT": agent_script()})
     as_principal(client, ALICE)
     ctx = client.app.state.nodestro  # type: ignore[attr-defined]
     owned = make_owned(client, wait=lambda run_id: client.portal.call(ctx.wait, run_id))  # type: ignore[union-attr]
@@ -212,6 +266,7 @@ def test_no_read_route_shows_anything_of_another_persons_conversation(
         "/api/inputs/{file_id}/content",
         "/api/search",
         "/api/assistant/conversations",
+        "/api/assistant/conversations/{conversation_id}/snapshots/{snapshot_id}",
     } <= seen_by_owner, seen_by_owner
     as_principal(client, viewer)
     assert leaking_reads(client, owned) == []
@@ -323,3 +378,4 @@ def test_the_activity_log_and_the_statistics_name_the_answers_without_their_cont
     for path in ("/api/skill-stats", "/api/pricing/history", "/api/notifications"):
         response = client.get(path)
         assert response.status_code == 200 and SECRET not in response.text, path
+
