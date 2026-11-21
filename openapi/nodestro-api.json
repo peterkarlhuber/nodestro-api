@@ -25254,6 +25254,21 @@
             "title": "Notes",
             "type": "array"
           },
+          "offline": {
+            "anyOf": [
+              {
+                "enum": [
+                  "agent",
+                  "conversation"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Offline"
+          },
           "paths": {
             "items": {
               "type": "string"

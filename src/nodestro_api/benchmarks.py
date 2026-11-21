@@ -674,7 +674,7 @@ class Benchmarks:
             if item.status == "succeeded":
                 result.checks = check_case(case, item.output)
                 if bench.judge and _criteria(case.judge_criteria):
-                    result.judge = await self._judge(bench, suite, case, item.output, judge_tracker)
+                    result.judge = await self._judge(bench, suite, case, item.output, judge_tracker, item.run_id)
                 checks_ok = all(check.passed is True for check in result.checks)
                 if result.judge is not None and result.judge.error_code is not None:
                     # The judge could not decide: the case is open unless a check already failed.
@@ -700,7 +700,13 @@ class Benchmarks:
         self._put(bench)
 
     async def _judge(
-        self, bench: BenchmarkRun, suite: Suite, case: TestCase, output: Any, tracker: BudgetTracker
+        self,
+        bench: BenchmarkRun,
+        suite: Suite,
+        case: TestCase,
+        output: Any,
+        tracker: BudgetTracker,
+        run_id: str | None = None,
     ) -> JudgeVerdict:
         model = suite.judge_model or self.ctx.settings().assistant_model
         before = len(tracker.records)
@@ -711,8 +717,12 @@ class Benchmarks:
         verdict = JudgeVerdict(model=model, passed=False, score=0.0)
         try:
             judge = check_model(model)
+            # N-09: the output of a run of an offline agent goes to a local judge only, as in run chat; a run that
+            # cannot be read fails closed.
+            run = self.ctx.runs.get(run_id) if run_id else None
+            scope = self.ctx.runs.content_offline_scope(run) if run is not None else "agent"
             # Nobody waits for the judge: unattended denies and limits apply (N-06).
-            connection = self.ctx.connect_model(judge, attended=False)
+            connection = self.ctx.connect_model(judge, attended=False, offline=scope)
             evaluator = Evaluator(
                 model=model_id(judge),
                 options=connection.options(),

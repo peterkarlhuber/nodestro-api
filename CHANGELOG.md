@@ -8,6 +8,13 @@
   of its answers too. The problem code list (`/api/error-codes`) has the runtime's new codes `offline.cloud_model`,
   `offline.remote_endpoint`, `offline.server_tools` and `offline.tool_unavailable` (each `400` where a route
   raises one). No route changed.
+  - Review fixes (security): a run of an offline agent or conversation reaches no cloud model through the Nodestro
+    Assistant or a test series' AI judge (`docs/conversations.md`). Attaching such a run is refused while the
+    assistant model is a cloud model (`400 offline.cloud_model`); every answer of an assistant conversation that has
+    one attached or sent it earlier uses a local model only. `Snapshot.offline` (`agent` or `conversation`, left out
+    while unset) is new in both OpenAPI documents. A test series' judge refuses a cloud judge for such a case
+    (`error_code` `offline.cloud_model` on the verdict). Uses the runtime's `content_offline_scope` and
+    `connect_model(..., offline=...)`.
 
 - Security (NS-002, the hardening steps of nodestro-session `docs/design.md` 5.2): six switches of the desktop launch,
   each off by default (README, "Hardening switches of the desktop launch"). With every switch off the answers stay
