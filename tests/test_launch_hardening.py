@@ -216,6 +216,34 @@ def test_the_launch_secret_expires_after_its_ttl() -> None:
         assert client.get("/api/launch", params={"token": "w" * 43}).json()["code"] == "access.launch_invalid"
 
 
+@pytest.mark.parametrize("stopped", ["monotonic", "wall"])
+def test_the_ttl_is_over_when_either_clock_says_so(stopped: str) -> None:
+    """Review I-3: ``time.monotonic`` may stop while the computer sleeps; the wall clock still ends the secret (and
+    the monotonic clock still does when the wall clock is set back)."""
+    monotonic, wall = Clock(), Clock()
+    app = Starlette(
+        routes=[Route("/{path:path}", _endpoint, methods=["GET", "POST"])],
+        middleware=[
+            Middleware(
+                LaunchSecretMiddleware,
+                secret=SECRET,
+                clock=monotonic,
+                wall_clock=wall,
+                hardening=LaunchHardening(ttl=30),
+            )
+        ],
+    )
+    with TestClient(app, base_url=ORIGIN) as client:
+        client.get("/api/anything")  # the first answer starts both clocks
+        running = wall if stopped == "monotonic" else monotonic
+        running.now += 29
+        if stopped == "wall":
+            wall.now -= 3600  # set back
+        running.now += 1
+        answer = client.get("/api/launch", params={"token": SECRET})
+        assert (answer.status_code, answer.json()["code"]) == (403, "access.launch_expired")
+
+
 def test_a_launch_within_the_ttl_works_and_its_session_outlives_the_ttl() -> None:
     clock = Clock()
     with bare(clock, ttl=30) as client:

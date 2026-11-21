@@ -336,6 +336,7 @@ class LaunchSecretMiddleware:
         max_age: float | None = None,
         clock: Callable[[], float] = time.monotonic,
         hardening: LaunchHardening | None = None,
+        wall_clock: Callable[[], float] = time.time,
     ) -> None:
         check_secret(secret)
         redact_access_logs(secret)
@@ -343,8 +344,11 @@ class LaunchSecretMiddleware:
         self._secret = secret
         #: The NS-002 switches; never for a reusable access key (Nodestro Local Docker).
         self.hardening = LaunchHardening() if reusable or hardening is None else hardening
-        #: The TTL counts from here: the backend's first answer (the desktop app waits for its health check).
+        #: The TTL counts from here: the backend's first answer (the desktop app waits for its health check), on the
+        #: monotonic clock and on the wall clock (see :meth:`_expired`).
         self._started = clock()
+        self.wall_clock = wall_clock
+        self._started_wall = wall_clock()
         #: Desktop: whether the one launch happened. Its one session lives in :attr:`_sessions` too.
         self._launched = False
         #: The browser sessions (digests only); the idle time and max age apply to a reusable key's sessions.
@@ -480,9 +484,14 @@ class LaunchSecretMiddleware:
         await send({"type": "http.response.body", "body": _CONTINUE})
 
     def _expired(self) -> bool:
-        """Whether the launch secret's TTL (``NODESTRO_LAUNCH_TTL``) is over; never for a reusable key."""
+        """Whether the launch secret's TTL (``NODESTRO_LAUNCH_TTL``) is over; never for a reusable key.
+
+        Over when either clock says so: the monotonic clock may stop while the computer sleeps, and the wall clock
+        may be set back; a secret left from before a sleep must not work after it."""
         ttl = self.hardening.ttl
-        return ttl is not None and self.clock() - self._started >= ttl
+        if ttl is None:
+            return False
+        return self.clock() - self._started >= ttl or self.wall_clock() - self._started_wall >= ttl
 
     def _handed(self, csrf: str) -> dict[str, object]:
         """What the launch page leaves for the studio: the CSRF value (with ``NODESTRO_LAUNCH_CSRF``) and whether the

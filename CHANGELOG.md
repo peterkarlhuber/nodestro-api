@@ -7,7 +7,7 @@
   byte for byte the ones before (`tests/test_launch_hardening.py` against answers recorded from 6783a52).
   - `NODESTRO_LAUNCH_TTL`: the launch secret expires (`access.launch_expired`; `access.launch_ttl_invalid`). Empty, any
     number equal to zero and `false`, `off`, `no` mean no limit; other values that are no number of seconds stop the
-    start (review L-2).
+    start (review L-2). The limit ends on whichever of the monotonic and the wall clock reaches it first (review I-3).
   - `NODESTRO_LAUNCH_CSRF`: changes need `Origin`, a JSON or form body and `X-Nodestro-CSRF` (`request.origin_required`,
     `request.json_only`, `access.csrf_invalid`); the launch page hands the value to the studio.
     A WebSocket of the window's session needs an `Origin` (review L-1).
