@@ -38,12 +38,14 @@ from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from starlette.routing import Route
+from starlette.routing import Route, WebSocketRoute
 from starlette.types import Receive, Scope, Send
+from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from nodestro_api import cli, launch
 from nodestro_api.context import AppConfig
 from nodestro_api.launch import LaunchHardening, LaunchSecretMiddleware
+from nodestro_api.local_access import LocalAccessMiddleware
 
 VECTORS = Path(__file__).parent / "vectors" / "launch-switches-off.json"
 SWITCHES = (
@@ -603,3 +605,53 @@ def test_terminal_start_end_to_end(tmp_path: Path) -> None:
     finally:
         process.terminate()
         process.wait(timeout=30)
+
+
+# --- review fixes ---------------------------------------------------------------------------------------------------
+
+
+SOCKET = ORIGIN.replace("http", "ws", 1) + "/api/ws"  # the test client would name the host testserver
+
+
+async def _socket(websocket: WebSocket) -> None:
+    await websocket.accept()
+    await websocket.send_text("open")
+    await websocket.close()
+
+
+def _with_socket(**switches: Any) -> TestClient:
+    """The outer Origin check and the launch middleware in front of one HTTP and one WebSocket route."""
+    app = Starlette(
+        routes=[Route("/api/x", _endpoint, methods=["GET", "POST"]), WebSocketRoute("/api/ws", _socket)],
+        middleware=[
+            Middleware(LocalAccessMiddleware, hosts=None, strict_origin=True),
+            Middleware(LaunchSecretMiddleware, secret=SECRET, hardening=LaunchHardening(**switches)),
+        ],
+    )
+    return TestClient(app, base_url=ORIGIN)
+
+
+def _session_cookie(client: TestClient) -> dict[str, str]:
+    """The window's cookie as a header (the test client's WebSocket does not send its cookie jar)."""
+    return {"cookie": f"{launch.COOKIE}={client.cookies.get(launch.COOKIE)}"}
+
+
+def test_with_csrf_a_websocket_without_origin_is_refused() -> None:
+    """Review L-1: the outer check refuses only a foreign Origin; a WebSocket with the cookie and no Origin passed."""
+    with _with_socket(csrf=True) as client:
+        assert client.get("/api/launch", params={"token": SECRET}).status_code == 200
+        cookie = _session_cookie(client)
+        with pytest.raises(WebSocketDisconnect), client.websocket_connect(SOCKET, headers=cookie) as socket:
+            socket.receive_text()
+        with client.websocket_connect(SOCKET, headers={**cookie, "origin": ORIGIN}) as socket:
+            assert socket.receive_text() == "open"
+        foreign = {**cookie, "origin": "http://127.0.0.1:9"}
+        with pytest.raises(WebSocketDisconnect), client.websocket_connect(SOCKET, headers=foreign) as socket:
+            socket.receive_text()
+
+
+def test_without_csrf_a_websocket_without_origin_passes_as_before() -> None:
+    with _with_socket() as client:
+        assert client.get("/api/launch", params={"token": SECRET}).status_code == 200
+        with client.websocket_connect(SOCKET, headers=_session_cookie(client)) as socket:
+            assert socket.receive_text() == "open"

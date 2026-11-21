@@ -8,6 +8,7 @@
   - `NODESTRO_LAUNCH_TTL`: the launch secret expires (`access.launch_expired`; `access.launch_ttl_invalid`).
   - `NODESTRO_LAUNCH_CSRF`: changes need `Origin`, a JSON or form body and `X-Nodestro-CSRF` (`request.origin_required`,
     `request.json_only`, `access.csrf_invalid`); the launch page hands the value to the studio.
+    A WebSocket of the window's session needs an `Origin` (review L-1).
   - `NODESTRO_DESKTOP_LOGOUT`: `POST /api/logout` on the desktop.
   - `NODESTRO_TERMINAL_LAUNCH`: the command line issues a launch secret when none is given (`cli.terminal_launch`,
     `launch.write_launch_file`).

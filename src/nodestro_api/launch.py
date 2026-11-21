@@ -479,7 +479,15 @@ class LaunchSecretMiddleware:
     def _change_problem(self, scope: Scope, session: str | None) -> tuple[int, str, str] | None:
         """Why a change of the window's session is refused (``NODESTRO_LAUNCH_CSRF``), or ``None``: it needs an
         ``Origin`` (the outer check already refuses a foreign one), a JSON or form body, and the session's CSRF value.
-        Reading requests and WebSockets (whose ``Origin`` the outer check requires) pass."""
+        Reading requests pass.
+
+        A WebSocket needs an ``Origin``: the outer check (:class:`nodestro_api.local_access.LocalAccessMiddleware`,
+        ``strict_origin``) refuses only a foreign one, never a missing one. A browser cannot send the CSRF header on a
+        WebSocket, but it always sends its ``Origin``, so this keeps every web page out. A program outside the browser
+        that got the cookie can set any ``Origin``; the CSRF value does not cover WebSockets (the API has no
+        WebSocket route today)."""
+        if scope["type"] == "websocket":
+            return None if _header(scope, b"origin") else _ORIGIN_REQUIRED
         if scope["type"] != "http" or scope.get("method", "GET") in _SAFE_METHODS:
             return None
         if not _header(scope, b"origin"):
