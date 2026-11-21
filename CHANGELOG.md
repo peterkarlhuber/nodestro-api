@@ -5,7 +5,9 @@
 - Security (NS-002, the hardening steps of nodestro-session `docs/design.md` 5.2): six switches of the desktop launch,
   each off by default (README, "Hardening switches of the desktop launch"). With every switch off the answers stay
   byte for byte the ones before (`tests/test_launch_hardening.py` against answers recorded from 6783a52).
-  - `NODESTRO_LAUNCH_TTL`: the launch secret expires (`access.launch_expired`; `access.launch_ttl_invalid`).
+  - `NODESTRO_LAUNCH_TTL`: the launch secret expires (`access.launch_expired`; `access.launch_ttl_invalid`). Empty, any
+    number equal to zero and `false`, `off`, `no` mean no limit; other values that are no number of seconds stop the
+    start (review L-2).
   - `NODESTRO_LAUNCH_CSRF`: changes need `Origin`, a JSON or form body and `X-Nodestro-CSRF` (`request.origin_required`,
     `request.json_only`, `access.csrf_invalid`); the launch page hands the value to the studio.
     A WebSocket of the window's session needs an `Origin` (review L-1).

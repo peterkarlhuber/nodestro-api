@@ -152,11 +152,23 @@ def test_each_switch_is_read_from_its_variable(monkeypatch: pytest.MonkeyPatch, 
         assert AppConfig.from_env().hardening == LaunchHardening()
 
 
-@pytest.mark.parametrize("value", ["-1", "abc", "nan", "inf", "3601", "1e9"])
+@pytest.mark.parametrize("value", ["-1", "abc", "nan", "inf", "3601", "1e9", "true", "on", "yes", "5m"])
 def test_an_invalid_ttl_is_refused(value: str) -> None:
     with pytest.raises(NodestroError) as refused:
         LaunchHardening.from_env({launch.TTL_ENV: value})
     assert refused.value.code == "access.launch_ttl_invalid"
+    assert "0, false, off or no" in str(refused.value)  # the message names the ways to turn the limit off
+
+
+@pytest.mark.parametrize("value", ["", " ", "0", "0.0", "00", "-0", "0e0", "false", "off", "no", "OFF", " No "])
+def test_every_off_spelling_of_the_ttl_is_off(value: str) -> None:
+    """Review L-2: a spelling meant to turn the limit off never stops the start (garbage still does, above)."""
+    assert LaunchHardening.from_env({launch.TTL_ENV: value}) == LaunchHardening()
+
+
+@pytest.mark.parametrize(("value", "seconds"), [("30", 30.0), (" 0.5 ", 0.5), ("3600", 3600.0), ("1e2", 100.0)])
+def test_a_ttl_in_range_is_taken(value: str, seconds: float) -> None:
+    assert LaunchHardening.from_env({launch.TTL_ENV: value}).ttl == seconds
 
 
 def test_nodestro_local_docker_never_takes_the_switches(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

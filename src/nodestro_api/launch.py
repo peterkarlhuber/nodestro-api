@@ -136,7 +136,7 @@ class LaunchHardening:
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> LaunchHardening:
         """The switches from the environment: ``1`` turns one on, anything else leaves it off; the TTL is a number of
-        seconds (``access.launch_ttl_invalid`` otherwise)."""
+        seconds, or off (see :func:`_ttl`; ``access.launch_ttl_invalid`` otherwise)."""
         env = os.environ if env is None else env
 
         def on(name: str) -> bool:
@@ -157,18 +157,31 @@ class LaunchHardening:
         return self.csrf or self.logout or self.fragment
 
 
+#: The spellings of ``NODESTRO_LAUNCH_TTL`` that mean "no limit", besides empty and every number equal to zero.
+TTL_OFF = frozenset({"false", "off", "no"})
+
+
 def _ttl(value: str) -> float | None:
+    """``NODESTRO_LAUNCH_TTL`` in seconds, or ``None`` (no limit).
+
+    Off: empty, any number equal to zero (``0``, ``0.0``, ``00``) and ``false``, ``off`` or ``no`` (any case), so
+    that a spelling meant to turn the limit off never stops the start (the other switches treat everything but ``1``
+    as off). Any other value must be a number of seconds above 0 and at most 3600; anything else stops the start
+    (``access.launch_ttl_invalid``) instead of silently running without the limit the operator meant to set."""
     text = value.strip()
-    if not text or text == "0":
+    if not text or text.lower() in TTL_OFF:
         return None
     try:
         seconds = float(text)
     except ValueError:
         seconds = -1.0
-    if not 0 < seconds <= MAX_TTL_SECONDS:  # also NaN
+    if seconds == 0:
+        return None
+    if not 0 < seconds <= MAX_TTL_SECONDS:  # also NaN, inf and negative numbers
         raise NodestroError(
             "access.launch_ttl_invalid",
-            f"{TTL_ENV} must be a number of seconds from 1 to {int(MAX_TTL_SECONDS)} (0 or empty: no limit)",
+            f"{TTL_ENV} must be a number of seconds above 0 and at most {int(MAX_TTL_SECONDS)}; "
+            "for no limit leave it empty or set 0, false, off or no",
             value=text[:40],
         )
     return seconds
