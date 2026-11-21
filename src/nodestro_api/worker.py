@@ -26,7 +26,8 @@ or more worker processes (:class:`ServerWorker`). Every worker:
   sessions and abandoned login starts, finished jobs after :attr:`WorkerSettings.job_retention` and run events after
   :attr:`WorkerSettings.event_retention` (the runs themselves stay); and, every
   :attr:`WorkerSettings.chat_file_every` seconds, the assistant chat files past the retention an administrator of the
-  tenant set (:meth:`ServerWorker.expire_chat_files`, API-066); and, every :attr:`WorkerSettings.activity_every`
+  tenant set (:meth:`ServerWorker.expire_chat_files`, API-066), and the stopped runs of answers whose conversation
+  was deleted (:meth:`ServerWorker.sweep_conversation_runs`, RT-089); and, every :attr:`WorkerSettings.activity_every`
   seconds, the activity events older than ``NODESTRO_ACTIVITY_RETENTION_DAYS`` days (default 90, ``0``: kept without
   limit) of every active tenant (:meth:`ServerWorker.prune_activity`, N-13; the desktop prunes when it opens);
 - keeps the Docker sandbox's proof warm (:class:`DockerWatch`): from its start it reads the process's Docker monitor
@@ -360,6 +361,25 @@ class ServerWorker:
                 removed[tenant_id] = count
         return removed
 
+    async def sweep_conversation_runs(self) -> dict[str, int]:
+        """Delete the stopped runs of answers whose conversation was deleted (RT-089, W3-P4a L-3) for every active
+        tenant while this worker leads, every :attr:`WorkerSettings.chat_file_every` seconds: the deletion of a
+        conversation waits a few seconds for an answer still going and leaves its run when it takes longer; the desktop
+        sweeps when it starts, a server here. Returns the runs deleted per tenant (only tenants where some went;
+        empty: another worker leads). A tenant whose pass fails is logged and skipped; the next pass tries again."""
+        if not await asyncio.to_thread(self.leader.acquire):
+            return {}
+        removed: dict[str, int] = {}
+        for tenant_id in await self._active_tenants():
+            try:
+                deleted = await asyncio.to_thread(self.scheduling.get(tenant_id).conversations.sweep_orphan_runs)
+            except Exception:
+                logger.exception("Deleting the runs of deleted conversations of tenant %s failed", tenant_id)
+                continue
+            if deleted:
+                removed[tenant_id] = len(deleted)
+        return removed
+
     async def prune_activity(self) -> dict[str, int]:
         """Delete the activity events past their retention (``NODESTRO_ACTIVITY_RETENTION_DAYS``, N-13) of every active
         tenant while this worker leads; a suspended tenant's events stay until it is resumed, as its chat files.
@@ -434,6 +454,12 @@ class ServerWorker:
         tasks.append(
             asyncio.create_task(
                 self._every(stop, self.settings.chat_file_every, self.expire_chat_files), name="worker-chat-files"
+            )
+        )
+        tasks.append(
+            asyncio.create_task(
+                self._every(stop, self.settings.chat_file_every, self.sweep_conversation_runs),
+                name="worker-conversation-runs",
             )
         )
         tasks.append(

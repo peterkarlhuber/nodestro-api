@@ -10,6 +10,17 @@
     runtime; OpenAPI: new field). Another member reaches neither those files nor the run (new test).
   - A run still going after its conversation was deleted is deleted by the runtime once it stops (needs the pinned
     runtime).
+- Security (W3-P4a review, M-1; needs the pinned runtime): `POST /api/runs/import` stores an imported trace without the
+  trace's `file_ids` and `reference_file_ids`, and a trace exported at a decision as stopped; deciding or continuing
+  an imported run answers `400 run.imported` (new code in `/api/error-codes`; a retry was already refused with
+  `resume.imported`). A run never gets a file of a
+  conversation unless it acts for the person who uploaded it. Before, a member could import a paused trace naming
+  another member's conversation file, approve it and have the agent read the file (tests
+  `test_w3p4a_m1_*` in `tests/test_conversations_api.py`).
+- Server worker (W3-P4a review, L-3): the leader deletes the stopped runs of answers whose conversation was deleted
+  for every active tenant, every `chat_file_every` seconds (`ServerWorker.sweep_conversation_runs`, duty
+  `worker-conversation-runs`): a delete that outlasts its 10-second wait no longer leaves the run until someone
+  deletes it by hand. The desktop sweeps when it starts.
 - Contract (N-09, runtime `claude/w3-n09`): `AgentConfig.offline` (default `false`, additive) in both OpenAPI
   documents: the strict offline mode's rules for one agent, checked by the runtime at every call (local models only,
   no server tools, no tool with external reach). The conversation's existing `offline` flag now covers every call

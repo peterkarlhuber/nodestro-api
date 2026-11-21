@@ -122,7 +122,10 @@ Rules:
   conversation.not_found`; `tests/test_conversations_api.py::test_rt089_earlier_files_reach_later_answers_of_the_owner_only`).
 - **A run still going after the delete (RT-089).** The delete route waits up to 10 seconds for a cancelled answer;
   a run still going then is hidden from everyone and deleted by the runtime as soon as it stops (runtime
-  `docs/conversations.md`).
+  `docs/conversations.md`), with its events. On a server, the worker's leader also deletes such runs every hour
+  (`ServerWorker.sweep_conversation_runs`), so a run whose worker did not see its conversation go is not left.
+- **Imported traces (W3-P4a M-1).** An imported trace keeps no file ids and never runs (`400 run.imported` for a
+  decision or a continuation); a run gets a conversation's file only when it acts for the person who uploaded it.
 - **Offline (N-09).** With `offline`, every call of an answer and of the runs below it follows the runtime's
   offline rules (runtime `docs/offline.md`): local models only, no server tools, and a tool that is not available
   offline is refused (`offline.tool_unavailable` on the call). An agent template with `offline` answers with local
