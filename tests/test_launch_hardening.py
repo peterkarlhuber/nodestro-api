@@ -713,3 +713,14 @@ def test_without_csrf_a_websocket_without_origin_passes_as_before() -> None:
         assert client.get("/api/launch", params={"token": SECRET}).status_code == 200
         with client.websocket_connect(SOCKET, headers=_session_cookie(client)) as socket:
             assert socket.receive_text() == "open"
+
+
+def test_with_csrf_a_stolen_cookie_reads_but_changes_nothing() -> None:
+    """Review I-2 (wording): the CSRF value guards changes only. A program on another local port that got the cookie
+    (cookies are not port-scoped) can still read; README and nodestro-session ``docs/design.md`` say so."""
+    with _with_socket(csrf=True) as client:
+        assert client.get("/api/launch", params={"token": SECRET}).status_code == 200
+        thief = TestClient(client.app, base_url=ORIGIN)
+        thief.cookies.set(launch.COOKIE, client.cookies.get(launch.COOKIE) or "")
+        assert thief.get("/api/x").json() == {"ok": True}
+        assert thief.post("/api/x", json={}, headers={"origin": ORIGIN}).json()["code"] == "access.csrf_invalid"
