@@ -307,7 +307,9 @@ def test_server_users_see_only_their_own_conversations_and_files(make_app: Calla
     shared = app.state.nodestro.assistant.create("from before owners")  # type: ignore[attr-defined]
 
     app.state.principal_resolver = lambda _connection: _person("bob")  # type: ignore[attr-defined]
-    assert [item["id"] for item in client.get("/api/assistant/conversations").json()] == [shared.id]
+    # W3-S1: a conversation without an owner is nobody's for a server user (until the operator assigns one).
+    assert client.get("/api/assistant/conversations").json() == []
+    assert client.get(f"/api/assistant/conversations/{shared.id}").status_code == 404
     base = f"/api/assistant/conversations/{conversation_id}"
     message_id = client.app.state.nodestro.assistant.messages(conversation_id)[1].id  # type: ignore[attr-defined]
     for method, path in [
@@ -336,7 +338,7 @@ def test_server_users_see_only_their_own_conversations_and_files(make_app: Calla
     assert adopt.status_code == 404
 
     app.state.principal_resolver = lambda _connection: _person("alice")  # type: ignore[attr-defined]
-    assert {item["id"] for item in client.get("/api/assistant/conversations").json()} == {conversation_id, shared.id}
+    assert {item["id"] for item in client.get("/api/assistant/conversations").json()} == {conversation_id}
     check = client.post(
         "/api/knowledge/adopt/check",
         json={"items": [{"kind": "input", "input_id": file_id}], "collection": "Mine"},

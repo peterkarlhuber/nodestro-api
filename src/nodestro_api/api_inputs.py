@@ -29,8 +29,10 @@ from nodestro_runtime.knowledge import CollectionInfo
 from nodestro_runtime.problems import Problem
 from pydantic import BaseModel, Field
 
-from .api import Ctx, actor_id, uploaded_file_headers
+from .api import Ctx, actor_id, owner_of, uploaded_file_headers
+from .conversation_owners import chat_file_visible
 from .permissions import EDIT, READ
+from .serving import ApiError
 
 router = APIRouter(prefix="/api")
 _PREVIEW_CHARS = 20_000
@@ -153,11 +155,15 @@ def cleanup_inputs(body: CleanupRequest, ctx: Ctx) -> InputCleanupResult:
 
 def visible(ctx: Ctx, request: Request, file_id: str) -> None:
     """Another user's file of an assistant conversation or of a conversation with an own agent (N-04) does not exist
-    for this request (``KeyError``, answered with 404)."""
+    for this request (``KeyError``, answered with 404); nor does a file of a conversation without an owner on a
+    server, nor any such file for a request without an owner identity (W3-S1,
+    :func:`nodestro_api.conversation_owners.chat_file_visible`)."""
     if not is_input_id(file_id):
         return
     item = ctx.inputs.find(file_id)
-    if item is not None and item.origin in ("assistant", "conversation") and item.uploaded_by != actor_id(request):
+    if item is None or item.origin not in ("assistant", "conversation"):
+        return
+    if item.uploaded_by != actor_id(request) or not chat_file_visible(ctx.store, item, owner_of(request)):
         raise KeyError(file_id)
 
 
@@ -268,17 +274,26 @@ def knowledge_collections(ctx: Ctx) -> list[CollectionInfo]:
     return ctx.knowledge.collections()
 
 
+def _adoptable(ctx: Ctx, request: Request, body: AdoptRequest) -> None:
+    """Every item's sources exist for this request: its input file (:func:`visible`) and its run. The run of another
+    user's conversation with an own agent (N-04 H-1) is not found like a missing run (W3-S1): its step outputs,
+    proposals and result files are the conversation's answers."""
+    owner = owner_of(request)
+    for item in body.items:
+        visible(ctx, request, item.input_id or "")
+        if item.run_id and not ctx.conversations.run_visible(item.run_id, owner):
+            raise ApiError(404, "run.not_found", f"Run {item.run_id!r} does not exist", id=item.run_id, kind="run")
+
+
 @router.post("/knowledge/adopt/check", dependencies=READ)
 def adopt_check(body: AdoptRequest, ctx: Ctx, request: Request) -> list[AdoptCheck]:
     """What the chosen items would become in knowledge; stores nothing."""
-    for item in body.items:
-        visible(ctx, request, item.input_id or "")
+    _adoptable(ctx, request, body)
     return check(ctx, body)
 
 
 @router.post("/knowledge/adopt", dependencies=EDIT)
 def adopt_confirm(body: AdoptConfirm, ctx: Ctx, request: Request) -> AdoptOutcome:
     """Store the confirmed items in knowledge (only with the tokens of the check)."""
-    for item in body.items:
-        visible(ctx, request, item.input_id or "")
+    _adoptable(ctx, request, body)
     return adopt(ctx, body)

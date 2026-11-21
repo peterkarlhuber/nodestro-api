@@ -613,11 +613,13 @@ def test_check_can_skip_the_identity_provider(schema: str, tmp_path: Path, monke
     assert command.parser().parse_args(["check", "--skip-identity-provider"]).skip_identity_provider
 
 
-def test_conversations_from_before_owners_get_the_owner_their_files_name(
+def test_conversations_from_before_owners_are_reported_with_the_owner_their_files_name(
     schema: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """API-057: ``assistant backfill-owners`` sets the owner where every file of a conversation was uploaded by one
-    person; without files or with files of several people a conversation stays visible to the tenant."""
+    """API-057, W3-S1 (API-073): ``assistant backfill-owners`` without ``--user`` only reports the conversations
+    without an owner, suggesting the person where every file of a conversation was uploaded by one person. It assigns
+    nothing by itself, with or without ``--dry-run``: an owner is only ever given explicitly
+    (``test_conversation_owners``)."""
     from nodestro_runtime.input_files import COLLECTION, InputFile
     from nodestro_runtime.schemas import now
 
@@ -652,23 +654,26 @@ def test_conversations_from_before_owners_get_the_owner_their_files_name(
     chat("chat_none", [])
     chat("chat_mine", ["carol"], owner="dave")
     database.close()
+    expected = {
+        "without_owner": {"chat_one1": "assistant", "chat_two2": "assistant", "chat_none": "assistant"},
+        "suggested_owners": {"chat_one1": "alice"},
+    }
     dry = command.backfill_conversation_owners(loaded, dry_run=True, tenant=None)
-    assert dry["tenants"]["alpha"] == {"without_owner": 3, "assigned": 1, "ambiguous": 1, "unknown": 1}
+    assert dry["tenants"]["alpha"] == expected
     report = command.backfill_conversation_owners(loaded, dry_run=False, tenant="alpha")
-    assert report["tenants"]["alpha"]["assigned"] == 1
+    assert report["tenants"]["alpha"] == expected  # a suggestion is never applied
     database = command._database(loaded)
     try:
         owners = {item.id: item.owner for item in database.store("alpha").list("assistant_conversations", Conversation)}
     finally:
         database.close()
-    assert owners == {"chat_one1": "alice", "chat_two2": None, "chat_none": None, "chat_mine": "dave"}
-    again = command.backfill_conversation_owners(loaded, dry_run=False, tenant=None)
-    assert again["tenants"]["alpha"] == {"without_owner": 2, "assigned": 0, "ambiguous": 1, "unknown": 1}
+    assert owners == {"chat_one1": None, "chat_two2": None, "chat_none": None, "chat_mine": "dave"}
     with pytest.raises(NodestroError) as unknown:
         command.backfill_conversation_owners(loaded, dry_run=True, tenant="nobody")
     assert unknown.value.code == "identity.tenant_unknown"
     parsed = command.parser().parse_args(["assistant", "backfill-owners", "--dry-run", "--tenant", "alpha"])
     assert (parsed.assistant_command, parsed.dry_run, parsed.tenant) == ("backfill-owners", True, "alpha")
+    assert (parsed.user, parsed.conversation) == (None, [])
 
 
 def test_operator_commands_are_in_the_tenants_access_audit(schema: str, tmp_path: Path) -> None:
