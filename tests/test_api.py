@@ -428,6 +428,18 @@ def test_the_openapi_contract_is_up_to_date() -> None:
     assert committed.read_text(encoding="utf-8") == openapi.text(), "run `make openapi`"
 
 
+def test_no_patch_or_merge_leftovers_are_committed() -> None:
+    """N-05 review L4: ``patch`` and merge tools leave ``.orig``/``.rej`` files next to the contract; none ships."""
+    root = Path(__file__).resolve().parents[1]
+    found = [
+        str(path.relative_to(root))
+        for folder in ("openapi", "src", "docs", "tests")
+        for path in (root / folder).rglob("*")
+        if path.suffix in (".orig", ".rej")
+    ]
+    assert found == []
+
+
 def test_the_server_openapi_contract_is_up_to_date() -> None:
     """API-012: the server profile has its own committed contract with the login and tenant routes."""
     from nodestro_api import openapi
