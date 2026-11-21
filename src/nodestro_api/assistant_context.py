@@ -82,6 +82,9 @@ class Snapshot(BaseModel):
     truncated: bool = False
     #: Number of masked credentials.
     secrets: int = 0
+    #: A run of an offline agent or conversation (N-09, ``RunManager.content_offline_scope``): its content may only
+    #: go to a local model, so every answer of the conversation uses one. Left out while ``None``.
+    offline: Literal["agent", "conversation"] | None = Field(default=None, exclude_if=lambda value: value is None)
     #: The options of the attachment (memory paths, knowledge content).
     paths: list[str] = Field(default_factory=list)
     include_content: bool = False
@@ -341,6 +344,7 @@ class _Built(BaseModel):
     content: Any
     data: dict[str, Any]
     notes: list[Problem] = Field(default_factory=list)
+    offline: Literal["agent", "conversation"] | None = None
 
 
 def _not_found(kind: str, ref_id: str) -> NodestroError:
@@ -481,6 +485,7 @@ def _build(nodestro: Nodestro, request: AttachRequest) -> _Built:
                 ],
                 "input_files": _run_inputs(nodestro, run),
             },
+            offline=nodestro.runs.content_offline_scope(run),
         )
     raise NodestroError("assistant.kind_unknown", f"Unknown object kind {kind!r}", kind=kind)
 
@@ -538,6 +543,7 @@ def take_snapshot(nodestro: Nodestro, request: AttachRequest, *, conversation_id
         secrets=secrets,
         paths=list(request.paths),
         include_content=request.include_content,
+        offline=built.offline,
     )
 
 

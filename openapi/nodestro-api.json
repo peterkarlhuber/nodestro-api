@@ -998,6 +998,11 @@
             "title": "Name",
             "type": "string"
           },
+          "offline": {
+            "default": false,
+            "title": "Offline",
+            "type": "boolean"
+          },
           "on_refusal": {
             "default": "raise",
             "enum": [
@@ -25263,6 +25268,21 @@
             },
             "title": "Notes",
             "type": "array"
+          },
+          "offline": {
+            "anyOf": [
+              {
+                "enum": [
+                  "agent",
+                  "conversation"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Offline"
           },
           "paths": {
             "items": {
