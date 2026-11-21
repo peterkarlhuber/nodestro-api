@@ -125,8 +125,8 @@ user login and does not lift the loopback-only rule. Without the variable (the `
 **Hardening switches of the desktop launch (NS-002, all off).** Each step of nodestro-session `docs/design.md` 5.2
 sits behind its own switch, off by default; with every switch off the answers are byte for byte the earlier ones
 (`tests/test_launch_hardening.py` against `tests/vectors/launch-switches-off.json`). Each waits for its counterpart
-(the desktop shell or the studio frontend) before it may be turned on. They apply to the desktop profile only, never to
-Nodestro Local Docker (`nodestro_api.launch.LaunchHardening`):
+(the desktop shell or the studio frontend) before it may be turned on. They apply to the desktop profile only: the `server`
+profile and Nodestro Local Docker neither read nor refuse them (`nodestro_api.launch.LaunchHardening`):
 
 | Variable | Effect when set |
 |---|---|

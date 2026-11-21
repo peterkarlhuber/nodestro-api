@@ -143,7 +143,8 @@ class AppConfig:
             price_sync=PriceSyncConfig.from_env(),
             dev_cors=os.environ.get("NODESTRO_DEV_CORS", "").strip() == "1",
             recovery=os.environ.get("NODESTRO_RECOVERY", "").strip() == "database-permissions",
-            hardening=LaunchHardening() if local else LaunchHardening.from_env(),
+            # NS-002: the desktop profile only; the others neither read nor refuse the switches.
+            hardening=LaunchHardening.from_env() if profile.kind == "desktop" else LaunchHardening(),
         )
 
 

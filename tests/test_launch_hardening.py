@@ -181,6 +181,24 @@ def test_nodestro_local_docker_never_takes_the_switches(monkeypatch: pytest.Monk
     assert middleware.hardening == LaunchHardening()
 
 
+@pytest.mark.parametrize("kind", ["server", "local-container"])
+def test_only_the_desktop_profile_reads_the_switches(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, kind: str
+) -> None:
+    """Review I-1: another profile neither takes the switches nor stops on an invalid value of one."""
+    for name in SWITCHES:
+        monkeypatch.setenv(name, "1")
+    monkeypatch.setenv(launch.TTL_ENV, "abc")
+    monkeypatch.setenv("NODESTRO_PROFILE", kind)
+    monkeypatch.setenv("NODESTRO_DATA_DIR", str(tmp_path))
+    if kind == "local-container":
+        monkeypatch.setenv("NODESTRO_BROWSER_HOST", "localhost")
+    assert AppConfig.from_env().hardening == LaunchHardening()
+    monkeypatch.setenv("NODESTRO_PROFILE", "desktop")
+    with pytest.raises(NodestroError):
+        AppConfig.from_env()
+
+
 # --- launch-secret TTL -----------------------------------------------------------------------------------------------
 
 

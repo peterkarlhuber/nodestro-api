@@ -16,7 +16,8 @@
     `launch.write_launch_file`).
   - `NODESTRO_LAUNCH_FRAGMENT`: the secret in the URL fragment, exchanged by the launch page with `POST /api/launch`.
   - `NODESTRO_BIND_LOOPBACK`: `nodestro_session.bind_loopback` for the command line's listener.
-  - New in `AppConfig`: `hardening` (`LaunchHardening`, every switch off by default). No route and no OpenAPI change.
+  - New in `AppConfig`: `hardening` (`LaunchHardening`, every switch off by default; read in the `desktop` profile
+    only, review I-1). No route and no OpenAPI change.
 - Security (N-02, step 1): the local session's protection uses the shared library `nodestro-session`
   (`>=0.1.0.dev0,<0.2`, standard library only; the studio lock pins its commit). No contract change: paths, codes,
   texts, cookie names and the open paths stay as they were.
