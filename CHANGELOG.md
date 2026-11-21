@@ -9,6 +9,22 @@
   `offline.remote_endpoint`, `offline.server_tools` and `offline.tool_unavailable` (each `400` where a route
   raises one). No route changed.
 
+- Security (NS-002, the hardening steps of nodestro-session `docs/design.md` 5.2): six switches of the desktop launch,
+  each off by default (README, "Hardening switches of the desktop launch"). With every switch off the answers stay
+  byte for byte the ones before (`tests/test_launch_hardening.py` against answers recorded from 6783a52).
+  - `NODESTRO_LAUNCH_TTL`: the launch secret expires (`access.launch_expired`; `access.launch_ttl_invalid`). Empty, any
+    number equal to zero and `false`, `off`, `no` mean no limit; other values that are no number of seconds stop the
+    start (review L-2). The limit ends on whichever of the monotonic and the wall clock reaches it first (review I-3).
+  - `NODESTRO_LAUNCH_CSRF`: changes need `Origin`, a JSON or form body and `X-Nodestro-CSRF` (`request.origin_required`,
+    `request.json_only`, `access.csrf_invalid`); the launch page hands the value to the studio.
+    A WebSocket of the window's session needs an `Origin` (review L-1).
+  - `NODESTRO_DESKTOP_LOGOUT`: `POST /api/logout` on the desktop.
+  - `NODESTRO_TERMINAL_LAUNCH`: the command line issues a launch secret when none is given (`cli.terminal_launch`,
+    `launch.write_launch_file`).
+  - `NODESTRO_LAUNCH_FRAGMENT`: the secret in the URL fragment, exchanged by the launch page with `POST /api/launch`.
+  - `NODESTRO_BIND_LOOPBACK`: `nodestro_session.bind_loopback` for the command line's listener.
+  - New in `AppConfig`: `hardening` (`LaunchHardening`, every switch off by default; read in the `desktop` profile
+    only, review I-1). No route and no OpenAPI change.
 - Security (W3-S1, conversations with own agents and the Nodestro Assistant; still behind `NODESTRO_CONVERSATIONS`,
   off by default; `docs/conversations.md`):
   - A principal without a role (no member of the tenant) no longer counts as the desktop's single person: on a server
