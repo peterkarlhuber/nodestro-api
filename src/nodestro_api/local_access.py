@@ -12,6 +12,11 @@ page the user visits can reach that address too, through the browser:
   pages on this computer (another program's page on ``localhost:<other port>``). The frontend's development server
   (``localhost:5173``) is added only with ``NODESTRO_DEV_CORS=1`` (``extra_origins``).
 
+The loopback rules (:func:`is_loopback`, :func:`split_host`, :func:`split_port`, :func:`is_ip_address`,
+:func:`listens_everywhere` and the bind check of :func:`require_loopback_only`) come from the shared library
+``nodestro_session`` (``nodestro_session.hosts``, ``nodestro_session.bind``); this module keeps the studio's own
+rules, error codes and texts.
+
 These checks protect a studio API on loopback against the browser; they are **not authentication**.
 As long as the studio API has no login, it is never offered to the network
 (:func:`require_loopback_only`, checked by :func:`nodestro_api.app.create_app` and the command line):
@@ -40,72 +45,37 @@ authentication.
 from __future__ import annotations
 
 from collections.abc import Iterable
-import ipaddress
 import json
 import socket
 from urllib.parse import urlsplit
 
 from nodestro_runtime.problems import NodestroError
+from nodestro_session.bind import loopback_refusals
+from nodestro_session.hosts import is_ip_address, is_loopback, listens_everywhere, split_host, split_port
 from starlette.types import ASGIApp, Receive, Scope, Send
+
+__all__ = [
+    "FORWARDING_HEADERS",
+    "SAFE_METHODS",
+    "LocalAccessMiddleware",
+    "allowed_hosts",
+    "computer_names",
+    "is_ip_address",
+    "is_loopback",
+    "listens_everywhere",
+    "require_loopback_only",
+    "split_host",
+    "split_port",
+]
 
 #: Methods that change nothing; a cross-site page cannot read their answers (no CORS headers).
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
-_WILDCARD_HOSTS = frozenset({"", "0.0.0.0", "::", "*"})
 #: Headers a reverse proxy adds to the requests it forwards.
 FORWARDING_HEADERS = ("forwarded", "x-forwarded-for", "x-forwarded-host", "x-real-ip")
 #: Key-protected routes that may be reached through a proxy (published workflow APIs).
 _KEY_PROTECTED_PREFIX = "/api/published"
 #: The app contract's discovery (public, more with a published API's key) may be reached through a proxy too.
 _DISCOVERY_PATH = "/api/app"
-
-
-def is_loopback(host: str) -> bool:
-    """``localhost``, ``*.localhost`` and loopback addresses (``127.0.0.0/8``, ``::1``)."""
-    host = host.strip("[]").lower().rstrip(".")
-    if host == "localhost" or host.endswith(".localhost"):
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
-
-
-def split_host(value: str) -> str:
-    """The host name of a ``Host`` header value (``name:port``, ``[::1]:port``), lower case."""
-    value = value.strip().lower()
-    if value.startswith("["):
-        return value[1 : value.find("]")] if "]" in value else value[1:]
-    if value.count(":") == 1:
-        return value.split(":", 1)[0]
-    return value
-
-
-def split_port(value: str) -> int | None:
-    """The port of a ``Host`` header value; ``None`` without one, ``-1`` for one that is not a number."""
-    value = value.strip()
-    if value.startswith("["):
-        rest = value[value.find("]") + 1 :] if "]" in value else ""
-    elif value.count(":") == 1:
-        rest = value[value.find(":") :]
-    else:
-        return None
-    if not rest:
-        return None
-    digits = rest[1:] if rest.startswith(":") else ""
-    return int(digits) if digits.isdigit() and len(digits) <= 5 else -1
-
-
-def is_ip_address(host: str) -> bool:
-    try:
-        ipaddress.ip_address(host.strip("[]"))
-    except ValueError:
-        return False
-    return True
-
-
-def listens_everywhere(bind_host: str | None) -> bool:
-    """``0.0.0.0``, ``::`` (or no address): the server is reachable under every address of this computer."""
-    return bind_host is not None and bind_host.strip() in _WILDCARD_HOSTS
 
 
 def computer_names() -> set[str]:
@@ -136,10 +106,9 @@ def require_loopback_only(bind_host: str | None, extra_hosts: Iterable[str] = ()
     Raised before anything is opened; the host and the host names that were refused are in the parameters."""
     refused: list[str] = []
     host = (bind_host or "").strip()
-    if not host or listens_everywhere(host) or not is_loopback(host):
+    bad_host, others = loopback_refusals(host, extra_hosts)
+    if bad_host:
         refused.append(f"listening on {host or '(every interface)'!r}")
-    names = [item.strip() for item in extra_hosts if item.strip()]
-    others = [name for name in names if name == "*" or not is_loopback(split_host(name))]
     if others:
         refused.append(f"NODESTRO_ALLOWED_HOSTS={','.join(others)}")
     if refused:

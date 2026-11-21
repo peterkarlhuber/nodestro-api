@@ -18,6 +18,9 @@ dependencies = [
     # (nodestro-studio platform/internal-server.txt).
     "orkexa>=0.2.0.dev0,<0.3",
     "nodestro-examples>=0.3.0,<0.4",
+    # The shared protection of the local session (N-02): host and origin rules, the session store, cookies, the
+    # secrets handoff and log redaction under launch.py, local_access.py and handoff.py. Standard library only.
+    "nodestro-session>=0.1.0.dev0,<0.2",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "python-multipart>=0.0.9",

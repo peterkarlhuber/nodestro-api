@@ -25,22 +25,27 @@ middleware with a persistent *access key* instead of a one-time secret (``reusab
 ``/api/launch?token=<key>`` that ``nodestro-local link`` prints can open any number of browser sessions (each gets
 its own random session cookie, under its own cookie name), and scripts send the key as ``Authorization: Bearer``.
 A request without a session in a browser gets a short page that says how to open Nodestro.
+
+The session store, the constant-time comparisons, the cookie headers and the log redaction come from the shared
+library ``nodestro_session`` (``SessionStore``, ``secret_equals``, ``set_cookie``, ``cookie_values``,
+``SecretRedactor``). Only digests of the session cookies are kept. The paths, codes, texts and cookie names here are
+Nodestro's and unchanged.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-import hmac
-from http.cookies import CookieError, SimpleCookie
 import json
 import logging
 import os
-import re
-import secrets
 import time
 from urllib.parse import parse_qs
 
 from nodestro_runtime.problems import NodestroError
+from nodestro_session.cookies import clear_cookie, cookie_values, set_cookie
+from nodestro_session.redact import SecretRedactor
+from nodestro_session.sessions import SessionStore
+from nodestro_session.tokens import WeakSecretError, check_secret_length, secret_equals
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from . import handoff
@@ -61,8 +66,6 @@ MAX_SESSIONS = 64
 #: The health check, and the app contract's discovery (public; a published API's key adds more, NAL-C1).
 _OPEN_PATHS = frozenset({"/api/health", "/api/app"})
 _OPEN_PREFIX = "/api/published"
-
-_TOKEN = re.compile(r"([?&]token=)[^&\s\"]*")
 
 #: The launch answer: continue to the studio from the backend's own origin (no script needed).
 _CONTINUE = b'<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/"><title>Nodestro</title>'
@@ -87,32 +90,25 @@ def launch_secret_from_env() -> str | None:
 
 def check_secret(secret: str | None) -> None:
     """Refuse a secret that is too short to protect anything (``access.launch_secret_weak``)."""
-    if secret is not None and len(secret) < MIN_LENGTH:
+    try:
+        check_secret_length(secret, MIN_LENGTH)
+    except WeakSecretError:
+        assert secret is not None
         raise NodestroError(
             "access.launch_secret_weak",
             f"{ENV_VAR} must have at least {MIN_LENGTH} characters",
             length=len(secret),
             minimum=MIN_LENGTH,
-        )
+        ) from None
 
 
-class RedactLaunchToken(logging.Filter):
-    """Replace the launch token in log records (uvicorn's access log prints the full request line)."""
+class RedactLaunchToken(SecretRedactor):
+    """Replace the launch token and every ``?token=`` value in log records (uvicorn's access log prints the full
+    request line); formatters such as uvicorn's AccessFormatter unpack the arguments, so they stay arguments."""
 
     def __init__(self, secret: str) -> None:
-        super().__init__()
+        super().__init__([secret])
         self.secret = secret
-
-    def _redact(self, text: str) -> str:
-        return _TOKEN.sub(r"\1[redacted]", text).replace(self.secret, "[redacted]")
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        if isinstance(record.args, tuple):
-            # Formatters such as uvicorn's AccessFormatter unpack the arguments: keep them, redacted.
-            record.args = tuple(self._redact(arg) if isinstance(arg, str) else arg for arg in record.args)
-        if isinstance(record.msg, str):
-            record.msg = self._redact(record.msg)
-        return True
 
 
 def redact_access_logs(secret: str) -> None:
@@ -171,10 +167,16 @@ class LaunchSecretMiddleware:
         check_secret(secret)
         redact_access_logs(secret)
         self.app = app
-        self._secret = secret.encode()
-        self._session: bytes | None = None
-        #: Reusable key: session -> (opened, last request), by :attr:`clock`.
-        self._sessions: dict[bytes, tuple[float, float]] = {}
+        self._secret = secret
+        #: Desktop: whether the one launch happened. Its one session lives in :attr:`_sessions` too.
+        self._launched = False
+        #: The browser sessions (digests only); the idle time and max age apply to a reusable key's sessions.
+        self._sessions = SessionStore(
+            MAX_SESSIONS if reusable else 1,
+            idle=idle if reusable else None,
+            max_age=max_age if reusable else None,
+            clock=clock,
+        )
         self.reusable = reusable
         self.bearer = bearer
         self.cookie = cookie
@@ -187,26 +189,6 @@ class LaunchSecretMiddleware:
     def _open(self, path: str) -> bool:
         return path in _OPEN_PATHS or path == _OPEN_PREFIX or path.startswith(_OPEN_PREFIX + "/")
 
-    def _session_for(self, token: bytes) -> bytes | None:
-        """The stored session ``token`` names; an expired one is removed and not returned."""
-        found = next((session for session in self._sessions if hmac.compare_digest(token, session)), None)
-        if found is None:
-            return None
-        opened, last = self._sessions[found]
-        now = self.clock()
-        if (self.idle is not None and now - last > self.idle) or (
-            self.max_age is not None and now - opened > self.max_age
-        ):
-            del self._sessions[found]
-            return None
-        self._sessions[found] = (opened, now)
-        return found
-
-    def _valid(self, token: bytes) -> bool:
-        if self.reusable:
-            return self._session_for(token) is not None
-        return self._session is not None and hmac.compare_digest(token, self._session)
-
     def _on_session_host(self, scope: Scope) -> bool:
         if self.session_host is None:
             return True
@@ -218,24 +200,18 @@ class LaunchSecretMiddleware:
         for key, value in scope["headers"]:
             if key == b"authorization":
                 scheme, _, token = value.decode("latin-1").partition(" ")
-                if scheme.lower() == "bearer" and hmac.compare_digest(token.strip().encode(), self._secret):
+                if scheme.lower() == "bearer" and secret_equals(token.strip(), self._secret):
                     return True
         return False
 
-    def _cookie_session(self, scope: Scope) -> bytes | None:
-        """The session token of this request's cookie, when it is a valid session (not refreshed otherwise)."""
+    def _cookie_session(self, scope: Scope) -> str | None:
+        """The session of this request's cookie, when it is a valid one (and then refreshed for the idle time). Every
+        value of the cookie counts: another local program may have set a second cookie of the same name."""
         if not self._on_session_host(scope):
             return None
-        for key, value in scope["headers"]:
-            if key != b"cookie":
-                continue
-            try:
-                cookies = SimpleCookie(value.decode("latin-1"))
-            except CookieError:
-                continue
-            morsel = cookies.get(self.cookie)
-            if morsel is not None and self._valid(morsel.value.encode()):
-                return morsel.value.encode()
+        for value in cookie_values(scope["headers"], self.cookie):
+            if self._sessions.known(value):
+                return value
         return None
 
     def _has_session(self, scope: Scope) -> bool:
@@ -264,15 +240,15 @@ class LaunchSecretMiddleware:
 
     async def _launch(self, scope: Scope, send: Send) -> None:
         query = parse_qs(scope.get("query_string", b"").decode("latin-1"))
-        token = (query.get("token") or [""])[0].encode()
-        if scope.get("method") != "GET" or not hmac.compare_digest(token, self._secret):
+        token = (query.get("token") or [""])[0]
+        if scope.get("method") != "GET" or not secret_equals(token, self._secret):
             await _answer(scope, send, 403, "access.launch_invalid", "The launch link is not valid")
             return
         if not self._on_session_host(scope):
             # A session cookie for any other name would also reach the other programs on that name.
             await _answer(scope, send, 403, "access.launch_host", self.refusal)
             return
-        if self._session is not None and not self.reusable:
+        if self._launched and not self.reusable:
             await _answer(
                 scope,
                 send,
@@ -281,17 +257,10 @@ class LaunchSecretMiddleware:
                 "The launch link was already used; restart the desktop app to open a new window",
             )
             return
-        session = secrets.token_urlsafe(32).encode()
-        if self.reusable:
-            now = self.clock()
-            self._sessions[session] = (now, now)
-            while len(self._sessions) > MAX_SESSIONS:
-                self._sessions.pop(next(iter(self._sessions)))
-        else:
-            self._session = session
-        cookie = f"{self.cookie}={session.decode()}; HttpOnly; SameSite=Strict; Path=/"
-        if self.reusable and self.max_age is not None:
-            cookie += f"; Max-Age={int(self.max_age)}"
+        # A new random session per launch; its CSRF value is not used yet (docs/TODO.md, N-02 follow-ups).
+        session, _ = self._sessions.create()
+        self._launched = True
+        cookie = set_cookie(self.cookie, session, max_age=self.max_age if self.reusable else None)
         # Not a redirect: the window's navigation to this URL starts on the app's own page (another site), and a
         # browser does not send a SameSite=Strict cookie on a redirect that a cross-site navigation started.
         # The page below moves on from the backend's own origin, so the cookie goes with the next request.
@@ -324,18 +293,17 @@ class LaunchSecretMiddleware:
             if not self._has_bearer(scope):
                 await _answer(scope, send, 401, "access.launch_required", self.refusal)
                 return
-            ended = len(self._sessions)
-            self._sessions.clear()
+            ended = self._sessions.end_all()
             await _json(send, 200, {"ended": ended})
             return
         session = self._cookie_session(scope)
         if session is not None:
-            self._sessions.pop(session, None)
+            self._sessions.end(session)
         await _page(
             send,
             200,
             "You are signed out. Open Nodestro again with the link that the launcher shows.",
-            cookie=f"{self.cookie}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0",
+            cookie=clear_cookie(self.cookie),
         )
 
 

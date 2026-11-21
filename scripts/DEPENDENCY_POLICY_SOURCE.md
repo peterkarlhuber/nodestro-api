@@ -7,10 +7,10 @@ nodestro-api's outgoing edges. `python scripts/check_dependency_policy.py` check
 checks the copies against the SHA-256 below, runs the checker and probes forbidden requirements.
 
 Origin: `https://github.com/peterkarlhuber/nodestro-studio`, files `scripts/check_dependency_policy.py` and the output
-of `python scripts/check_dependency_policy.py --copy nodestro-api`, at commit `25095d2d56979c5a1b2bec9c80eecb82b8db18cc`
+of `python scripts/check_dependency_policy.py --copy nodestro-api`, at commit `c8106825d414f489546c92b93cc30a710d2868ba`
 
 - `check_dependency_policy.py`: `9c790533d9bc7e34927b48f532dfcb311f6841984430bf501e05304816ff386e`
-- `dependency-policy.json`: `e801858798e28849b32bee4473d2c873b543221ff744e0942d7f483c2a56e1e7`
+- `dependency-policy.json`: `7413991d2bf0c2dfe296bca58ee5484a00a788b7cf4614d9f9b2bf0924df5b02`
 
 ## Updating the copies
 

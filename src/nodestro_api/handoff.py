@@ -19,16 +19,19 @@ Operators can still configure the backend with ``NODESTRO_LAUNCH_SECRET`` (:func
 .launch_secret_from_env`) and ``NODESTRO_VAULT_KEY`` (:func:`vault_key`): both are taken out of ``os.environ`` on the
 first read, so no child process inherits them either; such a value is still visible in the backend's own initial
 environment. After a handoff both variables are removed and ignored.
+
+Reading the descriptor is the shared library's (``nodestro_session.handoff.read_secrets_fd``); the format and the
+error code ``access.handoff_invalid`` are Nodestro's.
 """
 
 from __future__ import annotations
 
-import contextlib
 from dataclasses import dataclass, field
 import json
 import os
 
 from nodestro_runtime.problems import NodestroError
+from nodestro_session.handoff import HandoffError, read_secrets_fd
 
 #: The command line option that names the descriptor.
 OPTION = "--secrets-fd"
@@ -81,42 +84,12 @@ def read(fd: int) -> Handoff:
     """Read and close descriptor ``fd`` and parse what it held; descriptor 0 is replaced by the null device.
 
     The descriptor is made non-inheritable before anything else, so a process started while it is read cannot get it
-    either. It is closed also when what it held is refused."""
-    if fd in (1, 2) or fd < 0:
-        raise _invalid("the descriptor must be 0 (standard input) or 3 and higher")
+    either. It is closed also when what it held is refused (``nodestro_session.handoff.read_secrets_fd``)."""
     try:
-        os.set_inheritable(fd, False)
-    except OSError as error:
-        raise _invalid(f"descriptor {fd} is not open ({error.strerror})") from None
-    chunks: list[bytes] = []
-    size = 0
-    try:
-        while True:
-            chunk = os.read(fd, 8192)
-            if not chunk:
-                break
-            size += len(chunk)
-            if size > MAX_BYTES:
-                raise _invalid(f"more than {MAX_BYTES} bytes")
-            chunks.append(chunk)
-    except OSError as error:
-        raise _invalid(f"descriptor {fd} cannot be read ({error.strerror})") from None
-    finally:
-        _release(fd)
-    return parse(b"".join(chunks))
-
-
-def _release(fd: int) -> None:
-    if fd == 0:
-        # Standard input stays a valid descriptor (the null device) for everything that expects one.
-        null = os.open(os.devnull, os.O_RDONLY)
-        try:
-            os.dup2(null, 0)
-        finally:
-            os.close(null)
-        return
-    with contextlib.suppress(OSError):
-        os.close(fd)
+        payload = read_secrets_fd(fd, max_bytes=MAX_BYTES)
+    except HandoffError as error:
+        raise _invalid(error.reason) from None
+    return parse(payload)
 
 
 def receive(fd: int | None) -> Handoff | None:

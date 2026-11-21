@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Security (N-02, step 1): the local session's protection uses the shared library `nodestro-session`
+  (`>=0.1.0.dev0,<0.2`, standard library only; the studio lock pins its commit). No contract change: paths, codes,
+  texts, cookie names and the open paths stay as they were.
+  - `launch`: the sessions live in `nodestro_session.SessionStore`, which keeps only SHA-256 digests of the session
+    cookies (before: the cookie values) and finds them by digest; the comparisons use `secret_equals`; the cookie
+    headers are built by `set_cookie`/`clear_cookie` (same text as before); the log filter `RedactLaunchToken` is a
+    `SecretRedactor`. Every value of the session cookie is read (`cookie_values`), so a second cookie of the same name
+    that another local program set no longer hides the real session.
+  - `local_access`: `is_loopback`, `split_host`, `split_port`, `is_ip_address` and `listens_everywhere` come from
+    `nodestro_session.hosts` (re-exported); `require_loopback_only` uses `loopback_refusals`.
+  - `handoff`: the descriptor is read by `nodestro_session.read_secrets_fd`.
+  - This covers the product host (`create_product_app`) and every local profile, which install their guards through
+    `install_guards`. `tests/test_session_library.py` shows the library in use and repeats the attack cases on a
+    product app; the existing tests are unchanged.
 - Added (N-04, behind `NODESTRO_CONVERSATIONS`, off by default; `docs/conversations.md`): conversations with own
   agents under `/api/conversations`, in the new router group `conversations` (host interface version 3).
   - Routes: list, create, read, `PATCH` (rename, switch agent or model, offline flag, budget), delete, Markdown
