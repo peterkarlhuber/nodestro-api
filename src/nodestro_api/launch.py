@@ -16,14 +16,14 @@ Open without the cookie: the health check (``/api/health``, the app waits for it
 workflow APIs (``/api/published``, protected by their own keys) and the app contract's discovery (``/api/app``).
 
 An operator can set the secret in ``NODESTRO_LAUNCH_SECRET`` instead. Without either, nothing changes (the
-``nodestro`` command in a terminal), unless ``NODESTRO_TERMINAL_LAUNCH`` is on.
+``nodestro`` command in a terminal), unless ``NODESTRO_TERMINAL_LAUNCH`` is on. This is the desktop's protection
+against other local processes; it is not a user login and does not make the studio API fit for the network
+(:func:`nodestro_api.local_access.require_loopback_only` still applies).
 
 The hardening steps of nodestro-session ``docs/design.md`` 5.2 (NS-002) each sit behind their own switch, all off by
 default (:class:`LaunchHardening`): a TTL for the secret, CSRF value + JSON only + required ``Origin`` for changes, the
 sign-out on the desktop, a secret for the terminal start, the secret in the URL fragment, and the loopback binding of
-the command line. With every switch off, every answer stays the same byte for byte. This is the desktop's protection against other local processes; it is not a user
-login and does not make the studio API fit for the network (:func:`nodestro_api.local_access.require_loopback_only`
-still applies).
+the command line. With every switch off, every answer stays the same byte for byte.
 
 Nodestro Local Docker (the ``local-container`` profile, :mod:`nodestro_api.local_container`) uses the same
 middleware with a persistent *access key* instead of a one-time secret (``reusable``): the link
