@@ -14573,6 +14573,14 @@
             "title": "Efforts",
             "type": "array"
           },
+          "features": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Features",
+            "type": "array"
+          },
           "library_version": {
             "title": "Library Version",
             "type": "string"
@@ -21304,6 +21312,13 @@
             },
             "maxItems": 8,
             "title": "Recommended Skills",
+            "type": "array"
+          },
+          "reference_file_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reference File Ids",
             "type": "array"
           },
           "release_id": {
