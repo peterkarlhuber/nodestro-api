@@ -5,7 +5,8 @@ answers `404 conversation.disabled` and nothing is read or written. The object i
 the runtime's (`nodestro_runtime.conversations`, runtime `docs/conversations.md`).
 
 The routes are in the router group `conversations` (`nodestro_api.router_groups`), so a product app of the host
-(`docs/embedding.md`) can serve them.
+(`docs/embedding.md`) can serve them. `GET /api/meta` lists `conversations` in `features` exactly while the switch
+is on and the app serves that group, so an interface (the studio's conversation area) shows them only then.
 
 | Method and path | Permission | What |
 |---|---|---|
@@ -114,4 +115,14 @@ Rules:
   `conversation.cloud_model_not_chosen` (the answer would use a cloud model nobody chose, such as a cloud judge)
   `422`; the others `400`.
 
-Open: the studio has no UI for it yet (runtime RT-089).
+- **Earlier files (RT-089).** The files sent with earlier messages that are still in the conversation go to each
+  later answer as reference files (`reference_file_ids` of the answer's run): an overview the model reads on demand
+  with the files tool. They are files of this conversation only, so of its owner; another member reaches neither the
+  file (`/api/inputs`, the file route) nor the run, and cannot send it in a conversation of their own (`404
+  conversation.not_found`; `tests/test_conversations_api.py::test_rt089_earlier_files_reach_later_answers_of_the_owner_only`).
+- **A run still going after the delete (RT-089).** The delete route waits up to 10 seconds for a cancelled answer;
+  a run still going then is hidden from everyone and deleted by the runtime as soon as it stops (runtime
+  `docs/conversations.md`).
+
+The studio's conversation area (nodestro-studio, shown only with `conversations` in `features`) is the interface;
+the runtime's RT-089 lists what is still open.

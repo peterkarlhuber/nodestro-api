@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Conversations (RT-089 follow-ups; still behind `NODESTRO_CONVERSATIONS`, off by default):
+  - `GET /api/meta` has `features`: `conversations` while the switch is on and the app serves the router group
+    `conversations` (`api.served_features`; `include_groups` records the served groups in `app.state.router_groups`).
+    The studio shows its conversation area only then. OpenAPI: new optional field `Meta.features`.
+  - An answer's run lists the earlier files of its conversation it was offered (`Run.reference_file_ids`, from the
+    runtime; OpenAPI: new field). Another member reaches neither those files nor the run (new test).
+  - A run still going after its conversation was deleted is deleted by the runtime once it stops (needs the pinned
+    runtime).
 - Security (NS-002, the hardening steps of nodestro-session `docs/design.md` 5.2): six switches of the desktop launch,
   each off by default (README, "Hardening switches of the desktop launch"). With every switch off the answers stay
   byte for byte the ones before (`tests/test_launch_hardening.py` against answers recorded from 6783a52).

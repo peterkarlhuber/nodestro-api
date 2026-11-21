@@ -457,3 +457,50 @@ def test_l5_the_answer_stream_ends_when_the_conversation_is_deleted(
     found = events(received[0])
     assert found[0][0] == "snapshot"
     assert found[-1] == ("end", {"reason": "deleted"})
+
+
+# ---- RT-089 follow-ups ---------------------------------------------------------------------------------------------
+
+
+def test_meta_names_conversations_only_while_they_are_served(
+    make_app: Callable[..., TestClient], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The studio shows its conversation area only when ``/api/meta`` lists the feature (off by default)."""
+    from fastapi import FastAPI
+
+    from nodestro_api.api import served_features
+
+    client = make_app()
+    assert client.get("/api/meta").json()["features"] == []
+    monkeypatch.setenv(CONVERSATIONS_ENV, "1")
+    assert client.get("/api/meta").json()["features"] == ["conversations"]
+    assert served_features(FastAPI()) == []  # an app without the router group does not claim it
+
+
+def test_rt089_earlier_files_reach_later_answers_of_the_owner_only(chatting: TestClient) -> None:
+    """A file sent with an earlier message is offered to the next answer (its run's reference files); another member
+    reaches neither the file nor the run, and cannot send it in a conversation of their own."""
+    client = chatting
+    alice = Principal(id="usr_alice", role="owner", permissions=ALL_PERMISSIONS)
+    bob = Principal(id="usr_bob", role="owner", permissions=ALL_PERMISSIONS)
+    _as(client, alice)
+    conversation_id = conversation(client)["id"]
+    uploaded = client.post(f"{BASE}/{conversation_id}/files", files=[("files", ("a.txt", b"hello", "text/plain"))])
+    file_id = uploaded.json()[0]["file"]["id"]
+    first = client.post(f"{BASE}/{conversation_id}/messages", json={"content": "Keep it", "file_ids": [file_id]})
+    wait(client, first.json()["assistant"]["run_id"])
+    second = client.post(f"{BASE}/{conversation_id}/messages", json={"content": "And now?"})
+    assert second.status_code == 201, second.text
+    run_id = second.json()["assistant"]["run_id"]
+    wait(client, run_id)
+    run = client.get(f"/api/runs/{run_id}").json()
+    assert (run["file_ids"], run["reference_file_ids"]) == ([], [file_id])
+    assert [(item["file_id"], item["mode"]) for item in run["nodes"]["agent"]["files"]] == [(file_id, "overview")]
+
+    _as(client, bob)
+    assert client.get(f"/api/runs/{run_id}").status_code == 404
+    assert client.get(f"/api/inputs/{file_id}").status_code == 404
+    assert client.get(f"{BASE}/{conversation_id}/files/{file_id}/content").status_code == 404
+    own = conversation(client)["id"]
+    refused = client.post(f"{BASE}/{own}/messages", json={"content": "x", "file_ids": [file_id]})
+    assert (refused.status_code, refused.json()["code"]) == (404, "conversation.not_found")
