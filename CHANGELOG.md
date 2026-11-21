@@ -15,6 +15,9 @@
     while unset) is new in both OpenAPI documents. A test series' judge refuses a cloud judge for such a case
     (`error_code` `offline.cloud_model` on the verdict). Uses the runtime's `content_offline_scope` and
     `connect_model(..., offline=...)`.
+  - Re-review fixes: the problem code list has the runtime's new `offline.shared_memory` (`fields`, `scope`; `400`
+    where a route raises it): an offline agent gets run memory only. A conversation with earlier offline answers
+    stays on local models (`offline.cloud_model` when it sends with a cloud model). No route or schema changed.
 
 - Security (NS-002, the hardening steps of nodestro-session `docs/design.md` 5.2): six switches of the desktop launch,
   each off by default (README, "Hardening switches of the desktop launch"). With every switch off the answers stay
