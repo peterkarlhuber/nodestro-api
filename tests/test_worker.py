@@ -903,3 +903,32 @@ def test_a_test_series_on_the_server_finishes_when_the_worker_ran_its_runs(
         time.sleep(0.1)
     assert series["status"] == "finished", series
     assert series["results"][0]["run_status"] == "succeeded"
+
+
+def test_w3p4a_l3_the_leader_deletes_the_runs_of_deleted_conversations(
+    server: Server, make_worker: Callable[..., Background]
+) -> None:
+    """RT-089 on a server: a conversation's delete waits a few seconds for an answer still going and leaves its run
+    when it takes longer; the leader deletes such runs once they stopped, for every active tenant. Other runs, and the
+    answers of conversations that still exist, stay."""
+    from nodestro_runtime.schemas import Run
+
+    alice = server.member("acme", "alice", "owner")
+    leader, other = make_worker({"ALPHA": [text("one"), text("two")]}), make_worker()
+    left, kept = _start(alice), _start(alice)
+    for _ in range(2):
+        leader.call(leader.worker.runner.run_once())
+    for run_id in (left, kept):
+        assert _wait(alice, run_id)["status"] == "succeeded"
+    store = leader.worker.scheduling.get("acme").store
+    orphan = store.get("runs", left, Run)
+    assert orphan is not None
+    # The answer's run of a conversation deleted while it ran (its document is gone).
+    store.put("runs", left, orphan.model_copy(update={"trigger": "conversation", "trigger_ref": "conv_deleted"}))
+
+    assert leader.call(leader.worker.fire_schedules()) == []  # takes the scheduler lock
+    assert other.call(other.worker.sweep_conversation_runs()) == {}  # only the leader sweeps
+    assert leader.call(leader.worker.sweep_conversation_runs()) == {"acme": 1}
+    assert store.get_raw("runs", left) is None
+    assert store.get("runs", kept, Run) is not None
+    assert leader.call(leader.worker.sweep_conversation_runs()) == {}  # nothing left
