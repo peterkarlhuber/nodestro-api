@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+import tempfile
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -142,3 +143,19 @@ def test_writing_needs_admin_and_a_person(granting: TestClient, docs: Path) -> N
         refused = granting.post(FOLDERS, json={"name": "Docs", "path": str(docs)})
         assert (refused.status_code, refused.json()["code"]) == (403, "access.person_required"), machine
     assert AccessRules(_store(granting)).grants() == []
+
+
+def test_the_secret_files_are_left_out_unless_an_admin_turns_it_off(
+    granting: TestClient, docs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """N-10 review L8 and L7: every grant leaves out common secret files unless the request turns that off; the
+    temporary folder itself cannot be granted, a folder inside it can."""
+    default = granting.post(FOLDERS, json={"name": "Docs", "path": str(docs)})
+    assert default.status_code == 201, default.text
+    assert default.json()["folder"]["default_excludes"] is True
+    keys = granting.post(FOLDERS, json={"name": "Keys", "path": str(docs / "notes"), "default_excludes": False})
+    assert keys.status_code == 201, keys.text
+    assert keys.json()["folder"]["default_excludes"] is False
+    monkeypatch.setattr(tempfile, "tempdir", str(docs.parent))
+    refused = granting.post(FOLDERS, json={"name": "Temp", "path": str(docs.parent)})
+    assert (refused.status_code, refused.json()["params"]) == (422, {"reason": "temp_root"})

@@ -66,6 +66,9 @@ class FolderGrantIn(BaseModel):
     limits: FolderLimits | None = None
     #: Stored only: indexing a granted folder is a later step.
     index: bool = False
+    #: Leave out the common secret files (``.env*``, keys, SSH keys, registry credentials, password databases;
+    #: ``nodestro_runtime.folders.DEFAULT_EXCLUDES``). Only an administrator turns it off, for this grant.
+    default_excludes: bool = True
     #: ``all`` agents, or only the ``agents`` named (``<workflow id>/<node id>``).
     scope: Literal["all", "agents"] = "all"
     agents: list[str] = Field(default_factory=list, max_length=200)
@@ -123,6 +126,7 @@ def grant_folder(body: FolderGrantIn, ctx: Ctx, request: Request) -> FolderGrant
         exclude=body.exclude,
         limits=body.limits,
         index=body.index,
+        default_excludes=body.default_excludes,
         scope=body.scope,
         agents=body.agents,
         mode=body.mode,
