@@ -29,6 +29,8 @@
     off the runtime's default excludes of common secret files for one grant) and `FolderGrant.default_excludes` in
     both OpenAPI documents; the new `folder.not_grantable` reason `temp_root` (a shared temporary folder itself);
     `fs.root_changed` in the problem code list.
+  - Re-review: the docs name the extended default excludes (`*.p12`, `*.pfx`, `*.ppk`, `credentials*`) and the
+    runtime's grant event `folder.granted` (code `default_excludes_off`).
 
 - Conversations (RT-089 follow-ups; still behind `NODESTRO_CONVERSATIONS`, off by default):
   - `GET /api/meta` has `features`: `conversations` while the switch is on and the app serves the router group
