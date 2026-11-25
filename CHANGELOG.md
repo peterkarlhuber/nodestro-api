@@ -12,6 +12,8 @@
   - A test series' AI judge of such a run's output needs a grant too (a run that cannot be read fails closed).
   - Contract: `Run.granted_content` (boolean, left out while unset) and the conversation's `provenance` value
     `granted_content` next to `unchecked`, in both OpenAPI documents. Additive.
+  - Files a person uploads into an assistant chat are not granted content (the person sends them to the model they
+    chose); documented in API-074 (review L2).
   - Tests: `tests/test_content_provenance.py`. See TODO API-074.
 
 - Granted folders (N-10, runtime `claude/w3-n10`), off by default (`NODESTRO_FOLDER_GRANTS=1`; never on a server):

@@ -54,8 +54,12 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
   `Run.granted_content` and the conversation value `provenance: granted_content`. Open:
   - the refusal comes when a message is sent, not when the object is attached (N-09 refuses an offline run at
     attaching already);
-  - the other callers of `connect_model` (architect, guide, skills, model choice) send no run content and pass none.
-- **Next step:** Independent review with runtime RT-094; activation is the owner's decision.
+  - the other callers of `connect_model` (architect, guide, skills, model choice) send no run content and pass none;
+  - files a person uploads into an assistant chat are not granted content: the person hands them to the model they
+    chose for that chat, so sending them is the person's own act (review L2, documented here and in the runtime's
+    `docs/content-provenance.md`). A local model server elsewhere counts as a cloud model here too (runtime
+    `RunManager.leaves_computer`, through `connect_model`).
+- **Next step:** Re-review of the fixes with runtime RT-094; activation is the owner's decision.
 
 ### API-073 · Conversation access: residual points after the W3-S1 audit
 
