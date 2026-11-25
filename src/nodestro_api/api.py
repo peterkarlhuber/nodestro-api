@@ -22,7 +22,7 @@ from nodestro_runtime.agent_builder import ConfigIssue
 from nodestro_runtime.agent_test import AgentTestIn, AgentTestResult
 from nodestro_runtime.catalog import SERVER_TOOLS, ModelInfo, ServerToolInfo, model_capabilities, models
 from nodestro_runtime.contracts import contract_of
-from nodestro_runtime.conversations import NO_OWNER
+from nodestro_runtime.conversations import NO_OWNER, conversations_enabled
 from nodestro_runtime.engine import add_usage, check_workflow
 from nodestro_runtime.input_files import is_input_id
 from nodestro_runtime.knowledge import KnowledgeFile
@@ -511,6 +511,9 @@ class Meta(BaseModel):
     #: The product this API serves (AD-05): ``desktop`` (one person, this computer), ``local-container``
     #: (Nodestro Local Docker: one person, a container on this computer) or ``server`` (an organization's server).
     profile: ProfileKind = "desktop"
+    #: Areas this API serves right now that are off by default, so an interface shows them only then:
+    #: ``conversations`` (N-04: ``NODESTRO_CONVERSATIONS=1`` and the app serves the router group ``conversations``).
+    features: list[str] = []
 
 
 # Whether this API process serves; on a server also whether it reaches its database (``503`` if not, D-10).
@@ -526,8 +529,16 @@ async def health(request: Request, response: Response) -> dict[str, str]:
     return {"status": "ok", "database": "ok"}
 
 
+def served_features(app: Any) -> list[str]:
+    """The off-by-default areas ``app`` serves right now (``Meta.features``)."""
+    found: list[str] = []
+    if conversations_enabled() and "conversations" in getattr(app.state, "router_groups", ()):
+        found.append("conversations")
+    return found
+
+
 @core_router.get("/meta", dependencies=READ)
-def meta(ctx: Ctx) -> Meta:
+def meta(ctx: Ctx, request: Request) -> Meta:
     return Meta(
         version=__version__,
         library_version=library_version,
@@ -538,6 +549,7 @@ def meta(ctx: Ctx) -> Meta:
         models=models(ctx.pricing),
         server_tools=list(SERVER_TOOLS.values()),
         profile=ctx.profile.kind,
+        features=served_features(request.app),
     )
 
 
