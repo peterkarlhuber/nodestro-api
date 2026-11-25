@@ -12,6 +12,25 @@
   - `output_folder.py` takes its system folders from the path guard (`orkexa.fs.system_folders`,
     `orkexa.fs.allowed_folders`) instead of its own list; it now also refuses `/root` (unless it is the home folder).
 
+- Conversations (RT-089 follow-ups; still behind `NODESTRO_CONVERSATIONS`, off by default):
+  - `GET /api/meta` has `features`: `conversations` while the switch is on and the app serves the router group
+    `conversations` (`api.served_features`; `include_groups` records the served groups in `app.state.router_groups`).
+    The studio shows its conversation area only then. OpenAPI: new optional field `Meta.features`.
+  - An answer's run lists the earlier files of its conversation it was offered (`Run.reference_file_ids`, from the
+    runtime; OpenAPI: new field). Another member reaches neither those files nor the run (new test).
+  - A run still going after its conversation was deleted is deleted by the runtime once it stops (needs the pinned
+    runtime).
+- Security (W3-P4a review, M-1; needs the pinned runtime): `POST /api/runs/import` stores an imported trace without the
+  trace's `file_ids` and `reference_file_ids`, and a trace exported at a decision as stopped; deciding or continuing
+  an imported run answers `400 run.imported` (new code in `/api/error-codes`; a retry was already refused with
+  `resume.imported`). A run never gets a file of a
+  conversation unless it acts for the person who uploaded it. Before, a member could import a paused trace naming
+  another member's conversation file, approve it and have the agent read the file (tests
+  `test_w3p4a_m1_*` in `tests/test_conversations_api.py`).
+- Server worker (W3-P4a review, L-3): the leader deletes the stopped runs of answers whose conversation was deleted
+  for every active tenant, every `chat_file_every` seconds (`ServerWorker.sweep_conversation_runs`, duty
+  `worker-conversation-runs`): a delete that outlasts its 10-second wait no longer leaves the run until someone
+  deletes it by hand. The desktop sweeps when it starts.
 - Conversations (N-05, contract only; nodestro-runtime `claude/w3-n05`): the conversation fields `history` (`trim`
   default, `summarize`) and `summary_model`, and `summary` (`HistorySummary`) on each answer, in both OpenAPI
   documents. Long conversations are fitted into the model's context window by the runtime. The error catalog gains

@@ -128,8 +128,10 @@ def check_groups(names: Iterable[str]) -> frozenset[str]:
 
 
 def include_groups(app: FastAPI, groups: Collection[str], workspace: Nodestro | None) -> None:
-    """Include the routers of ``groups`` in the registry's order."""
+    """Include the routers of ``groups`` in the registry's order; ``app.state.router_groups`` names the groups it
+    serves (``/api/meta`` reads it for ``features``)."""
     selected = check_groups(groups)
+    app.state.router_groups = frozenset(getattr(app.state, "router_groups", frozenset())) | selected
     for slot in SLOTS:
         if slot.group in selected:
             app.include_router(slot.build(workspace))

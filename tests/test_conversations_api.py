@@ -486,3 +486,144 @@ def test_l5_the_answer_stream_ends_when_the_conversation_is_deleted(
     found = events(received[0])
     assert found[0][0] == "snapshot"
     assert found[-1] == ("end", {"reason": "deleted"})
+
+
+# ---- RT-089 follow-ups ---------------------------------------------------------------------------------------------
+
+
+def test_meta_names_conversations_only_while_they_are_served(
+    make_app: Callable[..., TestClient], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The studio shows its conversation area only when ``/api/meta`` lists the feature (off by default)."""
+    from fastapi import FastAPI
+
+    from nodestro_api.api import served_features
+
+    client = make_app()
+    assert client.get("/api/meta").json()["features"] == []
+    monkeypatch.setenv(CONVERSATIONS_ENV, "1")
+    assert client.get("/api/meta").json()["features"] == ["conversations"]
+    assert served_features(FastAPI()) == []  # an app without the router group does not claim it
+
+
+def test_rt089_earlier_files_reach_later_answers_of_the_owner_only(chatting: TestClient) -> None:
+    """A file sent with an earlier message is offered to the next answer (its run's reference files); another member
+    reaches neither the file nor the run, and cannot send it in a conversation of their own."""
+    client = chatting
+    alice = Principal(id="usr_alice", role="owner", permissions=ALL_PERMISSIONS)
+    bob = Principal(id="usr_bob", role="owner", permissions=ALL_PERMISSIONS)
+    _as(client, alice)
+    conversation_id = conversation(client)["id"]
+    uploaded = client.post(f"{BASE}/{conversation_id}/files", files=[("files", ("a.txt", b"hello", "text/plain"))])
+    file_id = uploaded.json()[0]["file"]["id"]
+    first = client.post(f"{BASE}/{conversation_id}/messages", json={"content": "Keep it", "file_ids": [file_id]})
+    wait(client, first.json()["assistant"]["run_id"])
+    second = client.post(f"{BASE}/{conversation_id}/messages", json={"content": "And now?"})
+    assert second.status_code == 201, second.text
+    run_id = second.json()["assistant"]["run_id"]
+    wait(client, run_id)
+    run = client.get(f"/api/runs/{run_id}").json()
+    assert (run["file_ids"], run["reference_file_ids"]) == ([], [file_id])
+    assert [(item["file_id"], item["mode"]) for item in run["nodes"]["agent"]["files"]] == [(file_id, "overview")]
+
+    _as(client, bob)
+    assert client.get(f"/api/runs/{run_id}").status_code == 404
+    assert client.get(f"/api/inputs/{file_id}").status_code == 404
+    assert client.get(f"{BASE}/{conversation_id}/files/{file_id}/content").status_code == 404
+    own = conversation(client)["id"]
+    refused = client.post(f"{BASE}/{own}/messages", json={"content": "x", "file_ids": [file_id]})
+    assert (refused.status_code, refused.json()["code"]) == (404, "conversation.not_found")
+
+
+# ---- W3-P4a review M-1: an imported trace never runs and never reaches another member's file ----------------------
+
+SECRET = "ALICE-SECRET-4f1d"
+
+
+@pytest.fixture
+def imported(make_app: Callable[..., TestClient], monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, str, str]:
+    """Alice's conversation file, and Bob's import of a trace paused at an approval that names it as a reference file
+    and a run file (the reviewer's proof of concept, W3-P4a M-1)."""
+    from test_flow import edge, save
+    from test_flow import wait as wait_run
+    from test_runs import agent_node
+
+    monkeypatch.setenv(CONVERSATIONS_ENV, "1")
+    client = make_app({"AGENT": [text("ok")], "READER": []})
+    alice = Principal(id="usr_alice", role="owner", permissions=ALL_PERMISSIONS)
+    bob = Principal(id="usr_bob", role="owner", permissions=ALL_PERMISSIONS)
+
+    _as(client, alice)
+    conversation_id = client.post(BASE, json={"agent": {"template_id": template(client)}, "model": CLOUD}).json()["id"]
+    uploaded = client.post(
+        f"{BASE}/{conversation_id}/files", files=[("files", ("plan.txt", SECRET.encode(), "text/plain"))]
+    )
+    file_id = uploaded.json()[0]["file"]["id"]
+    sent = client.post(f"{BASE}/{conversation_id}/messages", json={"content": "keep", "file_ids": [file_id]})
+    wait(client, sent.json()["assistant"]["run_id"])
+
+    _as(client, bob)
+    assert client.get(f"/api/inputs/{file_id}").status_code == 404  # Bob cannot reach the file directly
+    workflow_id = save(
+        client,
+        [
+            {"id": "start", "type": "start"},
+            {"id": "check", "type": "approval", "label": "Review"},
+            agent_node("reader", "READER"),
+            {"id": "out", "type": "output"},
+        ],
+        [edge("start", "check"), edge("check", "reader", "approved"), edge("reader", "out")],
+    )
+    started = client.post(f"/api/workflows/{workflow_id}/runs", json={"input": "hi"})
+    paused = wait_run(client, started.json()["id"])
+    assert paused["status"] == "paused"
+    trace = client.get(f"/api/runs/{paused['id']}").json()
+    trace.update(reference_file_ids=[file_id], file_ids=[file_id], input="hi again")
+    response = client.post("/api/runs/import", content=json.dumps(trace))
+    assert response.status_code == 201, response.text
+    script = client.fake.messages.script["READER"]  # type: ignore[attr-defined]
+    script += [tool_use("input_files", {"command": "read", "file_id": file_id}), text("done")]
+    client.calls_before = len(client.fake.messages.calls)  # type: ignore[attr-defined]  # Alice's own answer read it
+    return client, file_id, response.json()["run"]["id"]
+
+
+def _bobs_calls(client: TestClient) -> str:
+    """The model requests since Bob's import."""
+    calls = client.fake.messages.calls[client.calls_before :]  # type: ignore[attr-defined]
+    return json.dumps(calls, default=str)
+
+
+def test_w3p4a_m1_an_imported_trace_is_stopped_names_no_files_and_is_never_executed(
+    imported: tuple[TestClient, str, str],
+) -> None:
+    client, _file_id, run_id = imported
+    stored = client.get(f"/api/runs/{run_id}").json()
+    assert stored["status"] == "cancelled" and stored["imported_at"] is not None
+    assert stored["file_ids"] == [] and stored["reference_file_ids"] == []
+    decided = client.post(f"/api/runs/{run_id}/approvals/check", json={"decision": "approved"})
+    assert decided.status_code == 400, decided.text
+    assert client.get(f"/api/runs/{run_id}").json()["status"] == "cancelled"
+    assert SECRET not in _bobs_calls(client)
+
+
+def test_w3p4a_m1_an_imported_run_stored_paused_is_never_executed_and_reads_no_file(
+    imported: tuple[TestClient, str, str],
+) -> None:
+    """An imported run stored as paused (an import of an earlier version) is refused with ``run.imported``: its
+    approval is not recorded, the run does not continue, and no model reads the file it names."""
+    from nodestro_runtime.schemas import Run
+
+    client, file_id, run_id = imported
+    ctx = client.app.state.nodestro  # type: ignore[attr-defined]
+    stored = ctx.runs.get(run_id)
+    source = ctx.runs.get(stored.source_run_id)
+    legacy = source.model_copy(
+        update={"id": "run_legacy_import", "imported_at": stored.imported_at, "reference_file_ids": [file_id]}
+    )
+    ctx.store.put("runs", legacy.id, legacy)
+    decided = client.post(f"/api/runs/{legacy.id}/approvals/check", json={"decision": "approved"})
+    assert (decided.status_code, decided.json()["code"]) == (400, "run.imported")
+    kept = ctx.store.get("runs", legacy.id, Run)
+    assert kept.status == "paused" and kept.nodes["check"].approval is None
+    time.sleep(0.2)
+    assert SECRET not in _bobs_calls(client)

@@ -1019,6 +1019,7 @@
   "run.failed": {"params": [], "source": "both"},
   "run.finished": {"params": ["run_status"], "source": "api"},
   "run.gone": {"params": [], "source": "runtime"},
+  "run.imported": {"params": [], "source": "runtime"},
   "run.incomplete": {"params": [], "source": "runtime"},
   "run.interrupted": {"params": [], "source": "both"},
   "run.local_model_missing": {"params": ["model", "provider"], "source": "both"},
