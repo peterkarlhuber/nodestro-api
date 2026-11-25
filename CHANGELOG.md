@@ -23,6 +23,10 @@
     `search_files`). The problem code list has the new `folder.*` codes and the path guard's `fs.*` codes.
   - `output_folder.py` takes its system folders from the path guard (`orkexa.fs.system_folders`,
     `orkexa.fs.allowed_folders`) instead of its own list; it now also refuses `/root` (unless it is the home folder).
+  - From the independent review of N-10: `FolderGrantIn.default_excludes` (default `true`; an administrator turns
+    off the runtime's default excludes of common secret files for one grant) and `FolderGrant.default_excludes` in
+    both OpenAPI documents; the new `folder.not_grantable` reason `temp_root` (a shared temporary folder itself);
+    `fs.root_changed` in the problem code list.
 
 - Conversations (RT-089 follow-ups; still behind `NODESTRO_CONVERSATIONS`, off by default):
   - `GET /api/meta` has `features`: `conversations` while the switch is on and the app serves the router group

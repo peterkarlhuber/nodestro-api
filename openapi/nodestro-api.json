@@ -9979,6 +9979,11 @@
             "title": "Created By",
             "type": "string"
           },
+          "default_excludes": {
+            "default": true,
+            "title": "Default Excludes",
+            "type": "boolean"
+          },
           "exclude": {
             "default": [],
             "items": {
@@ -10072,6 +10077,11 @@
             "maxItems": 200,
             "title": "Agents",
             "type": "array"
+          },
+          "default_excludes": {
+            "default": true,
+            "title": "Default Excludes",
+            "type": "boolean"
           },
           "exclude": {
             "items": {

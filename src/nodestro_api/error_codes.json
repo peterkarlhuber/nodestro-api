@@ -546,6 +546,7 @@
   "fs.not_a_directory": {"params": [], "source": "runtime"},
   "fs.not_found": {"params": [], "source": "runtime"},
   "fs.protected_root": {"params": [], "source": "runtime"},
+  "fs.root_changed": {"params": [], "source": "runtime"},
   "fs.too_complex": {"params": [], "source": "runtime"},
   "fs.too_large": {"params": [], "source": "runtime"},
   "fs.unsupported_type": {"params": ["path"], "source": "runtime"},

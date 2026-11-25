@@ -12,7 +12,7 @@ is read or written.
 |---|---|---|
 | `GET /api/folders/state` | `read` | `enabled`, the default `limits` and the `bounds` of each limit (`lowest`, `highest`). Always answers, so the studio knows whether to show the folders page |
 | `GET /api/folders` | `admin` | Every folder grant of the workspace, newest first, with revoked and expired ones (`status`) |
-| `POST /api/folders` | `admin` | Grant a folder for reading (`201`): `name`, `path` (absolute), `include`, `exclude`, `limits`, `index`, `scope` (`all` or `agents`), `agents`, `mode`, `expires_at` |
+| `POST /api/folders` | `admin` | Grant a folder for reading (`201`): `name`, `path` (absolute), `include`, `exclude`, `limits`, `index`, `default_excludes` (default `true`: the common secret files `.env*`, `*.pem`, `*.key`, `id_rsa*`, `id_ed25519*`, `.npmrc`, `.pypirc`, `.netrc`, `*.kdbx` are left out; `false` turns that off for this grant), `scope` (`all` or `agents`), `agents`, `mode`, `expires_at` |
 | `GET /api/folders/{id}` | `admin` | One folder grant. An unknown id answers `404 folder.not_found` |
 | `GET /api/folders/{id}/accesses` | `admin` | Its access log, newest first (`limit`, at most 1,000): every call of the folder tools with agent, run, outcome and code, never a path |
 | `DELETE /api/folders/{id}` | `admin` | Revoke a folder grant. The next tool call on it is refused. Revoking twice changes nothing |
@@ -40,7 +40,7 @@ is the access model's (`access_granted`, `access_grant_revoked`). A grant for "t
 | `folder.disabled` | 404 | The switch is off, or this is a server |
 | `folder.not_found` | 404 | No folder grant has this id (`id`) |
 | `folder.name_taken` | 409 | An active folder grant already has this name (compared case-folded) |
-| `folder.not_grantable` | 422 | The folder can never be granted. `reason`: `protected_root` (a drive or file-system root, the home folder or a folder above it, a user's home folder, a system folder, a credential folder, Nodestro's data folder or a folder inside it), `network_path`, `link`, `not_found`, `not_a_directory`, `invalid_path`, `safety_limit` |
+| `folder.not_grantable` | 422 | The folder can never be granted. `reason`: `protected_root` (a drive or file-system root, the home folder or a folder above it, a user's home folder, a system folder, a credential folder, Nodestro's data folder or a folder inside it), `network_path`, `link`, `not_found`, `not_a_directory`, `invalid_path`, `safety_limit`, `temp_root` (a shared temporary folder itself, such as `/tmp`; a folder inside one can be granted) |
 | `folder.invalid_name` | 422 | The name is empty, longer than 80 characters, not printable or has a slash |
 | `folder.invalid_pattern` | 422 | An include or exclude pattern is not valid |
 | `access.person_required` | 403 | The caller is not a person |
