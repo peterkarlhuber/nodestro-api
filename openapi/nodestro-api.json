@@ -1239,8 +1239,11 @@
             "title": "Owner"
           },
           "provenance": {
-            "const": "unchecked",
             "default": "unchecked",
+            "enum": [
+              "unchecked",
+              "granted_content"
+            ],
             "title": "Provenance",
             "type": "string"
           },
@@ -21718,6 +21721,11 @@
               }
             ],
             "title": "Flow State"
+          },
+          "granted_content": {
+            "default": false,
+            "title": "Granted Content",
+            "type": "boolean"
           },
           "id": {
             "title": "Id",

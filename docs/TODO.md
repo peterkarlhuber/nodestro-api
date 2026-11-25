@@ -12,7 +12,7 @@
 | P0 Critical | 0 |
 | P1 High | 0 |
 | P2 Medium | 6 |
-| P3 Low | 12 |
+| P3 Low | 13 |
 | P4 Optional | 7 |
 
 **Release blockers:** None for this repository; every entry below is not a release blocker. The next desktop
@@ -42,6 +42,20 @@ None known.
 
 Tool approvals (`NODESTRO_TOOL_APPROVALS`, off by default and staying off) need the independent S-2 review tracked as
 nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes here. No separate entry in this file.
+
+### API-074 · Egress protection by content provenance (N-08): the api's part
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** nodestro-runtime RT-094 and `docs/content-provenance.md`,
+  `tests/test_content_provenance.py`
+- **What:** Behind the runtime's `NODESTRO_CONTENT_PROVENANCE` (default off, only with `NODESTRO_ACCESS_GRANTS`): the
+  assistant's context (an attached or earlier sent run that holds content of a granted source, the selected files of
+  a memory space, the text of a knowledge file) and a test series' AI judge (the output of such a run) need a grant
+  for a cloud model (`Workspace.connect_model(..., shared_content=)`; `access.missing_grant`). The contract has
+  `Run.granted_content` and the conversation value `provenance: granted_content`. Open:
+  - the refusal comes when a message is sent, not when the object is attached (N-09 refuses an offline run at
+    attaching already);
+  - the other callers of `connect_model` (architect, guide, skills, model choice) send no run content and pass none.
+- **Next step:** Independent review with runtime RT-094; activation is the owner's decision.
 
 ### API-073 · Conversation access: residual points after the W3-S1 audit
 

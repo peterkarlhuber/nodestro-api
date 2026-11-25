@@ -721,8 +721,11 @@ class Benchmarks:
             # cannot be read fails closed.
             run = self.ctx.runs.get(run_id) if run_id else None
             scope = self.ctx.runs.content_offline_scope(run) if run is not None else "agent"
+            # N-08: the output of a run with content of a granted source needs a grant for a cloud judge (fails closed
+            # for a run that cannot be read).
+            granted = self.ctx.runs.content_granted(run) if run is not None else self.ctx.runs.provenance_on()
             # Nobody waits for the judge: unattended denies and limits apply (N-06).
-            connection = self.ctx.connect_model(judge, attended=False, offline=scope)
+            connection = self.ctx.connect_model(judge, attended=False, offline=scope, shared_content=granted)
             evaluator = Evaluator(
                 model=model_id(judge),
                 options=connection.options(),
