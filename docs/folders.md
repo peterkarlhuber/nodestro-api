@@ -12,7 +12,7 @@ is read or written.
 |---|---|---|
 | `GET /api/folders/state` | `read` | `enabled`, the default `limits` and the `bounds` of each limit (`lowest`, `highest`). Always answers, so the studio knows whether to show the folders page |
 | `GET /api/folders` | `admin` | Every folder grant of the workspace, newest first, with revoked and expired ones (`status`) |
-| `POST /api/folders` | `admin` | Grant a folder for reading (`201`): `name`, `path` (absolute), `include`, `exclude`, `limits`, `index`, `default_excludes` (default `true`: the common secret files `.env*`, `*.pem`, `*.key`, `id_rsa*`, `id_ed25519*`, `.npmrc`, `.pypirc`, `.netrc`, `*.kdbx` are left out; `false` turns that off for this grant), `scope` (`all` or `agents`), `agents`, `mode`, `expires_at` |
+| `POST /api/folders` | `admin` | Grant a folder for reading (`201`): `name`, `path` (absolute), `include`, `exclude`, `limits`, `index`, `default_excludes` (default `true`: the common secret files `.env*`, `*.pem`, `*.key`, `id_rsa*`, `id_ed25519*`, `.npmrc`, `.pypirc`, `.netrc`, `*.kdbx`, `*.p12`, `*.pfx`, `*.ppk`, `credentials*` are left out; the grant is logged as `folder.granted`, with code `default_excludes_off` when they are off; `false` turns that off for this grant), `scope` (`all` or `agents`), `agents`, `mode`, `expires_at` |
 | `GET /api/folders/{id}` | `admin` | One folder grant. An unknown id answers `404 folder.not_found` |
 | `GET /api/folders/{id}/accesses` | `admin` | Its access log, newest first (`limit`, at most 1,000): every call of the folder tools with agent, run, outcome and code, never a path |
 | `DELETE /api/folders/{id}` | `admin` | Revoke a folder grant. The next tool call on it is refused. Revoking twice changes nothing |
