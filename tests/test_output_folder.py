@@ -17,7 +17,7 @@ import pytest
 from test_export import _download, _export, _extract
 from test_published_api import PUBLISHED, new_key, publish
 
-from nodestro_api.output_folder import FILE, OutputFolder
+from nodestro_api.output_folder import FILE, OutputFolder, system_folders
 from nodestro_api.serving import ApiError
 
 from conftest import text
@@ -183,18 +183,24 @@ def test_browser_lists_folder_names_only(package: SimpleNamespace, tmp_path: Pat
     (place / ".hidden").mkdir()
     (place / "secret.txt").write_text("never listed")
     (place / "to-data").symlink_to(package.data, target_is_directory=True)
+    (place / "to-results").symlink_to(package.default, target_is_directory=True)
     output = _folder(package)
     view = output.browse(str(place))
-    assert [item["name"] for item in view["folders"]] == ["alpha", "Beta", "to-data"]
-    assert [item["usable"] for item in view["folders"]] == [True, True, False]
+    # The data folder is not shown at all (N-11: the path guard's folder browser), not even through a link; a link
+    # to another folder is shown as its target.
+    assert [item["name"] for item in view["folders"]] == ["alpha", "Beta", "to-results"]
+    assert [item["usable"] for item in view["folders"]] == [True, True, True]
+    assert view["folders"][2]["path"] == str(package.default)
     assert "secret" not in json.dumps(view) and "never listed" not in json.dumps(view)
+    assert _code(lambda: output.browse(str(package.data))) == "output.protected"
+    assert _code(lambda: output.browse(str(place / "to-data"))) == "output.protected"
     assert view["path"] == str(place.resolve()) and view["parent"] == str(place.resolve().parent)
     assert {item["kind"] for item in view["places"]} >= {"home", "current"}
     assert _code(lambda: output.browse(str(place / "secret.txt"))) == "output.not_found"
     assert _code(lambda: output.browse("relative")) == "output.not_absolute"
-    # The package root is listed, but its code folders are marked unusable.
+    # The package root is listed, but its code folders are marked unusable and its data folder is not shown.
     listed = {item["name"]: item["usable"] for item in output.browse(str(package.root))["folders"]}
-    assert listed["results"] and not listed["app"] and not listed["data"]
+    assert listed["results"] and not listed["app"] and "data" not in listed
     # New folders: plain names only.
     created = output.make_folder(str(place), "Neu 2026")
     assert created["path"] == str((place / "Neu 2026").resolve()) and (place / "Neu 2026").is_dir()
@@ -202,6 +208,38 @@ def test_browser_lists_folder_names_only(package: SimpleNamespace, tmp_path: Pat
         assert _code(lambda bad=bad: output.make_folder(str(place), bad)) == "output.bad_name", bad
     assert _code(lambda: output.make_folder(str(place), "alpha")) == "output.exists"
     assert _code(lambda: output.make_folder(str(package.data), "x")) == "output.protected"
+
+
+def test_no_answer_tells_what_exists_in_a_folder_the_browser_hides(
+    package: SimpleNamespace, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """N-11 review #1: browsing, choosing and creating in another user's home folder or a credential folder answer
+    ``output.protected`` alike for a file, a folder and a missing name, so the routes enumerate neither files nor
+    users. Elsewhere a file and a missing folder are still told apart."""
+    import orkexa.fs
+
+    users = tmp_path / "users"
+    (users / "bob" / "proj").mkdir(parents=True)
+    (users / "bob" / "notes.txt").write_text("x")
+    monkeypatch.setattr(orkexa.fs, "home_parents", lambda: [str(users)])
+    keys = tmp_path / "place" / ".ssh"
+    keys.mkdir(parents=True)
+    (keys / "id_ed25519").write_text("key")
+    output = _folder(package)
+    probes = [users / "bob", users / "bob" / "proj", users / "bob" / "notes.txt", users / "bob" / "nope"]
+    probes += [users / "carol", keys, keys / "id_ed25519", keys / "missing"]
+    for probe in probes:
+        assert _code(lambda probe=probe: output.browse(str(probe))) == "output.protected", probe
+        assert _code(lambda probe=probe: output.check(str(probe), create=False)) == "output.protected", probe
+    assert _code(lambda: output.make_folder(str(users / "bob"), "x")) == "output.protected"
+    assert not (users / "bob" / "x").exists()
+    if os.name == "posix":
+        for path in ("/etc/shadow", "/etc/no-such-file-n11"):
+            assert _code(lambda path=path: output.browse(path)) == "output.protected", path
+    place = tmp_path / "place"
+    (place / "note.txt").write_text("x")
+    assert _code(lambda: output.browse(str(place / "note.txt"))) == "output.not_found"
+    assert _code(lambda: output.browse(str(place / "missing"))) == "output.not_found"
 
 
 # ---- the web interface: a real run with the deterministic double --------------------------------------------------
@@ -366,6 +404,29 @@ def test_the_folder_opens_only_for_a_browser_on_this_computer(exported: SimpleNa
         assert local.get("/ui/api/setup").json()["output_dir"]["can_open"] is True
         assert local.post("/ui/api/setup/output/open", headers=HEADERS).status_code == 200
         assert opened == [(exported.project / "results").resolve()]
+
+
+def test_the_settings_page_browses_through_the_shared_folder_browser(exported: SimpleNamespace, tmp_path: Path) -> None:
+    """N-11: the result folder's browser is the backend's one folder browser (nodestro_api.folder_browser on
+    orkexa.fs): folder names only, no system folder, and only for the interface's own page, also as a GET."""
+    place = tmp_path / "place"
+    (place / "inner").mkdir(parents=True)
+    (place / "report.txt").write_text("canary-content")
+    browse = "/ui/api/setup/output/browse"
+    with _app(exported.project, tmp_path / "data", "") as (client, ui):
+        _sign_in_operator(client, ui)
+        view = client.get(browse, params={"path": str(place)}, headers={"Sec-Fetch-Site": "same-origin"})
+        assert view.status_code == 200, view.text
+        assert [item["name"] for item in view.json()["folders"]] == ["inner"]
+        assert "report" not in view.text and "canary" not in view.text
+        for headers in ({"Sec-Fetch-Site": "cross-site"}, {"Sec-Fetch-Site": "same-site"}, {"Origin": "http://evil"}):
+            refused = client.get(browse, params={"path": str(place)}, headers=headers)
+            assert (refused.status_code, refused.json()["error"]["code"]) == (403, "ui.csrf"), headers
+        system = next(folder for folder in system_folders() if folder.is_dir())
+        hidden = client.get(browse, params={"path": str(system)})
+        assert (hidden.status_code, hidden.json()["error"]["code"]) == (422, "output.protected")
+        data = client.get(browse, params={"path": str(tmp_path / "data")})
+        assert (data.status_code, data.json()["error"]["code"]) == (422, "output.protected")
 
 
 def test_only_a_portable_package_carries_the_result_folder_choice() -> None:

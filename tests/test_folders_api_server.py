@@ -23,6 +23,8 @@ def test_a_server_never_grants_folders(server: Any, monkeypatch: pytest.MonkeyPa
         alice.get(FOLDERS),
         alice.post(FOLDERS, json={"name": "Docs", "path": str(tmp_path / "docs")}),
         alice.delete(f"{FOLDERS}/fgr_x"),
+        # The folder browser (N-11) lists nothing of the server's file system either.
+        alice.post(f"{FOLDERS}/browse", json={"path": str(tmp_path)}),
     ):
         assert (response.status_code, response.json()["code"]) == (404, "folder.disabled")
     acme = server.app.state.tenants.get("acme")

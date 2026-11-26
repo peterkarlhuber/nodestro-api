@@ -45,6 +45,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Resp
 from pydantic import BaseModel, Field
 
 from .app_contract import form_fields, ui_form_fields
+from .folder_browser import check_fetch_site
 from .serving import ApiError, KeyAuthenticatedRoute, KeyIdentity, parse_token, read_body
 
 if TYPE_CHECKING:
@@ -411,7 +412,7 @@ WEB_UI_ROUTES: dict[tuple[str, str], str] = {
     ("DELETE", "/ui/api/setup/providers/{provider}"): "operator session (WebUi.require(operator=True))",
     ("PUT", "/ui/api/setup/output"): "operator session (WebUi.require(operator=True))",
     ("DELETE", "/ui/api/setup/output"): "operator session (WebUi.require(operator=True))",
-    ("GET", "/ui/api/setup/output/browse"): "operator session (WebUi.require(operator=True))",
+    ("GET", "/ui/api/setup/output/browse"): "operator session (WebUi.require(operator=True)), same site only",
     ("POST", "/ui/api/setup/output/folders"): "operator session (WebUi.require(operator=True))",
     ("POST", "/ui/api/setup/output/open"): "operator session (WebUi.require(operator=True))",
     ("POST", "/ui/control/stop"): "the launcher's control token (UiOptions.control_token)",
@@ -570,6 +571,8 @@ def build_router(ui: WebUi) -> APIRouter:
     @router.get("/ui/api/setup/output/browse")
     def browse_output(request: Request) -> JSONResponse:
         folder = output_folder(request)
+        # A listing of this computer's folders: only for the interface's own page, also as a GET (N-11).
+        check_fetch_site(request, "ui.csrf")
         return json_answer(folder.browse(request.query_params.get("path") or None))
 
     @router.post("/ui/api/setup/output/folders")

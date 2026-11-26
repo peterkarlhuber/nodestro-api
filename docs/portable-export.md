@@ -26,7 +26,8 @@ Both carry `openapi.json` (the same document the running application serves) and
 | `ui_package.py` | Checks an interface folder or artifact against its `manifest.json` and contract range (used by `scripts/vendor_app_ui.py` and `ui install`). |
 | `portable_secrets.py` | The AI providers' keys on the target computer (`data/secrets/providers.json`, owner-only). |
 | `webui_server.py` + `webui/` | Sessions, sign-in, the interface's endpoints and the static app (vanilla JS, no build step, no CDN). The app itself is developed in [nodestro-app-ui](https://github.com/peterkarlhuber/nodestro-app-ui); `webui/` is an unchanged copy of one of its commits (see below). |
-| `output_folder.py` | The result folder chosen on the settings page (portable only): precedence `OUTPUT_DIR` from outside > choice in `data/settings/output-folder.json` > `[data] output_dir`; path checks, the folder browser (names only), "Open folder". |
+| `output_folder.py` | The result folder chosen on the settings page (portable only): precedence `OUTPUT_DIR` from outside > choice in `data/settings/output-folder.json` > `[data] output_dir`; path checks, the folder browser (names only, through `folder_browser.py`), "Open folder". |
+| `folder_browser.py` | The backend's one folder browser on `orkexa.fs.browse_folder` (N-11): folder names only, no system, other users', credential or data folders; shared with `POST /api/folders/browse` (`docs/folders.md`). |
 
 ## How a package is built
 
@@ -116,7 +117,9 @@ standard export (`POST /publications/{id}/exports`) is not affected.
   launcher's state are `0600`.
 - **Result folder.** The operator (only) may choose another result folder on the settings page:
   `PUT/DELETE /ui/api/setup/output`, `GET /ui/api/setup/output/browse` (sub-folder names only, never files, hidden
-  folders left out, at most 500), `POST /ui/api/setup/output/folders` (a plain name), `POST
+  folders left out, at most 500; the backend's one folder browser `nodestro_api.folder_browser` on `orkexa.fs`, so
+  system folders, other users' home folders, credential folders and the data folder are neither listed nor opened,
+  and a request that the browser marks as from another site is refused with `ui.csrf`), `POST /ui/api/setup/output/folders` (a plain name), `POST
   /ui/api/setup/output/open` — all with the usual CSRF header/Origin check. A path must be absolute; it is normalized
   and its links resolved before the checks, which refuse the drive root, system folders (`/etc`, `/usr`, `/var`,
   `/opt`, `C:\Windows`, `Program Files`, … except the user's home and `/var/home`, `/run/media`, temp folders), the
