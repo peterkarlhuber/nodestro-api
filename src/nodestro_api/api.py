@@ -22,14 +22,16 @@ from nodestro_runtime.agent_builder import ConfigIssue
 from nodestro_runtime.agent_test import AgentTestIn, AgentTestResult
 from nodestro_runtime.catalog import SERVER_TOOLS, ModelInfo, ServerToolInfo, model_capabilities, models
 from nodestro_runtime.contracts import contract_of
-from nodestro_runtime.conversations import NO_OWNER, conversations_enabled
+from nodestro_runtime.conversations import NO_OWNER, conversations_enabled, memory_visible
 from nodestro_runtime.engine import add_usage, check_workflow
 from nodestro_runtime.input_files import is_input_id
 from nodestro_runtime.knowledge import KnowledgeFile
 from nodestro_runtime.launcher import launch
 from nodestro_runtime.local_models import LOCAL_ASSISTANT_MODEL, LOCAL_DEFAULT_MODEL
+from nodestro_runtime.memory_consents import ConsentTarget, combined_digest, consent_targets
 from nodestro_runtime.memory_spaces import (
     BrowsableMemory,
+    MemoryConsent,
     MemoryFile,
     MemorySpaceInfo,
     check_space_name,
@@ -89,7 +91,7 @@ from nodestro_runtime.versions import VersionSummary, WorkflowVersion
 from orkexa import OrkexaError, ProviderError, UsageTracker
 from orkexa import __version__ as library_version
 from orkexa.retrieval import RetrievalError
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import __version__, library_models, model_readiness, sandbox_status
@@ -261,6 +263,11 @@ NODESTRO_ERROR_STATUS = {
     "folder.invalid_pattern": 422,
     # Memory spaces with an owner (RT-089c): another person's space, one without an owner, or none.
     "memory.space_not_found": 404,
+    # The owner's consent (RT-089d): missing, given for other content than the owner saw, or too many workflows.
+    "memory.consent_required": 403,
+    "memory.consent_stale": 409,
+    "memory.consent_too_large": 422,
+    "memory.consent_unavailable": 404,
 }
 
 
@@ -461,6 +468,7 @@ PATH_TAGS: dict[str, str] = {
     "knowledge": "knowledge",
     "inputs": "knowledge",
     "memory": "memory",
+    "memory-consents": "memory",
     "batches": "automation",
     "benchmarks": "automation",
     "benchmark-runs": "automation",
@@ -824,11 +832,13 @@ class WorkflowSummary(RuntimeWorkflowSummary):
 
 
 @workflows_router.get("/workflows", dependencies=READ)
-def list_workflows(ctx: Ctx) -> list[WorkflowSummary]:
+def list_workflows(ctx: Ctx, request: Request) -> list[WorkflowSummary]:
     last_status: dict[str, Any] = {}
     recent = readable_documents(ctx.store, "runs", RunSummary, newest_first=lambda run: run.created_at, limit=500)
+    owner = owner_of(request)
     for run in recent:
-        if run.imported_at is None:
+        # RT-089d: a run private to another person (its memory, its conversation) gives away no status.
+        if run.imported_at is None and ctx.conversations.summary_visible(run, owner):
             last_status.setdefault(run.workflow_id, run.status)
     return [
         WorkflowSummary(
@@ -1842,23 +1852,40 @@ async def run_events(run_id: str, request: Request, ctx: Ctx) -> StreamingRespon
 
     def visible() -> bool:
         # RT-089c: a run becomes its owner's alone when a step uses a persistent memory space (event
-        # ``memory_private``, sent before the step reads the space); another reader's stream ends then.
+        # ``memory_private``, sent to the run and every run above it before the step reads the space); another
+        # reader's stream ends then.
         return ctx.conversations.run_visible(run_id, owner)
+
+    def snapshot() -> dict[str, Any] | None:
+        """The run as it is now, or ``None`` when the reader may not see it (RT-089d): the copy is taken first and
+        checked afterwards, on itself (its ``memory_owner``) and on the stored runs up to the top. The mark is set and
+        stored before a step reads a space, so a copy that holds anything of the space is never sent; before, the
+        check came first and a step could start in between."""
+        current = ctx.runs.get(run_id)
+        if current is None:
+            return None
+        data = current.model_dump(mode="json")
+        marked = data.get("memory_owner")
+        if marked is not None and owner is not None and (owner == NO_OWNER or marked != owner):
+            return None
+        return data if visible() else None
 
     async def stream() -> AsyncIterator[str]:
         if not ctx.runs.is_live(run_id):
-            if not visible():
+            finished = snapshot()
+            if finished is None:
                 yield _sse("end", {"reason": "access_ended"})
                 return
-            yield _sse("snapshot", run.model_dump(mode="json"))
-            yield _sse("end", {"status": run.status})
+            yield _sse("snapshot", finished)
+            yield _sse("end", {"status": finished.get("status")})
             return
         history, queue = ctx.runs.subscribe(run_id)
         try:
-            if not visible():
+            first = snapshot()
+            if first is None:
                 yield _sse("end", {"reason": "access_ended"})
                 return
-            yield _sse("snapshot", ctx.runs.get(run_id).model_dump(mode="json"))  # type: ignore[union-attr]
+            yield _sse("snapshot", first)
             last = history[-1].seq if history else 0
             while True:
                 if await request.is_disconnected():
@@ -2010,8 +2037,12 @@ def _add(bucket: UsageBucket, usage: Any, *, run: bool = False) -> None:
         bucket.cost_state = "unknown" if bucket.unpriced >= bucket.requests and not bucket.known_cost_usd else "partial"
 
 
+#: The workflow bucket of the usage report that holds the runs another person's memory made private (RT-089d).
+PRIVATE_RUNS = "private_runs"
+
+
 @usage_router.get("/usage", dependencies=READ)
-def usage(ctx: Ctx, days: int = Query(30, ge=1, le=365)) -> UsageReport:
+def usage(ctx: Ctx, request: Request, days: int = Query(30, ge=1, le=365)) -> UsageReport:
     """Tokens and cost of every AI request Nodestro made: workflow runs plus everything else.
 
     Workflow runs are counted from the stored runs (imported traces excluded); agent tests,
@@ -2043,12 +2074,17 @@ def usage(ctx: Ctx, days: int = Query(30, ge=1, le=365)) -> UsageReport:
         return by_model.setdefault(key, UsageBucket(key=key, label=key))
 
     runs = _runs_since(ctx, cutoff)
+    owner = owner_of(request)
     for run in runs:
         day = run.created_at.date().isoformat()
+        # RT-089d: a run private to another person (its memory space) counts in every sum, but under no workflow's
+        # name: the report shows that private runs cost something, never which workflow ran.
+        shown = memory_visible(run, owner)  # type: ignore[arg-type]
+        workflow_key, workflow_label = (run.workflow_id, run.workflow_name) if shown else (PRIVATE_RUNS, "Private runs")
         buckets = [
             total,
             day_bucket(day),
-            by_workflow.setdefault(run.workflow_id, UsageBucket(key=run.workflow_id, label=run.workflow_name)),
+            by_workflow.setdefault(workflow_key, UsageBucket(key=workflow_key, label=workflow_label)),
             # Runs of published APIs are shown on their own (they are workflow runs all the same).
             by_source["api_run" if run.trigger == "api" else "workflow_run"],
         ]
@@ -2227,6 +2263,8 @@ class _UsageRun(BaseModel):
     error_code: str | None = None
     budget: _UsageRunBudget | None = None
     cause: _UsageRunCause | None = None
+    #: RT-089d: the person whose memory made the run private (its bucket in the report).
+    memory_owner: str | None = None
 
 
 #: Runs the usage report reads per keyset page of the store.
@@ -2768,6 +2806,168 @@ def clear_memory(space: str, ctx: Ctx, request: Request) -> Response:
     """Empty a space; on a server its owner keeps it (RT-089c)."""
     _usable_space(ctx, request, space).clear()
     return Response(status_code=204)
+
+
+# ---- the owners' consents (RT-089d) --------------------------------------------------------------------------
+
+
+class MemoryConsentIn(BaseModel):
+    """What the owner of ``space`` allows to use it: a saved workflow (``workflow_id``, ``version``; ``None``: the
+    latest) with every workflow it runs, or one agent configuration for agent tests (``agent``). ``digest`` (required):
+    the digest the owner was shown (``GET /api/memory-consents/preview`` for a workflow, the combined digest of all
+    its workflows; ``POST /api/memory-consents/preview`` for an agent configuration). When anything changed since,
+    the consent is refused (``409 memory.consent_stale``) instead of covering content the owner did not see."""
+
+    space: str
+    workflow_id: str | None = None
+    version: int | None = None
+    agent: AgentConfig | None = None
+    digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def _one_subject(self) -> MemoryConsentIn:
+        if (self.workflow_id is None) == (self.agent is None):
+            raise ValueError("Name either a workflow or an agent configuration")
+        return self
+
+
+class MemoryConsentPreview(BaseModel):
+    """What a consent for a workflow would cover now: the workflow and every workflow it runs (sub-workflows, teams),
+    each in the version and with the digest its run would have; ``digest``: one digest over all of them, which the
+    grant names."""
+
+    workflow_id: str
+    digest: str
+    targets: list[ConsentTarget]
+
+
+class AgentConsentPreviewIn(BaseModel):
+    """An agent configuration whose consent digest the owner wants to see before allowing it."""
+
+    agent: AgentConfig
+
+
+class AgentConsentPreview(BaseModel):
+    """The digest a consent for an agent configuration covers now (with the tools, connections and MCP servers it
+    uses), which the grant names."""
+
+    digest: str
+
+
+def _consent_owner(ctx: Nodestro, request: Request) -> str:
+    """The request's owner, who gives and sees their own consents: only on a workspace with owners (a server) and only
+    a member (``404 memory.consent_unavailable`` otherwise; the desktop needs no consent)."""
+    owner = owner_of(request)
+    if ctx.memory.owners is None or owner is None or owner == NO_OWNER:
+        raise NodestroError(
+            "memory.consent_unavailable", "Consents for memory spaces exist only for the members of a server"
+        )
+    return owner
+
+
+def _targets(ctx: Nodestro, workflow_id: str, version: int | None) -> list[ConsentTarget]:
+    try:
+        runs = ctx.runs
+        return consent_targets(ctx.resolve_workflow, runs.pin_subworkflows, runs.consent_digest, workflow_id, version)
+    except KeyError as missing:
+        raise MissingReference("workflow", str(missing.args[0]) if missing.args else workflow_id) from None
+
+
+@memory_router.get("/memory-consents", dependencies=READ)
+def list_memory_consents(ctx: Ctx, request: Request) -> list[MemoryConsent]:
+    """The consents the request's owner gave for their memory spaces (RT-089d), oldest first."""
+    return ctx.memory.consents(_consent_owner(ctx, request))
+
+
+@memory_router.get("/memory-consents/preview", dependencies=READ)
+def preview_memory_consent(
+    ctx: Ctx, request: Request, workflow_id: str, version: int | None = None
+) -> MemoryConsentPreview:
+    """What a consent for ``workflow_id`` would cover now, for the owner to review before allowing it."""
+    _consent_owner(ctx, request)
+    targets = _targets(ctx, workflow_id, version)
+    return MemoryConsentPreview(workflow_id=workflow_id, digest=combined_digest(targets), targets=targets)
+
+
+@memory_router.post("/memory-consents/preview", dependencies=READ)
+def preview_agent_memory_consent(ctx: Ctx, request: Request, body: AgentConsentPreviewIn) -> AgentConsentPreview:
+    """The digest a consent for an agent configuration (agent tests) would cover now, for the grant to name."""
+    _consent_owner(ctx, request)
+    return AgentConsentPreview(digest=ctx.runs.agent_consent_digest(body.agent))
+
+
+@memory_router.post("/memory-consents", status_code=201, dependencies=RUN)
+def grant_memory_consent(body: MemoryConsentIn, ctx: Ctx, request: Request) -> list[MemoryConsent]:
+    """The owner of a memory space allows a workflow (with every workflow it runs, in their current content) or one
+    agent configuration to use it (RT-089d). Only the space's owner, or a member who creates the space with it (its
+    first writer); anyone else gets ``404 memory.space_not_found``. Nothing else grants a consent, and a changed
+    workflow needs a new one. The request names the digest the owner was shown; if anything changed since (any of the
+    workflows, a tool, a connection), it is refused with ``409 memory.consent_stale``. Each consent is recorded in the
+    access audit trail."""
+    owner = _consent_owner(ctx, request)
+    space = check_space_name(body.space)
+    if body.agent is not None:
+        digest = ctx.runs.agent_consent_digest(body.agent)
+        if body.digest != digest:
+            raise NodestroError("memory.consent_stale", "The agent configuration is not the one shown", space=space)
+        granted = [ctx.memory.grant(space, owner, "agent", digest)]
+    else:
+        targets = _targets(ctx, body.workflow_id or "", body.version)
+        if body.digest != combined_digest(targets):
+            raise NodestroError(
+                "memory.consent_stale",
+                "The workflow changed since it was shown; review it again",
+                space=space,
+            )
+        granted = [
+            ctx.memory.grant(
+                space,
+                owner,
+                "workflow",
+                target.digest,
+                workflow_id=target.workflow_id,
+                workflow_version=target.version,
+                workflow_name=target.name,
+            )
+            for target in targets
+        ]
+    for consent in granted:
+        _audit_consent(ctx, request, "memory_consent_granted", consent)
+    return granted
+
+
+@memory_router.delete("/memory-consents/{consent_id}", status_code=204, dependencies=READ)
+def revoke_memory_consent(consent_id: str, ctx: Ctx, request: Request) -> Response:
+    """Withdraw one of the request's owner's consents; another person's or an unknown id answers ``404``. It takes
+    effect at the next check: a step that already passed its check (and the tool calls it makes) finishes; every step
+    and run that starts afterwards and needs the consent is refused."""
+    revoked = ctx.memory.revoke(consent_id, _consent_owner(ctx, request))
+    if revoked is None:
+        raise KeyError(consent_id)
+    _audit_consent(ctx, request, "memory_consent_revoked", revoked)
+    return Response(status_code=204)
+
+
+def _audit_consent(ctx: Nodestro, request: Request, kind: str, consent: MemoryConsent) -> None:
+    from . import access_audit
+
+    access_audit.record(
+        ctx.store,
+        access_audit.AccessEvent(
+            kind=kind,  # type: ignore[arg-type]
+            actor=actor_id(request),
+            target_type="user",
+            target_id=consent.owner,
+            details={
+                "consent": consent.id,
+                "space": consent.space,
+                "subject": consent.subject,
+                "workflow_id": consent.workflow_id or "",
+                "workflow_version": consent.workflow_version,
+                "digest": consent.digest,
+            },
+        ),
+    )
 
 
 #: Every part of this module, in the order of the file; ``router`` serves them all.

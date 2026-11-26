@@ -161,7 +161,8 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # read: + whether the access model v2 is on, and the safety limits (N-06)
         # read: + conversations with own agents: list, one, export, file content, message, events (N-04)
         # read: + whether folder grants are on, and the default limits (N-10)
-        "read": 159,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
+        # read: + the owner's consents for private memory spaces: list, preview, revoke (RT-089d; one's own only)
+        "read": 163,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
         # MCP status, servers, server, tools (WP-3); tool approval inbox, run questions, pre-grants, state (S-2b)
         # edit: + starting and cancelling a portable export job (like the synchronous export)
         # edit: + uploading and removing a conversation's files (assistant files)
@@ -177,7 +178,8 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # run: + the readiness check of a local model before an action (missing local models)
         # run: + a tool draft from a skill script (NAL-B4; the same tool job as /tools/jobs)
         # run: + sending a conversation message and cancelling its answer (N-04)
-        "run": 37,  # + deciding a tool call (S-2b); - the tool panel's test run (review H-1)
+        # run: + allowing a workflow or agent to use one's own memory space (RT-089d)
+        "run": 38,  # + deciding a tool call (S-2b); - the tool panel's test run (review H-1)
         # admin: + the Docker sandbox's self-test (A1)
         # admin: + adopting an AI-generated tool as one's own (R-4, desktop only)
         # admin: + the access audit trail (API-004)

@@ -50,6 +50,8 @@
               "sessions_revoked",
               "conversation_owner_assigned",
               "memory_space_owner_assigned",
+              "memory_consent_granted",
+              "memory_consent_revoked",
               "backup_restored",
               "data_exported",
               "data_deleted"
@@ -1151,6 +1153,33 @@
           }
         },
         "title": "AgentConfig",
+        "type": "object"
+      },
+      "AgentConsentPreview": {
+        "description": "The digest a consent for an agent configuration covers now (with the tools, connections and MCP servers it\nuses), which the grant names.",
+        "properties": {
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          }
+        },
+        "required": [
+          "digest"
+        ],
+        "title": "AgentConsentPreview",
+        "type": "object"
+      },
+      "AgentConsentPreviewIn": {
+        "description": "An agent configuration whose consent digest the owner wants to see before allowing it.",
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/AgentConfig"
+          }
+        },
+        "required": [
+          "agent"
+        ],
+        "title": "AgentConsentPreviewIn",
         "type": "object"
       },
       "AgentConversationDetail": {
@@ -7075,6 +7104,41 @@
           "updated_at"
         ],
         "title": "ConnectionView",
+        "type": "object"
+      },
+      "ConsentTarget": {
+        "description": "One workflow a consent covers, as it would run now.",
+        "properties": {
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "name": {
+            "default": "",
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "workflow_id": {
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workflow_id",
+          "digest"
+        ],
+        "title": "ConsentTarget",
         "type": "object"
       },
       "ContextPreview": {
@@ -14947,6 +15011,155 @@
         "title": "MemoryConfig",
         "type": "object"
       },
+      "MemoryConsent": {
+        "description": "The owner of a memory space allows one content to use it (RT-089d): the workflow ``workflow_id`` (or, for an\nagent test, an agent configuration) whose content has the digest ``digest``. It applies to nothing else: a changed\nworkflow has another digest and needs a new consent.",
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "space": {
+            "title": "Space",
+            "type": "string"
+          },
+          "subject": {
+            "enum": [
+              "workflow",
+              "agent"
+            ],
+            "title": "Subject",
+            "type": "string"
+          },
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Id"
+          },
+          "workflow_name": {
+            "default": "",
+            "title": "Workflow Name",
+            "type": "string"
+          },
+          "workflow_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Version"
+          }
+        },
+        "required": [
+          "id",
+          "space",
+          "owner",
+          "subject",
+          "digest"
+        ],
+        "title": "MemoryConsent",
+        "type": "object"
+      },
+      "MemoryConsentIn": {
+        "description": "What the owner of ``space`` allows to use it: a saved workflow (``workflow_id``, ``version``; ``None``: the\nlatest) with every workflow it runs, or one agent configuration for agent tests (``agent``). ``digest`` (required):\nthe digest the owner was shown (``GET /api/memory-consents/preview`` for a workflow, the combined digest of all\nits workflows; ``POST /api/memory-consents/preview`` for an agent configuration). When anything changed since,\nthe consent is refused (``409 memory.consent_stale``) instead of covering content the owner did not see.",
+        "properties": {
+          "agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Digest",
+            "type": "string"
+          },
+          "space": {
+            "title": "Space",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Id"
+          }
+        },
+        "required": [
+          "space",
+          "digest"
+        ],
+        "title": "MemoryConsentIn",
+        "type": "object"
+      },
+      "MemoryConsentPreview": {
+        "description": "What a consent for a workflow would cover now: the workflow and every workflow it runs (sub-workflows, teams),\neach in the version and with the digest its run would have; ``digest``: one digest over all of them, which the\ngrant names.",
+        "properties": {
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/ConsentTarget"
+            },
+            "title": "Targets",
+            "type": "array"
+          },
+          "workflow_id": {
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workflow_id",
+          "digest",
+          "targets"
+        ],
+        "title": "MemoryConsentPreview",
+        "type": "object"
+      },
       "MemoryFile": {
         "properties": {
           "path": {
@@ -21965,6 +22178,13 @@
               }
             ],
             "title": "Memory Owner"
+          },
+          "memory_spaces": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Memory Spaces",
+            "type": "array"
           },
           "nodes": {
             "additionalProperties": {
@@ -31137,6 +31357,8 @@
                     "sessions_revoked",
                     "conversation_owner_assigned",
                     "memory_space_owner_assigned",
+                    "memory_consent_granted",
+                    "memory_consent_revoked",
                     "backup_restored",
                     "data_exported",
                     "data_deleted"
@@ -40624,6 +40846,221 @@
           }
         },
         "summary": "List Spaces",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/memory-consents": {
+      "get": {
+        "description": "The consents the request's owner gave for their memory spaces (RT-089d), oldest first.",
+        "operationId": "list_memory_consents_api_memory_consents_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MemoryConsent"
+                  },
+                  "title": "Response List Memory Consents Api Memory Consents Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Memory Consents",
+        "tags": [
+          "memory"
+        ]
+      },
+      "post": {
+        "description": "The owner of a memory space allows a workflow (with every workflow it runs, in their current content) or one\nagent configuration to use it (RT-089d). Only the space's owner, or a member who creates the space with it (its\nfirst writer); anyone else gets ``404 memory.space_not_found``. Nothing else grants a consent, and a changed\nworkflow needs a new one. The request names the digest the owner was shown; if anything changed since (any of the\nworkflows, a tool, a connection), it is refused with ``409 memory.consent_stale``. Each consent is recorded in the\naccess audit trail.",
+        "operationId": "grant_memory_consent_api_memory_consents_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryConsentIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MemoryConsent"
+                  },
+                  "title": "Response Grant Memory Consent Api Memory Consents Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Grant Memory Consent",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/memory-consents/preview": {
+      "get": {
+        "description": "What a consent for ``workflow_id`` would cover now, for the owner to review before allowing it.",
+        "operationId": "preview_memory_consent_api_memory_consents_preview_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "workflow_id",
+            "required": true,
+            "schema": {
+              "title": "Workflow Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryConsentPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Preview Memory Consent",
+        "tags": [
+          "memory"
+        ]
+      },
+      "post": {
+        "description": "The digest a consent for an agent configuration (agent tests) would cover now, for the grant to name.",
+        "operationId": "preview_agent_memory_consent_api_memory_consents_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentConsentPreviewIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConsentPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Preview Agent Memory Consent",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/memory-consents/{consent_id}": {
+      "delete": {
+        "description": "Withdraw one of the request's owner's consents; another person's or an unknown id answers ``404``. It takes\neffect at the next check: a step that already passed its check (and the tool calls it makes) finishes; every step\nand run that starts afterwards and needs the consent is refused.",
+        "operationId": "revoke_memory_consent_api_memory_consents__consent_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "consent_id",
+            "required": true,
+            "schema": {
+              "title": "Consent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Revoke Memory Consent",
         "tags": [
           "memory"
         ]
