@@ -269,7 +269,7 @@ def create_grant(body: GrantIn, ctx: Ctx, request: Request) -> Grant:
 def create_deny(body: DenyIn, ctx: Ctx, request: Request) -> Deny:
     """Block an access, whatever is granted (a deny for a folder also blocks every folder below it)."""
     _require_enabled()
-    return _rules(ctx).deny(
+    found = _rules(ctx).deny(
         resource=AccessResource(type=body.resource_type, id=body.resource_id),
         actions=body.actions,
         by=_person(request),
@@ -279,19 +279,25 @@ def create_deny(body: DenyIn, ctx: Ctx, request: Request) -> Deny:
         duration=body.duration,
         expires_at=body.expires_at,
     )
+    ctx.folder_access_changed()  # N-12: a denied folder leaves the folder indexes at their next sync
+    return found
 
 
 @router.delete("/grants/{grant_id}", dependencies=ADMIN)
 def revoke_grant(grant_id: str, ctx: Ctx, request: Request) -> Grant:
     """Revoke a grant; it no longer applies from the next access on, also for running tasks."""
     _require_enabled()
-    return _rules(ctx).revoke_grant(grant_id, by=_person(request))
+    found = _rules(ctx).revoke_grant(grant_id, by=_person(request))
+    ctx.folder_access_changed()  # N-12: a revoked folder grant's index is dropped now
+    return found
 
 
 @router.delete("/denies/{deny_id}", dependencies=ADMIN)
 def revoke_deny(deny_id: str, ctx: Ctx, request: Request) -> Deny:
     _require_enabled()
-    return _rules(ctx).revoke_deny(deny_id, by=_person(request))
+    found = _rules(ctx).revoke_deny(deny_id, by=_person(request))
+    ctx.folder_access_changed()  # N-12: a folder no longer denied is indexed again
+    return found
 
 
 def _who_may(

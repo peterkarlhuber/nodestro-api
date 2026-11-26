@@ -12,8 +12,13 @@ runtime: only while ``NODESTRO_FOLDER_GRANTS=1``, and never in the server profil
   (:class:`~nodestro_runtime.tool_approvals.Person`), never a field of the body; a principal that is not a person (an
   API key, a machine) is refused (``403 access.person_required``). System folders, the home folder, credential
   folders and Nodestro's data folder are refused (``422 folder.not_grantable`` with ``reason``).
-- ``DELETE /api/folders/{folder_id}`` (``admin``): revoke a folder grant; the next tool call is refused. Revoking
-  twice changes nothing.
+- ``DELETE /api/folders/{folder_id}`` (``admin``): revoke a folder grant; the next tool call is refused and the
+  folder's search index (N-12) is removed at once. Revoking twice changes nothing.
+
+A grant with ``index`` keeps a search index of the folder (runtime N-12, ``docs/folders.md`` "The search index"): the
+grant wakes the workspace's indexer, and every change of a folder grant or an access record
+(:mod:`nodestro_api.api_access`) drops the index of every grant that ended at once
+(``Workspace.folder_access_changed``).
 
 While the switch is off, and always on a server, every route but ``state`` answers ``404 folder.disabled`` and
 nothing is read or written. The routes use the workspace's CSRF and session protection like every other route; none
@@ -64,7 +69,7 @@ class FolderGrantIn(BaseModel):
     include: list[str] = Field(default_factory=list, max_length=100)
     exclude: list[str] = Field(default_factory=list, max_length=100)
     limits: FolderLimits | None = None
-    #: Stored only: indexing a granted folder is a later step.
+    #: Keep a search index of the folder (N-12): ``search_files`` then searches the index.
     index: bool = False
     #: Leave out the common secret files (``.env*``, keys, SSH keys, registry credentials, password databases;
     #: ``nodestro_runtime.folders.DEFAULT_EXCLUDES``). Only an administrator turns it off, for this grant.
@@ -118,7 +123,7 @@ def list_folders(ctx: Ctx) -> list[FolderGrantView]:
 def grant_folder(body: FolderGrantIn, ctx: Ctx, request: Request) -> FolderGrantView:
     """Grant a folder for reading. Agents see its name, never its path."""
     grants = _grants(ctx)
-    return grants.grant(
+    view = grants.grant(
         name=body.name,
         path=body.path,
         by=_person(request),
@@ -132,6 +137,8 @@ def grant_folder(body: FolderGrantIn, ctx: Ctx, request: Request) -> FolderGrant
         mode=body.mode,
         expires_at=body.expires_at,
     )
+    ctx.folder_access_changed(view.folder.id)  # N-12: a grant with an index is indexed at once
+    return view
 
 
 @router.get("/{folder_id}", dependencies=ADMIN)
@@ -149,7 +156,9 @@ def folder_accesses(
 @router.delete("/{folder_id}", dependencies=ADMIN)
 def revoke_folder(folder_id: str, ctx: Ctx, request: Request) -> FolderGrantView:
     """Revoke a folder grant: every later call of the folder tools on it is refused."""
-    return _grants(ctx).revoke(folder_id, by=_person(request))
+    view = _grants(ctx).revoke(folder_id, by=_person(request))
+    ctx.folder_access_changed()  # N-12: the folder's index (chunks and vectors) is dropped now
+    return view
 
 
 __all__ = ["FolderGrantIn", "FolderLimitBounds", "FolderState", "router"]

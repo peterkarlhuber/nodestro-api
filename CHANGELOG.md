@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Granted folders as a knowledge source (N-12; needs the runtime with `nodestro_runtime.folder_index` in the studio
+  lock; behind `NODESTRO_FOLDER_GRANTS`, off): `POST /api/folders` with `index: true` wakes the runtime's folder
+  indexer; revoking a folder grant (`DELETE /api/folders/{id}`, `DELETE /api/access/grants/{id}`) drops its search
+  index before the answer, and creating or revoking a deny resyncs the indexes (`Workspace.folder_access_changed`).
+  No contract change. See `docs/folders.md`, "The search index".
 - Agent templates through the product host (N-25): a product app that selects the router group `agents` serves the
   agent templates, their versions, their origin, the shipped library and `nodestro-agent/1` export and import as the
   studio does, behind the host's guards. No code change; `tests/test_product_host_agents.py` holds the round trip

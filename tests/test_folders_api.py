@@ -159,3 +159,38 @@ def test_the_secret_files_are_left_out_unless_an_admin_turns_it_off(
     monkeypatch.setattr(tempfile, "tempdir", str(docs.parent))
     refused = granting.post(FOLDERS, json={"name": "Temp", "path": str(docs.parent)})
     assert (refused.status_code, refused.json()["params"]) == (422, {"reason": "temp_root"})
+
+
+def test_a_folder_index_is_built_on_a_grant_and_dropped_at_once_on_a_revocation(
+    make_app: Callable[..., TestClient], docs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """N-12: a grant with ``index`` wakes the indexer; revoking it (here, or through the access API) removes the
+    folder's chunks before the answer, so nothing of it stays searchable."""
+    import time
+
+    from nodestro_runtime.knowledge import FOLDER_SOURCE
+    from nodestro_runtime.tool_approvals import ACCESS_ENV, ENABLE_ENV
+
+    for name in (FOLDERS_ENV, ACCESS_ENV, ENABLE_ENV):
+        monkeypatch.setenv(name, "1")
+    granting = make_app()
+    nodestro = granting.app.state.nodestro  # type: ignore[attr-defined]
+
+    def chunks() -> list[str]:
+        return [source for source in nodestro.knowledge.chunk_sources() if source.startswith(FOLDER_SOURCE)]
+
+    created = granting.post(FOLDERS, json={"name": "Docs", "path": str(docs), "index": True})
+    assert created.status_code == 201 and created.json()["folder"]["index"] is True
+    deadline = time.monotonic() + 20
+    while not chunks() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert chunks() == [f"{FOLDER_SOURCE}{created.json()['folder']['id']}/notes/plan.txt"]
+    assert granting.delete(f"{FOLDERS}/{created.json()['folder']['id']}").status_code == 200
+    assert chunks() == []
+    # The same through the access API.
+    again = granting.post(FOLDERS, json={"name": "Notes", "path": str(docs / "notes"), "index": True}).json()
+    nodestro.folder_index.sync(again["folder"]["id"])
+    assert chunks()
+    revoked = granting.delete(f"/api/access/grants/{again['folder']['grant_id']}")
+    assert revoked.status_code == 200, revoked.text
+    assert chunks() == []

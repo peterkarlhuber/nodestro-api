@@ -12,7 +12,7 @@ is read or written.
 |---|---|---|
 | `GET /api/folders/state` | `read` | `enabled`, the default `limits` and the `bounds` of each limit (`lowest`, `highest`). Always answers, so the studio knows whether to show the folders page |
 | `GET /api/folders` | `admin` | Every folder grant of the workspace, newest first, with revoked and expired ones (`status`) |
-| `POST /api/folders` | `admin` | Grant a folder for reading (`201`): `name`, `path` (absolute), `include`, `exclude`, `limits`, `index`, `default_excludes` (default `true`: the common secret files `.env*`, `*.pem`, `*.key`, `id_rsa*`, `id_ed25519*`, `.npmrc`, `.pypirc`, `.netrc`, `*.kdbx`, `*.p12`, `*.pfx`, `*.ppk`, `credentials*` are left out; the grant is logged as `folder.granted`, with code `default_excludes_off` when they are off; `false` turns that off for this grant), `scope` (`all` or `agents`), `agents`, `mode`, `expires_at` |
+| `POST /api/folders` | `admin` | Grant a folder for reading (`201`): `name`, `path` (absolute), `include`, `exclude`, `limits`, `index`, `default_excludes` (default `true`: the common secret files `.env*`, `*.pem`, `*.key`, `id_rsa*`, `id_ed25519*`, `.npmrc`, `.pypirc`, `.netrc`, `*.kdbx`, `*.p12`, `*.pfx`, `*.ppk`, `credentials*` are left out; the grant is logged as `folder.granted`, with code `default_excludes_off` when they are off; `false` turns that off for this grant), `scope` (`all` or `agents`), `agents`, `mode`, `expires_at`. `index: true` keeps a search index of the folder (N-12): the grant wakes the indexer |
 | `GET /api/folders/{id}` | `admin` | One folder grant. An unknown id answers `404 folder.not_found` |
 | `GET /api/folders/{id}/accesses` | `admin` | Its access log, newest first (`limit`, at most 1,000): every call of the folder tools with agent, run, outcome and code, never a path |
 | `DELETE /api/folders/{id}` | `admin` | Revoke a folder grant. The next tool call on it is refused. Revoking twice changes nothing |
@@ -47,3 +47,13 @@ is the access model's (`access_granted`, `access_grant_revoked`). A grant for "t
 
 The result folder of a portable application (`output_folder.py`) uses the same system folder lists as the path
 guard (`orkexa.fs.system_folders`, `orkexa.fs.allowed_folders`).
+
+## The search index (N-12)
+
+A grant with `index: true` keeps a search index of the folder in the runtime (`nodestro_runtime.folder_index`, the
+runtime's `docs/folders.md`, "The search index"); `search_files` then searches it. The routes keep the index in step
+with the rights: a grant wakes the indexer for that folder, and `DELETE /api/folders/{id}`, `POST /api/access/denies`,
+`DELETE /api/access/grants/{id}` and `DELETE /api/access/denies/{id}` call `Workspace.folder_access_changed`, which
+drops the index (chunks and vectors) of every folder grant that ended before the answer and syncs the indexes soon.
+An expiry is dropped by the runtime's sweep. The API shows no index state yet. Test:
+`tests/test_folders_api.py::test_a_folder_index_is_built_on_a_grant_and_dropped_at_once_on_a_revocation`.
