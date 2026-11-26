@@ -816,6 +816,33 @@ class Assistant:
                 return scope
         return None
 
+    def content_granted(self, conversation_id: str) -> bool:
+        """Whether the conversation's context holds content of a granted source (N-08): an attached run (or one sent
+        with an earlier message) that holds it (``RunManager.content_granted``), the selected files of a memory space
+        or the text of a knowledge file. A cloud model then needs a grant. Only while the runtime's provenance switch
+        is on; a run or snapshot that can no longer be read counts as holding it then (fail closed)."""
+        runs = self.nodestro.runs
+        if not runs.provenance_on():
+            return False
+        conversation = self._conversation(conversation_id)
+        refs = [(item.kind, item.ref_id, item.snapshot_id) for item in conversation.attachments]
+        for message in self.messages(conversation_id):
+            if message.role == "user":
+                refs += [(item.kind, item.ref_id, item.snapshot_id) for item in message.context]
+        for kind, ref_id, snapshot_id in dict.fromkeys(refs):
+            if kind == "run":
+                run = runs.get(ref_id)
+                if run is None or runs.content_granted(run):
+                    return True
+            elif kind in ("memory", "knowledge"):
+                try:
+                    snapshot = self.snapshot(conversation_id, snapshot_id)
+                except KeyError:
+                    return True
+                if (kind == "memory" and snapshot.paths) or (kind == "knowledge" and snapshot.include_content):
+                    return True
+        return False
+
     # ---- messages ----------------------------------------------------------------------
 
     def send(
@@ -832,7 +859,12 @@ class Assistant:
             raise NodestroError("assistant.message_empty", "Please write a message")
         model = body.model or self.nodestro.settings().assistant_model
         # Nothing stored then; N-09: local models only after a run of an offline agent or conversation.
-        self.nodestro.connect_model(model, actor=actor, offline=self.offline_scope(conversation_id))
+        self.nodestro.connect_model(
+            model,
+            actor=actor,
+            offline=self.offline_scope(conversation_id),
+            shared_content=self.content_granted(conversation_id),
+        )
         with self._lock:
             return self._send(conversation_id, body, loop, actor)
 
@@ -917,6 +949,7 @@ class Assistant:
             body.model or self.nodestro.settings().assistant_model,
             actor=actor,
             offline=self.offline_scope(conversation_id),
+            shared_content=self.content_granted(conversation_id),
         )
         # Checked and started under the lock, like a new message: two retries never both start.
         with self._lock:
@@ -1434,7 +1467,11 @@ class _Reply:
         try:
             # N-09: the attached runs decide at the answer itself, whatever was checked when it was sent.
             connection = self.nodestro.connect_model(
-                model, actor=self.actor, offline=self.service.offline_scope(self.conversation_id)
+                model,
+                actor=self.actor,
+                offline=self.service.offline_scope(self.conversation_id),
+                # N-08: an attached run with content of a granted source needs a grant for a cloud model.
+                shared_content=self.service.content_granted(self.conversation_id),
             )
             prompt = self.prompt()
             files = self.files(model)

@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Egress protection by content provenance (N-08; needs the pinned runtime; off by default, the runtime's
+  `NODESTRO_CONTENT_PROVENANCE` together with `NODESTRO_ACCESS_GRANTS`): content of a granted source needs a grant for a
+  cloud model outside the run too.
+  - The assistant: an attached run (or one sent with an earlier message) whose content came from a granted folder,
+    knowledge, memory or file, the selected files of a memory space and the text of a knowledge file
+    (`AssistantService.content_granted`) are passed as `shared_content` to `connect_model`, so sending a message
+    without a grant for the assistant's provider is refused with `access.missing_grant` before anything is sent.
+  - A test series' AI judge of such a run's output needs a grant too (a run that cannot be read fails closed).
+  - Contract: `Run.granted_content` (boolean, left out while unset) and the conversation's `provenance` value
+    `granted_content` next to `unchecked`, in both OpenAPI documents. Additive.
+  - Files a person uploads into an assistant chat are not granted content (the person sends them to the model they
+    chose); documented in API-074 (review L2).
+  - Tests: `tests/test_content_provenance.py`. See TODO API-074.
+
 - Granted folders (N-10, runtime `claude/w3-n10`), off by default (`NODESTRO_FOLDER_GRANTS=1`; never on a server):
   `/api/folders` (`state` for `read`; list, grant, get, access log and revoke for `admin`). The writer is always the
   signed-in person; API keys and machines get `403 access.person_required`. System folders, the home folder and the
