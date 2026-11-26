@@ -47,8 +47,10 @@ computer). They are left out now, and a restore never takes them from a backup, 
 A restore keeps this computer's secrets: its provider keys, and the sealed token (and pending sign-in) of an MCP
 service or the sealed secret of a connection with the same id, but only while the restored document is bound to the
 same place and use (threat model T9, as the runtime drops a secret when one of these changes): for an MCP service its
-`url`, `transport`, `stdio` command and `auth`; for a connection its `type`, `provider`, `egress` and the settings
-`auth`, `security` and `username`. Otherwise the secret is dropped (its storage becomes `none`) and listed for
+`url`, `transport`, `stdio` command and `auth`; for a connection its `type`, `provider`, `egress` and its whole
+`settings` (the address is there: a webhook's `url`, an SMTP `host` and `port`; the stored `egress` comes from the
+backup itself, so it alone proves nothing). This is stricter than the runtime, which keeps a secret for a new path on
+the same host; a restore drops it. Otherwise the secret is dropped (its storage becomes `none`) and listed for
 re-entry. `BackupInfo.secrets_to_reenter` (on checking) and `RestoreResult.secrets_to_reenter`
 (after the restore) list the secrets of the backup that this computer does not have; the user enters them again.
 A backup made before N-15 does not name its provider keys (they were left out without a record), so only the sealed

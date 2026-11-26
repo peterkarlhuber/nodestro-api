@@ -12,8 +12,8 @@
     them from one; it keeps this computer's for the same id. `BackupInfo.secrets_to_reenter` and
     `RestoreResult.secrets_to_reenter` list what has to be entered again.
   - A restored MCP service or connection keeps this computer's sealed secret only while it is bound to the same
-    address and use (MCP: `url`, `transport`, `stdio`, `auth`; connection: `type`, `provider`, `egress`, settings
-    `auth`/`security`/`username`; threat model T9); otherwise the secret is dropped and listed for re-entry.
+    address and use (MCP: `url`, `transport`, `stdio`, `auth`; connection: `type`, `provider`, `egress` and the whole
+    `settings`, where its address is; threat model T9); otherwise the secret is dropped and listed for re-entry.
   - Safety backups no longer hold sealed tokens either: undoing a restore with one lists those MCP tokens and
     connection secrets for re-entry.
   - Restored tool and input files, the waiting backup and the safety backups are private to the owner (POSIX).

@@ -315,6 +315,46 @@ def test_a_restore_keeps_a_secret_only_for_the_same_address_and_use(
     assert "secret_sealed" not in raw and raw["secret_storage"] == "none"
 
 
+def test_a_connection_whose_address_in_its_settings_changed_loses_its_secret(
+    make_app: Callable[..., TestClient], sealing: None, tmp_path: Path
+) -> None:
+    """Round 2 of the review: the address of a webhook or a mail server is in the settings; the stored ``egress`` is
+    supplied by the backup itself. Only the address changes here, ``egress`` stays: the secret is dropped all the
+    same."""
+    client = make_app()
+    ctx = client.app.state.nodestro  # type: ignore[attr-defined]
+    ids = {}
+    for body in (
+        {"type": "webhook", "name": "Hook", "settings": {"url": "https://good.example/hook"}},
+        {"type": "smtp", "name": "Mail", "settings": {"host": "smtp.good.example", "from_address": "bot@good.example"}},
+    ):
+        made = client.post("/api/connections", json=body)
+        assert made.status_code == 201, made.text
+        ids[body["type"]] = made.json()["id"]
+        stored = client.put(f"/api/connections/{ids[body['type']]}/secret", json={"secret": "CANARY-CONNECTION-SECRET"})
+        assert stored.json()["secret_storage"] == "vault"
+    data = client.get("/api/backup").content
+    assert _upload(client, data).json()["secrets_to_reenter"] == []
+    egress = {key: ctx.store.get_raw("service_connections", value)["egress"] for key, value in ids.items()}
+
+    hook = _set("service_connections", ids["webhook"], "$.settings.url", "http://127.0.0.1:8999/hook")
+    mail = _set("service_connections", ids["smtp"], "$.settings.host", "127.0.0.1")
+    port = _set("service_connections", ids["smtp"], "$.settings.port", 2525)
+    path = _set("service_connections", ids["webhook"], "$.settings.url", "https://good.example/other")
+    for change, kind in ((hook, "webhook"), (mail, "smtp"), (port, "smtp"), (path, "webhook")):
+        changed = _upload(client, _rebuilt(data, change, tmp_path))
+        assert changed.status_code == 200, changed.text
+        assert changed.json()["secrets_to_reenter"] == [f"connection:{ids[kind]}"], kind
+    moved = _upload(client, _rebuilt(data, hook, tmp_path)).json()
+    assert client.post("/api/backup/restore", json={"id": moved["id"], "confirm": True}).status_code == 200
+    raw = ctx.store.get_raw("service_connections", ids["webhook"])
+    assert raw["settings"]["url"] == "http://127.0.0.1:8999/hook" and raw["egress"] == egress["webhook"]
+    assert "secret_sealed" not in raw and raw["secret_storage"] == "none"
+    assert ctx.store.get_raw("service_connections", ids["smtp"])["secret_sealed"].startswith("nodestro:enc:")
+    secret_set = {item["id"]: item["secret_set"] for item in client.get("/api/connections").json()}
+    assert secret_set == {ids["webhook"]: False, ids["smtp"]: True}
+
+
 def test_delete_everything_leaves_no_data_in_the_data_directory(
     make_app: Callable[..., TestClient], sealing: None
 ) -> None:
@@ -435,6 +475,16 @@ def test_a_deletion_that_cannot_remove_everything_says_what_is_left(
     def broken(_connection: Any) -> None:
         raise sqlite3.OperationalError("disk I/O error")
 
+    # So is a failure of reloading the workspace after a deletion that succeeded.
+    def reload_fails() -> None:
+        raise RuntimeError("reload failed")
+
+    monkeypatch.setattr(nodestro, "reload_after_restore", reload_fails)
+    with pytest.raises(RuntimeError):
+        client.post("/api/data/delete-all", json=CONFIRM)
+    kinds = [(item["kind"], item["details"].get("error")) for item in client.get("/api/access-audit").json()]
+    assert kinds[0] == ("data_deleted", "RuntimeError")
+    monkeypatch.undo()
     monkeypatch.setattr(data_lifecycle, "_empty_database", broken)
     with pytest.raises(sqlite3.OperationalError):
         client.post("/api/data/delete-all", json=CONFIRM)

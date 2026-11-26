@@ -288,7 +288,10 @@ def delete_all(nodestro: Nodestro, profile: BackupProfile | None = None) -> Dele
                             left.append(path.name)
                 except Exception as exc:
                     raise DeleteStarted() from exc
-            nodestro.reload_after_restore()
+            try:
+                nodestro.reload_after_restore()
+            except Exception as exc:
+                raise DeleteStarted() from exc
         finally:
             if blocked is not None:
                 blocked.clear()

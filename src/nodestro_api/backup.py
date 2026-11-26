@@ -149,8 +149,6 @@ _SEALED_FIELDS: dict[str, tuple[str, tuple[str, ...]]] = {
 }
 #: Where a document says how its secret is stored (``vault``: sealed in the document itself).
 _STORAGE_FIELDS = {"mcp_servers": "token_storage", "service_connections": "secret_storage"}
-#: The settings of a connection that say how its secret is used (nodestro_runtime.connections ``_SECRET_BOUND``).
-_CONNECTION_SECRET_BOUND = ("auth", "security", "username")
 #: What the manifest lists as ``excluded``.
 EXCLUDED = (*_SECRET_SETTINGS, _PROVIDER_SECRETS, *_LOCAL_COLLECTIONS, "mcp_tokens", "connection_secrets")
 #: A secret's label in ``secrets_excluded`` and ``secrets_to_reenter`` (the manifest is data: other labels are dropped).
@@ -624,18 +622,20 @@ def inspect_backup(
 
 def _binding(collection: str, document: dict[str, Any]) -> Any:
     """What a sealed secret of ``document`` is bound to (threat model T9, ADR-0001): an MCP service's address,
-    transport, command and kind of sign-in; a connection's type, provider, reachable hosts and the settings that say how
-    its secret is used. The runtime drops a secret when one of them changes; a restore does the same."""
+    transport, command and kind of sign-in; a connection's type, provider, reachable hosts and **all** its settings.
+
+    A connection's settings are compared whole: its address lives there (a webhook's ``url``, an SMTP ``host`` and
+    ``port``, a search endpoint), and its stored ``egress`` comes from the same document, so a backup could pair an
+    old ``egress`` with a new address. Any change of the settings drops the secret, which is stricter than the
+    runtime's own rule (a new path on the same host keeps it there); a restore has no reason to be lenient."""
     if collection == "mcp_servers":
         return [document.get(name) for name in ("url", "transport", "stdio", "auth")]
-    settings = document.get("settings")
-    settings = settings if isinstance(settings, dict) else {}
     egress = document.get("egress")
     return [
         document.get("type"),
         document.get("provider"),
         sorted(str(item) for item in egress) if isinstance(egress, list) else egress,
-        [settings.get(name) for name in _CONNECTION_SECRET_BOUND],
+        json.dumps(document.get("settings"), sort_keys=True),
     ]
 
 
