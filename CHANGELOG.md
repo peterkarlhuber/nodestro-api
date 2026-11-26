@@ -25,6 +25,10 @@
     `backup_restored`, `data_exported`, `data_deleted`, target type `data`). Both OpenAPI documents are regenerated;
     the SDK syncs. Tests: `tests/test_data_lifecycle.py` (restore on a second computer in a second process, the old
     format, the canary scan after a deletion, the export, permission and CSRF). See TODO API-076.
+- Agent templates through the product host (N-25): a product app that selects the router group `agents` serves the
+  agent templates, their versions, their origin, the shipped library and `nodestro-agent/1` export and import as the
+  studio does, behind the host's guards. No code change; `tests/test_product_host_agents.py` holds the round trip
+  (export, import into another product workspace, export again) and the guards, `docs/embedding.md` describes it.
 
 - Memory spaces with an owner on a server (RT-089c, needs the pinned runtime). `/api/memory` lists only the request's
   own spaces. The space routes, assistant attachments of kind `memory`, the export check and export
