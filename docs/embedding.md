@@ -124,6 +124,27 @@ The order matters where paths overlap: `/api/library/agents` before `/api/librar
 before `/api/tools/{name}`, `/api/published/_mcp` before `/api/published/{slug}`. A product that selects a subset
 keeps that order.
 
+### Agent templates in a product (N-25)
+
+A product that selects the group `agents` serves the studio's agent template routes unchanged, with no product
+content of their own: the person's templates, every changed save as an immutable version
+(`/api/agents/templates/{id}/versions`), the origin of each template (`meta.origin`: `user`, `builtin:...` for a copy
+of a shipped template from `nodestro-examples`, `import:<sha256>` for an imported file; a client can never set it),
+the check of what a template needs in this workspace, the shipped library (`/api/library/agents`) and export and
+import in the format `nodestro-agent/1`. The permissions are those of the studio (`read` lists, reads versions,
+exports and checks; `edit` creates, changes, deletes, copies and imports), behind the host's guards: the launch
+secret or access key, the host and origin check for every write, the body limits.
+
+Export and import are a round trip: a template exported from one product workspace and imported into another is the
+same agent with the same description (`category`, `summary`, `requirements`, `examples`, `tests`, `locale`), and
+exporting the copy gives the same file apart from `meta.origin`. What belongs to one workspace does not travel:
+service connections, knowledge files and approval rules (`tool_policies`) are left out of the export and dropped
+from an import (`removed` names them); the import's answer names what the template still needs here. The version
+history stays in its workspace: an export carries the latest version, and the import starts a new history at
+version 1 (note `import`) with the origin `import:<sha256 of the file>`; a later change of it is its version 2 and
+keeps that origin. The backup of a workspace keeps every version (`agent_template_versions`).
+`tests/test_product_host_agents.py` holds these rules for a product app.
+
 Error codes: every code is listed by `GET /api/error-codes` (group `core`) for the whole package; a group's routes
 answer only with codes from that catalog.
 
