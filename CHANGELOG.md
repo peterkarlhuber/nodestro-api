@@ -10,7 +10,9 @@
   without one), `admin`; a request marked as from another site is refused (`403 request.cross_site`). The embedded web
   interface's result folder browser uses the same code path (`folder_browser.py`): the data folder is no longer
   listed, and a cross-site request is refused with `ui.csrf`. Both OpenAPI documents are regenerated (additive).
-  Tests: `tests/test_folders_browse_api.py`, `tests/test_output_folder.py`; see `docs/folders.md`.
+  Tests: `tests/test_folders_browse_api.py`, `tests/test_output_folder.py`; see `docs/folders.md`. Review fix: no
+  answer tells whether something exists in a hidden folder (`reason: hidden`; the result folder answers
+  `output.protected` on browsing, choosing and creating there).
 
 - Memory spaces with an owner on a server (RT-089c, needs the pinned runtime). `/api/memory` lists only the request's
   own spaces. The space routes, assistant attachments of kind `memory`, the export check and export

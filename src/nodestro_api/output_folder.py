@@ -42,7 +42,7 @@ import tempfile
 import threading
 from typing import TYPE_CHECKING, Any
 
-from orkexa.fs import allowed_folders
+from orkexa.fs import allowed_folders, browse_problem
 from orkexa.fs import system_folders as guard_system_folders
 
 from . import folder_browser
@@ -203,6 +203,10 @@ class OutputFolder:
         for folder_ in self.protected:
             if _inside(target, folder_):
                 return ApiError(422, "output.protected", "This folder belongs to the application", path=str(target))
+        # What the folder browser does not show (another user's home folder, a credential folder): refused before
+        # anything is looked at, so the answer never tells whether something exists there (N-11 review #1).
+        if browse_problem(str(target), protected=self.protected, given=str(folder)) is not None:
+            return ApiError(422, "output.protected", "This folder cannot hold result files", path=str(target))
         return None
 
     def normalize(self, given: str) -> Path:

@@ -210,6 +210,38 @@ def test_browser_lists_folder_names_only(package: SimpleNamespace, tmp_path: Pat
     assert _code(lambda: output.make_folder(str(package.data), "x")) == "output.protected"
 
 
+def test_no_answer_tells_what_exists_in_a_folder_the_browser_hides(
+    package: SimpleNamespace, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """N-11 review #1: browsing, choosing and creating in another user's home folder or a credential folder answer
+    ``output.protected`` alike for a file, a folder and a missing name, so the routes enumerate neither files nor
+    users. Elsewhere a file and a missing folder are still told apart."""
+    import orkexa.fs
+
+    users = tmp_path / "users"
+    (users / "bob" / "proj").mkdir(parents=True)
+    (users / "bob" / "notes.txt").write_text("x")
+    monkeypatch.setattr(orkexa.fs, "home_parents", lambda: [str(users)])
+    keys = tmp_path / "place" / ".ssh"
+    keys.mkdir(parents=True)
+    (keys / "id_ed25519").write_text("key")
+    output = _folder(package)
+    probes = [users / "bob", users / "bob" / "proj", users / "bob" / "notes.txt", users / "bob" / "nope"]
+    probes += [users / "carol", keys, keys / "id_ed25519", keys / "missing"]
+    for probe in probes:
+        assert _code(lambda probe=probe: output.browse(str(probe))) == "output.protected", probe
+        assert _code(lambda probe=probe: output.check(str(probe), create=False)) == "output.protected", probe
+    assert _code(lambda: output.make_folder(str(users / "bob"), "x")) == "output.protected"
+    assert not (users / "bob" / "x").exists()
+    if os.name == "posix":
+        for path in ("/etc/shadow", "/etc/no-such-file-n11"):
+            assert _code(lambda path=path: output.browse(path)) == "output.protected", path
+    place = tmp_path / "place"
+    (place / "note.txt").write_text("x")
+    assert _code(lambda: output.browse(str(place / "note.txt"))) == "output.not_found"
+    assert _code(lambda: output.browse(str(place / "missing"))) == "output.not_found"
+
+
 # ---- the web interface: a real run with the deterministic double --------------------------------------------------
 
 

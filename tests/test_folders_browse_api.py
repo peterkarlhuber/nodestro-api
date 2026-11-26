@@ -165,6 +165,29 @@ def test_paths_that_are_no_folder_are_refused_with_a_reason(
     assert "canary" not in refused.text
 
 
+def test_no_answer_tells_what_exists_in_a_hidden_folder(
+    window: TestClient, place: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """N-11 review #1: a file, a folder and a missing name in another user's home folder, a credential folder or a
+    system folder all answer ``reason: hidden``: the route enumerates neither files nor users."""
+    import orkexa.fs
+
+    users = tmp_path / "users"
+    (users / "bob" / "proj").mkdir(parents=True)
+    (users / "bob" / "notes.txt").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(orkexa.fs, "home_parents", lambda: [str(users)])
+    keys = place / ".ssh"
+    keys.mkdir()
+    (keys / "id_ed25519").write_text("key", encoding="utf-8")
+    probes = [users / "bob" / "notes.txt", users / "bob" / "proj", users / "bob" / "nope", users / "carol" / "x"]
+    probes += [keys / "id_ed25519", keys / "missing", tmp_path / "data" / "missing"]
+    if os.name == "posix":
+        probes += [Path("/etc/shadow"), Path("/etc/no-such-file-n11")]
+    for probe in probes:
+        refused = _browse(window, str(probe))
+        assert (refused.status_code, refused.json()["params"]) == (422, {"reason": "hidden"}), probe
+
+
 # ---- nothing without the session ------------------------------------------------------------------------------
 
 

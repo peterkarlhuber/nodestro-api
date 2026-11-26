@@ -47,6 +47,10 @@ the file system). It answers `path` (canonical), `parent` (`null` at a file-syst
   Nodestro's data folder: they are neither listed nor opened (`422 folder.not_browsable`, `reason: hidden`). The lists
   are the path guard's (`orkexa.fs.browse_folder`, `orkexa.fs.system_folders`). The user's own home folder and
   everything below it can be browsed.
+- **No existence answers in hidden places.** A file, a folder or a missing name in or below such a folder answers
+  `reason: hidden` alike (never `not_found`, `not_a_folder` or `no_access`), so the browser enumerates neither files
+  nor users. The result folder of the embedded interface answers `output.protected` for them on browsing, choosing
+  and creating a folder.
 - **Links.** `..` and links are resolved before the checks. A symbolic link or junction is listed only when its
   target is a folder that passes the same checks; its `path` is the target (`link: true`), never the link. The folder
   is opened once after the checks and must still be the folder that was checked.
