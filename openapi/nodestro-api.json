@@ -48,7 +48,8 @@
               "role_changed",
               "member_removed",
               "sessions_revoked",
-              "conversation_owner_assigned"
+              "conversation_owner_assigned",
+              "memory_space_owner_assigned"
             ],
             "title": "Kind",
             "type": "string"
@@ -21758,6 +21759,17 @@
             "title": "Input",
             "type": "string"
           },
+          "memory_owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Owner"
+          },
           "nodes": {
             "additionalProperties": {
               "$ref": "#/components/schemas/NodeRun"
@@ -22798,6 +22810,17 @@
           "input": {
             "title": "Input",
             "type": "string"
+          },
+          "memory_owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Owner"
           },
           "parent_run_id": {
             "anyOf": [
@@ -30916,7 +30939,8 @@
                     "role_changed",
                     "member_removed",
                     "sessions_revoked",
-                    "conversation_owner_assigned"
+                    "conversation_owner_assigned",
+                    "memory_space_owner_assigned"
                   ],
                   "type": "string"
                 },
@@ -40258,6 +40282,7 @@
     },
     "/api/memory": {
       "get": {
+        "description": "The spaces the request's owner uses (RT-089c: on a server only their own).",
         "operationId": "list_spaces_api_memory_get",
         "responses": {
           "200": {
@@ -40334,6 +40359,7 @@
     },
     "/api/memory/{space}": {
       "delete": {
+        "description": "Empty a space; on a server its owner keeps it (RT-089c).",
         "operationId": "clear_memory_api_memory__space__delete",
         "parameters": [
           {
@@ -40504,6 +40530,7 @@
         ]
       },
       "put": {
+        "description": "Write a file; on a server the first writer of a new space becomes its owner (RT-089c).",
         "operationId": "write_memory_api_memory__space__file_put",
         "parameters": [
           {
@@ -41513,7 +41540,7 @@
     },
     "/api/publication-overview": {
       "get": {
-        "description": "All publications of this installation (on a server: of the tenant) with their workflow, active release and\nexports, for the studio's *Publications* page (one request instead of one per publication).",
+        "description": "All publications of this installation (on a server: of the tenant) with their workflow, active release and\nexports, for the studio's *Publications* page (one request instead of one per publication). Exports with another\nperson's memory are left out (RT-089c).",
         "operationId": "publication_overview_api_publication_overview_get",
         "responses": {
           "200": {

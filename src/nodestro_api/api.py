@@ -28,7 +28,13 @@ from nodestro_runtime.input_files import is_input_id
 from nodestro_runtime.knowledge import KnowledgeFile
 from nodestro_runtime.launcher import launch
 from nodestro_runtime.local_models import LOCAL_ASSISTANT_MODEL, LOCAL_DEFAULT_MODEL
-from nodestro_runtime.memory_spaces import MemoryFile, MemorySpaceInfo, check_space_name
+from nodestro_runtime.memory_spaces import (
+    BrowsableMemory,
+    MemoryFile,
+    MemorySpaceInfo,
+    check_space_name,
+    space_not_found,
+)
 from nodestro_runtime.model_profile import ModelProfile
 from nodestro_runtime.preflight import WorkflowCheck, preflight, workflow_models
 from nodestro_runtime.preview import ContextPreview, PreviewRequest, build_preview, latest_run
@@ -253,6 +259,8 @@ NODESTRO_ERROR_STATUS = {
     "folder.not_grantable": 422,
     "folder.invalid_name": 422,
     "folder.invalid_pattern": 422,
+    # Memory spaces with an owner (RT-089c): another person's space, one without an owner, or none.
+    "memory.space_not_found": 404,
 }
 
 
@@ -1460,7 +1468,9 @@ def preview(body: PreviewRequest, ctx: Ctx, request: Request) -> ContextPreview:
         run = latest_run(ctx, body.workflow_id)
         if run is not None and not ctx.conversations.summary_visible(run, owner):
             run = None
-    return build_preview(ctx, workflow, body.node_id, given_input=body.input, run=run, given_values=body.values)
+    return build_preview(
+        ctx, workflow, body.node_id, given_input=body.input, run=run, given_values=body.values, owner=owner
+    )
 
 
 # ---- runs -----------------------------------------------------------------------
@@ -1827,14 +1837,26 @@ async def run_events(run_id: str, request: Request, ctx: Ctx) -> StreamingRespon
         raise KeyError(run_id)
 
     access = StreamAccess(request)
+    owner = owner_of(request)
+
+    def visible() -> bool:
+        # RT-089c: a run becomes its owner's alone when a step uses a persistent memory space (event
+        # ``memory_private``, sent before the step reads the space); another reader's stream ends then.
+        return ctx.conversations.run_visible(run_id, owner)
 
     async def stream() -> AsyncIterator[str]:
         if not ctx.runs.is_live(run_id):
+            if not visible():
+                yield _sse("end", {"reason": "access_ended"})
+                return
             yield _sse("snapshot", run.model_dump(mode="json"))
             yield _sse("end", {"status": run.status})
             return
         history, queue = ctx.runs.subscribe(run_id)
         try:
+            if not visible():
+                yield _sse("end", {"reason": "access_ended"})
+                return
             yield _sse("snapshot", ctx.runs.get(run_id).model_dump(mode="json"))  # type: ignore[union-attr]
             last = history[-1].seq if history else 0
             while True:
@@ -1853,6 +1875,9 @@ async def run_events(run_id: str, request: Request, ctx: Ctx) -> StreamingRespon
                     return
                 if event.seq <= last:
                     continue
+                if event.type == "memory_private" and not visible():
+                    yield _sse("end", {"reason": "access_ended"})
+                    return
                 yield _sse("event", event.model_dump(mode="json"))
         finally:
             ctx.runs.unsubscribe(run_id, queue)
@@ -2306,7 +2331,9 @@ async def test_agent(body: AgentTestIn, ctx: Ctx, request: Request) -> AgentTest
         await model_readiness.require_local(ctx, request, body.agent.quality.judge_model, "check")
     # The checks may ask a local model server (/api/show, /api/ps): never on the event loop (RT3-04 pattern).
     await asyncio.to_thread(_check_agent_test, ctx, body)
-    result, tracker = await asyncio.to_thread(ctx.tester.run, body)
+    # The person who asks: the N-06 audit of a refused cloud model, and whose persistent memory space the test uses
+    # (RT-089c review L-1; before, every test acted for ``system``: persistent memory failed on a server).
+    result, tracker = await asyncio.to_thread(ctx.tester.run, body, actor=actor_id(request))
     ctx.usage_log.record("agent_test", tracker.records, label=body.agent.name, ref=result.id, tracker=tracker)
     return result
 
@@ -2677,9 +2704,20 @@ class MemoryProposal(BaseModel):
     cost_usd: float | None
 
 
+def _usable_space(ctx: Nodestro, request: Request, space: str) -> BrowsableMemory:
+    """The space ``space`` for the request's owner (RT-089c): on a server only its owner lists, reads, changes and
+    clears it; another member, an administrator included, a principal without an owner identity and a space without
+    an owner get ``404 memory.space_not_found``, as for a space that does not exist. The desktop uses every space."""
+    name = check_space_name(space)
+    if not ctx.memory.may_use(name, owner_of(request)):
+        raise space_not_found(name)
+    return ctx.memory.open(name)
+
+
 @memory_router.get("/memory", dependencies=READ)
-def list_spaces(ctx: Ctx) -> list[MemorySpaceInfo]:
-    return ctx.memory.all()
+def list_spaces(ctx: Ctx, request: Request) -> list[MemorySpaceInfo]:
+    """The spaces the request's owner uses (RT-089c: on a server only their own)."""
+    return ctx.memory.visible(owner_of(request))
 
 
 @memory_router.post("/memory/propose", dependencies=RUN)
@@ -2702,30 +2740,32 @@ def propose_memory(body: MemoryProposalRequest, ctx: Ctx, request: Request) -> M
 
 
 @memory_router.get("/memory/{space}", dependencies=READ)
-def list_memory(space: str, ctx: Ctx) -> list[MemoryFile]:
-    return ctx.memory.open(check_space_name(space)).entries()
+def list_memory(space: str, ctx: Ctx, request: Request) -> list[MemoryFile]:
+    return _usable_space(ctx, request, space).entries()
 
 
 @memory_router.get("/memory/{space}/file", dependencies=READ)
-def read_memory(space: str, path: str, ctx: Ctx) -> MemoryText:
-    return MemoryText(path=path, content=ctx.memory.open(space).read(path))
+def read_memory(space: str, path: str, ctx: Ctx, request: Request) -> MemoryText:
+    return MemoryText(path=path, content=_usable_space(ctx, request, space).read(path))
 
 
 @memory_router.put("/memory/{space}/file", dependencies=EDIT)
-def write_memory(space: str, body: MemoryText, ctx: Ctx) -> MemoryText:
-    ctx.memory.open(space).write(body.path, body.content)
+def write_memory(space: str, body: MemoryText, ctx: Ctx, request: Request) -> MemoryText:
+    """Write a file; on a server the first writer of a new space becomes its owner (RT-089c)."""
+    ctx.memory.open_for(space, owner_of(request)).write(body.path, body.content)
     return body
 
 
 @memory_router.delete("/memory/{space}/file", status_code=204, dependencies=EDIT)
-def delete_memory(space: str, path: str, ctx: Ctx) -> Response:
-    ctx.memory.open(space).remove(path)
+def delete_memory(space: str, path: str, ctx: Ctx, request: Request) -> Response:
+    _usable_space(ctx, request, space).remove(path)
     return Response(status_code=204)
 
 
 @memory_router.delete("/memory/{space}", status_code=204, dependencies=EDIT)
-def clear_memory(space: str, ctx: Ctx) -> Response:
-    ctx.memory.open(space).clear()
+def clear_memory(space: str, ctx: Ctx, request: Request) -> Response:
+    """Empty a space; on a server its owner keeps it (RT-089c)."""
+    _usable_space(ctx, request, space).clear()
     return Response(status_code=204)
 
 

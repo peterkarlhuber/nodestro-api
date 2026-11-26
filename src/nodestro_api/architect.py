@@ -511,9 +511,15 @@ class WorkflowArchitect:
     # ---- public API ----------------------------------------------------------------
 
     def start(
-        self, request: ArchitectRequest, *, loop: asyncio.AbstractEventLoop | None = None, actor: str = "system"
+        self,
+        request: ArchitectRequest,
+        *,
+        loop: asyncio.AbstractEventLoop | None = None,
+        actor: str = "system",
+        memory_owner: str | None = None,
     ) -> ArchitectJob:
-        """Start a job in its own thread; ``actor``: who asks (the access model v2 checks its cloud model, N-06)."""
+        """Start a job in its own thread; ``actor``: who asks (the access model v2 checks its cloud model, N-06);
+        ``memory_owner``: whose memory spaces the plan may name (RT-089c; ``None``: every space, the desktop)."""
         if not request.description.strip():
             raise NodestroError("architect.description_missing", "Please describe the workflow")
         if request.mode == "revise" and request.workflow is None:
@@ -537,7 +543,7 @@ class WorkflowArchitect:
             self._subscribers[job.id] = []
         if loop is not None:
             self._loop = loop
-        session = _Session(self, job, request, cancelled, actor=actor)
+        session = _Session(self, job, request, cancelled, actor=actor, memory_owner=memory_owner)
         threading.Thread(target=session.run, name=f"architect-{job.id}", daemon=True).start()
         return job
 
@@ -714,9 +720,11 @@ class _Session:
         cancelled: threading.Event,
         *,
         actor: str = "system",
+        memory_owner: str | None = None,
     ) -> None:
         self.service = service
         self.actor = actor
+        self.memory_owner = memory_owner
         self.nodestro = service.nodestro
         self.job = job
         self.request = request
@@ -1043,7 +1051,7 @@ class _Session:
             {"id": item.id, "name": item.name, "description": item.description}
             for item in self.nodestro.knowledge.files(None)[:60]
         ]
-        spaces = [space.name for space in self.nodestro.memory.all()][:40]
+        spaces = [space.name for space in self.nodestro.memory.visible(self.memory_owner)][:40]
         return {
             "existing_tools": tools,
             "server_tools": server,

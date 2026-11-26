@@ -43,6 +43,33 @@ None known.
 Tool approvals (`NODESTRO_TOOL_APPROVALS`, off by default and staying off) need the independent S-2 review tracked as
 nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes here. No separate entry in this file.
 
+### API-075 · Memory spaces with an owner on a server (RT-089c): the api's part
+
+- **Priority:** P1 High · **Status:** In review · **Refs:** nodestro-runtime RT-089c, `nodestro_api.memory_owners`,
+  `tests/test_memory_space_owners.py`
+- **What:** before, every member of a tenant listed, read, wrote and cleared every memory space on `/api/memory`. Now
+  on a server only a space's owner (its first writer) uses it: `/api/memory` lists only the request's own spaces; the
+  space routes, an assistant attachment of kind `memory`, the export check and export (`options.memory`), the
+  architect's resource list and the context preview answer another person's space, a space without an owner and a
+  principal without an owner identity like a space that does not exist (`404 memory.space_not_found`).
+  Administrators get no extra capability. A space without an owner gets one only with the operator's
+  `nodestro-server memory backfill-owners --tenant --user --space` (member only, never over an owner, audited as
+  `memory_space_owner_assigned`; nothing is deleted). The desktop is unchanged.
+- **Review fixes (2026-11-26):** H-1: an export that includes a memory space (record or portable job) is listed,
+  downloaded, deleted and shown in the publication overview only for the owner of every space it includes; everybody
+  else, administrators included, gets it like an unknown export. H-2: a run whose step used a person's space is that
+  person's alone on every run route (runtime `Run.memory_owner`, the conversation answers' mechanism in `app_context`
+  and `visible_runs`); an open event stream of another member ends with `access_ended` (run event `memory_private`).
+  L-1: the agent test acts for the person who asks (`actor`), so it uses the tester's space.
+- **Residual risks (review, documented):** workflows are shared, so an editor can name another member's space in a
+  workflow and prompt the agent to overwrite or empty it; when the space's owner runs it, it acts on her space (what
+  it reads stays in her private run; an overwrite does not). A space name is taken by its first writer (squatting).
+  The spaces of a removed member stay theirs and unused; a transfer would be a separate owner decision.
+- **Open:** runs for no person (published APIs, schedules without a starter, batches) that use persistent memory
+  fail closed on a server (runtime RT-089c), and such a run is seen by nobody; the SDK syncs the audit kind and
+  `memory_owner` from `openapi/nodestro-api.json`.
+- **Next step:** Independent review together with the runtime part.
+
 ### API-074 · Egress protection by content provenance (N-08): the api's part
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** nodestro-runtime RT-094 and `docs/content-provenance.md`,

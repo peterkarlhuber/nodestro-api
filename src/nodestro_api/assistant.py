@@ -39,6 +39,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from nodestro_runtime.conversations import NO_OWNER
 from nodestro_runtime.engine import usage_of
+from nodestro_runtime.memory_spaces import space_not_found
 from nodestro_runtime.offline import OfflineScope, check_provider
 from nodestro_runtime.problems import NodestroError, Problem, library_problem, problem
 from nodestro_runtime.providers import MAX_RETRIES, model_id, provider_of
@@ -715,8 +716,12 @@ class Assistant:
         return True
 
     def attach(self, conversation_id: str, request: AttachRequest) -> ConversationDetail:
-        """Take a snapshot and attach it; the same object (and variant) replaces its earlier attachment."""
-        self._conversation(conversation_id)
+        """Take a snapshot and attach it; the same object (and variant) replaces its earlier attachment. A memory
+        space only its owner uses (RT-089c) is attached only to its owner's conversation (``memory.space_not_found``
+        otherwise, before anything is read)."""
+        owner = self._conversation(conversation_id).owner
+        if request.kind == "memory" and not self.nodestro.memory.may_use(request.ref_id, owner):
+            raise space_not_found(request.ref_id)
         snapshot = build_snapshot(self.nodestro, request, conversation_id=conversation_id)
         if snapshot.offline is not None:
             # N-09: a run of an offline agent or conversation is attached only while the assistant model is local;

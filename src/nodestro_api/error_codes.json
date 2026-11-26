@@ -784,6 +784,7 @@
   "mcp.write_not_supported": {"params": ["name"], "source": "runtime"},
   "mcp_server.disabled": {"params": [], "source": "api"},
   "memory.space_name": {"params": ["name"], "source": "runtime"},
+  "memory.space_not_found": {"params": ["name"], "source": "runtime"},
   "method.not_allowed": {"params": [], "source": "api"},
   "model.choice_invalid": {"params": ["configured", "model"], "source": "runtime"},
   "model.cost_unknown": {"params": [], "source": "api"},

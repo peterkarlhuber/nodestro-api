@@ -19,12 +19,13 @@ from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import FileResponse
 from nodestro_runtime.engine import start_fields
 from nodestro_runtime.forms import check_values, input_text
+from nodestro_runtime.memory_spaces import space_not_found
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.schemas import LANGUAGES, RunSummary, Workflow
 from pydantic import BaseModel, Field
 
 from . import access_audit, api_guide, exporter, portable_build
-from .api import Ctx, _quote, actor_id
+from .api import Ctx, _quote, actor_id, owner_of
 from .api_examples import ApiExamples, examples
 from .api_guide import ApiGuide
 from .api_keys import ApiKeyOut, NewApiKey
@@ -205,13 +206,17 @@ class _ReleaseHead(BaseModel):
 
 
 @router.get("/publication-overview", dependencies=READ)
-def publication_overview(ctx: Ctx) -> list[PublicationOverviewItem]:
+def publication_overview(ctx: Ctx, request: Request) -> list[PublicationOverviewItem]:
     """All publications of this installation (on a server: of the tenant) with their workflow, active release and
-    exports, for the studio's *Publications* page (one request instead of one per publication)."""
-    exports = exporter.records_by_publication(ctx)
+    exports, for the studio's *Publications* page (one request instead of one per publication). Exports with another
+    person's memory are left out (RT-089c)."""
+    exports = {
+        key: [item for item in items if _export_visible(ctx, request, item.options.memory)]
+        for key, items in exporter.records_by_publication(ctx).items()
+    }
     jobs: dict[str, list[portable_build.ExportJob]] = {}
     for job in sorted(ctx.store.list(portable_build.JOBS, portable_build.ExportJob), key=lambda job: job.created_at):
-        if job.state == "running":
+        if job.state == "running" and _export_visible(ctx, request, job.options.get("memory")):
             jobs.setdefault(job.publication_id, []).insert(0, job)
     found = []
     for publication in sorted(ctx.publications.all(), key=lambda item: item.name.lower()):
@@ -402,11 +407,44 @@ class ExportIn(BaseModel):
     options: exporter.ExportOptions = Field(default_factory=exporter.ExportOptions)
 
 
+def _own_memory(ctx: Ctx, request: Request, options: exporter.ExportOptions) -> str | None:
+    """The request's owner, after checking that every memory space the export includes is theirs (RT-089c: another
+    person's space, or one without an owner, answers ``404 memory.space_not_found`` before anything is read)."""
+    owner = owner_of(request)
+    for name in options.memory:
+        if not ctx.memory.may_use(name, owner):
+            raise space_not_found(name)
+    return owner
+
+
+def _export_visible(ctx: Ctx, request: Request, memory: Any) -> bool:
+    """Whether the request may see an export (record or job) that includes the memory spaces ``memory`` (RT-089c review
+    H-1): only the owner of every one of them. An export without memory is the tenant's; one with another person's
+    space, or a space without an owner, is answered like an unknown export, administrators included."""
+    owner = owner_of(request)
+    return all(isinstance(name, str) and ctx.memory.may_use(name, owner) for name in memory or [])
+
+
+def _visible_record(ctx: Ctx, request: Request, export_id: str) -> exporter.ExportRecord:
+    record = ctx.store.get(exporter.EXPORTS, export_id, exporter.ExportRecord)
+    if record is None or not _export_visible(ctx, request, record.options.memory):
+        raise KeyError(export_id)
+    return record
+
+
+def _visible_job(ctx: Ctx, request: Request, job_id: str) -> portable_build.ExportJob:
+    job = portable_build.runner(ctx).get(job_id)
+    if not _export_visible(ctx, request, job.options.get("memory")):
+        raise KeyError(job_id)
+    return job
+
+
 @router.post("/publications/{publication_id}/export/check", dependencies=READ)
-def export_check(publication_id: str, body: ExportIn, ctx: Ctx) -> exporter.ExportCheck:
+def export_check(publication_id: str, body: ExportIn, ctx: Ctx, request: Request) -> exporter.ExportCheck:
+    owner = _own_memory(ctx, request, body.options)
     publication = ctx.publications.get(publication_id)
     release, _ = _served(ctx, publication, body.number)
-    return exporter.check(ctx, publication, release, body.options)
+    return exporter.check(ctx, publication, release, body.options, memory_owner=owner)
 
 
 @router.post("/publications/{publication_id}/export/libraries", dependencies=EDIT)
@@ -420,20 +458,24 @@ def export_libraries(publication_id: str, body: ExportIn, ctx: Ctx) -> portable_
 
 
 @router.post("/publications/{publication_id}/exports", status_code=201, dependencies=EDIT)
-def create_export(publication_id: str, body: ExportIn, ctx: Ctx) -> exporter.ExportRecord:
+def create_export(publication_id: str, body: ExportIn, ctx: Ctx, request: Request) -> exporter.ExportRecord:
+    _own_memory(ctx, request, body.options)
     publication = ctx.publications.get(publication_id)
     release, _ = _served(ctx, publication, body.number)
     return exporter.export(ctx, publication, release, body.options)
 
 
 @router.get("/publications/{publication_id}/exports", dependencies=READ)
-def list_exports(publication_id: str, ctx: Ctx) -> list[exporter.ExportRecord]:
+def list_exports(publication_id: str, ctx: Ctx, request: Request) -> list[exporter.ExportRecord]:
     ctx.publications.get(publication_id)
-    return exporter.records(ctx, publication_id)
+    return [
+        item for item in exporter.records(ctx, publication_id) if _export_visible(ctx, request, item.options.memory)
+    ]
 
 
 @router.get("/exports/{export_id}/download", dependencies=READ)
-def download_export(export_id: str, ctx: Ctx) -> Response:
+def download_export(export_id: str, ctx: Ctx, request: Request) -> Response:
+    _visible_record(ctx, request, export_id)
     headers = {"Content-Disposition": "attachment; filename*=UTF-8''{name}"}
     record, path = exporter.content_path(ctx, export_id)
     headers["Content-Disposition"] = headers["Content-Disposition"].format(name=_quote(record.file_name))
@@ -446,9 +488,10 @@ def download_export(export_id: str, ctx: Ctx) -> Response:
 
 
 @router.delete("/exports/{export_id}", status_code=204, dependencies=EDIT)
-def delete_export(export_id: str, ctx: Ctx) -> Response:
+def delete_export(export_id: str, ctx: Ctx, request: Request) -> Response:
     """Delete an export and its ZIP file (``404`` for an unknown id). On a server this frees space of the
     workspace's quota for stored packages (``NODESTRO_SERVER_EXPORT_TENANT_QUOTA_BYTES``, API-048)."""
+    _visible_record(ctx, request, export_id)
     exporter.delete_export(ctx, export_id)
     return Response(status_code=204)
 
@@ -457,7 +500,7 @@ def delete_export(export_id: str, ctx: Ctx) -> Response:
 
 
 @router.post("/publications/{publication_id}/export-jobs", status_code=202, dependencies=EDIT)
-def start_export_job(publication_id: str, body: ExportIn, ctx: Ctx) -> portable_build.ExportJob:
+def start_export_job(publication_id: str, body: ExportIn, ctx: Ctx, request: Request) -> portable_build.ExportJob:
     """Build a portable package in the background (``options.kind`` must be ``portable``).
 
     On a server this answers ``403 export.server_unsupported`` unless its operator enabled export jobs
@@ -465,12 +508,13 @@ def start_export_job(publication_id: str, body: ExportIn, ctx: Ctx) -> portable_
     at a time on the whole server (API-048), a workspace has one active export job (``export.busy`` otherwise), and a
     package larger than ``NODESTRO_SERVER_EXPORT_MAX_BYTES`` (default 2 GiB) is refused (``403
     export.server_too_large`` from the estimate, or the job fails with that code)."""
+    owner = _own_memory(ctx, request, body.options)
     publication = ctx.publications.get(publication_id)
     release, _ = _served(ctx, publication, body.number)
     options = body.options
     if options.kind != "portable":
         raise NodestroError("export.not_portable", "Only portable packages are built as jobs")
-    found = exporter.check(ctx, publication, release, options)
+    found = exporter.check(ctx, publication, release, options, memory_owner=owner)
     # On a server only with the operator's opt-in, one build at a time and a size limit (API3-07); its refusal
     # answers 403 before the check's own copy of it (API-053) would answer 400.
     portable_build.server_admission(ctx, found.portable.estimated_bytes if found.portable else 0)
@@ -481,18 +525,23 @@ def start_export_job(publication_id: str, body: ExportIn, ctx: Ctx) -> portable_
 
 
 @router.get("/publications/{publication_id}/export-jobs", dependencies=READ)
-def list_export_jobs(publication_id: str, ctx: Ctx) -> list[portable_build.ExportJob]:
+def list_export_jobs(publication_id: str, ctx: Ctx, request: Request) -> list[portable_build.ExportJob]:
     ctx.publications.get(publication_id)
-    return portable_build.runner(ctx).for_publication(publication_id)
+    return [
+        job
+        for job in portable_build.runner(ctx).for_publication(publication_id)
+        if _export_visible(ctx, request, job.options.get("memory"))
+    ]
 
 
 @router.get("/export-jobs/{job_id}", dependencies=READ)
-def get_export_job(job_id: str, ctx: Ctx) -> portable_build.ExportJob:
-    return portable_build.runner(ctx).get(job_id)
+def get_export_job(job_id: str, ctx: Ctx, request: Request) -> portable_build.ExportJob:
+    return _visible_job(ctx, request, job_id)
 
 
 @router.post("/export-jobs/{job_id}/cancel", dependencies=EDIT)
-def cancel_export_job(job_id: str, ctx: Ctx) -> portable_build.ExportJob:
+def cancel_export_job(job_id: str, ctx: Ctx, request: Request) -> portable_build.ExportJob:
+    _visible_job(ctx, request, job_id)
     return portable_build.runner(ctx).cancel(job_id)
 
 

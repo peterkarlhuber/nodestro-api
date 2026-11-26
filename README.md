@@ -301,7 +301,9 @@ Commands:
   tenant secrets (`secrets reencrypt`), Axentra platform services (`axentra`), input file storage (`files`),
   owners of conversations without an owner, which nobody sees on a server (`assistant backfill-owners`: lists
   them with suggestions; with `--tenant`, `--user` and `--conversation` it assigns exactly those to that member,
-  never over an owner, and audits each assignment)
+  never over an owner, and audits each assignment), owners of memory spaces without an owner (`memory
+  backfill-owners`: lists them; with `--tenant`, `--user` and `--space` it assigns exactly those, never over an owner,
+  audited)
   and database roles (`db`): `nodestro-server <command> --help` shows the arguments, and the runbook in the
   `nodestro-server` repository (`docs/RUNBOOK.md`) describes when to use them.
 
