@@ -11,6 +11,10 @@
   owner). Each assignment is audited as the new access audit kind `memory_space_owner_assigned`; both OpenAPI documents
   are regenerated and the SDK syncs. The desktop is unchanged. Tests: `tests/test_memory_space_owners.py`; see TODO
   API-075.
+  - Review fixes: an export with a memory space (and its portable job) is its owner's alone on every export route and
+    the publication overview (H-1); a run that used a person's space is that person's alone on every run route, and
+    another reader's open event stream ends (H-2; `Run.memory_owner`/`RunSummary.memory_owner` in both OpenAPI
+    documents, left out while unset); the agent test acts for the person who asks (L-1).
 
 - Egress protection by content provenance (N-08; needs the pinned runtime; off by default, the runtime's
   `NODESTRO_CONTENT_PROVENANCE` together with `NODESTRO_ACCESS_GRANTS`): content of a granted source needs a grant for a

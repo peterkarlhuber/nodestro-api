@@ -1837,14 +1837,26 @@ async def run_events(run_id: str, request: Request, ctx: Ctx) -> StreamingRespon
         raise KeyError(run_id)
 
     access = StreamAccess(request)
+    owner = owner_of(request)
+
+    def visible() -> bool:
+        # RT-089c: a run becomes its owner's alone when a step uses a persistent memory space (event
+        # ``memory_private``, sent before the step reads the space); another reader's stream ends then.
+        return ctx.conversations.run_visible(run_id, owner)
 
     async def stream() -> AsyncIterator[str]:
         if not ctx.runs.is_live(run_id):
+            if not visible():
+                yield _sse("end", {"reason": "access_ended"})
+                return
             yield _sse("snapshot", run.model_dump(mode="json"))
             yield _sse("end", {"status": run.status})
             return
         history, queue = ctx.runs.subscribe(run_id)
         try:
+            if not visible():
+                yield _sse("end", {"reason": "access_ended"})
+                return
             yield _sse("snapshot", ctx.runs.get(run_id).model_dump(mode="json"))  # type: ignore[union-attr]
             last = history[-1].seq if history else 0
             while True:
@@ -1863,6 +1875,9 @@ async def run_events(run_id: str, request: Request, ctx: Ctx) -> StreamingRespon
                     return
                 if event.seq <= last:
                     continue
+                if event.type == "memory_private" and not visible():
+                    yield _sse("end", {"reason": "access_ended"})
+                    return
                 yield _sse("event", event.model_dump(mode="json"))
         finally:
             ctx.runs.unsubscribe(run_id, queue)
@@ -2316,7 +2331,9 @@ async def test_agent(body: AgentTestIn, ctx: Ctx, request: Request) -> AgentTest
         await model_readiness.require_local(ctx, request, body.agent.quality.judge_model, "check")
     # The checks may ask a local model server (/api/show, /api/ps): never on the event loop (RT3-04 pattern).
     await asyncio.to_thread(_check_agent_test, ctx, body)
-    result, tracker = await asyncio.to_thread(ctx.tester.run, body)
+    # The person who asks: the N-06 audit of a refused cloud model, and whose persistent memory space the test uses
+    # (RT-089c review L-1; before, every test acted for ``system``: persistent memory failed on a server).
+    result, tracker = await asyncio.to_thread(ctx.tester.run, body, actor=actor_id(request))
     ctx.usage_log.record("agent_test", tracker.records, label=body.agent.name, ref=result.id, tracker=tracker)
     return result
 

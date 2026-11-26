@@ -21759,6 +21759,17 @@
             "title": "Input",
             "type": "string"
           },
+          "memory_owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Owner"
+          },
           "nodes": {
             "additionalProperties": {
               "$ref": "#/components/schemas/NodeRun"
@@ -22799,6 +22810,17 @@
           "input": {
             "title": "Input",
             "type": "string"
+          },
+          "memory_owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Owner"
           },
           "parent_run_id": {
             "anyOf": [
@@ -41518,7 +41540,7 @@
     },
     "/api/publication-overview": {
       "get": {
-        "description": "All publications of this installation (on a server: of the tenant) with their workflow, active release and\nexports, for the studio's *Publications* page (one request instead of one per publication).",
+        "description": "All publications of this installation (on a server: of the tenant) with their workflow, active release and\nexports, for the studio's *Publications* page (one request instead of one per publication). Exports with another\nperson's memory are left out (RT-089c).",
         "operationId": "publication_overview_api_publication_overview_get",
         "responses": {
           "200": {
