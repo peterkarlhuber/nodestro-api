@@ -107,6 +107,10 @@ class AppConfig:
     #: ``NODESTRO_DESKTOP_LOGOUT``, ``NODESTRO_TERMINAL_LAUNCH``, ``NODESTRO_LAUNCH_FRAGMENT``,
     #: ``NODESTRO_BIND_LOOPBACK``), every switch off by default, see :class:`nodestro_api.launch.LaunchHardening`.
     hardening: LaunchHardening = field(default_factory=LaunchHardening)
+    #: The product whose data this is (N-15): backups name it in their manifest (``product``) and a restore refuses a
+    #: backup of another product (``backup.product_mismatch``). An embedding product sets its own id (lower-case
+    #: letters, digits and ``-``, see :data:`nodestro_api.backup.PRODUCT_ID`); the studio keeps ``nodestro``.
+    product_id: str = "nodestro"
 
     @property
     def profile(self) -> RuntimeProfile:

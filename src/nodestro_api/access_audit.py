@@ -51,6 +51,10 @@ AccessKind = Literal[
     "conversation_owner_assigned",
     # The operator gave a memory space without an owner its owner (target: the new owner; details: the space, RT-089c).
     "memory_space_owner_assigned",
+    # N-15: the installation's data was restored from a backup, exported or deleted (target: ``data``, the product id).
+    "backup_restored",
+    "data_exported",
+    "data_deleted",
 ]
 
 
@@ -62,7 +66,7 @@ class AccessEvent(BaseModel):
     kind: AccessKind
     #: The user id that acted (``operator`` for the server's commands, ``local`` on the desktop).
     actor: str
-    target_type: Literal["user", "api_key", "tenant", "session"]
+    target_type: Literal["user", "api_key", "tenant", "session", "data"]
     target_id: str
     outcome: Literal["success", "denied"] = "success"
     #: Ids and codes only: a role before and after, a refusal code, a key's name and prefix; never a secret.

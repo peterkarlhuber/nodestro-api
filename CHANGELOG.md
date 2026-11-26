@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- Product-neutral backups, export everything and delete everything (N-15, [docs/backup.md](docs/backup.md)). The
+  backup core works on a `BackupProfile` (product id, data directory, components); `AppConfig.product_id` (default
+  `nodestro`) names the product. The format stays `nodestro-backup` version 1 with the new manifest fields `product`,
+  `components` and `secrets_excluded`; a backup without `product` (every earlier one) belongs to `nodestro` and stays
+  readable (fixture `tests/fixtures/backup-v1.zip`), one of another product is refused (`backup.product_mismatch`).
+  - Secrets: the sealed tokens of MCP services, pending OAuth sign-ins and the sealed secrets of service connections
+    are no longer part of a backup (`excluded` adds `mcp_tokens`, `connection_secrets`), and a restore never takes
+    them from one; it keeps this computer's for the same id. `BackupInfo.secrets_to_reenter` and
+    `RestoreResult.secrets_to_reenter` list what has to be entered again.
+  - Restored tool and input files, the waiting backup and the safety backups are private to the owner (POSIX).
+  - New routes (permission `install`, router group `data`, tag `backup`): `GET /api/data/export` (format
+    `nodestro-export` version 1, readable files without secrets) and `POST /api/data/delete-all` (`{"confirm": "delete
+    all data"}`; leaves no data in the data directory; `data.busy` while anything works in the background,
+    `data.not_confirmed`). A restore, an export and a deletion are recorded in the access audit trail (new kinds
+    `backup_restored`, `data_exported`, `data_deleted`, target type `data`). Both OpenAPI documents are regenerated;
+    the SDK syncs. Tests: `tests/test_data_lifecycle.py` (restore on a second computer in a second process, the old
+    format, the canary scan after a deletion, the export, permission and CSRF). See TODO API-076.
+
 - Memory spaces with an owner on a server (RT-089c, needs the pinned runtime). `/api/memory` lists only the request's
   own spaces. The space routes, assistant attachments of kind `memory`, the export check and export
   (`options.memory`), the architect's resource list and the context preview answer another person's space, a space
