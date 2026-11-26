@@ -51,6 +51,10 @@ AccessKind = Literal[
     "conversation_owner_assigned",
     # The operator gave a memory space without an owner its owner (target: the new owner; details: the space, RT-089c).
     "memory_space_owner_assigned",
+    # The owner of a memory space allowed (or no longer allows) a workflow or an agent configuration to use it
+    # (target: the owner; details: the consent, the space, the workflow, its version and digest; RT-089d).
+    "memory_consent_granted",
+    "memory_consent_revoked",
     # N-15: the installation's data was restored from a backup, exported or deleted (target: ``data``, the product id).
     "backup_restored",
     "data_exported",

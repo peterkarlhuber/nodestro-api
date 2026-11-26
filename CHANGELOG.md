@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Security (RT-089d, needs the pinned runtime): a workflow or agent test uses a person's private memory space on a
+  server only with that person's explicit consent for exactly its content. New routes `GET /api/memory-consents`,
+  `GET /api/memory-consents/preview`, `POST /api/memory-consents`, `DELETE /api/memory-consents/{consent_id}`; codes
+  `memory.consent_required` (403), `memory.consent_stale` (409), `memory.consent_too_large` (422),
+  `memory.consent_unavailable` (404); access audit kinds `memory_consent_granted` and `memory_consent_revoked`.
+  Private runs tell nobody else about themselves: the local inbox (list and unread count) leaves out messages of runs
+  the member may not see, `GET /api/workflows` shows no last status of another person's private run, `GET /api/usage`
+  counts other people's private runs under `private_runs` instead of their workflow, and `/api/runs/{run_id}/events`
+  checks the snapshot after reading it (before, a run that became private between the check and the snapshot was
+  sent). Both OpenAPI documents are regenerated (additive, plus `Run.memory_spaces`).
 - The folder browser (N-11; needs orkexa with `orkexa.fs.browse_folder` in the studio lock; behind
   `NODESTRO_FOLDER_GRANTS`, off): `POST /api/folders/browse` answers the sub-folders of a folder of this computer for
   choosing a folder to grant: folder names and paths, never files; system folders, other users' home folders,

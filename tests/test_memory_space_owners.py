@@ -308,6 +308,8 @@ def test_a_run_that_used_a_memory_space_is_seen_only_by_its_owner(scripted_serve
     stored = alice.put(f"/api/memory/{AUDIT_SPACE}/file", json={"path": AUDIT_NOTE, "content": f"{MARKER} note"})
     assert stored.status_code == 200
     workflow_id = _memory_workflow(alice, AUDIT_SPACE)
+    allowed = alice.post("/api/memory-consents", json={"space": AUDIT_SPACE, "workflow_id": workflow_id})
+    assert allowed.status_code == 201, allowed.text  # RT-089d: Alice's explicit consent
     started = alice.post(f"/api/workflows/{workflow_id}/runs", json={"input": "go"})
     assert started.status_code == 201, started.text
     run_id = started.json()["id"]
@@ -359,6 +361,8 @@ def test_an_agent_test_with_persistent_memory_uses_the_testers_space(scripted_se
         },
         "input": "go",
     }
+    allowed = alice.post("/api/memory-consents", json={"space": AUDIT_SPACE, "agent": body["agent"]})
+    assert allowed.status_code == 201, allowed.text  # RT-089d: Alice's explicit consent for this configuration
     mine = alice.post("/api/agents/test", json=body)
     assert mine.status_code == 200 and mine.json()["status"] == "succeeded", mine.text
     assert MARKER in mine.text
