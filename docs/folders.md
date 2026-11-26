@@ -16,6 +16,7 @@ is read or written.
 | `GET /api/folders/{id}` | `admin` | One folder grant. An unknown id answers `404 folder.not_found` |
 | `GET /api/folders/{id}/accesses` | `admin` | Its access log, newest first (`limit`, at most 1,000): every call of the folder tools with agent, run, outcome and code, never a path |
 | `DELETE /api/folders/{id}` | `admin` | Revoke a folder grant. The next tool call on it is refused. Revoking twice changes nothing |
+| `POST /api/folders/browse` | `admin`, local session | The folder browser (N-11): the sub-folders of a folder of this computer, for choosing the folder to grant. See below |
 
 ## Who writes
 
@@ -33,6 +34,41 @@ A folder grant is an access grant of the access model v2 (resource `folder`, act
 is the access model's (`access_granted`, `access_grant_revoked`). A grant for "this conversation" is not offered here
 (`scope` is `all` or `agents`).
 
+## The folder browser (N-11)
+
+A browser cannot hand a folder of this computer to the backend, so the studio browses folders through
+`POST /api/folders/browse` with `{"path": "<absolute path>"}` (`null` or no `path`: the home folder, else the root of
+the file system). It answers `path` (canonical), `parent` (`null` at a file-system or drive root), `folders`
+(`name`, `path`, `link`), `truncated`, `places` (`home`, `root`, `drive`, `media`) and `separator`.
+
+- **Folder names only.** Never a file, a file name, a size or a content. Names starting with `.` are left out (on
+  Windows also `$` names and folders with the hidden or system attribute).
+- **No system folders**, no other user's home folder, no credential folder (`.ssh`, `.aws`, keychains ...) and not
+  Nodestro's data folder: they are neither listed nor opened (`422 folder.not_browsable`, `reason: hidden`). The lists
+  are the path guard's (`orkexa.fs.browse_folder`, `orkexa.fs.system_folders`). The user's own home folder and
+  everything below it can be browsed.
+- **No existence answers in hidden places.** A file, a folder or a missing name in or below such a folder answers
+  `reason: hidden` alike (never `not_found`, `not_a_folder` or `no_access`), so the browser enumerates neither files
+  nor users. The result folder of the embedded interface answers `output.protected` for them on browsing, choosing
+  and creating a folder.
+- **Links.** `..` and links are resolved before the checks. A symbolic link or junction is listed only when its
+  target is a folder that passes the same checks; its `path` is the target (`link: true`), never the link. The folder
+  is opened once after the checks and must still be the folder that was checked.
+- **Only the authenticated local session.** The request must have come through the session that the desktop app's
+  launch secret opened (or Nodestro Local Docker's access key: a browser session or `Authorization: Bearer`). Without
+  a launch secret (the `nodestro` command in a terminal) it answers `403 folder.session_required`. It needs `admin`,
+  the folder grant switch and a non-server profile like every other route here.
+- **CSRF.** It is a `POST` with a JSON body, although it changes nothing: it gets the protection of every change
+  (an `Origin` must be the API's own, and with `NODESTRO_LAUNCH_CSRF=1` the session's `X-Nodestro-CSRF` value and an
+  `Origin` are required), a link or an image cannot trigger it, and the path stays out of access logs. A request
+  that the browser marks as from another site (`Sec-Fetch-Site` other than `same-origin` or `none`) is refused with
+  `403 request.cross_site`.
+- At most 500 folders are answered and 10,000 entries read within 10 seconds; beyond, `truncated` is `true`.
+
+Browsing is not granting: a folder chosen here is checked again by `POST /api/folders`, which is stricter (no home
+folder, no file-system root). The embedded web interface's result folder browser (`output_folder.py`,
+`GET /ui/api/setup/output/browse`) uses the same code path (`nodestro_api.folder_browser`).
+
 ## Problem codes
 
 | Code | Status | When |
@@ -44,9 +80,12 @@ is the access model's (`access_granted`, `access_grant_revoked`). A grant for "t
 | `folder.invalid_name` | 422 | The name is empty, longer than 80 characters, not printable or has a slash |
 | `folder.invalid_pattern` | 422 | An include or exclude pattern is not valid |
 | `access.person_required` | 403 | The caller is not a person |
+| `folder.not_browsable` | 422 | The folder browser does not open this path. `reason`: `hidden` (a system folder, another user's home folder, a credential folder or the data folder, or a folder inside one), `not_found`, `not_a_folder`, `no_access`, `changed` (the folder changed while it was checked), `invalid_path`, `network_path` |
+| `folder.session_required` | 403 | The folder browser was asked without the authenticated local session |
+| `request.cross_site` | 403 | The folder browser was asked from another site (`Sec-Fetch-Site`) |
 
 The result folder of a portable application (`output_folder.py`) uses the same system folder lists as the path
-guard (`orkexa.fs.system_folders`, `orkexa.fs.allowed_folders`).
+guard (`orkexa.fs.system_folders`, `orkexa.fs.allowed_folders`) and the same folder browser.
 
 ## The search index (N-12)
 

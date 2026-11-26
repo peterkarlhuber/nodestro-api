@@ -7,6 +7,17 @@
   indexer; revoking a folder grant (`DELETE /api/folders/{id}`, `DELETE /api/access/grants/{id}`) drops its search
   index before the answer, and creating or revoking a deny resyncs the indexes (`Workspace.folder_access_changed`).
   No contract change. See `docs/folders.md`, "The search index".
+- The folder browser (N-11; needs orkexa with `orkexa.fs.browse_folder` in the studio lock; behind
+  `NODESTRO_FOLDER_GRANTS`, off): `POST /api/folders/browse` answers the sub-folders of a folder of this computer for
+  choosing a folder to grant: folder names and paths, never files; system folders, other users' home folders,
+  credential folders and the data folder are neither listed nor opened (`422 folder.not_browsable` with `reason`);
+  links only when their target passes. Only for the authenticated local session (`403 folder.session_required`
+  without one), `admin`; a request marked as from another site is refused (`403 request.cross_site`). The embedded web
+  interface's result folder browser uses the same code path (`folder_browser.py`): the data folder is no longer
+  listed, and a cross-site request is refused with `ui.csrf`. Both OpenAPI documents are regenerated (additive).
+  Tests: `tests/test_folders_browse_api.py`, `tests/test_output_folder.py`; see `docs/folders.md`. Review fix: no
+  answer tells whether something exists in a hidden folder (`reason: hidden`; the result folder answers
+  `output.protected` on browsing, choosing and creating there).
 - Product-neutral backups, export everything and delete everything (N-15, [docs/backup.md](docs/backup.md)). The
   backup core works on a `BackupProfile` (product id, data directory, components); `AppConfig.product_id` (default
   `nodestro`) names the product. The format stays `nodestro-backup` version 1 with the new manifest fields `product`,

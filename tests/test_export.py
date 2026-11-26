@@ -158,6 +158,8 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     expected |= {"nodestro_api.pairing", "nodestro_api.portable_ops"}
     # + nodestro_api.cross_origin (NAL-C5: the token profile and CORS for the interface on another origin).
     expected.add("nodestro_api.cross_origin")
+    # + nodestro_api.folder_browser (N-11: the result folder's browser on orkexa.fs.browse_folder).
+    expected.add("nodestro_api.folder_browser")
     # + nodestro_runtime.activity (N-13, runtime a8e54a9): the engine, input files and knowledge write one activity
     # event per action; it needs only platform_events (the hook protocol, exported already), never Axentra itself.
     expected.add("nodestro_runtime.activity")
@@ -173,7 +175,7 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     # indexes; an exported application never builds one (folders stay off there).
     with_folder_index = (Path(nodestro_runtime.__file__).parent / "folder_index.py").is_file()
     assert ("nodestro_runtime.folder_index" in modules) is with_folder_index
-    assert len(modules) == 78 + with_error_texts + with_offline + 2 * with_folders + with_folder_index
+    assert len(modules) == 79 + with_error_texts + with_offline + 2 * with_folders + with_folder_index
     assert expected | {"nodestro_runtime.local_models"} <= set(modules)
     assert "nodestro_runtime.local_service" not in modules
     # The audit/usage hook protocol is exported (tool approvals and the usage log import it); the Axentra

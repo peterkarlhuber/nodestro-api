@@ -14,6 +14,15 @@ runtime: only while ``NODESTRO_FOLDER_GRANTS=1``, and never in the server profil
   folders and Nodestro's data folder are refused (``422 folder.not_grantable`` with ``reason``).
 - ``DELETE /api/folders/{folder_id}`` (``admin``): revoke a folder grant; the next tool call is refused and the
   folder's search index (N-12) is removed at once. Revoking twice changes nothing.
+- ``POST /api/folders/browse`` (``admin``, N-11): the sub-folders of a folder of this computer, for choosing the
+  folder to grant (:mod:`nodestro_api.folder_browser` on ``orkexa.fs``): folder names and paths, never files. System
+  folders, other users' home folders, credential folders and the data folder are neither listed nor opened
+  (``422 folder.not_browsable`` with ``reason``). Only for the authenticated local session: a request that came
+  through the launch secret's or access key's session (:data:`nodestro_api.launch.SESSION_SCOPE_KEY`); without one
+  (no launch secret, e.g. the ``nodestro`` command in a terminal) it answers ``403 folder.session_required``. It is
+  a ``POST`` with a JSON body, so it gets the CSRF protection of every change (exact ``Origin``, and with
+  ``NODESTRO_LAUNCH_CSRF`` the session's CSRF value) and the path stays out of access logs; a request that the
+  browser marks as from another site (``Sec-Fetch-Site``) is refused (``403 request.cross_site``).
 
 A grant with ``index`` keeps a search index of the folder (runtime N-12, ``docs/folders.md`` "The search index"): the
 grant wakes the workspace's indexer, and every change of a folder grant or an access record
@@ -30,6 +39,7 @@ in :data:`nodestro_api.api.NODESTRO_ERROR_STATUS`.
 
 from __future__ import annotations
 
+import os
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query, Request
@@ -39,7 +49,9 @@ from nodestro_runtime.tool_approvals import Person
 from nodestro_runtime.tool_policy import AccessMode
 from pydantic import AwareDatetime, BaseModel, Field
 
+from . import folder_browser
 from .api import Ctx
+from .launch import SESSION_SCOPE_KEY
 from .permissions import ADMIN, READ, Principal
 from .serving import ApiError
 
@@ -80,6 +92,41 @@ class FolderGrantIn(BaseModel):
     mode: AccessMode = "supervised"
     #: Until when the grant holds; ``None``: until revoked.
     expires_at: AwareDatetime | None = None
+
+
+class FolderBrowseIn(BaseModel):
+    """The folder to browse: an absolute path; ``None``: the home folder (or the root of the file system)."""
+
+    path: str | None = Field(default=None, max_length=folder_browser.MAX_PATH)
+
+
+class BrowsedFolder(BaseModel):
+    #: The name as stored.
+    name: str
+    #: The canonical absolute path to browse or grant.
+    path: str
+    #: A symbolic link or junction; ``path`` is its target.
+    link: bool = False
+
+
+class FolderPlace(BaseModel):
+    kind: Literal["home", "root", "drive", "media"]
+    path: str
+
+
+class FolderBrowse(BaseModel):
+    """One folder of the browser: its sub-folders (never files) and the starting points."""
+
+    #: The canonical folder that was listed.
+    path: str
+    #: Its parent folder; ``None`` at the root of a file system or drive.
+    parent: str | None
+    folders: list[BrowsedFolder]
+    #: More folders than answered (at most ``nodestro_api.folder_browser.MAX_FOLDERS``) or the listing took too long.
+    truncated: bool
+    places: list[FolderPlace]
+    #: The path separator of this computer.
+    separator: str
 
 
 def _bounds() -> dict[str, FolderLimitBounds]:
@@ -141,6 +188,31 @@ def grant_folder(body: FolderGrantIn, ctx: Ctx, request: Request) -> FolderGrant
     return view
 
 
+@router.post("/browse", dependencies=ADMIN)
+def browse_folders(body: FolderBrowseIn, ctx: Ctx, request: Request) -> FolderBrowse:
+    """The sub-folders of a folder of this computer (names only), for choosing a folder to grant."""
+    _grants(ctx)  # 404 folder.disabled while folder grants are off, and always on a server
+    if request.scope.get(SESSION_SCOPE_KEY) not in ("cookie", "bearer"):
+        raise ApiError(
+            403, "folder.session_required", "Browsing folders needs the session of the window Nodestro opened"
+        )
+    folder_browser.check_fetch_site(request, "request.cross_site")
+    protected = [ctx.data_dir.resolve()]
+    given = body.path or str(folder_browser.home() or folder_browser.file_system_root())
+    try:
+        listing = folder_browser.browse(given, protected=protected)
+    except folder_browser.BrowseRefused as refused:
+        raise ApiError(422, "folder.not_browsable", refused.message, reason=refused.reason) from None
+    return FolderBrowse(
+        path=listing.path,
+        parent=listing.parent,
+        folders=[BrowsedFolder(name=item.name, path=item.path, link=item.link) for item in listing.folders],
+        truncated=listing.truncated,
+        places=[FolderPlace.model_validate(place) for place in folder_browser.places(protected=protected)],
+        separator=os.sep,
+    )
+
+
 @router.get("/{folder_id}", dependencies=ADMIN)
 def get_folder(folder_id: str, ctx: Ctx) -> FolderGrantView:
     return _grants(ctx).get(folder_id)
@@ -161,4 +233,13 @@ def revoke_folder(folder_id: str, ctx: Ctx, request: Request) -> FolderGrantView
     return view
 
 
-__all__ = ["FolderGrantIn", "FolderLimitBounds", "FolderState", "router"]
+__all__ = [
+    "BrowsedFolder",
+    "FolderBrowse",
+    "FolderBrowseIn",
+    "FolderGrantIn",
+    "FolderLimitBounds",
+    "FolderPlace",
+    "FolderState",
+    "router",
+]
