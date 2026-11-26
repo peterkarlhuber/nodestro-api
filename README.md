@@ -478,6 +478,13 @@ first (paths, checksums, database integrity, every stored document, and whether 
 current state as a safety backup, copies the tool and input files next to the current ones, replaces all tables in
 one transaction and only then swaps the directories. One restore runs at a time, and none while runs are executing.
 
+The backup core is product-neutral (N-15): the manifest names the `product` (`AppConfig.product_id`, `nodestro` for the
+studio and for every backup made before the field), sealed MCP tokens and connection secrets stay on the computer as
+well, and checking or restoring a backup lists the secrets to enter again (`secrets_to_reenter`). `GET
+/api/data/export` exports everything as readable files without secrets; `POST /api/data/delete-all` with `{"confirm":
+"delete all data"}` deletes every piece of data in the data directory. Both need `install` and are recorded in the
+access audit trail, as a restore is. See [docs/backup.md](docs/backup.md).
+
 ## The contract
 
 `openapi/nodestro-api.json` is the OpenAPI document of exactly this API. A test fails while the file does not match

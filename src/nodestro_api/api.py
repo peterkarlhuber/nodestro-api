@@ -467,6 +467,7 @@ PATH_TAGS: dict[str, str] = {
     "schedules": "automation",
     "library": "examples",
     "backup": "backup",
+    "data": "backup",  # export and delete everything (N-15)
     "settings": "settings",
 }
 DEFAULT_TAG = "workspace"

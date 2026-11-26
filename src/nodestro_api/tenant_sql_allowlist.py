@@ -14,6 +14,10 @@ SKIP_MODULES: dict[str, str] = {
         "local backups of the desktop's SQLite database (one data directory is one tenant, no tenant_id column);"
         " the server profile has no local backups"
     ),
+    "nodestro_api/data_lifecycle.py": (
+        "export and delete everything of the desktop's SQLite database (one data directory is one tenant, no"
+        " tenant_id column); its routes need the install permission, which no role holds on a server (N-15)"
+    ),
 }
 
 #: ``(module, normalized statement) -> reason``.
