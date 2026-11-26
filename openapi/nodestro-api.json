@@ -49,7 +49,10 @@
               "member_removed",
               "sessions_revoked",
               "conversation_owner_assigned",
-              "memory_space_owner_assigned"
+              "memory_space_owner_assigned",
+              "backup_restored",
+              "data_exported",
+              "data_deleted"
             ],
             "title": "Kind",
             "type": "string"
@@ -72,7 +75,8 @@
               "user",
               "api_key",
               "tenant",
-              "session"
+              "session",
+              "data"
             ],
             "title": "Target Type",
             "type": "string"
@@ -3706,6 +3710,18 @@
               "type": "string"
             },
             "title": "Notes",
+            "type": "array"
+          },
+          "product": {
+            "default": "nodestro",
+            "title": "Product",
+            "type": "string"
+          },
+          "secrets_to_reenter": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Secrets To Reenter",
             "type": "array"
           }
         },
@@ -8150,6 +8166,61 @@
           }
         },
         "title": "DecisionRecord",
+        "type": "object"
+      },
+      "DeleteAllRequest": {
+        "properties": {
+          "confirm": {
+            "maxLength": 100,
+            "title": "Confirm",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "title": "DeleteAllRequest",
+        "type": "object"
+      },
+      "DeleteResult": {
+        "description": "What a deletion removed: the contents before it and the number of files and folders in the data directory.",
+        "properties": {
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "contents": {
+            "$ref": "#/components/schemas/BackupContents"
+          },
+          "deleted_at": {
+            "format": "date-time",
+            "title": "Deleted At",
+            "type": "string"
+          },
+          "left": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Left",
+            "type": "array"
+          },
+          "log_emptied": {
+            "title": "Log Emptied",
+            "type": "boolean"
+          },
+          "removed_entries": {
+            "title": "Removed Entries",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "deleted_at",
+          "contents",
+          "removed_entries",
+          "complete",
+          "log_emptied"
+        ],
+        "title": "DeleteResult",
         "type": "object"
       },
       "Deny": {
@@ -21291,6 +21362,13 @@
           "safety_backup": {
             "title": "Safety Backup",
             "type": "string"
+          },
+          "secrets_to_reenter": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Secrets To Reenter",
+            "type": "array"
           }
         },
         "required": [
@@ -31058,7 +31136,10 @@
                     "member_removed",
                     "sessions_revoked",
                     "conversation_owner_assigned",
-                    "memory_space_owner_assigned"
+                    "memory_space_owner_assigned",
+                    "backup_restored",
+                    "data_exported",
+                    "data_deleted"
                   ],
                   "type": "string"
                 },
@@ -34548,7 +34629,7 @@
     },
     "/api/backup/restore": {
       "post": {
-        "description": "Replace all data with a checked backup; the current state is saved as a safety backup first.",
+        "description": "Replace all data with a checked backup; the current state is saved as a safety backup first.\n\n``secrets_to_reenter`` names the secrets the backup left out that this computer does not have.",
         "operationId": "restore_api_backup_restore_post",
         "requestBody": {
           "content": {
@@ -36777,6 +36858,78 @@
         "summary": "Message Events",
         "tags": [
           "conversations"
+        ]
+      }
+    },
+    "/api/data/delete-all": {
+      "post": {
+        "description": "Delete every piece of data in the data directory: the database is emptied and rebuilt, every other file and\nfolder is removed (see :mod:`nodestro_api.data_lifecycle`). Needs ``confirm`` set to ``\"delete all data\"``;\nrefused while runs or other background work are active. Cannot be undone: no safety backup is kept.",
+        "operationId": "delete_everything_api_data_delete_all_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteAllRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Delete Everything",
+        "tags": [
+          "backup"
+        ]
+      }
+    },
+    "/api/data/export": {
+      "get": {
+        "description": "Everything the workspace holds as readable files in a ZIP file (``nodestro-export``), without any secret.",
+        "operationId": "export_everything_api_data_export_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Export Everything",
+        "tags": [
+          "backup"
         ]
       }
     },

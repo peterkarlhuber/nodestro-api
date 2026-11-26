@@ -10,7 +10,7 @@
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
-| P1 High | 0 |
+| P1 High | 1 |
 | P2 Medium | 6 |
 | P3 Low | 13 |
 | P4 Optional | 7 |
@@ -42,6 +42,22 @@ None known.
 
 Tool approvals (`NODESTRO_TOOL_APPROVALS`, off by default and staying off) need the independent S-2 review tracked as
 nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes here. No separate entry in this file.
+
+### API-076 · Export and delete everything (N-15): review and follow-ups
+
+- **Priority:** P1 High · **Status:** Needs external review · **Refs:** `nodestro_api.data_lifecycle`,
+  `nodestro_api.backup`, [backup.md](backup.md), `tests/test_data_lifecycle.py`
+- **What:** `POST /api/data/delete-all` deletes every piece of data of the installation and `GET /api/data/export`
+  hands all of it out (without secrets); both need `install`, are audited, and the deletion needs the exact
+  confirmation. Backups no longer carry sealed MCP tokens and connection secrets.
+- **Open:** an independent security review of both routes and of the secret handling of backups (deletion: the
+  kept-entries list, symbolic links, the database rebuild and its write-ahead log while other connections read; export:
+  that no collection with a secret is missed when new ones are added). The deletion blocks new runs (`data.deleting`)
+  and holds the store lock while it deletes; other background work (tool jobs, installations, a reindex) is not
+  blocked but checked again under the lock. The studio has no buttons for export, delete
+  and the re-entry of secrets yet (studio work). A backup made before N-15 does not name the provider keys it left
+  out, so `secrets_to_reenter` cannot list them for it (documented).
+- **Next step:** the review; then the studio's settings page offers the three actions.
 
 ### API-075 · Memory spaces with an owner on a server (RT-089c): the api's part
 
@@ -456,6 +472,7 @@ removed by the change that completes its package here.
 | (accepted, low) | axentra | TABRION MIG-NOD-3 | `db_log_redaction.install_db_error_redaction` wraps the record factory only; unlike Axentra's install it does not replace `logging.Handler.handleError` (report of a failed `emit`, whose chain may hold a database error) or `Logger.makeRecord` (`extra=` with `db_sqlstate`/`db_constraint` raises `KeyError` once the filter set them). Nodestro passes no such `extra`; revisit if a log call fails to format with a database error in its chain |
 | (done 2026-11-20, CI-FAST follow-up W0-1) | nodestro-studio, nodestro-sdk, nodestro-integrations | studio `platform/internal-server.txt`, same `scripts/studio_lock.sh` in sdk and integrations | A master push of a merge commit reads the lock of the studio branch of the merged PR's head branch while that branch is still ahead of the studio master (paired bump not merged yet, "lock lag"); otherwise the studio master's lock as before. Before, such pushes ran red against the old lock (14 of 23 master pushes from 2026-11-14 to 11-20). `tests/test_studio_lock.py` (curl stub, no network); the copies of the script stay identical |
 | (in review 2026-11-20, Welle 1, Peter 12:12Z) | nodestro-sdk, nodestro-integrations, nodestro-runtime, nodestro-studio | `scripts/studio_lock.sh` (same copy in all four), `GH_TOKEN` on each lock step | The lock-lag compare request is authenticated with the workflow token (`permissions: contents: read`); before, unauthenticated requests hit the shared rate limit and silently fell back to the master lock (runtime 511ab38). A 404 (branch gone) reads master; any other answer reads master with a "Lock lag unknown" warning naming the HTTP status. `tests/test_studio_lock.py` covers token, anonymous, 404, 403/500/network |
+| (in review, N-25) | embedding products | N-01 (product host), NAL-B1 (`api_agent_templates.py`) | The group `agents` of the product host serves agent templates, versions, origin, the shipped library and `nodestro-agent/1` export and import unchanged; `tests/test_product_host_agents.py` proves the round trip and the guards, `docs/embedding.md` describes it. No product content: a product ships its own default templates, if any, outside this package |
 | (in review, N-01, [#156](https://github.com/peterkarlhuber/nodestro-api/pull/156)) | nodestro-studio, embedding products | N-01 (product host), spike P0-9 | `nodestro_api.host.create_product_app` builds an app from named router groups (`router_groups`, one registry for the desktop, the server and product apps) with the studio's checks, guards, background services and fail-closed route check; `api.py` is split into groups along its sections. Host interface version 1, frozen by `tests/test_product_host.py`; see `docs/embedding.md`. The error-code catalog (`/api/error-codes`) stays one list for the package, not one per group |
 | (in review, N-13) | nodestro-runtime, nodestro-studio, nodestro-sdk | runtime #198 (`nodestro_runtime.activity`, RT-084) | `GET /api/activity` (filters, keyset paging, `limit` at most 1000) and `GET /api/activity/export?format=jsonl\|csv` (complete, streamed download), permission `admin`, per tenant on a server; new router group `activity` (host interface version 2). The scheduler-leading worker prunes every active tenant hourly (`NODESTRO_ACTIVITY_RETENTION_DAYS`), which closes the server half of RT-084's prune item. Needs the runtime at or after a8e54a9 in the studio lock. Follow-ups: the SDK syncs the two operations from `openapi/nodestro-api.json`; the studio shows the log; more sources (API-072) |
 | (in review, E-0R-1 A) | nodestro-runtime, nodestro-studio, nodestro-sdk | runtime #200 (merge a05eef4, RT-085) | Approval comments never reach a model; `agent_note` (at most 2,000 characters) is the only text of a decision later agents read. Both decision endpoints take it (`POST /api/runs/{run_id}/approvals/{node_id}`, `POST /api/published/{slug}/runs/{id}/approve`); `approval.agent_note_too_long` (`limit`) and `approval.agent_note_disabled` answer `422`. Pending approvals carry `allow_agent_note` (studio `GET /api/approvals`, published run status and `GET …/approvals`, app contract v1 `approvals.schema.json`); workflows pass `ApprovalConfig.allow_agent_note` through; new workflows from the architect and copies of library templates and parts save their approvals with `allow_agent_note: true` (the check warning is meant for workflows saved before the note existed). Canary tests in `tests/test_approval_agent_note.py`. Needs the runtime at or after a05eef4 in the studio lock. Follow-ups: the SDK syncs `agent_note`/`allow_agent_note` from `openapi/nodestro-api.json`; the studio shows the note field; nodestro-examples may set `allow_agent_note` in its templates itself; the embedded web interface (nodestro-app-ui, vendored) has no note field yet |
