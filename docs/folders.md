@@ -94,5 +94,7 @@ runtime's `docs/folders.md`, "The search index"); `search_files` then searches i
 with the rights: a grant wakes the indexer for that folder, and `DELETE /api/folders/{id}`, `POST /api/access/denies`,
 `DELETE /api/access/grants/{id}` and `DELETE /api/access/denies/{id}` call `Workspace.folder_access_changed`, which
 drops the index (chunks and vectors) of every folder grant that ended before the answer and syncs the indexes soon.
-An expiry is dropped by the runtime's sweep. The API shows no index state yet. Test:
-`tests/test_folders_api.py::test_a_folder_index_is_built_on_a_grant_and_dropped_at_once_on_a_revocation`.
+An expiry is dropped by the runtime's sweep. The API shows no index state yet. Backups and the data export leave a
+folder's index out (review M-1, [backup.md](backup.md)). Tests:
+`tests/test_folders_api.py::test_a_folder_index_is_built_on_a_grant_and_dropped_at_once_on_a_revocation`,
+`tests/test_folders_api.py::test_backups_and_the_data_export_hold_nothing_of_a_folder_index`.

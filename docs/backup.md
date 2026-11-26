@@ -17,6 +17,13 @@ routes need the session's CSRF value when `NODESTRO_LAUNCH_CSRF=1` is on.
 The audit entries are in the access audit trail (`GET /api/access-audit`, target type `data`, target id the product
 id); they name who acted and counts, never data.
 
+A granted folder's search index (N-12) is in neither a backup nor an export (review M-1): the sanitized snapshot both
+are made from loses every chunk whose source starts with `folder:`, the chunks' vectors, their full-text entries (the
+full-text index is rebuilt from the remaining chunks) and the collections `folder_index_files` and
+`folder_index_state`. The folder's text belongs to the folder and its grant: the runtime builds the index again from
+the folder while the grant holds, also after a restore. Test:
+`tests/test_folders_api.py::test_backups_and_the_data_export_hold_nothing_of_a_folder_index`.
+
 ## The profile
 
 `BackupProfile(product, data_dir, components)` is what the core works on; `profile_of(workspace)` builds it from the

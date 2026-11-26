@@ -194,3 +194,60 @@ def test_a_folder_index_is_built_on_a_grant_and_dropped_at_once_on_a_revocation(
     revoked = granting.delete(f"/api/access/grants/{again['folder']['grant_id']}")
     assert revoked.status_code == 200, revoked.text
     assert chunks() == []
+
+
+def test_backups_and_the_data_export_hold_nothing_of_a_folder_index(
+    make_app: Callable[..., TestClient], docs: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """N-12 review M-1: a granted folder's text stays with the folder. A backup's database holds no chunk, vector or
+    full-text term of a folder index and no manifest or state of it; the data export holds none of its documents.
+    The index is built again from the folder while the grant holds."""
+    import io
+    import json
+    import sqlite3
+    import zipfile
+
+    from nodestro_runtime.folder_index import FILES, STATES, FolderIndexState
+    from nodestro_runtime.knowledge import FOLDER_SOURCE
+    from nodestro_runtime.tool_approvals import ACCESS_ENV, ENABLE_ENV
+
+    for name in (FOLDERS_ENV, ACCESS_ENV, ENABLE_ENV):
+        monkeypatch.setenv(name, "1")
+    (docs / "notes" / "ledger.txt").write_text("The quartermaster ledger of the zanzibarlantern\n", encoding="utf-8")
+    client = make_app()
+    nodestro = client.app.state.nodestro  # type: ignore[attr-defined]
+    nodestro.knowledge.add(b"Customers get a refund within thirty days.", name="returns.md")
+    created = client.post(FOLDERS, json={"name": "Docs", "path": str(docs), "index": True}).json()
+    folder_id = created["folder"]["id"]
+    nodestro.folder_index.sync(folder_id)
+    folder_chunks = [source for source in nodestro.knowledge.chunk_sources() if source.startswith(FOLDER_SOURCE)]
+    assert folder_chunks and nodestro.store.list(STATES, FolderIndexState)
+    with sqlite3.connect(nodestro.config.data_dir / "nodestro.db") as live:  # a vector of a folder chunk
+        live.execute(
+            "INSERT INTO index_vectors (space, chunk_id, embedding)"
+            " SELECT 'nodestro:test', id, x'00' FROM index_chunks WHERE substr(source, 1, 7) = 'folder:'"
+        )
+    backup = client.get("/api/backup")
+    assert backup.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(backup.content)) as archive:
+        database = tmp_path / "restored.db"
+        database.write_bytes(archive.read("nodestro.db"))
+    assert b"zanzibarlantern" not in database.read_bytes()
+    with sqlite3.connect(database) as copy:
+        sources = [row[0] for row in copy.execute("SELECT source FROM index_chunks")]
+        assert sources and not any(source.startswith(FOLDER_SOURCE) for source in sources)  # knowledge stays
+        assert copy.execute("SELECT count(*) FROM index_vectors WHERE space = 'nodestro:test'").fetchone()[0] == 0
+        assert copy.execute("SELECT count(*) FROM index_fts WHERE index_fts MATCH 'zanzibarlantern'").fetchone()[0] == 0
+        assert copy.execute("SELECT count(*) FROM index_fts WHERE index_fts MATCH 'refund'").fetchone()[0] == 1
+        collections = {row[0] for row in copy.execute("SELECT DISTINCT collection FROM nodestro_documents")}
+        assert not collections & {FILES, STATES} and COLLECTION in collections
+    export = client.get("/api/data/export")
+    assert export.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(export.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+        assert not set(manifest["collections"].values()) & {FILES, STATES}
+        assert not any(b"zanzibarlantern" in archive.read(name) for name in archive.namelist())
+    # The live index is untouched.
+    assert [
+        source for source in nodestro.knowledge.chunk_sources() if source.startswith(FOLDER_SOURCE)
+    ] == folder_chunks

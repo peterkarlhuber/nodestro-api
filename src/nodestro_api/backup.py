@@ -20,6 +20,11 @@ backup is restored; the manifest names the secrets that were left out (``secrets
 export records) are part of it; network access for them is switched off after a restore and has to be switched on
 again deliberately.
 
+The search index of a granted folder (N-12) is never part of a backup or an export either (review M-1): its chunks,
+their vectors and full-text entries, and its manifest and state (``folder_index_files``, ``folder_index_state``) are
+removed from the snapshot. The folder's text belongs to the folder and its grant; the workspace builds the index again
+from the folder while the grant holds (also after a restore).
+
 The core is product-neutral (N-15): it works on a :class:`BackupProfile` (the product id, the data directory and the
 parts besides the database), by default the one of the app's configuration (:func:`profile_of`). The format stays
 ``nodestro-backup`` version 1; the manifest names the ``product`` whose data it holds, and a backup of another
@@ -59,6 +64,9 @@ import uuid
 import zipfile
 import zlib
 
+from nodestro_runtime.folder_index import FILES as FOLDER_INDEX_FILES
+from nodestro_runtime.folder_index import STATES as FOLDER_INDEX_STATES
+from nodestro_runtime.knowledge import FOLDER_SOURCE
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.providers import has_credentials
 from nodestro_runtime.schemas import (
@@ -341,6 +349,34 @@ def _strip_sealed(connection: sqlite3.Connection, schema: str = "main") -> None:
         )
 
 
+def _strip_folder_index(connection: sqlite3.Connection) -> None:
+    """Remove every granted folder's index (N-12 review M-1): its chunks with their vectors and full-text entries, and
+    its manifest and state documents. Runs on the snapshot, with ``secure_delete`` on and a ``VACUUM`` after it."""
+    connection.execute(
+        "DELETE FROM nodestro_documents WHERE collection IN (?, ?)", (FOLDER_INDEX_FILES, FOLDER_INDEX_STATES)
+    )
+    tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    if "index_chunks" not in tables:
+        return
+    # substr, not LIKE: a source is data, and LIKE would treat ``_`` and ``%`` in it as patterns.
+    folder = "substr(source, 1, ?) = ?"
+    marks = (len(FOLDER_SOURCE), FOLDER_SOURCE)
+    if connection.execute(f"SELECT count(*) FROM index_chunks WHERE {folder}", marks).fetchone()[0] == 0:
+        return
+    chunk_ids = f"SELECT id FROM index_chunks WHERE {folder}"
+    if "index_vectors" in tables:
+        connection.execute(f"DELETE FROM index_vectors WHERE chunk_id IN ({chunk_ids})", marks)
+    if "index_vec" in tables:  # the legacy vector table (embedder= callables); Nodestro never writes it
+        try:
+            connection.execute(f"DELETE FROM index_vec WHERE rowid IN ({chunk_ids})", marks)
+        except sqlite3.OperationalError:
+            logger.warning("The legacy vector table could not be cleaned in a backup (sqlite-vec is not loaded)")
+    connection.execute(f"DELETE FROM index_chunks WHERE {folder}", marks)
+    if "index_fts" in tables:
+        # The full-text index reads its text from index_chunks: rebuilt, it holds no term of a folder's text.
+        connection.execute("INSERT INTO index_fts (index_fts) VALUES ('rebuild')")
+
+
 def sanitized_snapshot(nodestro: Nodestro, database: Path) -> tuple[BackupContents, list[str]]:
     """A consistent copy of the database at ``database`` without any secret (see the module's docstring), its contents
     and the labels of the secrets left out. Backups and the data export are made from it."""
@@ -360,6 +396,7 @@ def sanitized_snapshot(nodestro: Nodestro, database: Path) -> tuple[BackupConten
                 (json.dumps(settings),),
             )
         _strip_sealed(snapshot)
+        _strip_folder_index(snapshot)
         snapshot.execute(
             f"DELETE FROM nodestro_documents WHERE collection IN ({', '.join('?' for _ in _LOCAL_COLLECTIONS)})",
             _LOCAL_COLLECTIONS,
