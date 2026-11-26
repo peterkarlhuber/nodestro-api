@@ -20,6 +20,11 @@ backup is restored; the manifest names the secrets that were left out (``secrets
 export records) are part of it; network access for them is switched off after a restore and has to be switched on
 again deliberately.
 
+The search index of a granted folder (N-12) is never part of a backup or an export either (review M-1): its chunks,
+their vectors and full-text entries, and its manifest and state (``folder_index_files``, ``folder_index_state``) are
+removed from the snapshot. The folder's text belongs to the folder and its grant; the workspace builds the index again
+from the folder while the grant holds (also after a restore).
+
 The core is product-neutral (N-15): it works on a :class:`BackupProfile` (the product id, the data directory and the
 parts besides the database), by default the one of the app's configuration (:func:`profile_of`). The format stays
 ``nodestro-backup`` version 1; the manifest names the ``product`` whose data it holds, and a backup of another
@@ -59,6 +64,9 @@ import uuid
 import zipfile
 import zlib
 
+from nodestro_runtime.folder_index import FILES as FOLDER_INDEX_FILES
+from nodestro_runtime.folder_index import STATES as FOLDER_INDEX_STATES
+from nodestro_runtime.knowledge import FOLDER_SOURCE
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.providers import has_credentials
 from nodestro_runtime.schemas import (
@@ -71,7 +79,7 @@ from nodestro_runtime.schemas import (
     Workflow,
     now,
 )
-from nodestro_runtime.storage import SCHEMA_VERSION
+from nodestro_runtime.storage import SCHEMA_VERSION, strip_index_sources
 from orkexa import __version__ as library_version
 from pydantic import BaseModel, Field, ValidationError
 
@@ -341,6 +349,13 @@ def _strip_sealed(connection: sqlite3.Connection, schema: str = "main") -> None:
         )
 
 
+def _strip_folder_index(connection: sqlite3.Connection) -> None:
+    """Remove every granted folder's index (N-12 review M-1, L-a): its chunks with their vectors and full-text entries,
+    and its manifest and state documents (:func:`nodestro_runtime.storage.strip_index_sources`). Runs on the snapshot,
+    with ``secure_delete`` on and a ``VACUUM`` after it."""
+    strip_index_sources(connection, FOLDER_SOURCE, (FOLDER_INDEX_FILES, FOLDER_INDEX_STATES))
+
+
 def sanitized_snapshot(nodestro: Nodestro, database: Path) -> tuple[BackupContents, list[str]]:
     """A consistent copy of the database at ``database`` without any secret (see the module's docstring), its contents
     and the labels of the secrets left out. Backups and the data export are made from it."""
@@ -360,6 +375,7 @@ def sanitized_snapshot(nodestro: Nodestro, database: Path) -> tuple[BackupConten
                 (json.dumps(settings),),
             )
         _strip_sealed(snapshot)
+        _strip_folder_index(snapshot)
         snapshot.execute(
             f"DELETE FROM nodestro_documents WHERE collection IN ({', '.join('?' for _ in _LOCAL_COLLECTIONS)})",
             _LOCAL_COLLECTIONS,

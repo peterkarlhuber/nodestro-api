@@ -21,6 +21,16 @@
   - Release note: on upgrade, server workflows and agent tests that use a persistent memory space fail closed with
     `memory.consent_required` until the space's owner grants a consent; granting is possible through this API only,
     the studio has no page for it yet.
+- Security (N-12 review M-1): backups and the data export carried the full text of indexed granted folders. The
+  sanitized snapshot both are made from now removes every folder chunk (source `folder:`), its vectors and full-text
+  entries, and the collections `folder_index_files` and `folder_index_state`; the index is built again from the folder
+  while its grant holds. The runtime's `storage.strip_index_sources` does the removal (review round 2, L-a: a legacy
+  `vec0` table that cannot be cleaned loses its storage tables). No contract change. See `docs/backup.md`.
+- Granted folders as a knowledge source (N-12; needs the runtime with `nodestro_runtime.folder_index` in the studio
+  lock; behind `NODESTRO_FOLDER_GRANTS`, off): `POST /api/folders` with `index: true` wakes the runtime's folder
+  indexer; revoking a folder grant (`DELETE /api/folders/{id}`, `DELETE /api/access/grants/{id}`) drops its search
+  index before the answer, and creating or revoking a deny resyncs the indexes (`Workspace.folder_access_changed`).
+  No contract change. See `docs/folders.md`, "The search index".
 - The folder browser (N-11; needs orkexa with `orkexa.fs.browse_folder` in the studio lock; behind
   `NODESTRO_FOLDER_GRANTS`, off): `POST /api/folders/browse` answers the sub-folders of a folder of this computer for
   choosing a folder to grant: folder names and paths, never files; system folders, other users' home folders,

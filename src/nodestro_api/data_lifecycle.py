@@ -12,7 +12,8 @@ take elsewhere, not for a restore (that is what a backup is for). It is a ZIP fi
 - ``stored-files.jsonl`` and ``stored-files/<n>``: the stored files (knowledge files and others) with their entry,
 - ``tools/<name>/v<n>.json`` and ``inputs/``: as in a backup.
 
-The search index and its vectors are left out: they are derived from the files and built again on import.
+The search index and its vectors are left out: they are derived from the files and built again on import. A granted
+folder's index manifest and state (N-12) are left out as well (:func:`~nodestro_api.backup.sanitized_snapshot`).
 
 **Delete everything** (:func:`delete_all`) leaves no data in the data directory. It refuses while anything works in
 the background (runs, tool jobs, installations, a reindex: ``data.busy``) or a restore runs, and then
