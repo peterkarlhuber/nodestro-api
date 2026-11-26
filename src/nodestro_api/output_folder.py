@@ -39,6 +39,9 @@ import tempfile
 import threading
 from typing import TYPE_CHECKING, Any
 
+from orkexa.fs import allowed_folders
+from orkexa.fs import system_folders as guard_system_folders
+
 from .serving import ApiError
 
 if TYPE_CHECKING:
@@ -57,14 +60,6 @@ PACKAGE_FOLDERS = (
     # The folder model of NAL-C3 (layout 2, nodestro_api.portable_ops).
     "program", "program.previous", "program.next", "ui", "backups",
 )  # fmt: skip
-
-_POSIX_SYSTEM = (
-    "/bin", "/boot", "/dev", "/etc", "/lib", "/lib32", "/lib64", "/libx32", "/opt", "/proc", "/run", "/sbin",
-    "/snap", "/sys", "/usr", "/var", "/System", "/Library", "/Applications", "/private", "/cores",
-)  # fmt: skip
-#: Places below a system folder where people keep their own files (Fedora Atomic's /var/home, removable media, macOS'
-#: temporary folders).
-_POSIX_ALLOWED = ("/var/home", "/var/mnt", "/var/tmp", "/run/media", "/private/tmp", "/private/var/folders")
 
 
 def _inside(path: PurePath, folder: PurePath) -> bool:
@@ -89,11 +84,11 @@ def _home() -> Path | None:
 
 
 def system_folders() -> list[Path]:
-    """Folders of the operating system and of installed programs."""
+    """Folders of the operating system and of installed programs: the lists of the path guard
+    (:func:`orkexa.fs.system_folders`), so a result folder and a granted folder (N-10) are judged alike."""
     if os.name == "nt":
-        names = ("SystemRoot", "windir", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "ProgramData")
-        return [_resolved(Path(value)) for value in (os.environ.get(name) for name in names) if value]
-    return [Path(name) for name in _POSIX_SYSTEM]
+        return [_resolved(Path(value)) for value in guard_system_folders()]
+    return [Path(name) for name in guard_system_folders()]
 
 
 class OutputFolder:
@@ -197,7 +192,7 @@ class OutputFolder:
         in_home = home is not None and home.parent != home and _inside(target, home)
         if not in_home:
             for system in system_folders():
-                if _inside(target, system) and not any(_inside(target, Path(ok)) for ok in _POSIX_ALLOWED):
+                if _inside(target, system) and not any(_inside(target, Path(ok)) for ok in allowed_folders()):
                     return ApiError(422, "output.protected", "This is a folder of the system", path=str(target))
         if target == self.project_dir or any(_inside(target, self.project_dir / name) for name in PACKAGE_FOLDERS):
             return ApiError(422, "output.protected", "This folder belongs to the application", path=str(target))

@@ -246,6 +246,13 @@ NODESTRO_ERROR_STATUS = {
     "conversation.cloud_model_not_chosen": 422,
     "conversation.answer_running": 409,
     "conversation.budget_exhausted": 409,
+    # Granted folders (N-10): switched off or unknown, a name in use, a folder or pattern that cannot be granted.
+    "folder.disabled": 404,
+    "folder.not_found": 404,
+    "folder.name_taken": 409,
+    "folder.not_grantable": 422,
+    "folder.invalid_name": 422,
+    "folder.invalid_pattern": 422,
 }
 
 
@@ -432,6 +439,7 @@ PATH_TAGS: dict[str, str] = {
     "tool-pre-grants": "tool approvals",
     "activity": "activity",
     "access": "access grants",
+    "folders": "access grants",
     "python": "Python environments",
     "sandbox": "tools",
     "agents": "agents",

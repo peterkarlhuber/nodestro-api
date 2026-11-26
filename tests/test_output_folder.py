@@ -374,3 +374,16 @@ def test_only_a_portable_package_carries_the_result_folder_choice() -> None:
     assert "nodestro_api.output_folder" in runtime_modules(extra=PORTABLE_ROOTS)
     # A standard export has no operator session, so nothing there could change or restore the folder.
     assert "nodestro_api.output_folder" not in runtime_modules()
+
+
+def test_system_folders_are_the_path_guards() -> None:
+    """The result folder is judged by the path guard's lists (``orkexa.fs``), like a granted folder (N-10)."""
+    from orkexa.fs import allowed_folders
+    from orkexa.fs import system_folders as guard_system_folders
+
+    from nodestro_api.output_folder import system_folders
+
+    assert [str(folder) for folder in system_folders()] == guard_system_folders() or os.name == "nt"
+    assert len(system_folders()) == len(guard_system_folders())
+    if os.name != "nt":
+        assert "/private/var/folders" in allowed_folders()  # macOS temporary folders stay usable

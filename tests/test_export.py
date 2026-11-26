@@ -165,7 +165,11 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     # run chat check an offline agent's calls with it; counted from the installed runtime, before and after the bump.
     with_offline = (Path(nodestro_runtime.__file__).parent / "offline.py").is_file()
     assert ("nodestro_runtime.offline" in modules) is with_offline
-    assert len(modules) == 78 + with_error_texts + with_offline
+    # + nodestro_runtime.folders and .folder_tools with nodestro-runtime claude/w3-n10 and later (N-10): the tool specs
+    # and the tool library name the folder tools; they do nothing while NODESTRO_FOLDER_GRANTS is off (the default).
+    with_folders = (Path(nodestro_runtime.__file__).parent / "folder_tools.py").is_file()
+    assert {"nodestro_runtime.folders", "nodestro_runtime.folder_tools"} <= set(modules) or not with_folders
+    assert len(modules) == 78 + with_error_texts + with_offline + 2 * with_folders
     assert expected | {"nodestro_runtime.local_models"} <= set(modules)
     assert "nodestro_runtime.local_service" not in modules
     # The audit/usage hook protocol is exported (tool approvals and the usage log import it); the Axentra

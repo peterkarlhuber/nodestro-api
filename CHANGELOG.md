@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Granted folders (N-10, runtime `claude/w3-n10`), off by default (`NODESTRO_FOLDER_GRANTS=1`; never on a server):
+  `/api/folders` (`state` for `read`; list, grant, get, access log and revoke for `admin`). The writer is always the
+  signed-in person; API keys and machines get `403 access.person_required`. System folders, the home folder and the
+  data folder are refused (`422 folder.not_grantable` with `reason`). See [docs/folders.md](docs/folders.md).
+  - Contract: the new routes and models (`FolderGrantView`, `FolderGrantIn`, `FolderState`, `FolderAccessEntry`)
+    in both OpenAPI documents; the tool capability source `folder` (the runtime's tools `list_folder`, `read_file`,
+    `search_files`). The problem code list has the new `folder.*` codes and the path guard's `fs.*` codes.
+  - `output_folder.py` takes its system folders from the path guard (`orkexa.fs.system_folders`,
+    `orkexa.fs.allowed_folders`) instead of its own list; it now also refuses `/root` (unless it is the home folder).
+  - From the independent review of N-10: `FolderGrantIn.default_excludes` (default `true`; an administrator turns
+    off the runtime's default excludes of common secret files for one grant) and `FolderGrant.default_excludes` in
+    both OpenAPI documents; the new `folder.not_grantable` reason `temp_root` (a shared temporary folder itself);
+    `fs.root_changed` in the problem code list.
+  - Re-review: the docs name the extended default excludes (`*.p12`, `*.pfx`, `*.ppk`, `credentials*`) and the
+    runtime's grant event `folder.granted` (code `default_excludes_off`).
+
 - Conversations (RT-089 follow-ups; still behind `NODESTRO_CONVERSATIONS`, off by default):
   - `GET /api/meta` has `features`: `conversations` while the switch is on and the app serves the router group
     `conversations` (`api.served_features`; `include_groups` records the served groups in `app.state.router_groups`).
