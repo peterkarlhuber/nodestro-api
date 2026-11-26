@@ -52,7 +52,9 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
   confirmation. Backups no longer carry sealed MCP tokens and connection secrets.
 - **Open:** an independent security review of both routes and of the secret handling of backups (deletion: the
   kept-entries list, symbolic links, the database rebuild and its write-ahead log while other connections read; export:
-  that no collection with a secret is missed when new ones are added). The studio has no buttons for export, delete
+  that no collection with a secret is missed when new ones are added). The deletion blocks new runs (`data.deleting`)
+  and holds the store lock while it deletes; other background work (tool jobs, installations, a reindex) is not
+  blocked but checked again under the lock. The studio has no buttons for export, delete
   and the re-entry of secrets yet (studio work). A backup made before N-15 does not name the provider keys it left
   out, so `secrets_to_reenter` cannot list them for it (documented).
 - **Next step:** the review; then the studio's settings page offers the three actions.

@@ -41,6 +41,7 @@ import re
 import shutil
 import sqlite3
 import tempfile
+import time
 from typing import TYPE_CHECKING, Any
 import zipfile
 
@@ -92,6 +93,12 @@ class DeleteResult(BaseModel):
     deleted_at: datetime
     contents: BackupContents
     removed_entries: int
+    #: Whether nothing is left: every entry removed and the database's write-ahead log emptied. ``False`` names what
+    #: is left in ``left`` (entries of the data directory that could not be removed) or ``log_emptied``; deleting
+    #: again removes the rest.
+    complete: bool
+    log_emptied: bool
+    left: list[str] = Field(default_factory=list)
 
 
 def export_file_name(product: str) -> str:
@@ -131,7 +138,8 @@ def export_all(nodestro: Nodestro, target: Path, profile: BackupProfile | None =
                 )
             for number, (collection, rows) in enumerate(sorted(by_collection.items())):
                 # A collection name is data of the database: a file name only when it is a plain one.
-                name = collection if _SAFE_NAME.fullmatch(collection) else f"collection-{number}"
+                # The fallback has a ``~``, which a plain name never has: the two cannot collide.
+                name = collection if _SAFE_NAME.fullmatch(collection) else f"~collection-{number}"
                 collections[f"documents/{name}.jsonl"] = collection
                 entries[f"documents/{name}.jsonl"] = _jsonl(rows)
             if "memory_files" in tables:
@@ -215,9 +223,18 @@ def _empty_database(connection: sqlite3.Connection) -> None:
         raise
     connection.execute("COMMIT")
     connection.execute("VACUUM")
-    busy, _log, _moved = connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
-    if busy:
-        logger.warning("Delete everything: the write-ahead log could not be emptied yet (a reader is open)")
+
+
+def _empty_log(connection: sqlite3.Connection, attempts: int = 20) -> bool:
+    """Empty the write-ahead log (the old pages of the deleted rows); a reader of another connection can hold it for a
+    moment, so it is tried again. Returns whether it is empty."""
+    for attempt in range(attempts):
+        busy, _log, _moved = connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        if not busy:
+            return True
+        time.sleep(0.05 * (attempt + 1))
+    logger.warning("Delete everything: the write-ahead log could not be emptied (a reader is open)")
+    return False
 
 
 def _remove(path: Path) -> None:
@@ -227,26 +244,65 @@ def _remove(path: Path) -> None:
         shutil.rmtree(path)
 
 
+def _check_idle(nodestro: Nodestro) -> None:
+    busy = nodestro.background_work()
+    if busy:
+        raise NodestroError(
+            "data.busy", "Wait until all runs and background work have finished, then delete the data", work=busy[:20]
+        )
+
+
+class DeleteStarted(Exception):
+    """Raised from :func:`delete_all` when something failed after the deletion began (``__cause__``: what failed)."""
+
+
 def delete_all(nodestro: Nodestro, profile: BackupProfile | None = None) -> DeleteResult:
-    """Delete every piece of data of the workspace (see the module's docstring). The caller confirmed it."""
+    """Delete every piece of data of the workspace (see the module's docstring). The caller confirmed it.
+
+    No run starts while it deletes (``data.deleting``), and the background work is checked again while the store is
+    locked, so nothing that began in between writes into it. A failure before anything was deleted raises as it is
+    (``data.busy``, ``backup.restore_running``); one after raises :class:`DeleteStarted`."""
     profile = profile or profile_of(nodestro)
+    blocked = getattr(nodestro, "new_work_blocked", None)
     with exclusive():
-        busy = nodestro.background_work()
-        if busy:
-            raise NodestroError(
-                "data.busy",
-                "Wait until all runs and background work have finished, then delete the data",
-                work=busy[:20],
-            )
-        contents = current_contents(nodestro, profile)
-        with nodestro.sqlite_store.maintenance() as connection:
-            _empty_database(connection)
-        removed = 0
-        for path in sorted(profile.data_dir.iterdir()):
-            if path.name in KEPT and not path.is_symlink():
-                continue
-            _remove(path)
-            removed += 1
-        nodestro.reload_after_restore()
-    logger.warning("Delete everything: every piece of data in the data directory was deleted (%d entries)", removed)
-    return DeleteResult(deleted_at=now(), contents=contents, removed_entries=removed)
+        if blocked is not None:
+            blocked.set()
+        try:
+            _check_idle(nodestro)
+            contents = current_contents(nodestro, profile)
+            # Every other use of the store waits until the files are removed as well.
+            with nodestro.sqlite_store.maintenance() as connection:
+                _check_idle(nodestro)
+                try:
+                    _empty_database(connection)
+                    log_emptied = _empty_log(connection)
+                    removed, left = 0, []
+                    for path in sorted(profile.data_dir.iterdir()):
+                        if path.name in KEPT and not path.is_symlink():
+                            continue
+                        try:
+                            _remove(path)
+                            removed += 1
+                        except OSError as exc:
+                            logger.error("Delete everything: %s could not be removed: %s", path.name, exc)
+                            left.append(path.name)
+                except Exception as exc:
+                    raise DeleteStarted() from exc
+            nodestro.reload_after_restore()
+        finally:
+            if blocked is not None:
+                blocked.clear()
+    complete = log_emptied and not left
+    logger.warning(
+        "Delete everything: %d entries of the data directory removed%s",
+        removed,
+        "" if complete else f"; left: {left}, log emptied: {log_emptied}",
+    )
+    return DeleteResult(
+        deleted_at=now(),
+        contents=contents,
+        removed_entries=removed,
+        complete=complete,
+        log_emptied=log_emptied,
+        left=left,
+    )

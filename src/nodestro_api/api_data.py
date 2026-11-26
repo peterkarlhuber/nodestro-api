@@ -29,7 +29,7 @@ from .backup import (
     profile_of,
     restore_backup,
 )
-from .data_lifecycle import DeleteResult, delete_all, export_all, export_file_name
+from .data_lifecycle import DeleteResult, DeleteStarted, delete_all, export_all, export_file_name
 from .diagnostics import DiagnosticCheck, Diagnostics, check_connection, run_diagnostics
 from .organize import Kind, Organize, OrganizeState
 from .permissions import EDIT, INSTALL, READ
@@ -197,7 +197,11 @@ async def export_everything(request: Request, ctx: Ctx) -> FileResponse:
     """Everything the workspace holds as readable files in a ZIP file (``nodestro-export``), without any secret."""
     directory = Path(tempfile.mkdtemp(prefix="nodestro-export-"))
     name = export_file_name(profile_of(ctx).product)
-    info = await asyncio.to_thread(export_all, ctx, directory / name)
+    try:
+        info = await asyncio.to_thread(export_all, ctx, directory / name)
+    except BaseException:
+        _remove(directory)  # with a partial file in it
+        raise
     _audit(ctx, request, "data_exported", file_name=name, workflows=info.contents.workflows)
     return FileResponse(
         directory / name, media_type="application/zip", filename=name, background=BackgroundTask(_remove, directory)
@@ -215,8 +219,23 @@ async def delete_everything(body: DeleteAllRequest, request: Request, ctx: Ctx) 
             "Deleting all data cannot be undone and must be confirmed",
             expected=DELETE_ALL_CONFIRMATION,
         )
-    result = await asyncio.to_thread(delete_all, ctx)
+    try:
+        result = await asyncio.to_thread(delete_all, ctx)
+    except DeleteStarted as exc:
+        # Deleting began and failed: what happened is recorded all the same, then the cause is answered.
+        await ctx.network.stop()
+        cause = exc.__cause__
+        _audit(ctx, request, "data_deleted", complete=False, error=getattr(cause, "code", type(cause).__name__))
+        raise cause if cause is not None else exc from None
     # Nothing is published any more: network access for published APIs is switched off.
     await ctx.network.stop()
-    _audit(ctx, request, "data_deleted", removed_entries=result.removed_entries, workflows=result.contents.workflows)
+    _audit(
+        ctx,
+        request,
+        "data_deleted",
+        removed_entries=result.removed_entries,
+        workflows=result.contents.workflows,
+        complete=result.complete,
+        left=result.left[:50],
+    )
     return result

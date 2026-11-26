@@ -400,6 +400,7 @@
   "conversation.too_many_files": {"params": ["limit"], "source": "runtime"},
   "cors.origin_not_allowed": {"params": [], "source": "api"},
   "data.busy": {"params": ["work"], "source": "api"},
+  "data.deleting": {"params": [], "source": "api"},
   "data.not_confirmed": {"params": ["expected"], "source": "api"},
   "deps.approval_needed": {"params": ["packages"], "source": "runtime"},
   "deps.build_required": {"params": ["name", "reason"], "source": "runtime"},

@@ -147,6 +147,10 @@ _SEALED_FIELDS: dict[str, tuple[str, tuple[str, ...]]] = {
     "mcp_servers": ("mcp", ("token_sealed", "oauth_pending_sealed")),
     "service_connections": ("connection", ("secret_sealed",)),
 }
+#: Where a document says how its secret is stored (``vault``: sealed in the document itself).
+_STORAGE_FIELDS = {"mcp_servers": "token_storage", "service_connections": "secret_storage"}
+#: The settings of a connection that say how its secret is used (nodestro_runtime.connections ``_SECRET_BOUND``).
+_CONNECTION_SECRET_BOUND = ("auth", "security", "username")
 #: What the manifest lists as ``excluded``.
 EXCLUDED = (*_SECRET_SETTINGS, _PROVIDER_SECRETS, *_LOCAL_COLLECTIONS, "mcp_tokens", "connection_secrets")
 #: A secret's label in ``secrets_excluded`` and ``secrets_to_reenter`` (the manifest is data: other labels are dropped).
@@ -618,6 +622,51 @@ def inspect_backup(
         return _inspect(nodestro, upload, file_name, profile or profile_of(nodestro))
 
 
+def _binding(collection: str, document: dict[str, Any]) -> Any:
+    """What a sealed secret of ``document`` is bound to (threat model T9, ADR-0001): an MCP service's address,
+    transport, command and kind of sign-in; a connection's type, provider, reachable hosts and the settings that say how
+    its secret is used. The runtime drops a secret when one of them changes; a restore does the same."""
+    if collection == "mcp_servers":
+        return [document.get(name) for name in ("url", "transport", "stdio", "auth")]
+    settings = document.get("settings")
+    settings = settings if isinstance(settings, dict) else {}
+    egress = document.get("egress")
+    return [
+        document.get("type"),
+        document.get("provider"),
+        sorted(str(item) for item in egress) if isinstance(egress, list) else egress,
+        [settings.get(name) for name in _CONNECTION_SECRET_BOUND],
+    ]
+
+
+def _sealed_documents(connection: sqlite3.Connection, schema: str = "main") -> dict[tuple[str, str], dict[str, Any]]:
+    """The documents of the collections with sealed secrets, by ``(collection, id)``."""
+    found: dict[tuple[str, str], dict[str, Any]] = {}
+    for collection in _SEALED_FIELDS:
+        for key, data in connection.execute(
+            f"SELECT id, data FROM {schema}.nodestro_documents WHERE collection = ? AND json_valid(data)", (collection,)
+        ):
+            document = json.loads(data)
+            if isinstance(document, dict):
+                found[(collection, key)] = document
+    return found
+
+
+def _keepable(
+    current: dict[tuple[str, str], dict[str, Any]], restored: dict[tuple[str, str], dict[str, Any]]
+) -> dict[tuple[str, str], dict[str, Any]]:
+    """This computer's sealed secrets (with how they are stored) that a restored document may keep: the same MCP
+    service or connection, bound to the same address and use. Any other secret has to be entered again."""
+    kept: dict[tuple[str, str], dict[str, Any]] = {}
+    for (collection, key), document in current.items():
+        values = {field: document[field] for field in _SEALED_FIELDS[collection][1] if document.get(field)}
+        other = restored.get((collection, key))
+        if values and other is not None and _binding(collection, other) == _binding(collection, document):
+            storage = _STORAGE_FIELDS[collection]
+            kept[(collection, key)] = {**values, storage: document.get(storage)}
+    return kept
+
+
 def _to_reenter(nodestro: Nodestro, source: Path) -> list[str]:
     """The secrets the waiting backup in ``source`` left out (its manifest's ``secrets_excluded``, and the sealed ones
     in an older backup, which a restore leaves out as well) that this computer does not have."""
@@ -631,21 +680,20 @@ def _to_reenter(nodestro: Nodestro, source: Path) -> list[str]:
     backup = sqlite3.connect(f"file:{source / 'nodestro.db'}?mode=ro", uri=True)
     try:
         wanted |= _secrets_in(backup)
-        documents = {
-            f"{kind}:{key}"
-            for collection, (kind, _fields) in _SEALED_FIELDS.items()
-            for (key,) in backup.execute("SELECT id FROM nodestro_documents WHERE collection = ?", (collection,))
-        }
+        restored = _sealed_documents(backup)
     finally:
         backup.close()
+    documents = {f"{_SEALED_FIELDS[collection][0]}:{key}": (collection, key) for collection, key in restored}
     # An MCP service or a connection needs its secret only when the backup holds it.
     wanted = {label for label in wanted if _SECRET_LABEL.fullmatch(label)}
     wanted = {label for label in wanted if label.startswith("provider:") or label in documents}
     current = sqlite3.connect(nodestro.sqlite_store.database, timeout=30)
     try:
-        present = _secrets_in(current)
+        providers = {label for label in _secrets_in(current) if label.startswith("provider:")}
+        kept = _keepable(_sealed_documents(current), restored)
     finally:
         current.close()
+    present = providers | {label for label, document in documents.items() if document in kept}
     return sorted(wanted - present)
 
 
@@ -776,18 +824,8 @@ def _copy_tables(connection: sqlite3.Connection, source: Path, keep_settings: di
             f"SELECT collection, id, data FROM main.nodestro_documents WHERE collection IN ({marks})",
             _LOCAL_COLLECTIONS,
         ).fetchall()
-        # This computer's sealed secrets of MCP services and connections, by document.
-        sealed: list[tuple[str, str, str]] = []
-        for collection, (_kind, fields) in _SEALED_FIELDS.items():
-            for key, data in connection.execute(
-                "SELECT id, data FROM main.nodestro_documents WHERE collection = ? AND json_valid(data)", (collection,)
-            ):
-                document = json.loads(data)
-                values = {
-                    field: document[field] for field in fields if isinstance(document, dict) and document.get(field)
-                }
-                if values:
-                    sealed.append((collection, key, json.dumps(values)))
+        # This computer's MCP services and connections with their sealed secrets, by document.
+        current_sealed = _sealed_documents(connection)
         connection.execute("BEGIN IMMEDIATE")
         try:
             for name in backup_tables:
@@ -813,14 +851,23 @@ def _copy_tables(connection: sqlite3.Connection, source: Path, keep_settings: di
             ).fetchone()
             settings = _without_secrets(json.loads(row[0]) if row is not None else {})
             _keep_secrets(settings, keep_settings)
-            # A backup holds no sealed secret (an older one may): those of this computer are kept, for the same
-            # MCP service or connection, the others have to be entered again.
+            # A backup holds no sealed secret (an older one may): those of this computer are kept for the same MCP
+            # service or connection bound to the same address and use (T9); the others have to be entered again.
+            restored = _sealed_documents(connection)
+            kept_sealed = _keepable(current_sealed, restored)
             _strip_sealed(connection)
-            connection.executemany(
-                "UPDATE main.nodestro_documents SET data = json_patch(data, ?) WHERE collection = ? AND id = ?"
-                " AND json_valid(data)",
-                [(values, collection, key) for collection, key, values in sealed],
-            )
+            for (collection, key), document in restored.items():
+                storage = _STORAGE_FIELDS[collection]
+                if (collection, key) in kept_sealed:
+                    patch = kept_sealed[(collection, key)]
+                elif document.get(storage) == "vault":
+                    patch = {storage: "none"}  # its sealed secret is gone
+                else:
+                    continue
+                connection.execute(
+                    "UPDATE main.nodestro_documents SET data = json_patch(data, ?) WHERE collection = ? AND id = ?",
+                    (json.dumps(patch), collection, key),
+                )
             connection.execute(f"DELETE FROM main.nodestro_documents WHERE collection IN ({marks})", _LOCAL_COLLECTIONS)
             connection.executemany("INSERT INTO main.nodestro_documents (collection, id, data) VALUES (?, ?, ?)", kept)
             connection.execute(

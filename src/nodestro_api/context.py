@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 import logging
 import os
 from pathlib import Path
+import threading
 from typing import Any, Literal
 
 from nodestro_runtime.extensions import Integration
@@ -224,6 +225,17 @@ class Nodestro(Workspace):
         return RunFileCatalog(self.inputs, self.knowledge.store)
 
     def compose(self) -> None:
+        #: Set while every piece of data is deleted (N-15, :func:`nodestro_api.data_lifecycle.delete_all`): no run
+        #: starts meanwhile, whatever starts it (a request, a schedule, a batch, a conversation, a published API).
+        self.new_work_blocked = threading.Event()
+        start = self.runs.start
+
+        def start_unless_blocked(*args: Any, **kwargs: Any) -> Run:
+            if self.new_work_blocked.is_set():
+                raise NodestroError("data.deleting", "All data is being deleted; start the run again afterwards")
+            return start(*args, **kwargs)
+
+        self.runs.start = start_unless_blocked  # type: ignore[method-assign]
         self.organize = Organizer(self.store)
         self.assistants = Assistants(self.tools, capabilities=self.builder.capabilities, builder=self.builder)
         self.batches = Batches(self)

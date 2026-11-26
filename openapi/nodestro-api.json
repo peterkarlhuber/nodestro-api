@@ -8162,6 +8162,10 @@
       "DeleteResult": {
         "description": "What a deletion removed: the contents before it and the number of files and folders in the data directory.",
         "properties": {
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
           "contents": {
             "$ref": "#/components/schemas/BackupContents"
           },
@@ -8169,6 +8173,17 @@
             "format": "date-time",
             "title": "Deleted At",
             "type": "string"
+          },
+          "left": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Left",
+            "type": "array"
+          },
+          "log_emptied": {
+            "title": "Log Emptied",
+            "type": "boolean"
           },
           "removed_entries": {
             "title": "Removed Entries",
@@ -8178,7 +8193,9 @@
         "required": [
           "deleted_at",
           "contents",
-          "removed_entries"
+          "removed_entries",
+          "complete",
+          "log_emptied"
         ],
         "title": "DeleteResult",
         "type": "object"

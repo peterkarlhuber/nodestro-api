@@ -10,11 +10,14 @@
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Callable
+import hashlib
 import io
 import json
 import os
 from pathlib import Path
+import sqlite3
 import stat
 import subprocess
 import sys
@@ -36,7 +39,16 @@ from conftest import text
 
 HERE = Path(__file__).resolve().parent
 FIXTURE = HERE / "fixtures" / "backup-v1.zip"
-CANARIES = (b"CANARY-PROVIDER-KEY", b"CANARY-CONNECTION-SECRET", b"CANARY-KNOWLEDGE", b"CANARY-MEMORY")
+CANARIES = (
+    b"CANARY-PROVIDER-KEY",
+    b"CANARY-CONNECTION-SECRET",
+    b"CANARY-MCP-TOKEN",
+    b"CANARY-OAUTH-PENDING",
+    b"CANARY-KNOWLEDGE",
+    b"CANARY-MEMORY",
+)
+SEALED = b"nodestro:enc:"
+MCP = "http://127.0.0.1:9/mcp"
 CONFIRM = {"confirm": "delete all data"}
 
 
@@ -83,8 +95,10 @@ def test_a_backup_from_one_computer_restores_identically_on_another(tmp_path: Pa
     settings_a, settings_b = a["documents"]["settings"]["app"], b["documents"]["settings"]["app"]
     assert _without(settings_a, "providers") == _without(settings_b, "providers")
     [(connection_id, connection)] = a["documents"]["service_connections"].items()
-    assert connection["secret_sealed"] and "secret_sealed" not in b["documents"]["service_connections"][connection_id]
-    assert _without(connection, "secret_sealed") == b["documents"]["service_connections"][connection_id]
+    restored_connection = b["documents"]["service_connections"][connection_id]
+    assert connection["secret_sealed"] and "secret_sealed" not in restored_connection
+    assert (connection["secret_storage"], restored_connection["secret_storage"]) == ("vault", "none")
+    assert _without(connection, "secret_sealed", "secret_storage") == _without(restored_connection, "secret_storage")
     # The restore is audited on the second computer; nothing else was added.
     assert a["documents"].get("access_audit", {}) == {}
     assert [event["kind"] for event in b["documents"]["access_audit"].values()] == ["backup_restored"]
@@ -178,22 +192,140 @@ def test_a_profile_without_a_component_neither_writes_nor_replaces_it(
     assert client.get("/api/tools/double_it").status_code == 200  # the tool files were left as they are
 
 
-def _canaries(client: TestClient) -> None:
+@pytest.fixture
+def sealing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A key for the data directory's secrets, so they are sealed into the database (as on the desktop)."""
+    monkeypatch.setenv("NODESTRO_VAULT_KEY", base64.b64encode(b"k" * 32).decode())
+
+
+def _secrets(client: TestClient) -> dict[str, str]:
+    """An MCP service with a sealed token and a pending OAuth sign-in, and a connection with a sealed secret."""
+    ctx = client.app.state.nodestro  # type: ignore[attr-defined]
+    body = {"name": "Docs", "url": MCP, "allow_loopback": True, "auth": "bearer", "token": "CANARY-MCP-TOKEN"}
+    server = client.post("/api/mcp/servers", json=body)
+    assert server.status_code == 201, server.text
+    mcp_id = server.json()["id"]
+    document = ctx.store.get_raw("mcp_servers", mcp_id)
+    document["oauth_pending_sealed"] = ctx.mcp.vault.seal(f"{mcp_id}:pending", "CANARY-OAUTH-PENDING")
+    ctx.store.put_raw("mcp_servers", mcp_id, document)
+    connection = client.post("/api/connections", json={"type": "search", "provider": "test", "name": "Search"}).json()
+    stored = client.put(f"/api/connections/{connection['id']}/secret", json={"secret": "CANARY-CONNECTION-SECRET"})
+    assert stored.json()["secret_storage"] == "vault"
+    sealed = ctx.store.get_raw("mcp_servers", mcp_id)
+    assert sealed["token_sealed"].startswith("nodestro:enc:") and sealed["oauth_pending_sealed"].startswith(
+        "nodestro:enc:"
+    )
+    assert ctx.store.get_raw("service_connections", connection["id"])["secret_sealed"].startswith("nodestro:enc:")
+    return {"mcp": mcp_id, "connection": connection["id"]}
+
+
+def _canaries(client: TestClient) -> dict[str, str]:
     _fill(client)
     client.post("/api/knowledge", files={"files": ("secret.txt", b"CANARY-KNOWLEDGE in a file", "text/plain")})
     client.put("/api/memory/Team/file", json={"path": "/memories/b.md", "content": "CANARY-MEMORY"})
-    connection = client.post("/api/connections", json={"type": "search", "provider": "test", "name": "Search"}).json()
-    client.put(f"/api/connections/{connection['id']}/secret", json={"secret": "CANARY-CONNECTION-SECRET"})
     client.put("/api/settings", json={"providers": {"anthropic": {"api_key": "sk-ant-CANARY-PROVIDER-KEY-1"}}})
+    return _secrets(client)
 
 
-def test_delete_everything_leaves_no_data_in_the_data_directory(make_app: Callable[..., TestClient]) -> None:
+def _entries(data: bytes) -> dict[str, bytes]:
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        return {name: archive.read(name) for name in archive.namelist()}
+
+
+def _rebuilt(data: bytes, change: Callable[[sqlite3.Connection], None], tmp_path: Path) -> bytes:
+    """``data`` (a backup) with its database changed by ``change`` and the manifest's checksum updated."""
+    entries = _entries(data)
+    database = tmp_path / "changed.db"
+    database.write_bytes(entries["nodestro.db"])
+    connection = sqlite3.connect(database)
+    change(connection)
+    connection.commit()
+    connection.close()
+    entries["nodestro.db"] = database.read_bytes()
+    manifest = json.loads(entries["manifest.json"])
+    manifest["files"]["nodestro.db"] = hashlib.sha256(entries["nodestro.db"]).hexdigest()
+    entries["manifest.json"] = json.dumps(manifest).encode()
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name, content in entries.items():
+            archive.writestr(name, content)
+    return buffer.getvalue()
+
+
+def _set(collection: str, key: str, path: str, value: Any) -> Callable[[sqlite3.Connection], None]:
+    def change(connection: sqlite3.Connection) -> None:
+        connection.execute(
+            "UPDATE nodestro_documents SET data = json_set(data, ?, json(?)) WHERE collection = ? AND id = ?",
+            (path, json.dumps(value), collection, key),
+        )
+
+    return change
+
+
+def test_a_restore_keeps_a_secret_only_for_the_same_address_and_use(
+    make_app: Callable[..., TestClient], sealing: None, tmp_path: Path
+) -> None:
+    """Threat model T9: a token belongs to its origin, a connection's secret to its hosts and use. A backup whose MCP
+    service or connection has this computer's id but another address or use never gets this computer's secret."""
+    client = make_app()
+    ids = _secrets(client)
+    ctx = client.app.state.nodestro  # type: ignore[attr-defined]
+    data = client.get("/api/backup").content
+    assert SEALED not in b"".join(_entries(data).values())
+    mcp, connection = f"mcp:{ids['mcp']}", f"connection:{ids['connection']}"
+
+    # The same address and use: this computer's secrets stay, nothing to enter again.
+    same = _upload(client, data).json()
+    assert same["secrets_to_reenter"] == []
+    assert client.post("/api/backup/restore", json={"id": same["id"], "confirm": True}).status_code == 200
+    server = ctx.mcp.server(ids["mcp"])
+    assert ctx.mcp.token(server) == "CANARY-MCP-TOKEN" and server.token_storage == "vault"
+    assert server.oauth_pending_sealed
+    assert {item["id"]: item["secret_set"] for item in client.get("/api/connections").json()} == {
+        ids["connection"]: True
+    }
+
+    cases = [
+        (_set("mcp_servers", ids["mcp"], "$.url", "https://evil.example/mcp"), [mcp]),
+        (_set("mcp_servers", ids["mcp"], "$.transport", "stdio"), [mcp]),
+        (_set("mcp_servers", ids["mcp"], "$.auth", "oauth"), [mcp]),
+        (_set("service_connections", ids["connection"], "$.egress", ["evil.example:443"]), [connection]),
+        (_set("service_connections", ids["connection"], "$.provider", "other"), [connection]),
+        (_set("service_connections", ids["connection"], "$.settings.username", "mallory"), [connection]),
+    ]
+    for change, expected in cases:
+        changed = _upload(client, _rebuilt(data, change, tmp_path))
+        assert changed.status_code == 200, changed.text
+        assert changed.json()["secrets_to_reenter"] == expected
+    # Restoring one of them: the moved MCP service has no token any more, the connection keeps its secret.
+    moved = _upload(client, _rebuilt(data, cases[0][0], tmp_path)).json()
+    result = client.post("/api/backup/restore", json={"id": moved["id"], "confirm": True}).json()
+    assert result["secrets_to_reenter"] == [mcp]
+    server = ctx.mcp.server(ids["mcp"])
+    assert server.url == "https://evil.example/mcp"
+    assert (server.token_sealed, server.oauth_pending_sealed, server.token_storage) == (None, None, "none")
+    assert ctx.mcp.token(server) is None
+    raw = ctx.store.get_raw("service_connections", ids["connection"])
+    assert raw["secret_sealed"].startswith("nodestro:enc:") and raw["secret_storage"] == "vault"
+    # And the moved connection loses its secret too.
+    moved = _upload(client, _rebuilt(client.get("/api/backup").content, cases[3][0], tmp_path)).json()
+    assert moved["secrets_to_reenter"] == [connection]
+    assert client.post("/api/backup/restore", json={"id": moved["id"], "confirm": True}).status_code == 200
+    raw = ctx.store.get_raw("service_connections", ids["connection"])
+    assert "secret_sealed" not in raw and raw["secret_storage"] == "none"
+
+
+def test_delete_everything_leaves_no_data_in_the_data_directory(
+    make_app: Callable[..., TestClient], sealing: None
+) -> None:
     client = make_app({"ONE": [text("a")]})
     _canaries(client)
     nodestro = client.app.state.nodestro  # type: ignore[attr-defined]
     data_dir = Path(nodestro.config.data_dir)
     # A restore leaves a safety backup; other things lie around too, a link to a file outside among them.
-    info = _upload(client, client.get("/api/backup").content).json()
+    data = client.get("/api/backup").content
+    assert not any(canary in content for content in _entries(data).values() for canary in (*CANARIES[:4], SEALED))
+    info = _upload(client, data).json()
     client.post("/api/backup/restore", json={"id": info["id"], "confirm": True})
     (data_dir / "exports").mkdir(exist_ok=True)
     (data_dir / "exports" / "old.zip").write_bytes(b"CANARY-MEMORY in an export")
@@ -201,6 +333,7 @@ def test_delete_everything_leaves_no_data_in_the_data_directory(make_app: Callab
     outside.write_text("stays", encoding="utf-8")
     (data_dir / "link").symlink_to(outside)
     assert any(canary in path.read_bytes() for path in data_dir.rglob("*") if path.is_file() for canary in CANARIES)
+    assert any(SEALED in path.read_bytes() for path in data_dir.rglob("*") if path.is_file())
 
     for body in ({"confirm": "yes"}, {"confirm": "DELETE ALL DATA"}):
         answer = client.post("/api/data/delete-all", json=body)
@@ -211,7 +344,9 @@ def test_delete_everything_leaves_no_data_in_the_data_directory(make_app: Callab
 
     deleted = client.post("/api/data/delete-all", json=CONFIRM)
     assert deleted.status_code == 200, deleted.text
-    assert deleted.json()["contents"]["workflows"] == 1 and deleted.json()["removed_entries"] >= 4
+    result = deleted.json()
+    assert result["contents"]["workflows"] == 1 and result["removed_entries"] >= 4
+    assert (result["complete"], result["log_emptied"], result["left"]) == (True, True, [])
 
     # Nothing of the data is left in any file of the data directory, the database's log included.
     left = sorted(path.name for path in data_dir.iterdir())
@@ -219,7 +354,7 @@ def test_delete_everything_leaves_no_data_in_the_data_directory(make_app: Callab
     for path in data_dir.rglob("*"):
         if path.is_file():
             content = path.read_bytes()
-            for canary in (*CANARIES, b"sk-ant", b"nodestro:enc:", b"double_it"):
+            for canary in (*CANARIES, b"sk-ant", SEALED, b"double_it"):
                 assert canary not in content, (path.name, canary)
     assert outside.read_text(encoding="utf-8") == "stays"  # a link is removed, never followed
 
@@ -227,6 +362,7 @@ def test_delete_everything_leaves_no_data_in_the_data_directory(make_app: Callab
     assert client.get("/api/workflows").json() == []
     assert client.get("/api/knowledge").json() == []
     assert client.get("/api/connections").json() == []
+    assert client.get("/api/mcp/servers").json() == []
     assert client.get("/api/memory").json() == []
     assert client.get("/api/tools/double_it").status_code == 404
     assert nodestro.provider_settings("anthropic").get("api_key") in (None, "")
@@ -255,9 +391,61 @@ def test_delete_everything_waits_for_background_work(
     assert client.get("/api/access-audit").json() == []
 
 
-def test_export_everything_is_readable_and_holds_no_secret(make_app: Callable[..., TestClient]) -> None:
+def test_no_run_starts_while_everything_is_deleted(make_app: Callable[..., TestClient]) -> None:
     client = make_app({"ONE": [text("a")]})
-    _canaries(client)
+    nodestro = client.app.state.nodestro  # type: ignore[attr-defined]
+    node = {"id": "one", "type": "agent", "label": "One", "agent": {"name": "One", "system_prompt": "ONE"}}
+    created = client.post("/api/workflows", json={"name": "Flow", "nodes": [node], "edges": []}).json()
+    nodestro.new_work_blocked.set()
+    try:
+        refused = client.post(f"/api/workflows/{created['id']}/runs", json={"input": "go"})
+        assert (refused.status_code, refused.json()["code"]) == (400, "data.deleting")
+    finally:
+        nodestro.new_work_blocked.clear()
+    assert client.post(f"/api/workflows/{created['id']}/runs", json={"input": "go"}).status_code == 201
+
+
+def test_a_deletion_that_cannot_remove_everything_says_what_is_left(
+    make_app: Callable[..., TestClient], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from nodestro_api import data_lifecycle
+
+    client = make_app()
+    nodestro = client.app.state.nodestro  # type: ignore[attr-defined]
+    data_dir = Path(nodestro.config.data_dir)
+    (data_dir / "stuck").mkdir()
+    (data_dir / "gone.txt").write_text("x", encoding="utf-8")
+    remove = data_lifecycle._remove
+
+    def failing(path: Path) -> None:
+        if path.name == "stuck":
+            raise PermissionError("in use")
+        remove(path)
+
+    monkeypatch.setattr(data_lifecycle, "_remove", failing)
+    result = client.post("/api/data/delete-all", json=CONFIRM).json()
+    assert (result["complete"], result["left"]) == (False, ["stuck"])
+    assert (data_dir / "stuck").exists() and not (data_dir / "gone.txt").exists()
+    [event] = client.get("/api/access-audit").json()
+    assert event["kind"] == "data_deleted" and event["details"]["complete"] is False
+    assert event["details"]["left"] == ["stuck"]
+    assert not nodestro.new_work_blocked.is_set()
+
+    # A failure after the deletion began is recorded as well before it is answered.
+    def broken(_connection: Any) -> None:
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(data_lifecycle, "_empty_database", broken)
+    with pytest.raises(sqlite3.OperationalError):
+        client.post("/api/data/delete-all", json=CONFIRM)
+    kinds = [(item["kind"], item["details"].get("error")) for item in client.get("/api/access-audit").json()]
+    assert kinds[0] == ("data_deleted", "OperationalError")
+    assert not nodestro.new_work_blocked.is_set()
+
+
+def test_export_everything_is_readable_and_holds_no_secret(make_app: Callable[..., TestClient], sealing: None) -> None:
+    client = make_app({"ONE": [text("a")]})
+    ids = _canaries(client)
     answer = client.get("/api/data/export")
     assert answer.status_code == 200 and answer.headers["content-type"] == "application/zip"
     assert 'filename="nodestro-export-' in answer.headers["content-disposition"]
@@ -267,8 +455,14 @@ def test_export_everything_is_readable_and_holds_no_secret(make_app: Callable[..
         entries = {name: archive.read(name) for name in names}
     assert (manifest["format"], manifest["format_version"], manifest["product"]) == ("nodestro-export", 1, "nodestro")
     assert set(manifest["files"]) == set(names) - {"manifest.json"}
-    # Without a key for the data directory, the connection's secret stays in this process only (tested above).
-    assert manifest["secrets_excluded"] == ["provider:anthropic"]
+    assert manifest["secrets_excluded"] == [
+        f"connection:{ids['connection']}",
+        f"mcp:{ids['mcp']}",
+        "provider:anthropic",
+    ]
+    [server] = [json.loads(line) for line in entries["documents/mcp_servers.jsonl"].splitlines()]
+    assert server["data"]["url"] == MCP and "token_sealed" not in server["data"]
+    assert "oauth_pending_sealed" not in server["data"]
     workflows = [json.loads(line) for line in entries["documents/workflows.jsonl"].splitlines()]
     assert [row["data"]["name"] for row in workflows] == ["Test"]
     memory = [json.loads(line) for line in entries["memory.jsonl"].splitlines()]
@@ -277,7 +471,7 @@ def test_export_everything_is_readable_and_holds_no_secret(make_app: Callable[..
     assert {entries[row["file"]] for row in files} >= {b"CANARY-KNOWLEDGE in a file"}
     assert "tools/double_it/v1.json" in names
     secrets = b"".join(content for name, content in entries.items())
-    for secret in (b"CANARY-PROVIDER-KEY", b"CANARY-CONNECTION-SECRET", b"nodestro:enc:", b"sk-ant"):
+    for secret in (*CANARIES[:4], SEALED, b"sk-ant"):
         assert secret not in secrets
     for local in ("api_keys", "api_idempotency", "local_vault"):
         assert f"documents/{local}.jsonl" not in names

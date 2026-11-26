@@ -11,11 +11,17 @@
     are no longer part of a backup (`excluded` adds `mcp_tokens`, `connection_secrets`), and a restore never takes
     them from one; it keeps this computer's for the same id. `BackupInfo.secrets_to_reenter` and
     `RestoreResult.secrets_to_reenter` list what has to be entered again.
+  - A restored MCP service or connection keeps this computer's sealed secret only while it is bound to the same
+    address and use (MCP: `url`, `transport`, `stdio`, `auth`; connection: `type`, `provider`, `egress`, settings
+    `auth`/`security`/`username`; threat model T9); otherwise the secret is dropped and listed for re-entry.
+  - Safety backups no longer hold sealed tokens either: undoing a restore with one lists those MCP tokens and
+    connection secrets for re-entry.
   - Restored tool and input files, the waiting backup and the safety backups are private to the owner (POSIX).
   - New routes (permission `install`, router group `data`, tag `backup`): `GET /api/data/export` (format
     `nodestro-export` version 1, readable files without secrets) and `POST /api/data/delete-all` (`{"confirm": "delete
     all data"}`; leaves no data in the data directory; `data.busy` while anything works in the background,
-    `data.not_confirmed`). A restore, an export and a deletion are recorded in the access audit trail (new kinds
+    `data.not_confirmed`; no run starts meanwhile, `data.deleting`; the answer says `complete`, `log_emptied` and what
+    is `left`). A restore, an export and a deletion are recorded in the access audit trail (new kinds
     `backup_restored`, `data_exported`, `data_deleted`, target type `data`). Both OpenAPI documents are regenerated;
     the SDK syncs. Tests: `tests/test_data_lifecycle.py` (restore on a second computer in a second process, the old
     format, the canary scan after a deletion, the export, permission and CSRF). See TODO API-076.
