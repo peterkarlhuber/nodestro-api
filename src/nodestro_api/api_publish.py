@@ -19,12 +19,13 @@ from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import FileResponse
 from nodestro_runtime.engine import start_fields
 from nodestro_runtime.forms import check_values, input_text
+from nodestro_runtime.memory_spaces import space_not_found
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.schemas import LANGUAGES, RunSummary, Workflow
 from pydantic import BaseModel, Field
 
 from . import access_audit, api_guide, exporter, portable_build
-from .api import Ctx, _quote, actor_id
+from .api import Ctx, _quote, actor_id, owner_of
 from .api_examples import ApiExamples, examples
 from .api_guide import ApiGuide
 from .api_keys import ApiKeyOut, NewApiKey
@@ -402,11 +403,22 @@ class ExportIn(BaseModel):
     options: exporter.ExportOptions = Field(default_factory=exporter.ExportOptions)
 
 
+def _own_memory(ctx: Ctx, request: Request, options: exporter.ExportOptions) -> str | None:
+    """The request's owner, after checking that every memory space the export includes is theirs (RT-089c: another
+    person's space, or one without an owner, answers ``404 memory.space_not_found`` before anything is read)."""
+    owner = owner_of(request)
+    for name in options.memory:
+        if not ctx.memory.may_use(name, owner):
+            raise space_not_found(name)
+    return owner
+
+
 @router.post("/publications/{publication_id}/export/check", dependencies=READ)
-def export_check(publication_id: str, body: ExportIn, ctx: Ctx) -> exporter.ExportCheck:
+def export_check(publication_id: str, body: ExportIn, ctx: Ctx, request: Request) -> exporter.ExportCheck:
+    owner = _own_memory(ctx, request, body.options)
     publication = ctx.publications.get(publication_id)
     release, _ = _served(ctx, publication, body.number)
-    return exporter.check(ctx, publication, release, body.options)
+    return exporter.check(ctx, publication, release, body.options, memory_owner=owner)
 
 
 @router.post("/publications/{publication_id}/export/libraries", dependencies=EDIT)
@@ -420,7 +432,8 @@ def export_libraries(publication_id: str, body: ExportIn, ctx: Ctx) -> portable_
 
 
 @router.post("/publications/{publication_id}/exports", status_code=201, dependencies=EDIT)
-def create_export(publication_id: str, body: ExportIn, ctx: Ctx) -> exporter.ExportRecord:
+def create_export(publication_id: str, body: ExportIn, ctx: Ctx, request: Request) -> exporter.ExportRecord:
+    _own_memory(ctx, request, body.options)
     publication = ctx.publications.get(publication_id)
     release, _ = _served(ctx, publication, body.number)
     return exporter.export(ctx, publication, release, body.options)
@@ -457,7 +470,7 @@ def delete_export(export_id: str, ctx: Ctx) -> Response:
 
 
 @router.post("/publications/{publication_id}/export-jobs", status_code=202, dependencies=EDIT)
-def start_export_job(publication_id: str, body: ExportIn, ctx: Ctx) -> portable_build.ExportJob:
+def start_export_job(publication_id: str, body: ExportIn, ctx: Ctx, request: Request) -> portable_build.ExportJob:
     """Build a portable package in the background (``options.kind`` must be ``portable``).
 
     On a server this answers ``403 export.server_unsupported`` unless its operator enabled export jobs
@@ -465,12 +478,13 @@ def start_export_job(publication_id: str, body: ExportIn, ctx: Ctx) -> portable_
     at a time on the whole server (API-048), a workspace has one active export job (``export.busy`` otherwise), and a
     package larger than ``NODESTRO_SERVER_EXPORT_MAX_BYTES`` (default 2 GiB) is refused (``403
     export.server_too_large`` from the estimate, or the job fails with that code)."""
+    owner = _own_memory(ctx, request, body.options)
     publication = ctx.publications.get(publication_id)
     release, _ = _served(ctx, publication, body.number)
     options = body.options
     if options.kind != "portable":
         raise NodestroError("export.not_portable", "Only portable packages are built as jobs")
-    found = exporter.check(ctx, publication, release, options)
+    found = exporter.check(ctx, publication, release, options, memory_owner=owner)
     # On a server only with the operator's opt-in, one build at a time and a size limit (API3-07); its refusal
     # answers 403 before the check's own copy of it (API-053) would answer 400.
     portable_build.server_admission(ctx, found.portable.estimated_bytes if found.portable else 0)

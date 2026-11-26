@@ -17,7 +17,7 @@ from nodestro_runtime.tool_library import ToolInfo
 from pydantic import BaseModel, Field
 
 from . import model_readiness
-from .api import Ctx, _sse, actor_id
+from .api import Ctx, _sse, actor_id, owner_of
 from .architect import ArchitectJob, ArchitectRequest
 from .permissions import EDIT, READ, RUN, StreamAccess
 
@@ -36,7 +36,12 @@ async def start_architect(body: ArchitectRequest, ctx: Ctx, request: Request) ->
     # Fail fast without provider settings; a local model server is asked off the event loop (RT3-04 pattern).
     actor = actor_id(request)
     await asyncio.to_thread(ctx.connect_model, model, actor=actor)
-    return ctx.architect.start(body.model_copy(update={"model": model}), loop=asyncio.get_running_loop(), actor=actor)
+    return ctx.architect.start(
+        body.model_copy(update={"model": model}),
+        loop=asyncio.get_running_loop(),
+        actor=actor,
+        memory_owner=owner_of(request),
+    )
 
 
 @router.get("/architect/jobs/{job_id}", dependencies=READ)

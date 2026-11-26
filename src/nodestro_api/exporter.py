@@ -602,7 +602,14 @@ def _server_package_issues(ctx: Nodestro, estimated_bytes: int) -> list[CheckIss
     return found
 
 
-def check(ctx: Nodestro, publication: Publication, release: Release, options: ExportOptions) -> ExportCheck:
+def check(
+    ctx: Nodestro,
+    publication: Publication,
+    release: Release,
+    options: ExportOptions,
+    *,
+    memory_owner: str | None = None,
+) -> ExportCheck:
     """What the export would contain and what to know before downloading it; nothing is written."""
     options = normalized(options)
     bundle = release.bundle
@@ -644,7 +651,7 @@ def check(ctx: Nodestro, publication: Publication, release: Release, options: Ex
                     name=ref.name,
                 )
             )
-    spaces = {info.name: info for info in ctx.memory.all()}
+    spaces = {info.name: info for info in ctx.memory.visible(memory_owner)}  # RT-089c: sizes of own spaces
     for space_ref in bundle.memory:
         info = spaces.get(space_ref.space)
         resources.append(

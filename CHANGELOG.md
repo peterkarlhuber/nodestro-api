@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Memory spaces with an owner on a server (RT-089c, needs the pinned runtime). `/api/memory` lists only the request's
+  own spaces. The space routes, assistant attachments of kind `memory`, the export check and export
+  (`options.memory`), the architect's resource list and the context preview answer another person's space, a space
+  without an owner and a principal without an owner identity with `404 memory.space_not_found` (new error code). The
+  first writer of a new space owns it. New operator command `nodestro-server memory backfill-owners [--tenant]`
+  (lists spaces without an owner) and `--tenant --user --space [--dry-run]` (assigns exactly those, never over an
+  owner). Each assignment is audited as the new access audit kind `memory_space_owner_assigned`; both OpenAPI documents
+  are regenerated and the SDK syncs. The desktop is unchanged. Tests: `tests/test_memory_space_owners.py`; see TODO
+  API-075.
+
 - Egress protection by content provenance (N-08; needs the pinned runtime; off by default, the runtime's
   `NODESTRO_CONTENT_PROVENANCE` together with `NODESTRO_ACCESS_GRANTS`): content of a granted source needs a grant for a
   cloud model outside the run too.

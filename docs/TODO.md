@@ -43,6 +43,22 @@ None known.
 Tool approvals (`NODESTRO_TOOL_APPROVALS`, off by default and staying off) need the independent S-2 review tracked as
 nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes here. No separate entry in this file.
 
+### API-075 · Memory spaces with an owner on a server (RT-089c): the api's part
+
+- **Priority:** P1 High · **Status:** In review · **Refs:** nodestro-runtime RT-089c, `nodestro_api.memory_owners`,
+  `tests/test_memory_space_owners.py`
+- **What:** before, every member of a tenant listed, read, wrote and cleared every memory space on `/api/memory`. Now
+  on a server only a space's owner (its first writer) uses it: `/api/memory` lists only the request's own spaces; the
+  space routes, an assistant attachment of kind `memory`, the export check and export (`options.memory`), the
+  architect's resource list and the context preview answer another person's space, a space without an owner and a
+  principal without an owner identity like a space that does not exist (`404 memory.space_not_found`).
+  Administrators get no extra capability. A space without an owner gets one only with the operator's
+  `nodestro-server memory backfill-owners --tenant --user --space` (member only, never over an owner, audited as
+  `memory_space_owner_assigned`; nothing is deleted). The desktop is unchanged.
+- **Open:** runs for no person (published APIs, schedules without a starter) that use persistent memory now fail
+  closed on a server (runtime RT-089c); the SDK syncs the new audit kind from `openapi/nodestro-api.json`.
+- **Next step:** Independent review together with the runtime part.
+
 ### API-074 · Egress protection by content provenance (N-08): the api's part
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** nodestro-runtime RT-094 and `docs/content-provenance.md`,

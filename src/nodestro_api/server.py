@@ -44,6 +44,13 @@ sentence listing every problem (``profile.invalid``); nothing has a default that
     conversation without an owner gets one; an existing owner is never replaced, and nothing is deleted. Each
     assignment is recorded in the tenant's access audit trail (``conversation_owner_assigned``, actor
     ``operator``). Run by the server's operator, who holds the database settings (API-073).
+``nodestro-server memory backfill-owners [--tenant TENANT]``
+    List the memory spaces without an owner (spaces with files from before owners were recorded, RT-089c) per tenant,
+    with their file counts and sizes. On a server nobody uses them, administrators included. Reads only.
+``nodestro-server memory backfill-owners --tenant TENANT --user USER --space NAME [--space NAME ...] [--dry-run]``
+    Give exactly these spaces exactly this owner, a member of the tenant (USER as for ``set-role``). Only a space with
+    files and without an owner gets one; an existing owner is never replaced, and nothing is deleted. Each assignment
+    is recorded in the tenant's access audit trail (``memory_space_owner_assigned``, actor ``operator``).
 ``nodestro-server axentra status``
     The embedding state: switches, package version, schema state of both runners, keyring key ids (never keys),
     stored secrets by format, identity backend and its readiness, and the reconciliation backlog (counts only).
@@ -982,14 +989,17 @@ def reencrypt_secrets(server: ServerEnvironment, *, dry_run: bool, tenant: str |
     return result
 
 
-def _owner_options_problem(tenant: str | None, user: str | None, conversations: list[str] | None) -> str:
-    """Why the options of ``assistant backfill-owners`` do not name exactly what to assign ("" when they do)."""
+def _owner_options_problem(
+    tenant: str | None, user: str | None, conversations: list[str] | None, option: str = "--conversation"
+) -> str:
+    """Why the options of ``assistant backfill-owners`` (``memory backfill-owners``: ``option`` ``--space``) do not
+    name exactly what to assign ("" when they do)."""
     if user is None:
-        return "--conversation needs --user (the new owner)" if conversations else ""
+        return f"{option} needs --user (the new owner)" if conversations else ""
     if tenant is None:
         return "--user needs --tenant"
     if not conversations:
-        return "--user needs at least one --conversation (there is no wildcard)"
+        return f"--user needs at least one {option} (there is no wildcard)"
     return ""
 
 
@@ -1049,6 +1059,71 @@ def backfill_conversation_owners(
             " (dry run)" if dry_run else "",
             tenant,
             assigned,
+            found.id,
+        )
+    return result
+
+
+def backfill_memory_owners(
+    server: ServerEnvironment,
+    *,
+    dry_run: bool,
+    tenant: str | None,
+    user: str | None = None,
+    spaces: list[str] | None = None,
+    confirm: Confirm | None = None,
+) -> dict[str, Any]:
+    """``nodestro-server memory backfill-owners`` (RT-089c, :mod:`nodestro_api.memory_owners`).
+
+    Without ``user``: report the memory spaces without an owner per tenant (names, file counts, sizes); nothing is
+    written. With ``user``: ``tenant`` and at least one space are required; the user must be a member of the tenant
+    (``identity.not_a_member``). Only spaces with files and without an owner get one; each is recorded in the access
+    audit trail. There is no default user and no wildcard."""
+    from nodestro_runtime.memory_spaces import MemorySpaces
+    from nodestro_runtime.postgres_tables import PostgresMemoryTables
+
+    from .memory_owners import assign, report
+
+    problem = _owner_options_problem(tenant, user, spaces, "--space")
+    if problem:
+        raise ValueError(problem)
+    database = _database(server)
+
+    def spaces_of(tenant_id: str) -> MemorySpaces:
+        return MemorySpaces(PostgresMemoryTables(database, tenant_id), owners=database.store(tenant_id))
+
+    result: dict[str, Any] = {"dry_run": dry_run, "tenants": {}}
+    try:
+        database.require_current_schema()
+        with _identity(server, database) as identity:
+            if tenant is not None:
+                _require_tenant(identity, tenant)
+            if user is None:
+                tenants = [tenant] if tenant is not None else [item.id for item in identity.tenants()]
+            else:
+                assert tenant is not None
+                found = find_user(server, database, user, confirm=confirm)
+                if identity.role(tenant, found.id) is None:
+                    raise NodestroError(
+                        "identity.not_a_member", f"{found.id} is not a member of {tenant}", tenant=tenant
+                    )
+        if user is None:
+            for tenant_id in tenants:
+                result["tenants"][tenant_id] = {
+                    "without_owner": [item.model_dump() for item in report(spaces_of(tenant_id))]
+                }
+        else:
+            assert tenant is not None and spaces
+            done = assign(spaces_of(tenant), found.id, spaces, dry_run=dry_run)
+            result["tenants"][tenant] = done.model_dump()
+    finally:
+        database.close()
+    if user is not None:
+        logger.info(
+            "Operator assigned memory space owners%s in tenant %s: %d to %s",
+            " (dry run)" if dry_run else "",
+            tenant,
+            sum(len(item["assigned"]) for item in result["tenants"].values()),
             found.id,
         )
     return result
@@ -1773,6 +1848,19 @@ def parser() -> argparse.ArgumentParser:
     owners.add_argument(
         "--conversation", action="append", default=[], help="A conversation id (chat_... or conv_...); repeat it"
     )
+    memory = commands.add_parser("memory", help="Memory spaces")
+    memory_commands = memory.add_subparsers(dest="memory_command", required=True)
+    memory_owners = memory_commands.add_parser(
+        "backfill-owners",
+        help=(
+            "List memory spaces without an owner (nobody uses them on a server), or give the named ones an owner "
+            "(--tenant, --user and --space; never replaces an owner; audited)"
+        ),
+    )
+    memory_owners.add_argument("--dry-run", action="store_true", help="Only report what would change")
+    memory_owners.add_argument("--tenant", help="Only this tenant (required with --user)")
+    memory_owners.add_argument("--user", help="The new owner, a member of the tenant: " + user_help)
+    memory_owners.add_argument("--space", action="append", default=[], help="A memory space name; repeat it")
     platform = commands.add_parser("axentra", help="Axentra platform services")
     platform_commands = platform.add_subparsers(dest="axentra_command", required=True)
     platform_commands.add_parser(
@@ -1826,6 +1914,10 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = found_parser.parse_args(argv)
     if args.command == "assistant":
         problem = _owner_options_problem(args.tenant, args.user, args.conversation)
+        if problem:
+            found_parser.error(problem)
+    if args.command == "memory":
+        problem = _owner_options_problem(args.tenant, args.user, args.space, "--space")
         if problem:
             found_parser.error(problem)
     from .db_log_redaction import install_db_error_redaction
@@ -1914,6 +2006,18 @@ def main(argv: Sequence[str] | None = None) -> None:
                 tenant=args.tenant,
                 user=args.user,
                 conversations=args.conversation,
+                confirm=_confirm_on_terminal,
+            )
+            print(json.dumps(report, indent=2))
+        elif args.command == "memory":
+            import json
+
+            report = backfill_memory_owners(
+                server,
+                dry_run=args.dry_run,
+                tenant=args.tenant,
+                user=args.user,
+                spaces=args.space,
                 confirm=_confirm_on_terminal,
             )
             print(json.dumps(report, indent=2))
