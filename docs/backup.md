@@ -20,7 +20,10 @@ id); they name who acted and counts, never data.
 A granted folder's search index (N-12) is in neither a backup nor an export (review M-1): the sanitized snapshot both
 are made from loses every chunk whose source starts with `folder:`, the chunks' vectors, their full-text entries (the
 full-text index is rebuilt from the remaining chunks) and the collections `folder_index_files` and
-`folder_index_state`. The folder's text belongs to the folder and its grant: the runtime builds the index again from
+`folder_index_state` (`nodestro_runtime.storage.strip_index_sources`; a legacy `vec0` vector table that cannot be
+cleaned loses its storage tables, fail closed). The safety backup before a restore is a backup like any other, and the
+runtime strips the copy it makes before a schema migration the same way. The folder's text belongs to the folder and
+its grant: the runtime builds the index again from
 the folder while the grant holds, also after a restore. Test:
 `tests/test_folders_api.py::test_backups_and_the_data_export_hold_nothing_of_a_folder_index`.
 

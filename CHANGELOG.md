@@ -5,7 +5,8 @@
 - Security (N-12 review M-1): backups and the data export carried the full text of indexed granted folders. The
   sanitized snapshot both are made from now removes every folder chunk (source `folder:`), its vectors and full-text
   entries, and the collections `folder_index_files` and `folder_index_state`; the index is built again from the folder
-  while its grant holds. No contract change. See `docs/backup.md`.
+  while its grant holds. The runtime's `storage.strip_index_sources` does the removal (review round 2, L-a: a legacy
+  `vec0` table that cannot be cleaned loses its storage tables). No contract change. See `docs/backup.md`.
 - Granted folders as a knowledge source (N-12; needs the runtime with `nodestro_runtime.folder_index` in the studio
   lock; behind `NODESTRO_FOLDER_GRANTS`, off): `POST /api/folders` with `index: true` wakes the runtime's folder
   indexer; revoking a folder grant (`DELETE /api/folders/{id}`, `DELETE /api/access/grants/{id}`) drops its search

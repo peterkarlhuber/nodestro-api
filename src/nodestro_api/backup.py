@@ -79,7 +79,7 @@ from nodestro_runtime.schemas import (
     Workflow,
     now,
 )
-from nodestro_runtime.storage import SCHEMA_VERSION
+from nodestro_runtime.storage import SCHEMA_VERSION, strip_index_sources
 from orkexa import __version__ as library_version
 from pydantic import BaseModel, Field, ValidationError
 
@@ -350,31 +350,10 @@ def _strip_sealed(connection: sqlite3.Connection, schema: str = "main") -> None:
 
 
 def _strip_folder_index(connection: sqlite3.Connection) -> None:
-    """Remove every granted folder's index (N-12 review M-1): its chunks with their vectors and full-text entries, and
-    its manifest and state documents. Runs on the snapshot, with ``secure_delete`` on and a ``VACUUM`` after it."""
-    connection.execute(
-        "DELETE FROM nodestro_documents WHERE collection IN (?, ?)", (FOLDER_INDEX_FILES, FOLDER_INDEX_STATES)
-    )
-    tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-    if "index_chunks" not in tables:
-        return
-    # substr, not LIKE: a source is data, and LIKE would treat ``_`` and ``%`` in it as patterns.
-    folder = "substr(source, 1, ?) = ?"
-    marks = (len(FOLDER_SOURCE), FOLDER_SOURCE)
-    if connection.execute(f"SELECT count(*) FROM index_chunks WHERE {folder}", marks).fetchone()[0] == 0:
-        return
-    chunk_ids = f"SELECT id FROM index_chunks WHERE {folder}"
-    if "index_vectors" in tables:
-        connection.execute(f"DELETE FROM index_vectors WHERE chunk_id IN ({chunk_ids})", marks)
-    if "index_vec" in tables:  # the legacy vector table (embedder= callables); Nodestro never writes it
-        try:
-            connection.execute(f"DELETE FROM index_vec WHERE rowid IN ({chunk_ids})", marks)
-        except sqlite3.OperationalError:
-            logger.warning("The legacy vector table could not be cleaned in a backup (sqlite-vec is not loaded)")
-    connection.execute(f"DELETE FROM index_chunks WHERE {folder}", marks)
-    if "index_fts" in tables:
-        # The full-text index reads its text from index_chunks: rebuilt, it holds no term of a folder's text.
-        connection.execute("INSERT INTO index_fts (index_fts) VALUES ('rebuild')")
+    """Remove every granted folder's index (N-12 review M-1, L-a): its chunks with their vectors and full-text entries,
+    and its manifest and state documents (:func:`nodestro_runtime.storage.strip_index_sources`). Runs on the snapshot,
+    with ``secure_delete`` on and a ``VACUUM`` after it."""
+    strip_index_sources(connection, FOLDER_SOURCE, (FOLDER_INDEX_FILES, FOLDER_INDEX_STATES))
 
 
 def sanitized_snapshot(nodestro: Nodestro, database: Path) -> tuple[BackupContents, list[str]]:
