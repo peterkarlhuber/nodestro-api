@@ -10,7 +10,7 @@
 | Priority | Count |
 |---|---|
 | P0 Critical | 0 |
-| P1 High | 0 |
+| P1 High | 1 |
 | P2 Medium | 6 |
 | P3 Low | 13 |
 | P4 Optional | 7 |
@@ -42,6 +42,22 @@ None known.
 
 Tool approvals (`NODESTRO_TOOL_APPROVALS`, off by default and staying off) need the independent S-2 review tracked as
 nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes here. No separate entry in this file.
+
+### API-076 · Export and delete everything (N-15): review and follow-ups
+
+- **Priority:** P1 High · **Status:** Needs external review · **Refs:** `nodestro_api.data_lifecycle`,
+  `nodestro_api.backup`, [backup.md](backup.md), `tests/test_data_lifecycle.py`
+- **What:** `POST /api/data/delete-all` deletes every piece of data of the installation and `GET /api/data/export`
+  hands all of it out (without secrets); both need `install`, are audited, and the deletion needs the exact
+  confirmation. Backups no longer carry sealed MCP tokens and connection secrets.
+- **Open:** an independent security review of both routes and of the secret handling of backups (deletion: the
+  kept-entries list, symbolic links, the database rebuild and its write-ahead log while other connections read; export:
+  that no collection with a secret is missed when new ones are added). The deletion blocks new runs (`data.deleting`)
+  and holds the store lock while it deletes; other background work (tool jobs, installations, a reindex) is not
+  blocked but checked again under the lock. The studio has no buttons for export, delete
+  and the re-entry of secrets yet (studio work). A backup made before N-15 does not name the provider keys it left
+  out, so `secrets_to_reenter` cannot list them for it (documented).
+- **Next step:** the review; then the studio's settings page offers the three actions.
 
 ### API-075 · Memory spaces with an owner on a server (RT-089c): the api's part
 

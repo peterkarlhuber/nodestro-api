@@ -54,7 +54,10 @@ def create_product_app(
 - `switches`: `scheduler` (default on) runs due schedules in the background; off, schedules only run on explicit
   ticks (tests). No switch can weaken a guard.
 - `config`: every other setting (listen address, allowed hosts, launch secret, access key, price sync, ...). By
-  default it is read from the environment exactly as for the studio (`AppConfig.from_env`).
+  default it is read from the environment exactly as for the studio (`AppConfig.from_env`). `AppConfig.product_id`
+  names the product whose data the workspace holds (default `nodestro`; lower-case letters, digits and `-`): the
+  backups and exports of the `data` group carry it, and a backup of another product is refused
+  ([backup.md](backup.md)).
 - `integrations`, `client_factory`: passed to the workspace as by `nodestro_api.app.create_app`.
 
 The module also exports `install_guards(app, config)` and `service_lifespan(workspace, scheduler=...)`, the building
@@ -118,7 +121,7 @@ its inbox or notifications last. `core` is always served. OpenAPI tags come from
 | `tools` | `api.tools_router` | `/api/tools` |
 | `references` | `api.references_router` | `/api/used-by` |
 | `memory` | `api.memory_router` | `/api/memory` |
-| `data` | `api_data` | `/api/backup`, `/api/diagnostics`, `/api/organize`, `/api/search` |
+| `data` | `api_data` | `/api/backup`, `/api/data/export`, `/api/data/delete-all` ([backup.md](backup.md)), `/api/diagnostics`, `/api/organize`, `/api/search` |
 
 The order matters where paths overlap: `/api/library/agents` before `/api/library/{template_id}`, `/api/tools/drafts`
 before `/api/tools/{name}`, `/api/published/_mcp` before `/api/published/{slug}`. A product that selects a subset

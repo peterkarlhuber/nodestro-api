@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 import logging
 import os
 from pathlib import Path
+import threading
 from typing import Any, Literal
 
 from nodestro_runtime.extensions import Integration
@@ -107,6 +108,10 @@ class AppConfig:
     #: ``NODESTRO_DESKTOP_LOGOUT``, ``NODESTRO_TERMINAL_LAUNCH``, ``NODESTRO_LAUNCH_FRAGMENT``,
     #: ``NODESTRO_BIND_LOOPBACK``), every switch off by default, see :class:`nodestro_api.launch.LaunchHardening`.
     hardening: LaunchHardening = field(default_factory=LaunchHardening)
+    #: The product whose data this is (N-15): backups name it in their manifest (``product``) and a restore refuses a
+    #: backup of another product (``backup.product_mismatch``). An embedding product sets its own id (lower-case
+    #: letters, digits and ``-``, see :data:`nodestro_api.backup.PRODUCT_ID`); the studio keeps ``nodestro``.
+    product_id: str = "nodestro"
 
     @property
     def profile(self) -> RuntimeProfile:
@@ -220,6 +225,17 @@ class Nodestro(Workspace):
         return RunFileCatalog(self.inputs, self.knowledge.store)
 
     def compose(self) -> None:
+        #: Set while every piece of data is deleted (N-15, :func:`nodestro_api.data_lifecycle.delete_all`): no run
+        #: starts meanwhile, whatever starts it (a request, a schedule, a batch, a conversation, a published API).
+        self.new_work_blocked = threading.Event()
+        start = self.runs.start
+
+        def start_unless_blocked(*args: Any, **kwargs: Any) -> Run:
+            if self.new_work_blocked.is_set():
+                raise NodestroError("data.deleting", "All data is being deleted; start the run again afterwards")
+            return start(*args, **kwargs)
+
+        self.runs.start = start_unless_blocked  # type: ignore[method-assign]
         self.organize = Organizer(self.store)
         self.assistants = Assistants(self.tools, capabilities=self.builder.capabilities, builder=self.builder)
         self.batches = Batches(self)

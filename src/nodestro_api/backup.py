@@ -11,10 +11,21 @@ A backup is a ZIP file with
 - ``inputs/catalog.json`` and ``inputs/blobs/<id>``: the files uploaded as inputs of runs
   (their metadata is in the database), so paused and continued runs find them after a restore.
 
-The Anthropic API key and the keys of published APIs are never part of a backup; they stay
-on this computer and are kept when a backup is restored. Published APIs (publications, their
-immutable versions and export records) are part of it; network access for them is switched
-off after a restore and has to be switched on again deliberately.
+Secrets are never part of a backup: provider keys (and base URLs with credentials in them), the sealed tokens of MCP
+services and pending OAuth sign-ins, the sealed secrets of service connections, the keys of published APIs, their
+idempotency records and the check value of the data directory's key. They stay on this computer and are kept when a
+backup is restored; the manifest names the secrets that were left out (``secrets_excluded``: ``provider:<name>``,
+``mcp:<id>``, ``connection:<id>``), and checking and restoring a backup list those this computer does not have
+(``secrets_to_reenter``), so the user enters them again. Published APIs (publications, their immutable versions and
+export records) are part of it; network access for them is switched off after a restore and has to be switched on
+again deliberately.
+
+The core is product-neutral (N-15): it works on a :class:`BackupProfile` (the product id, the data directory and the
+parts besides the database), by default the one of the app's configuration (:func:`profile_of`). The format stays
+``nodestro-backup`` version 1; the manifest names the ``product`` whose data it holds, and a backup of another
+product is refused (``backup.product_mismatch``). A backup without the field (every backup made before it existed)
+belongs to :data:`LEGACY_PRODUCT` and stays readable. :mod:`nodestro_api.data_lifecycle` builds "export everything"
+and "delete everything" on the same core.
 
 Restoring takes two steps. :func:`inspect_backup` checks the file completely (ZIP
 structure, paths, checksums, database integrity, every workflow, template and run) and
@@ -31,10 +42,12 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime
 import hashlib
 import json
 import logging
+import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
@@ -72,6 +85,12 @@ logger = logging.getLogger(__name__)
 
 FORMAT = "nodestro-backup"
 FORMAT_VERSION = 1
+#: The product of a backup whose manifest names none: every backup made before N-15 was the studio's.
+LEGACY_PRODUCT = "nodestro"
+#: A product id: lower-case letters, digits and ``-``, starting with a letter.
+PRODUCT_ID = re.compile(r"^[a-z][a-z0-9-]{0,39}$")
+#: The parts of a backup besides the database: the tool files and the input files of runs.
+COMPONENTS = ("tools", "inputs")
 _TOOL_FILE = re.compile(r"^tools/[A-Za-z_][A-Za-z0-9_]*/v\d+\.json$")
 _INPUT_FILE = re.compile(r"^inputs/(catalog\.json|blobs/[0-9a-f]{16})$")
 #: Tables that SQLite, the full-text index or the legacy ``vec0`` vector table (``index_vec`` and its shadow tables)
@@ -122,6 +141,43 @@ _PROVIDER_SECRETS = "provider_keys"
 #: (they are credentials, even hashed), the API's idempotency records and the check value of the
 #: data directory's key (nodestro_runtime.local_vault). A restore keeps the current ones.
 _LOCAL_COLLECTIONS = ("api_keys", "api_idempotency", "local_vault")
+#: Sealed secrets in documents besides the settings (see nodestro_runtime.local_vault): the token of an MCP service, a
+#: pending OAuth sign-in and the secret of a service connection, by collection, with the label kind of each.
+_SEALED_FIELDS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "mcp_servers": ("mcp", ("token_sealed", "oauth_pending_sealed")),
+    "service_connections": ("connection", ("secret_sealed",)),
+}
+#: Where a document says how its secret is stored (``vault``: sealed in the document itself).
+_STORAGE_FIELDS = {"mcp_servers": "token_storage", "service_connections": "secret_storage"}
+#: What the manifest lists as ``excluded``.
+EXCLUDED = (*_SECRET_SETTINGS, _PROVIDER_SECRETS, *_LOCAL_COLLECTIONS, "mcp_tokens", "connection_secrets")
+#: A secret's label in ``secrets_excluded`` and ``secrets_to_reenter`` (the manifest is data: other labels are dropped).
+_SECRET_LABEL = re.compile(r"^(provider|mcp|connection):[A-Za-z0-9_.:-]{1,200}$")
+
+
+@dataclass(frozen=True)
+class BackupProfile:
+    """What the backup core works on: the ``product`` whose data it is (:data:`PRODUCT_ID`), its ``data_dir`` (the
+    tool and input files, ``backups/``) and the ``components`` besides the database (a subset of
+    :data:`COMPONENTS`). A component left out is neither written nor replaced by a restore."""
+
+    product: str
+    data_dir: Path
+    components: tuple[str, ...] = COMPONENTS
+
+    def __post_init__(self) -> None:
+        if not PRODUCT_ID.fullmatch(self.product):
+            raise ValueError(f"invalid product id: {self.product!r}")
+        unknown = set(self.components) - set(COMPONENTS)
+        if unknown:
+            raise ValueError(f"unknown backup components: {sorted(unknown)}")
+
+
+def profile_of(nodestro: Nodestro) -> BackupProfile:
+    """The profile of the app's configuration (``AppConfig.product_id`` and ``data_dir``), with every component."""
+    return BackupProfile(
+        product=getattr(nodestro.config, "product_id", LEGACY_PRODUCT), data_dir=nodestro.config.data_dir
+    )
 
 
 #: Space that has to stay free on the disk after unpacking a backup.
@@ -155,6 +211,8 @@ class BackupInfo(BaseModel):
     id: str
     file_name: str
     created_at: datetime
+    #: The product whose data the backup holds (``nodestro`` for a backup without the field).
+    product: str = LEGACY_PRODUCT
     nodestro_version: str
     library_version: str
     contents: BackupContents
@@ -162,11 +220,16 @@ class BackupInfo(BaseModel):
     current: BackupContents
     #: Codes of things worth knowing (e.g. ``backup.newer_version``).
     notes: list[str] = Field(default_factory=list)
+    #: Secrets the backup's data used that it does not hold and this computer does not have either; they have to be
+    #: entered again after the restore (``provider:<name>``, ``mcp:<id>``, ``connection:<id>``).
+    secrets_to_reenter: list[str] = Field(default_factory=list)
 
 
 class RestoreResult(BaseModel):
     contents: BackupContents
     safety_backup: str
+    #: As in :class:`BackupInfo`: the secrets to enter again now.
+    secrets_to_reenter: list[str] = Field(default_factory=list)
 
 
 class LocalBackup(BaseModel):
@@ -212,65 +275,137 @@ def _count(connection: sqlite3.Connection) -> BackupContents:
     return contents
 
 
-def current_contents(nodestro: Nodestro) -> BackupContents:
+def current_contents(nodestro: Nodestro, profile: BackupProfile | None = None) -> BackupContents:
+    profile = profile or profile_of(nodestro)
     connection = sqlite3.connect(nodestro.sqlite_store.database, timeout=30)
     try:
         contents = _count(connection)
     finally:
         connection.close()
-    contents.tools = len(list((nodestro.config.data_dir / "tools").glob("*/v*.json")))
+    contents.tools = len(list((profile.data_dir / "tools").glob("*/v*.json")))
     return contents
 
 
-def backup_dir(nodestro: Nodestro) -> Path:
-    directory = nodestro.config.data_dir / "backups"
+def backup_dir(nodestro: Nodestro, profile: BackupProfile | None = None) -> Path:
+    directory = (profile or profile_of(nodestro)).data_dir / "backups"
     directory.mkdir(parents=True, exist_ok=True)
+    _private(directory, tree=False)
     return directory
 
 
-def create_backup(nodestro: Nodestro, target: Path) -> BackupContents:
+def _private(path: Path, *, tree: bool = True) -> None:
+    """Only the owner may read what a backup holds: folders ``0700``, files ``0600`` (POSIX; on Windows the data
+    directory's permissions apply). ``tree``: everything below ``path`` as well; symbolic links are left alone."""
+    if os.name != "posix" or path.is_symlink() or not path.exists():
+        return
+    for item in [path, *(path.rglob("*") if tree and path.is_dir() else ())]:
+        if not item.is_symlink():
+            item.chmod(0o700 if item.is_dir() else 0o600)
+
+
+def _secrets_in(connection: sqlite3.Connection) -> set[str]:
+    """The labels of the secrets a database holds (plain or sealed): ``provider:<name>`` for a provider's key or a
+    base URL with credentials, ``mcp:<id>`` and ``connection:<id>`` for sealed tokens and connection secrets."""
+    found: set[str] = set()
+    row = connection.execute(
+        "SELECT data FROM nodestro_documents WHERE collection = 'settings' AND id = 'app'"
+    ).fetchone()
+    settings = json.loads(row[0]) if row is not None else {}
+    if isinstance(settings, dict):
+        if settings.get("api_key"):
+            found.add("provider:anthropic")  # the top-level key of old releases is Anthropic's
+        providers = settings.get("providers")
+        for name, entry in (providers if isinstance(providers, dict) else {}).items():
+            if isinstance(entry, dict) and (
+                entry.get("api_key") or (entry.get("base_url") and has_credentials(str(entry["base_url"])))
+            ):
+                found.add(f"provider:{name}")
+    for collection, (kind, fields) in _SEALED_FIELDS.items():
+        for key, data in connection.execute(
+            "SELECT id, data FROM nodestro_documents WHERE collection = ? AND json_valid(data)", (collection,)
+        ):
+            document = json.loads(data)
+            if isinstance(document, dict) and any(document.get(field) for field in fields):
+                found.add(f"{kind}:{key}")
+    return {label for label in found if _SECRET_LABEL.fullmatch(label)}
+
+
+def _strip_sealed(connection: sqlite3.Connection, schema: str = "main") -> None:
+    """Remove the sealed secrets of MCP services and service connections from the documents of ``schema``."""
+    for collection, (_kind, fields) in _SEALED_FIELDS.items():
+        paths = ", ".join(f"'$.{field}'" for field in fields)
+        connection.execute(
+            f"UPDATE {schema}.nodestro_documents SET data = json_remove(data, {paths})"
+            " WHERE collection = ? AND json_valid(data)",
+            (collection,),
+        )
+
+
+def sanitized_snapshot(nodestro: Nodestro, database: Path) -> tuple[BackupContents, list[str]]:
+    """A consistent copy of the database at ``database`` without any secret (see the module's docstring), its contents
+    and the labels of the secrets left out. Backups and the data export are made from it."""
+    nodestro.sqlite_store.snapshot(database)
+    snapshot = sqlite3.connect(database)
+    try:
+        excluded = sorted(_secrets_in(snapshot))
+        # Overwrite what is deleted, so no secret stays in a freed page of the copy (VACUUM rewrites it anyway).
+        snapshot.execute("PRAGMA secure_delete = ON")
+        row = snapshot.execute(
+            "SELECT data FROM nodestro_documents WHERE collection = 'settings' AND id = 'app'"
+        ).fetchone()
+        if row is not None:
+            settings = _without_secrets(json.loads(row[0]))
+            snapshot.execute(
+                "UPDATE nodestro_documents SET data = ? WHERE collection = 'settings' AND id = 'app'",
+                (json.dumps(settings),),
+            )
+        _strip_sealed(snapshot)
+        snapshot.execute(
+            f"DELETE FROM nodestro_documents WHERE collection IN ({', '.join('?' for _ in _LOCAL_COLLECTIONS)})",
+            _LOCAL_COLLECTIONS,
+        )
+        snapshot.commit()
+        snapshot.execute("VACUUM")
+        contents = _count(snapshot)
+    finally:
+        snapshot.close()
+    return contents, excluded
+
+
+def component_files(profile: BackupProfile) -> dict[str, Path]:
+    """The files of the profile's components by their path in a backup (tool files, then input files)."""
+    found: dict[str, Path] = {}
+    tools_root = profile.data_dir / "tools"
+    if "tools" in profile.components and tools_root.is_dir():
+        for path in sorted(tools_root.glob("*/v*.json")):
+            found[f"tools/{path.parent.name}/{path.name}"] = path
+    if "inputs" in profile.components:
+        found.update(_input_files(profile.data_dir / "inputs"))
+    return found
+
+
+def create_backup(nodestro: Nodestro, target: Path, profile: BackupProfile | None = None) -> BackupContents:
     """Write a complete backup of the current data to ``target`` (a .zip file)."""
+    profile = profile or profile_of(nodestro)
     with tempfile.TemporaryDirectory(prefix="nodestro-backup-") as directory:
         database = Path(directory) / "nodestro.db"
-        nodestro.sqlite_store.snapshot(database)
-        snapshot = sqlite3.connect(database)
-        try:
-            row = snapshot.execute(
-                "SELECT data FROM nodestro_documents WHERE collection = 'settings' AND id = 'app'"
-            ).fetchone()
-            if row is not None:
-                settings = _without_secrets(json.loads(row[0]))
-                snapshot.execute(
-                    "UPDATE nodestro_documents SET data = ? WHERE collection = 'settings' AND id = 'app'",
-                    (json.dumps(settings),),
-                )
-                snapshot.commit()
-            snapshot.execute(
-                f"DELETE FROM nodestro_documents WHERE collection IN ({', '.join('?' for _ in _LOCAL_COLLECTIONS)})",
-                _LOCAL_COLLECTIONS,
-            )
-            snapshot.commit()
-            snapshot.execute("VACUUM")
-            contents = _count(snapshot)
-        finally:
-            snapshot.close()
-        tools_root = nodestro.config.data_dir / "tools"
-        tool_files = sorted(tools_root.glob("*/v*.json")) if tools_root.is_dir() else []
-        contents.tools = len(tool_files)
+        contents, excluded = sanitized_snapshot(nodestro, database)
+        parts = component_files(profile)
+        contents.tools = sum(1 for name in parts if name.startswith("tools/"))
         files = {"nodestro.db": _sha256(database)}
-        for path in tool_files:
-            files[f"tools/{path.parent.name}/{path.name}"] = _sha256(path)
-        input_files = _input_files(nodestro.config.data_dir / "inputs")
-        for name, path in input_files.items():
+        for name, path in parts.items():
             files[name] = _sha256(path)
         manifest = {
             "format": FORMAT,
             "format_version": FORMAT_VERSION,
+            "product": profile.product,
+            "components": list(profile.components),
             "created_at": now().isoformat(),
             "nodestro_version": __version__,
             "library_version": library_version,
             "contents": contents.model_dump(),
-            "excluded": [*_SECRET_SETTINGS, _PROVIDER_SECRETS, *_LOCAL_COLLECTIONS],
+            "excluded": list(EXCLUDED),
+            "secrets_excluded": excluded,
             "files": files,
         }
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -278,10 +413,9 @@ def create_backup(nodestro: Nodestro, target: Path) -> BackupContents:
         with zipfile.ZipFile(partial, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             archive.writestr("manifest.json", json.dumps(manifest, indent=2))
             archive.write(database, "nodestro.db")
-            for path in tool_files:
-                archive.write(path, f"tools/{path.parent.name}/{path.name}")
-            for name, path in input_files.items():
+            for name, path in parts.items():
                 archive.write(path, name)
+        _private(partial)
         partial.replace(target)
     return contents
 
@@ -334,8 +468,8 @@ def backup_file_name(prefix: str = "nodestro-backup") -> str:
 # ---- checking and restoring -----------------------------------------------------------
 
 
-def _pending_root(nodestro: Nodestro) -> Path:
-    return backup_dir(nodestro) / ".pending"
+def _pending_root(profile: BackupProfile) -> Path:
+    return profile.data_dir / "backups" / ".pending"
 
 
 def _fail(code: str, message: str, **params: Any) -> BackupError:
@@ -476,22 +610,103 @@ def _read(archive: zipfile.ZipFile, name: str) -> bytes:
         return archive.read(name)
 
 
-def inspect_backup(nodestro: Nodestro, upload: Path, file_name: str) -> BackupInfo:
+def inspect_backup(
+    nodestro: Nodestro, upload: Path, file_name: str, profile: BackupProfile | None = None
+) -> BackupInfo:
     """Check an uploaded backup completely and keep it for :func:`restore_backup`."""
     # Checking replaces the waiting backup; a restore running meanwhile reads from it, so the
     # check waits until that restore has finished.
     with _RESTORE_LOCK:
-        return _inspect(nodestro, upload, file_name)
+        return _inspect(nodestro, upload, file_name, profile or profile_of(nodestro))
 
 
-def _inspect(nodestro: Nodestro, upload: Path, file_name: str) -> BackupInfo:
+def _binding(collection: str, document: dict[str, Any]) -> Any:
+    """What a sealed secret of ``document`` is bound to (threat model T9, ADR-0001): an MCP service's address,
+    transport, command and kind of sign-in; a connection's type, provider, reachable hosts and **all** its settings.
+
+    A connection's settings are compared whole: its address lives there (a webhook's ``url``, an SMTP ``host`` and
+    ``port``, a search endpoint), and its stored ``egress`` comes from the same document, so a backup could pair an
+    old ``egress`` with a new address. Any change of the settings drops the secret, which is stricter than the
+    runtime's own rule (a new path on the same host keeps it there); a restore has no reason to be lenient."""
+    if collection == "mcp_servers":
+        return [document.get(name) for name in ("url", "transport", "stdio", "auth")]
+    egress = document.get("egress")
+    return [
+        document.get("type"),
+        document.get("provider"),
+        sorted(str(item) for item in egress) if isinstance(egress, list) else egress,
+        json.dumps(document.get("settings"), sort_keys=True),
+    ]
+
+
+def _sealed_documents(connection: sqlite3.Connection, schema: str = "main") -> dict[tuple[str, str], dict[str, Any]]:
+    """The documents of the collections with sealed secrets, by ``(collection, id)``."""
+    found: dict[tuple[str, str], dict[str, Any]] = {}
+    for collection in _SEALED_FIELDS:
+        for key, data in connection.execute(
+            f"SELECT id, data FROM {schema}.nodestro_documents WHERE collection = ? AND json_valid(data)", (collection,)
+        ):
+            document = json.loads(data)
+            if isinstance(document, dict):
+                found[(collection, key)] = document
+    return found
+
+
+def _keepable(
+    current: dict[tuple[str, str], dict[str, Any]], restored: dict[tuple[str, str], dict[str, Any]]
+) -> dict[tuple[str, str], dict[str, Any]]:
+    """This computer's sealed secrets (with how they are stored) that a restored document may keep: the same MCP
+    service or connection, bound to the same address and use. Any other secret has to be entered again."""
+    kept: dict[tuple[str, str], dict[str, Any]] = {}
+    for (collection, key), document in current.items():
+        values = {field: document[field] for field in _SEALED_FIELDS[collection][1] if document.get(field)}
+        other = restored.get((collection, key))
+        if values and other is not None and _binding(collection, other) == _binding(collection, document):
+            storage = _STORAGE_FIELDS[collection]
+            kept[(collection, key)] = {**values, storage: document.get(storage)}
+    return kept
+
+
+def _to_reenter(nodestro: Nodestro, source: Path) -> list[str]:
+    """The secrets the waiting backup in ``source`` left out (its manifest's ``secrets_excluded``, and the sealed ones
+    in an older backup, which a restore leaves out as well) that this computer does not have."""
+    try:
+        manifest = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        manifest = {}
+    listed = manifest.get("secrets_excluded") if isinstance(manifest, dict) else None
+    # The manifest is data: only labels of the known form count, and not more than a workspace could hold.
+    wanted = {item for item in listed[:1000] if isinstance(item, str)} if isinstance(listed, list) else set()
+    backup = sqlite3.connect(f"file:{source / 'nodestro.db'}?mode=ro", uri=True)
+    try:
+        wanted |= _secrets_in(backup)
+        restored = _sealed_documents(backup)
+    finally:
+        backup.close()
+    documents = {f"{_SEALED_FIELDS[collection][0]}:{key}": (collection, key) for collection, key in restored}
+    # An MCP service or a connection needs its secret only when the backup holds it.
+    wanted = {label for label in wanted if _SECRET_LABEL.fullmatch(label)}
+    wanted = {label for label in wanted if label.startswith("provider:") or label in documents}
+    current = sqlite3.connect(nodestro.sqlite_store.database, timeout=30)
+    try:
+        providers = {label for label in _secrets_in(current) if label.startswith("provider:")}
+        kept = _keepable(_sealed_documents(current), restored)
+    finally:
+        current.close()
+    present = providers | {label for label, document in documents.items() if document in kept}
+    return sorted(wanted - present)
+
+
+def _inspect(nodestro: Nodestro, upload: Path, file_name: str, profile: BackupProfile) -> BackupInfo:
     if not zipfile.is_zipfile(upload):
         raise _fail("backup.not_zip", "The file is not a Nodestro backup (no ZIP file)")
-    root = _pending_root(nodestro)
+    root = _pending_root(profile)
     shutil.rmtree(root, ignore_errors=True)
     backup_id = uuid.uuid4().hex[:12]
     target = root / backup_id
     target.mkdir(parents=True)
+    for folder in (root.parent, root, target):
+        _private(folder, tree=False)
     try:
         try:
             archive = zipfile.ZipFile(upload)
@@ -521,6 +736,14 @@ def _inspect(nodestro: Nodestro, upload: Path, file_name: str) -> BackupInfo:
             if not isinstance(version, int) or version > FORMAT_VERSION:
                 raise _fail(
                     "backup.format_newer", f"Backup format {version} is newer than this Nodestro", version=version
+                )
+            product = manifest.get("product", LEGACY_PRODUCT)
+            if product != profile.product:
+                raise _fail(
+                    "backup.product_mismatch",
+                    "The backup holds the data of another product",
+                    found=str(product)[:40] if isinstance(product, str) else None,
+                    expected=profile.product,
                 )
             listed = manifest.get("files")
             if not isinstance(listed, dict) or set(listed) != set(names) - {"manifest.json"}:
@@ -571,11 +794,13 @@ def _inspect(nodestro: Nodestro, upload: Path, file_name: str) -> BackupInfo:
         id=backup_id,
         file_name=file_name,
         created_at=datetime.fromisoformat(created) if isinstance(created, str) else now(),
+        product=profile.product,
         nodestro_version=str(manifest.get("nodestro_version", "")),
         library_version=str(manifest.get("library_version", "")),
         contents=contents,
-        current=current_contents(nodestro),
+        current=current_contents(nodestro, profile),
         notes=notes,
+        secrets_to_reenter=_to_reenter(nodestro, target),
     )
 
 
@@ -599,6 +824,8 @@ def _copy_tables(connection: sqlite3.Connection, source: Path, keep_settings: di
             f"SELECT collection, id, data FROM main.nodestro_documents WHERE collection IN ({marks})",
             _LOCAL_COLLECTIONS,
         ).fetchall()
+        # This computer's MCP services and connections with their sealed secrets, by document.
+        current_sealed = _sealed_documents(connection)
         connection.execute("BEGIN IMMEDIATE")
         try:
             for name in backup_tables:
@@ -624,6 +851,23 @@ def _copy_tables(connection: sqlite3.Connection, source: Path, keep_settings: di
             ).fetchone()
             settings = _without_secrets(json.loads(row[0]) if row is not None else {})
             _keep_secrets(settings, keep_settings)
+            # A backup holds no sealed secret (an older one may): those of this computer are kept for the same MCP
+            # service or connection bound to the same address and use (T9); the others have to be entered again.
+            restored = _sealed_documents(connection)
+            kept_sealed = _keepable(current_sealed, restored)
+            _strip_sealed(connection)
+            for (collection, key), document in restored.items():
+                storage = _STORAGE_FIELDS[collection]
+                if (collection, key) in kept_sealed:
+                    patch = kept_sealed[(collection, key)]
+                elif document.get(storage) == "vault":
+                    patch = {storage: "none"}  # its sealed secret is gone
+                else:
+                    continue
+                connection.execute(
+                    "UPDATE main.nodestro_documents SET data = json_patch(data, ?) WHERE collection = ? AND id = ?",
+                    (json.dumps(patch), collection, key),
+                )
             connection.execute(f"DELETE FROM main.nodestro_documents WHERE collection IN ({marks})", _LOCAL_COLLECTIONS)
             connection.executemany("INSERT INTO main.nodestro_documents (collection, id, data) VALUES (?, ?, ?)", kept)
             connection.execute(
@@ -639,27 +883,40 @@ def _copy_tables(connection: sqlite3.Connection, source: Path, keep_settings: di
         connection.execute("DETACH DATABASE restore_source")
 
 
-def restore_backup(nodestro: Nodestro, backup_id: str) -> RestoreResult:
+def restore_backup(nodestro: Nodestro, backup_id: str, profile: BackupProfile | None = None) -> RestoreResult:
     """Replace all data with a checked backup; the current state is saved first."""
     if not re.fullmatch(r"[0-9a-f]{12}", backup_id):
         raise KeyError(backup_id)
     if not _RESTORE_LOCK.acquire(blocking=False):
         raise _fail("backup.restore_running", "A backup is being restored already; wait until it has finished")
     try:
-        return _restore(nodestro, backup_id)
+        return _restore(nodestro, backup_id, profile or profile_of(nodestro))
     finally:
         _RESTORE_LOCK.release()
 
 
-def _restore(nodestro: Nodestro, backup_id: str) -> RestoreResult:
-    source = _pending_root(nodestro) / backup_id
+@contextmanager
+def exclusive() -> Iterator[None]:
+    """Hold the lock restores take, without waiting (``backup.restore_running`` while one runs): for other work that
+    replaces all data (:func:`nodestro_api.data_lifecycle.delete_all`)."""
+    if not _RESTORE_LOCK.acquire(blocking=False):
+        raise _fail("backup.restore_running", "A backup is being restored already; wait until it has finished")
+    try:
+        yield
+    finally:
+        _RESTORE_LOCK.release()
+
+
+def _restore(nodestro: Nodestro, backup_id: str, profile: BackupProfile) -> RestoreResult:
+    source = _pending_root(profile) / backup_id
     if not (source / "nodestro.db").is_file():
         raise _fail("backup.expired", "This backup is no longer waiting to be restored; please choose it again")
     if nodestro.runs.has_live_runs():
         raise _fail("backup.runs_active", "Wait until all runs have finished, then restore the backup")
-    safety = backup_dir(nodestro) / backup_file_name("before-restore")
-    create_backup(nodestro, safety)
-    data_dir = nodestro.config.data_dir
+    reenter = _to_reenter(nodestro, source)
+    safety = backup_dir(nodestro, profile) / backup_file_name("before-restore")
+    create_backup(nodestro, safety, profile)
+    data_dir = profile.data_dir
     # Copy the tool and input files next to the current ones first: what can fail (a full disk)
     # fails before anything is replaced. Afterwards only renames follow the database transaction.
     staged = data_dir / f".tools-restore-{backup_id}"
@@ -676,6 +933,9 @@ def _restore(nodestro: Nodestro, backup_id: str) -> RestoreResult:
             shutil.copytree(source / "inputs", staged_inputs)
         else:
             (staged_inputs / "blobs").mkdir(parents=True)
+        # Unpacked and copied with the process's default permissions: private like the folders they replace.
+        _private(staged)
+        _private(staged_inputs)
         keep = nodestro.store.get_raw("settings", "app") or {}
         with nodestro.sqlite_store.maintenance() as connection:
             _copy_tables(connection, source / "nodestro.db", keep)
@@ -684,8 +944,12 @@ def _restore(nodestro: Nodestro, backup_id: str) -> RestoreResult:
         shutil.rmtree(staged_inputs, ignore_errors=True)
         raise
     tools = data_dir / "tools"
-    _swap(staged, tools, data_dir / f".tools-old-{backup_id}")
-    _swap(staged_inputs, data_dir / "inputs", data_dir / f".inputs-old-{backup_id}")
+    if "tools" in profile.components:
+        _swap(staged, tools, data_dir / f".tools-old-{backup_id}")
+    if "inputs" in profile.components:
+        _swap(staged_inputs, data_dir / "inputs", data_dir / f".inputs-old-{backup_id}")
+    shutil.rmtree(staged, ignore_errors=True)  # a component left out of the profile stays as it is
+    shutil.rmtree(staged_inputs, ignore_errors=True)
     nodestro.reload_after_restore()
     connection = sqlite3.connect(nodestro.sqlite_store.database, timeout=30)
     try:
@@ -694,7 +958,7 @@ def _restore(nodestro: Nodestro, backup_id: str) -> RestoreResult:
         connection.close()
     contents.tools = len(list(tools.glob("*/v*.json")))
     shutil.rmtree(source, ignore_errors=True)
-    return RestoreResult(contents=contents, safety_backup=safety.name)
+    return RestoreResult(contents=contents, safety_backup=safety.name, secrets_to_reenter=reenter)
 
 
 def _swap(staged: Path, current: Path, old: Path) -> None:
@@ -706,10 +970,10 @@ def _swap(staged: Path, current: Path, old: Path) -> None:
     shutil.rmtree(old, ignore_errors=True)
 
 
-def local_backups(nodestro: Nodestro) -> list[LocalBackup]:
+def local_backups(nodestro: Nodestro, profile: BackupProfile | None = None) -> list[LocalBackup]:
     """The backups kept in the data directory (safety copies made before restores)."""
     found = []
-    for path in backup_dir(nodestro).glob("*.zip"):
+    for path in backup_dir(nodestro, profile).glob("*.zip"):
         stat = path.stat()
         found.append(
             LocalBackup(
@@ -719,10 +983,10 @@ def local_backups(nodestro: Nodestro) -> list[LocalBackup]:
     return sorted(found, key=lambda item: item.created_at, reverse=True)
 
 
-def local_backup_path(nodestro: Nodestro, name: str) -> Path:
+def local_backup_path(nodestro: Nodestro, name: str, profile: BackupProfile | None = None) -> Path:
     if not re.fullmatch(r"[A-Za-z0-9._-]+\.zip", name):
         raise KeyError(name)
-    path = backup_dir(nodestro) / name
+    path = backup_dir(nodestro, profile) / name
     if not path.is_file():
         raise KeyError(name)
     return path
