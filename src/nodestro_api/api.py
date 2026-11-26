@@ -28,7 +28,7 @@ from nodestro_runtime.input_files import is_input_id
 from nodestro_runtime.knowledge import KnowledgeFile
 from nodestro_runtime.launcher import launch
 from nodestro_runtime.local_models import LOCAL_ASSISTANT_MODEL, LOCAL_DEFAULT_MODEL
-from nodestro_runtime.memory_consents import ConsentTarget, agent_digest, consent_targets
+from nodestro_runtime.memory_consents import ConsentTarget, combined_digest, consent_targets
 from nodestro_runtime.memory_spaces import (
     BrowsableMemory,
     MemoryConsent,
@@ -2813,15 +2813,16 @@ def clear_memory(space: str, ctx: Ctx, request: Request) -> Response:
 
 class MemoryConsentIn(BaseModel):
     """What the owner of ``space`` allows to use it: a saved workflow (``workflow_id``, ``version``; ``None``: the
-    latest) with every workflow it runs, or one agent configuration for agent tests (``agent``). ``digest``: the
-    digest the owner was shown (``GET /api/memory-consents/preview``); when given and the content changed since, the
-    consent is refused (``409 memory.consent_stale``) instead of covering content the owner did not see."""
+    latest) with every workflow it runs, or one agent configuration for agent tests (``agent``). ``digest`` (required):
+    the digest the owner was shown (``GET /api/memory-consents/preview`` for a workflow, the combined digest of all
+    its workflows; ``POST /api/memory-consents/preview`` for an agent configuration). When anything changed since,
+    the consent is refused (``409 memory.consent_stale``) instead of covering content the owner did not see."""
 
     space: str
     workflow_id: str | None = None
     version: int | None = None
     agent: AgentConfig | None = None
-    digest: str | None = None
+    digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
     def _one_subject(self) -> MemoryConsentIn:
@@ -2832,11 +2833,25 @@ class MemoryConsentIn(BaseModel):
 
 class MemoryConsentPreview(BaseModel):
     """What a consent for a workflow would cover now: the workflow and every workflow it runs (sub-workflows, teams),
-    each in the version and with the digest its run would have."""
+    each in the version and with the digest its run would have; ``digest``: one digest over all of them, which the
+    grant names."""
 
     workflow_id: str
     digest: str
     targets: list[ConsentTarget]
+
+
+class AgentConsentPreviewIn(BaseModel):
+    """An agent configuration whose consent digest the owner wants to see before allowing it."""
+
+    agent: AgentConfig
+
+
+class AgentConsentPreview(BaseModel):
+    """The digest a consent for an agent configuration covers now (with the tools, connections and MCP servers it
+    uses), which the grant names."""
+
+    digest: str
 
 
 def _consent_owner(ctx: Nodestro, request: Request) -> str:
@@ -2852,7 +2867,8 @@ def _consent_owner(ctx: Nodestro, request: Request) -> str:
 
 def _targets(ctx: Nodestro, workflow_id: str, version: int | None) -> list[ConsentTarget]:
     try:
-        return consent_targets(ctx.resolve_workflow, ctx.runs.pin_subworkflows, workflow_id, version)
+        runs = ctx.runs
+        return consent_targets(ctx.resolve_workflow, runs.pin_subworkflows, runs.consent_digest, workflow_id, version)
     except KeyError as missing:
         raise MissingReference("workflow", str(missing.args[0]) if missing.args else workflow_id) from None
 
@@ -2870,7 +2886,14 @@ def preview_memory_consent(
     """What a consent for ``workflow_id`` would cover now, for the owner to review before allowing it."""
     _consent_owner(ctx, request)
     targets = _targets(ctx, workflow_id, version)
-    return MemoryConsentPreview(workflow_id=workflow_id, digest=targets[0].digest, targets=targets)
+    return MemoryConsentPreview(workflow_id=workflow_id, digest=combined_digest(targets), targets=targets)
+
+
+@memory_router.post("/memory-consents/preview", dependencies=READ)
+def preview_agent_memory_consent(ctx: Ctx, request: Request, body: AgentConsentPreviewIn) -> AgentConsentPreview:
+    """The digest a consent for an agent configuration (agent tests) would cover now, for the grant to name."""
+    _consent_owner(ctx, request)
+    return AgentConsentPreview(digest=ctx.runs.agent_consent_digest(body.agent))
 
 
 @memory_router.post("/memory-consents", status_code=201, dependencies=RUN)
@@ -2878,17 +2901,19 @@ def grant_memory_consent(body: MemoryConsentIn, ctx: Ctx, request: Request) -> l
     """The owner of a memory space allows a workflow (with every workflow it runs, in their current content) or one
     agent configuration to use it (RT-089d). Only the space's owner, or a member who creates the space with it (its
     first writer); anyone else gets ``404 memory.space_not_found``. Nothing else grants a consent, and a changed
-    workflow needs a new one. Each consent is recorded in the access audit trail."""
+    workflow needs a new one. The request names the digest the owner was shown; if anything changed since (any of the
+    workflows, a tool, a connection), it is refused with ``409 memory.consent_stale``. Each consent is recorded in the
+    access audit trail."""
     owner = _consent_owner(ctx, request)
     space = check_space_name(body.space)
     if body.agent is not None:
-        digest = agent_digest(body.agent)
-        if body.digest is not None and body.digest != digest:
+        digest = ctx.runs.agent_consent_digest(body.agent)
+        if body.digest != digest:
             raise NodestroError("memory.consent_stale", "The agent configuration is not the one shown", space=space)
         granted = [ctx.memory.grant(space, owner, "agent", digest)]
     else:
         targets = _targets(ctx, body.workflow_id or "", body.version)
-        if body.digest is not None and body.digest != targets[0].digest:
+        if body.digest != combined_digest(targets):
             raise NodestroError(
                 "memory.consent_stale",
                 "The workflow changed since it was shown; review it again",
@@ -2913,8 +2938,9 @@ def grant_memory_consent(body: MemoryConsentIn, ctx: Ctx, request: Request) -> l
 
 @memory_router.delete("/memory-consents/{consent_id}", status_code=204, dependencies=READ)
 def revoke_memory_consent(consent_id: str, ctx: Ctx, request: Request) -> Response:
-    """Withdraw one of the request's owner's consents; another person's or an unknown id answers ``404``. A step that
-    already reads the space finishes; every later step and run that needs the consent is refused."""
+    """Withdraw one of the request's owner's consents; another person's or an unknown id answers ``404``. It takes
+    effect at the next check: a step that already passed its check (and the tool calls it makes) finishes; every step
+    and run that starts afterwards and needs the consent is refused."""
     revoked = ctx.memory.revoke(consent_id, _consent_owner(ctx, request))
     if revoked is None:
         raise KeyError(consent_id)

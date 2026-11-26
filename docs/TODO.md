@@ -50,8 +50,10 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
 - **What:** a shared workflow could use a member's private memory space whenever she ran it. Now the runtime refuses
   it (`memory.consent_required`) until she allowed exactly that content: `GET /api/memory-consents` (her consents),
   `GET /api/memory-consents/preview?workflow_id=` (what a consent would cover: the workflow and every workflow it
-  runs, with digests), `POST /api/memory-consents` (`space` plus `workflow_id` [`version`] or `agent`; with `digest`
-  a changed workflow is refused with `409 memory.consent_stale`), `DELETE /api/memory-consents/{id}`. Only the
+  runs, with their digests and one digest over all of them), `POST /api/memory-consents/preview` (the digest of an
+  agent configuration), `POST /api/memory-consents` (`space` plus `workflow_id` [`version`] or `agent`, and the
+  required `digest` that was shown; any change since is refused with `409 memory.consent_stale`),
+  `DELETE /api/memory-consents/{id}`. Only the
   space's owner (or a member who creates the space with it) gives one, `404 memory.space_not_found` for anyone else;
   only members of a server (`404 memory.consent_unavailable` elsewhere). Each grant and revocation is audited
   (`memory_consent_granted`, `memory_consent_revoked`). Private runs: the local inbox list and unread count leave out
@@ -61,7 +63,7 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
 - **Open:** a studio page for consents; the Axentra inbox is filtered when it sends (runtime), not when it lists; the
   access audit trail (admins) still names private runs' workflow starts; name squatting and the spaces of removed
   members (runtime RT-089d, owner decision).
-- **Next step:** independent review together with the runtime part.
+- **Next step:** review of the fixes (F1-F5) together with the runtime part.
 
 ### API-076 · Export and delete everything (N-15): review and follow-ups
 

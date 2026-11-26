@@ -162,7 +162,7 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # read: + conversations with own agents: list, one, export, file content, message, events (N-04)
         # read: + whether folder grants are on, and the default limits (N-10)
         # read: + the owner's consents for private memory spaces: list, preview, revoke (RT-089d; one's own only)
-        "read": 162,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
+        "read": 163,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
         # MCP status, servers, server, tools (WP-3); tool approval inbox, run questions, pre-grants, state (S-2b)
         # edit: + starting and cancelling a portable export job (like the synchronous export)
         # edit: + uploading and removing a conversation's files (assistant files)

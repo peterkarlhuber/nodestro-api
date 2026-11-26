@@ -20,7 +20,13 @@ pytest.importorskip("jwt")
 from fastapi.testclient import TestClient
 from test_conversation_owners import command_schema, process_logging  # noqa: F401  (fixtures)
 from test_identity import Server, _wait, database  # noqa: F401  (fixture)
-from test_memory_space_owners import AUDIT_NOTE, AUDIT_SPACE, _memory_workflow, scripted_server  # noqa: F401
+from test_memory_space_owners import (  # noqa: F401
+    AUDIT_NOTE,
+    AUDIT_SPACE,
+    _memory_workflow,
+    allow_workflow,
+    scripted_server,
+)
 
 from nodestro_api import access_audit
 
@@ -65,7 +71,8 @@ def test_poc_a_shared_workflow_uses_alices_memory_only_with_her_consent(scripted
     )
     assert allowed.status_code == 201, allowed.text
     (consent,) = allowed.json()
-    assert (consent["space"], consent["workflow_id"], consent["digest"]) == (AUDIT_SPACE, workflow_id, digest)
+    shown = preview.json()["targets"][0]["digest"]  # each consent records its workflow's own digest
+    assert (consent["space"], consent["workflow_id"], consent["digest"]) == (AUDIT_SPACE, workflow_id, shown)
     succeeded = _run(alice, workflow_id)
     assert succeeded["status"] == "succeeded" and MARKER in str(succeeded)
     # Bob changes the workflow: the consent does not cover the new content.
@@ -88,16 +95,35 @@ def test_only_the_owner_gives_lists_and_revokes_a_consent_and_each_is_audited(
     _note(alice)
     workflow_id = _memory_workflow(alice, AUDIT_SPACE)
     # Bob (an administrator) cannot allow anything for Alice's space: as for a space that does not exist.
-    refused = bob.post("/api/memory-consents", json={"space": AUDIT_SPACE, "workflow_id": workflow_id})
+    refused = allow_workflow(bob, workflow_id)
     assert refused.status_code == 404 and refused.json()["code"] == "memory.space_not_found"
-    unknown = alice.post("/api/memory-consents", json={"space": AUDIT_SPACE, "workflow_id": "wf_unknown"})
+    digest = "0" * 64
+    unknown = alice.post(
+        "/api/memory-consents", json={"space": AUDIT_SPACE, "workflow_id": "wf_unknown", "digest": digest}
+    )
     assert unknown.status_code == 404
     both = alice.post(
         "/api/memory-consents",
-        json={"space": AUDIT_SPACE, "workflow_id": workflow_id, "agent": {"name": "A", "system_prompt": "x"}},
+        json={
+            "space": AUDIT_SPACE,
+            "workflow_id": workflow_id,
+            "agent": {"name": "A", "system_prompt": "x"},
+            "digest": digest,
+        },
     )
     assert both.status_code == 422
-    (consent,) = alice.post("/api/memory-consents", json={"space": AUDIT_SPACE, "workflow_id": workflow_id}).json()
+    # Review F2: a grant names the digest the owner was shown; without one it is refused, never granted unseen.
+    unseen = alice.post("/api/memory-consents", json={"space": AUDIT_SPACE, "workflow_id": workflow_id})
+    assert unseen.status_code == 422
+    wrong = alice.post(
+        "/api/memory-consents", json={"space": AUDIT_SPACE, "workflow_id": workflow_id, "digest": digest}
+    )
+    assert wrong.status_code == 409 and wrong.json()["code"] == "memory.consent_stale"
+    agent = {"name": "A", "system_prompt": "x", "memory": {"mode": "persistent", "space": AUDIT_SPACE}}
+    stale_agent = alice.post("/api/memory-consents", json={"space": AUDIT_SPACE, "agent": agent, "digest": digest})
+    assert stale_agent.status_code == 409 and stale_agent.json()["code"] == "memory.consent_stale"
+    assert alice.get("/api/memory-consents").json() == []
+    (consent,) = allow_workflow(alice, workflow_id).json()
     assert [item["id"] for item in alice.get("/api/memory-consents").json()] == [consent["id"]]
     assert bob.get("/api/memory-consents").json() == []
     assert bob.delete(f"/api/memory-consents/{consent['id']}").status_code == 404
@@ -111,6 +137,40 @@ def test_only_the_owner_gives_lists_and_revokes_a_consent_and_each_is_audited(
         (_user(alice), _user(alice), AUDIT_SPACE)
     ] * 2
     assert MARKER not in str([event.model_dump() for event in granted + revoked])
+
+
+def test_a_grant_is_refused_when_any_workflow_it_covers_changed_since_the_preview(
+    scripted_server: Server,  # noqa: F811
+) -> None:
+    """Review F2: before, the shown digest was compared with the top-level workflow's only, so a sub-workflow changed
+    between the preview and the grant was allowed unseen. Now the preview's digest covers every workflow of the
+    consent, and any change of any of them is refused with ``409 memory.consent_stale``."""
+    alice = scripted_server.member("acme", "alice", "editor")
+    bob = scripted_server.member("acme", "bob", "editor")
+    _note(alice)
+    child_id = _memory_workflow(alice, AUDIT_SPACE)
+    parent = {
+        "name": "Parent",
+        "nodes": [
+            {"id": "start", "type": "start"},
+            {"id": "sub", "type": "subworkflow", "subworkflow": {"workflow_id": child_id}},
+        ],
+        "edges": [{"id": "e1", "source": "start", "target": "sub"}],
+    }
+    created = alice.post("/api/workflows", json=parent)
+    assert created.status_code == 201, created.text
+    parent_id = created.json()["id"]
+    preview = alice.get("/api/memory-consents/preview", params={"workflow_id": parent_id}).json()
+    assert [target["workflow_id"] for target in preview["targets"]] == [parent_id, child_id]
+    assert preview["digest"] not in {target["digest"] for target in preview["targets"]}  # one over all of them
+    child = bob.get(f"/api/workflows/{child_id}").json()
+    child["nodes"][1]["agent"]["tools"] = ["calculator"]
+    assert bob.put(f"/api/workflows/{child_id}", json=child).status_code == 200
+    body = {"space": AUDIT_SPACE, "workflow_id": parent_id, "digest": preview["digest"]}
+    stale = alice.post("/api/memory-consents", json=body)
+    assert stale.status_code == 409 and stale.json()["code"] == "memory.consent_stale"
+    assert alice.get("/api/memory-consents").json() == []
+    assert allow_workflow(alice, parent_id).status_code == 201  # after reviewing it again
 
 
 def test_a_private_run_is_left_out_of_other_members_inbox_workflow_list_and_usage_names(
@@ -127,7 +187,7 @@ def test_a_private_run_is_left_out_of_other_members_inbox_workflow_list_and_usag
     flow = alice.get(f"/api/workflows/{workflow_id}").json()
     flow["notifications"] = {"events": ["run_finished"], "recipients": "members"}
     assert alice.put(f"/api/workflows/{workflow_id}", json=flow).status_code == 200
-    allowed = alice.post("/api/memory-consents", json={"space": AUDIT_SPACE, "workflow_id": workflow_id})
+    allowed = allow_workflow(alice, workflow_id)
     assert allowed.status_code == 201
     run = _run(alice, workflow_id)
     assert run["status"] == "succeeded"

@@ -12,6 +12,15 @@
   counts other people's private runs under `private_runs` instead of their workflow, and `/api/runs/{run_id}/events`
   checks the snapshot after reading it (before, a run that became private between the check and the snapshot was
   sent). Both OpenAPI documents are regenerated (additive, plus `Run.memory_spaces`).
+  - Review fixes: `POST /api/memory-consents` requires `digest` (64 hex characters; `422` without it), the digest
+    the owner was shown: `GET /api/memory-consents/preview` now answers one digest over every workflow of the consent
+    (`memory_consents.combined_digest`), and a grant is refused with `409 memory.consent_stale` when any of them, or
+    a tool, connection or MCP server one of them uses, changed since. New `POST /api/memory-consents/preview`
+    (`{"agent": ...}`) answers the digest of an agent configuration for an agent test's consent. The digests now
+    cover what the agents use (runtime `RunManager.consent_digest`).
+  - Release note: on upgrade, server workflows and agent tests that use a persistent memory space fail closed with
+    `memory.consent_required` until the space's owner grants a consent; granting is possible through this API only,
+    the studio has no page for it yet.
 - The folder browser (N-11; needs orkexa with `orkexa.fs.browse_folder` in the studio lock; behind
   `NODESTRO_FOLDER_GRANTS`, off): `POST /api/folders/browse` answers the sub-folders of a folder of this computer for
   choosing a folder to grant: folder names and paths, never files; system folders, other users' home folders,

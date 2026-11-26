@@ -1155,6 +1155,33 @@
         "title": "AgentConfig",
         "type": "object"
       },
+      "AgentConsentPreview": {
+        "description": "The digest a consent for an agent configuration covers now (with the tools, connections and MCP servers it\nuses), which the grant names.",
+        "properties": {
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          }
+        },
+        "required": [
+          "digest"
+        ],
+        "title": "AgentConsentPreview",
+        "type": "object"
+      },
+      "AgentConsentPreviewIn": {
+        "description": "An agent configuration whose consent digest the owner wants to see before allowing it.",
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/AgentConfig"
+          }
+        },
+        "required": [
+          "agent"
+        ],
+        "title": "AgentConsentPreviewIn",
+        "type": "object"
+      },
       "AgentConversationDetail": {
         "properties": {
           "agent": {
@@ -15055,7 +15082,7 @@
         "type": "object"
       },
       "MemoryConsentIn": {
-        "description": "What the owner of ``space`` allows to use it: a saved workflow (``workflow_id``, ``version``; ``None``: the\nlatest) with every workflow it runs, or one agent configuration for agent tests (``agent``). ``digest``: the\ndigest the owner was shown (``GET /api/memory-consents/preview``); when given and the content changed since, the\nconsent is refused (``409 memory.consent_stale``) instead of covering content the owner did not see.",
+        "description": "What the owner of ``space`` allows to use it: a saved workflow (``workflow_id``, ``version``; ``None``: the\nlatest) with every workflow it runs, or one agent configuration for agent tests (``agent``). ``digest`` (required):\nthe digest the owner was shown (``GET /api/memory-consents/preview`` for a workflow, the combined digest of all\nits workflows; ``POST /api/memory-consents/preview`` for an agent configuration). When anything changed since,\nthe consent is refused (``409 memory.consent_stale``) instead of covering content the owner did not see.",
         "properties": {
           "agent": {
             "anyOf": [
@@ -15068,15 +15095,9 @@
             ]
           },
           "digest": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Digest"
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Digest",
+            "type": "string"
           },
           "space": {
             "title": "Space",
@@ -15106,13 +15127,14 @@
           }
         },
         "required": [
-          "space"
+          "space",
+          "digest"
         ],
         "title": "MemoryConsentIn",
         "type": "object"
       },
       "MemoryConsentPreview": {
-        "description": "What a consent for a workflow would cover now: the workflow and every workflow it runs (sub-workflows, teams),\neach in the version and with the digest its run would have.",
+        "description": "What a consent for a workflow would cover now: the workflow and every workflow it runs (sub-workflows, teams),\neach in the version and with the digest its run would have; ``digest``: one digest over all of them, which the\ngrant names.",
         "properties": {
           "digest": {
             "title": "Digest",
@@ -40865,7 +40887,7 @@
         ]
       },
       "post": {
-        "description": "The owner of a memory space allows a workflow (with every workflow it runs, in their current content) or one\nagent configuration to use it (RT-089d). Only the space's owner, or a member who creates the space with it (its\nfirst writer); anyone else gets ``404 memory.space_not_found``. Nothing else grants a consent, and a changed\nworkflow needs a new one. Each consent is recorded in the access audit trail.",
+        "description": "The owner of a memory space allows a workflow (with every workflow it runs, in their current content) or one\nagent configuration to use it (RT-089d). Only the space's owner, or a member who creates the space with it (its\nfirst writer); anyone else gets ``404 memory.space_not_found``. Nothing else grants a consent, and a changed\nworkflow needs a new one. The request names the digest the owner was shown; if anything changed since (any of the\nworkflows, a tool, a connection), it is refused with ``409 memory.consent_stale``. Each consent is recorded in the\naccess audit trail.",
         "operationId": "grant_memory_consent_api_memory_consents_post",
         "requestBody": {
           "content": {
@@ -40966,11 +40988,51 @@
         "tags": [
           "memory"
         ]
+      },
+      "post": {
+        "description": "The digest a consent for an agent configuration (agent tests) would cover now, for the grant to name.",
+        "operationId": "preview_agent_memory_consent_api_memory_consents_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentConsentPreviewIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConsentPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Preview Agent Memory Consent",
+        "tags": [
+          "memory"
+        ]
       }
     },
     "/api/memory-consents/{consent_id}": {
       "delete": {
-        "description": "Withdraw one of the request's owner's consents; another person's or an unknown id answers ``404``. A step that\nalready reads the space finishes; every later step and run that needs the consent is refused.",
+        "description": "Withdraw one of the request's owner's consents; another person's or an unknown id answers ``404``. It takes\neffect at the next check: a step that already passed its check (and the tool calls it makes) finishes; every step\nand run that starts afterwards and needs the consent is refused.",
         "operationId": "revoke_memory_consent_api_memory_consents__consent_id__delete",
         "parameters": [
           {
