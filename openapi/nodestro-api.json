@@ -5089,6 +5089,29 @@
         "title": "Body_upload_knowledge_api_knowledge_post",
         "type": "object"
       },
+      "BrowsedFolder": {
+        "properties": {
+          "link": {
+            "default": false,
+            "title": "Link",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path"
+        ],
+        "title": "BrowsedFolder",
+        "type": "object"
+      },
       "BudgetBlock": {
         "description": "The limit that refused the request.",
         "properties": {
@@ -9961,6 +9984,77 @@
         "title": "FolderAccessEntry",
         "type": "object"
       },
+      "FolderBrowse": {
+        "description": "One folder of the browser: its sub-folders (never files) and the starting points.",
+        "properties": {
+          "folders": {
+            "items": {
+              "$ref": "#/components/schemas/BrowsedFolder"
+            },
+            "title": "Folders",
+            "type": "array"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "places": {
+            "items": {
+              "$ref": "#/components/schemas/FolderPlace"
+            },
+            "title": "Places",
+            "type": "array"
+          },
+          "separator": {
+            "title": "Separator",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "parent",
+          "folders",
+          "truncated",
+          "places",
+          "separator"
+        ],
+        "title": "FolderBrowse",
+        "type": "object"
+      },
+      "FolderBrowseIn": {
+        "description": "The folder to browse: an absolute path; ``None``: the home folder (or the root of the file system).",
+        "properties": {
+          "path": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          }
+        },
+        "title": "FolderBrowseIn",
+        "type": "object"
+      },
       "FolderGrant": {
         "additionalProperties": false,
         "description": "A folder granted for reading (see the module documentation). Never deleted: it ends with its access grant.",
@@ -10330,6 +10424,30 @@
           }
         },
         "title": "FolderLimits",
+        "type": "object"
+      },
+      "FolderPlace": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "home",
+              "root",
+              "drive",
+              "media"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "path"
+        ],
+        "title": "FolderPlace",
         "type": "object"
       },
       "FolderState": {
@@ -37046,6 +37164,48 @@
           }
         },
         "summary": "Grant Folder",
+        "tags": [
+          "access grants"
+        ]
+      }
+    },
+    "/api/folders/browse": {
+      "post": {
+        "description": "The sub-folders of a folder of this computer (names only), for choosing a folder to grant.",
+        "operationId": "browse_folders_api_folders_browse_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderBrowseIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderBrowse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Browse Folders",
         "tags": [
           "access grants"
         ]

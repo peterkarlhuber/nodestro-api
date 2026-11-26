@@ -83,6 +83,12 @@ _OPEN_PREFIX = "/api/published"
 #: The launch answer: continue to the studio from the backend's own origin (no script needed).
 _CONTINUE = b'<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/"><title>Nodestro</title>'
 
+#: The ASGI scope key under which a request that passed with a session says how: ``"cookie"`` (a browser session
+#: opened with the launch secret or access key) or ``"bearer"`` (the access key itself, Nodestro Local Docker).
+#: Routes that need the authenticated local session (the folder browser, N-11) read it; a request the middleware
+#: never saw (no launch secret: the ``nodestro`` command in a terminal) has no such key.
+SESSION_SCOPE_KEY = "nodestro.local_session"
+
 #: The header with the session's CSRF value (``NODESTRO_LAUNCH_CSRF``).
 CSRF_HEADER = "X-Nodestro-CSRF"
 #: Where the launch page leaves the session's values for the studio (``sessionStorage``, scoped to the origin).
@@ -395,9 +401,6 @@ class LaunchSecretMiddleware:
                 return value
         return None
 
-    def _has_session(self, scope: Scope) -> bool:
-        return self._has_bearer(scope) or self._cookie_session(scope) is not None
-
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] not in ("http", "websocket"):
             await self.app(scope, receive, send)
@@ -420,12 +423,15 @@ class LaunchSecretMiddleware:
         if self._open(path):
             await self.app(scope, receive, send)
             return
-        if self._has_session(scope):
+        cookie_session = self._cookie_session(scope)
+        if cookie_session is not None or self._has_bearer(scope):
             if self.hardening.csrf:
-                problem = self._change_problem(scope, self._cookie_session(scope))
+                problem = self._change_problem(scope, cookie_session)
                 if problem is not None:
                     await _answer(scope, send, *problem)
                     return
+            # Routes that need the local session can tell (SESSION_SCOPE_KEY); the answers stay the same.
+            scope = {**scope, SESSION_SCOPE_KEY: "cookie" if cookie_session is not None else "bearer"}
             await self.app(scope, receive, send)
             return
         if self.reusable and _wants_html(scope):

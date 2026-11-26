@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- The folder browser (N-11; needs orkexa with `orkexa.fs.browse_folder` in the studio lock; behind
+  `NODESTRO_FOLDER_GRANTS`, off): `POST /api/folders/browse` answers the sub-folders of a folder of this computer for
+  choosing a folder to grant: folder names and paths, never files; system folders, other users' home folders,
+  credential folders and the data folder are neither listed nor opened (`422 folder.not_browsable` with `reason`);
+  links only when their target passes. Only for the authenticated local session (`403 folder.session_required`
+  without one), `admin`; a request marked as from another site is refused (`403 request.cross_site`). The embedded web
+  interface's result folder browser uses the same code path (`folder_browser.py`): the data folder is no longer
+  listed, and a cross-site request is refused with `ui.csrf`. Both OpenAPI documents are regenerated (additive).
+  Tests: `tests/test_folders_browse_api.py`, `tests/test_output_folder.py`; see `docs/folders.md`.
+
 - Memory spaces with an owner on a server (RT-089c, needs the pinned runtime). `/api/memory` lists only the request's
   own spaces. The space routes, assistant attachments of kind `memory`, the export check and export
   (`options.memory`), the architect's resource list and the context preview answer another person's space, a space

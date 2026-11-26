@@ -15,8 +15,11 @@ state this computer adds to the package (provider keys, API keys). The choice ap
 a restart; files already written stay where they are.
 
 A browser cannot hand a folder of this computer to the server (``showDirectoryPicker`` yields a handle, not a path,
-and the server writes the files), so the page offers a folder browser served by this module: the names of folders,
-never files or contents, for the operator's session only. Every chosen folder must be absolute; it is normalized and
+and the server writes the files), so the page offers a folder browser: the names of folders, never files or contents,
+for the operator's session only. It is the backend's one folder browser (:mod:`nodestro_api.folder_browser`, on the
+path guard ``orkexa.fs``, N-11): system folders, other users' home folders, credential folders and the data folder
+are neither listed nor opened, and links only to folders that pass the same checks. This module adds whether each
+folder may hold result files (``usable``). Every chosen folder must be absolute; it is normalized and
 its symbolic links resolved before any check, and refused when it is a system folder, the file system's root, or a
 folder of the package's own code, Python, models, data or logs. A missing folder is created only when the operator
 confirmed it, and the folder must be writable.
@@ -42,6 +45,7 @@ from typing import TYPE_CHECKING, Any
 from orkexa.fs import allowed_folders
 from orkexa.fs import system_folders as guard_system_folders
 
+from . import folder_browser
 from .serving import ApiError
 
 if TYPE_CHECKING:
@@ -51,9 +55,9 @@ logger = logging.getLogger("nodestro.output_folder")
 
 FILE = Path("settings") / "output-folder.json"
 #: Longest path accepted (Windows' long paths are possible, but nobody types more).
-MAX_PATH = 1024
+MAX_PATH = folder_browser.MAX_PATH
 #: At most this many folders are listed in one answer of the browser.
-MAX_ENTRIES = 500
+MAX_ENTRIES = folder_browser.MAX_FOLDERS
 #: Folders of an exported package that hold its code, its Python, models or state (never a result folder).
 PACKAGE_FOLDERS = (
     "app", "workflow", "nodestro_runtime", "nodestro_api", "python", "ollama", "models", "config", "run",
@@ -291,64 +295,31 @@ class OutputFolder:
 
     def places(self) -> list[dict[str, str]]:
         """Starting points of the browser: home, the folder in effect, the default and the drives or root."""
-        found: list[dict[str, str]] = []
-
-        def add(kind: str, path: Path | None) -> None:
-            if path is not None and path.is_dir() and all(item["path"] != str(path) for item in found):
-                found.append({"kind": kind, "path": str(path)})
-
-        add("home", _home())
-        add("current", self.host.output_dir)
-        add("default", self.default)
-        if os.name == "nt":
-            for letter in "CDEFGHIJKLMNOPQRSTUVWXYZ":
-                with suppress(OSError):
-                    add("drive", Path(f"{letter}:\\"))
-        else:
-            add("root", Path("/"))
-            for media in ("/Volumes", "/media", "/mnt", f"/run/media/{os.environ.get('USER', '')}"):
-                with suppress(OSError):
-                    add("media", Path(media))
-        return found
+        return folder_browser.places(
+            [("current", self.host.output_dir), ("default", self.default)], protected=[self.data_dir]
+        )
 
     def browse(self, given: str | None) -> dict[str, Any]:
-        """The sub-folders (names only) of a folder; files and hidden folders are never listed."""
-        start = given if given else str(self.host.output_dir or self.default or _home() or Path(os.sep).resolve())
-        folder = self.normalize(start)
-        if not folder.is_dir():
-            raise ApiError(404, "output.not_found", "This folder does not exist", path=str(folder))
-        folders: list[dict[str, Any]] = []
-        truncated = False
+        """The sub-folders (names only) of a folder; files and hidden folders are never listed
+        (:func:`nodestro_api.folder_browser.browse`)."""
+        fallback = self.host.output_dir or self.default or _home() or folder_browser.file_system_root()
+        start = given if given else str(fallback)
+        self.normalize(start)  # the result folder's own codes for an empty, relative or overlong path
         try:
-            with os.scandir(folder) as entries:
-                for entry in entries:
-                    if entry.name.startswith(".") or entry.name.startswith("$"):
-                        continue
-                    with suppress(OSError):
-                        if not entry.is_dir():
-                            continue
-                        if _hidden(entry):
-                            continue
-                        if len(folders) >= MAX_ENTRIES:
-                            truncated = True
-                            break
-                        path = _resolved(Path(entry.path))
-                        folders.append({"name": entry.name, "path": str(path), "usable": self.problem(path) is None})
-        except PermissionError:
-            raise ApiError(403, "output.no_access", "This folder cannot be read", path=str(folder)) from None
-        except OSError as exc:
-            raise ApiError(
-                422, "output.no_access", "This folder cannot be read", path=str(folder), problem=_why(exc)
-            ) from None
-        folders.sort(key=lambda item: item["name"].casefold())
-        parent = folder.parent if folder.parent != folder else None
+            listing = folder_browser.browse(start, protected=[self.data_dir])
+        except folder_browser.BrowseRefused as refused:
+            raise _browse_problem(refused, start) from None
+        folder = Path(listing.path)
         return {
-            "path": str(folder),
-            "parent": str(parent) if parent is not None else None,
+            "path": listing.path,
+            "parent": listing.parent,
             "usable": self.problem(folder) is None,
             "writable": os.access(folder, os.W_OK),
-            "folders": folders,
-            "truncated": truncated,
+            "folders": [
+                {"name": item.name, "path": item.path, "usable": self.problem(Path(item.path)) is None}
+                for item in listing.folders
+            ],
+            "truncated": listing.truncated,
             "places": self.places(),
             "separator": os.sep,
         }
@@ -381,16 +352,20 @@ class OutputFolder:
         return self.browse(str(target))
 
 
+def _browse_problem(refused: folder_browser.BrowseRefused, given: str) -> ApiError:
+    """The result folder's problem codes for a folder the browser does not open (the codes the page translates)."""
+    path = given.strip()
+    if refused.reason == "hidden":
+        return ApiError(422, "output.protected", "This is a folder of the system", path=path)
+    if refused.reason in ("not_found", "not_a_folder"):
+        return ApiError(404, "output.not_found", "This folder does not exist", path=path)
+    if refused.reason in ("invalid_path", "network_path"):
+        return ApiError(422, "output.invalid", "Enter the full path of a folder")
+    return ApiError(403, "output.no_access", "This folder cannot be read", path=path)
+
+
 def _why(exc: OSError) -> str:
     return exc.strerror or type(exc).__name__
-
-
-def _hidden(entry: os.DirEntry[str]) -> bool:
-    """Windows' hidden and system folders."""
-    if os.name != "nt":
-        return False
-    attributes = getattr(entry.stat(follow_symlinks=False), "st_file_attributes", 0)
-    return bool(attributes & (stat.FILE_ATTRIBUTE_HIDDEN | stat.FILE_ATTRIBUTE_SYSTEM))
 
 
 def file_manager(environ: dict[str, str] | None = None) -> Callable[[Path], None] | None:
