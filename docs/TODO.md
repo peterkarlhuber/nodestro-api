@@ -58,6 +58,9 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
 - **Residual risk:** checks inside the process cannot catch a foreign package already in the host environment; the
   boundary is enforced by the environment (only the shipped lock, no pip in the products).
 
+- **Export count (2026-11-27):** with nodestro-runtime ce68698 an export holds two more runtime modules
+  (`extension_classes`, `extension_seccomp`); `tests/test_export.py` counts them when the runtime has them.
+
 ### API-080 · Memory entries (N-24): the api's part
 
 - **Priority:** P3 Low · **Status:** In review · **Refs:** nodestro-runtime RT-097 and `docs/memory-entries.md`,
