@@ -19,7 +19,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 from nodestro_runtime.mcp.service import McpService
-from nodestro_runtime.tool_approvals import ENABLE_ENV, ToolApprovals
+from nodestro_runtime.tool_approvals import ENABLE_ENV, ToolApprovals, audit_events
 import pytest
 import test_mcp_review_api as review  # reuse the fixtures of the fix round
 from test_mcp_review_api import DELETE, SCRIPT, Counting, _finished, _waiting, as_role, connected, save_workflow
@@ -290,3 +290,7 @@ def test_an_approval_read_before_the_reclassification_is_not_sent(
     assert not armed.is_set(), "the reclassification did not land inside the call"
     assert call["is_error"] and (call["output"] or "").startswith("tool.approval_stale:"), call
     assert seen.deleted == [], "the call was sent although the tool was reclassified before the request"
+    # Welle 5 (runtime): the record and the audit say so, as for a refusal at the engine's own gate.
+    assert call["approval"]["status"] == "approved" and call["approval"]["code"] == "tool.approval_stale", call
+    stale = [item for item in audit_events(nodestro.store) if item.kind == "stale" and item.request_id == request["id"]]
+    assert [item.outcome for item in stale] == ["tool.reclassified"]
