@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Tests (API-082): the crash tests start each child in a process group of its own and kill it with its helper
+  processes; the desktop test reopened the data directory while a Docker CLI helper of the killed child, still
+  between fork and exec, held the lock's file (`workspace.in_use`, flaky on CI). New test with such a helper.
 - Tests: the export module count of `test_export_check_names_what_is_and_is_not_included` also counts
   `nodestro_runtime.extension_classes` and `.extension_seccomp` when the installed runtime has them (nodestro-runtime
   master ce68698, N-22 Welle 6), as earlier rounds counted new runtime modules. Both are inert while
