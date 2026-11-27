@@ -9,6 +9,17 @@
   has a preview (`dry_run`) and stores all or nothing. `POST /api/workflows/import` accepts `format` and refuses a
   newer `nodestro-workflow` version (`422 exchange.version_newer`). New `exchange.*` codes; both OpenAPI documents
   are regenerated (additive).
+- Tests (Welle 5): `tests/test_rereview_reclassify_destructive.py::test_a_reclassification_racing_an_approval_never_runs_the_call`
+  was nondeterministic (master push 60d8f52, Python 3.11: `assert (True and None == 'tool.approval_stale')`). The
+  cause was the test, not the product: it started the race while the waiting run kept polling its request every
+  20 ms, so on a busy runner the run could read the approval and pass the gate before the reclassification landed.
+  The service's check right before the send then refused the call (nothing reached the MCP server), but the call's
+  approval record had no stale code, and with a longer delay the call would have been sent before the
+  reclassification existed, which is a different case from the one the test is about. The test now holds the
+  waiting run between two reads of its request until both people are done (`HeldPolls`, as the runtime's RT-087
+  tests do) and runs four times. Its assertions are unchanged; it also asserts that the approval is either stored
+  or refused as `tool.approval_stale`. The other order (approval read first, reclassified before the send) is a new
+  deterministic test, `test_an_approval_read_before_the_reclassification_is_not_sent`. No product change.
 
 - Security (RT-089d, needs the pinned runtime): a workflow or agent test uses a person's private memory space on a
   server only with that person's explicit consent for exactly its content. New routes `GET /api/memory-consents`,
