@@ -5,18 +5,24 @@ tool one by one with a classification (``read``, ``write``, ``destructive``). Ed
 agents like any other tool (``GET /api/tools`` lists them with ``kind: "mcp"``). Everything lives in the tenant's
 own store; tokens are write-only and never returned.
 
-Permissions: ``read`` lists servers and tools; ``admin`` adds, changes, removes, tests, approves and reads the audit
-events.
+Exchange (N-14, ``nodestro-mcp/1``, :mod:`nodestro_runtime.mcp.exchange`): ``GET /api/mcp/export`` writes the servers'
+configuration without tokens (checked for secrets first); ``POST /api/mcp/import`` previews (``dry_run``) or adds the
+servers of such a file, switched off and without tokens or approvals, by the rules of adding one by hand.
+
+Permissions: ``read`` lists servers and tools; ``admin`` adds, changes, removes, tests, approves, exports, imports and
+reads the audit events.
 """
 
 from __future__ import annotations
 
 import asyncio
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from nodestro_runtime.exchange import MAX_ITEMS, ImportReport
+from nodestro_runtime.mcp import exchange
 from nodestro_runtime.mcp.hub import sdk_available
 from nodestro_runtime.mcp.models import McpEvent, McpServerIn, McpServerView, McpTool, ToolAccess, ToolDefinition
 from nodestro_runtime.mcp_access import unattended_mcp_enabled
@@ -24,7 +30,7 @@ from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.python_envs import DependencyStatus, Plan
 from pydantic import BaseModel, Field
 
-from .api import Ctx
+from .api import Ctx, exchange_body
 from .permissions import ADMIN, READ
 
 router = APIRouter(prefix="/api/mcp")
@@ -159,6 +165,27 @@ def mcp_status(ctx: Ctx) -> McpStatus:
         write_tools_enabled=bool(ctx.mcp.write_gate),
         stdio_possible=ctx.python.containers(),
     )
+
+
+@router.get("/export", dependencies=ADMIN, responses={200: {"model": exchange.McpPackage}})
+def export_servers(ctx: Ctx, ids: Annotated[list[str] | None, Query(max_length=MAX_ITEMS)] = None) -> JSONResponse:
+    """The servers (``ids``: only these) as ``nodestro-mcp/1``: their configuration, never a token, a sign-in, an id,
+    the switch or the tool approvals. An export that would hold a secret is refused (``exchange.secret_detected``)."""
+    document = exchange.export_mcp(ctx.mcp, ids)
+    return JSONResponse(
+        document, headers={"Content-Disposition": 'attachment; filename="mcp-servers.nodestro-mcp.json"'}
+    )
+
+
+@router.post("/import", dependencies=ADMIN, openapi_extra=exchange_body("McpPackage"))
+async def import_servers(ctx: Ctx, request: Request, dry_run: bool = False) -> ImportReport:
+    """Preview (``dry_run``) or apply a ``nodestro-mcp/1`` file (the request body). Each server is checked like adding
+    it by hand (address rules, a stdio server only with the Docker sandbox, the server limit); applying adds all of
+    them or none, each switched off, without a token and with no tool approved (``secrets_to_reenter`` names the
+    tokens and sign-ins to enter). The raw body goes to the shared check (size, nesting, format and version: a newer
+    one is refused with ``exchange.version_newer``)."""
+    raw = await request.body()
+    return await asyncio.to_thread(exchange.import_mcp, ctx.mcp, raw, dry_run=dry_run, actor=_actor(request))
 
 
 @router.get("/servers", dependencies=READ)

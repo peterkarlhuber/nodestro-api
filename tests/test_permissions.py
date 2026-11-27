@@ -162,7 +162,8 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # read: + conversations with own agents: list, one, export, file content, message, events (N-04)
         # read: + whether folder grants are on, and the default limits (N-10)
         # read: + the owner's consents for private memory spaces: list, preview, revoke (RT-089d; one's own only)
-        "read": 163,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
+        # read: + exporting a knowledge collection (N-14)
+        "read": 164,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
         # MCP status, servers, server, tools (WP-3); tool approval inbox, run questions, pre-grants, state (S-2b)
         # edit: + starting and cancelling a portable export job (like the synchronous export)
         # edit: + uploading and removing a conversation's files (assistant files)
@@ -172,7 +173,8 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # edit: + skill group create, change, delete (NAL-B4)
         # edit: + the platform pre-check of a portable package (NAL-C3; runs uv like a build)
         # edit: + conversations: create, change, delete, upload and remove files (N-04)
-        "edit": 74,  # + the tool panel's test run (review H-1, was run); + semantic index rebuild, cancel, remove
+        # edit: + importing a knowledge collection (N-14)
+        "edit": 75,  # + the tool panel's test run (review H-1, was run); + semantic index rebuild, cancel, remove
         # run: + sending a live run chat message (LRC-1)
         # run: + deciding a run's budget request (BUDGET-1; the route also checks starter or admin)
         # run: + the readiness check of a local model before an action (missing local models)
@@ -191,7 +193,8 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # admin: + grants and denies: list, create, revoke (2 each), who-may, explain (N-06)
         # admin: + granted folders: list, grant, get, access log, revoke (N-10)
         # admin: + the folder browser (N-11)
-        "admin": 72,  # + price sync, reviews, overrides, billing keys and reconciliation (PRICING-1); gate (Q-3);
+        # admin: + MCP servers and service connections: export and import (N-14)
+        "admin": 76,  # + price sync, reviews, overrides, billing keys and reconciliation (PRICING-1); gate (Q-3);
         # MCP add, change, remove, discover, decision, events (WP-3); pre-grants, audit, activation (S-2b);
         # MCP OAuth start, callback, sign-out (WP-6); MCP stdio package plan (WP-8); MCP stats (WP-7);
         # Amazon Bedrock verification (a settings action)
@@ -261,6 +264,12 @@ SENSITIVE = {
     ("POST", "/api/schedules"): "run",
     ("POST", "/api/assistant/conversations/{conversation_id}/messages"): "run",
     ("POST", "/api/knowledge"): "edit",
+    ("GET", "/api/mcp/export"): "admin",
+    ("POST", "/api/mcp/import"): "admin",
+    ("GET", "/api/connections/export"): "admin",
+    ("POST", "/api/connections/import"): "admin",
+    ("GET", "/api/knowledge/collections/export"): "read",
+    ("POST", "/api/knowledge/collections/import"): "edit",
     ("POST", "/api/inputs"): "edit",
     ("PUT", "/api/workflows/{workflow_id}"): "edit",
     ("GET", "/api/runs/{run_id}/events"): "read",

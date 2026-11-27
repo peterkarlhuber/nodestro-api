@@ -4,15 +4,23 @@ A service connection is what a built-in tool needs to reach an outside service (
 with CR-DB): its settings, the hosts it may reach and one secret. Secrets are write-only: no route returns them,
 ``secret_set`` only says whether one is stored. Everything lives in the tenant's own store.
 
+Exchange (N-14, ``nodestro-connection/1``, :mod:`nodestro_runtime.exchange`): ``GET /api/connections/export`` writes
+the connections' configuration without secrets (checked for secrets first); ``POST /api/connections/import`` previews
+(``dry_run``) or creates the connections of such a file without secrets, by the rules of creating one by hand.
+
 Permissions: ``read`` lists connections, types and the tool catalog; ``admin`` creates, changes, deletes, sets the
-secret, checks, sends a test (NAL-A4) and reads the audit events (on the desktop the owner has ``admin``).
+secret, checks, sends a test (NAL-A4), exports, imports and reads the audit events (on the desktop the owner has
+``admin``).
 """
 
 from __future__ import annotations
 
-from typing import Any, Literal
+import asyncio
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Query, Request
+from fastapi.responses import JSONResponse
+from nodestro_runtime import exchange
 from nodestro_runtime.connections import (
     ConnectionEvent,
     ConnectionIn,
@@ -23,7 +31,7 @@ from nodestro_runtime.connections import (
 from nodestro_runtime.problems import NodestroError
 from pydantic import BaseModel, Field
 
-from .api import Ctx
+from .api import Ctx, exchange_body
 from .permissions import ADMIN, READ
 
 router = APIRouter(prefix="/api")
@@ -99,6 +107,31 @@ def list_connections(ctx: Ctx, type: str | None = Query(None, max_length=32)) ->
 @router.post("/connections", dependencies=ADMIN, status_code=201)
 def create_connection(ctx: Ctx, data: ConnectionIn, request: Request) -> ConnectionView:
     return ctx.connections.view(ctx.connections.create(data, actor=_actor(request)))
+
+
+@router.get("/connections/export", dependencies=ADMIN, responses={200: {"model": exchange.ConnectionPackage}})
+def export_connections(
+    ctx: Ctx, ids: Annotated[list[str] | None, Query(max_length=exchange.MAX_ITEMS)] = None
+) -> JSONResponse:
+    """The connections (``ids``: only these) as ``nodestro-connection/1``: type, provider, name, description and
+    settings, never a secret, an id, the reachable hosts or a check. An export that would hold a secret is refused
+    (``exchange.secret_detected``)."""
+    document = exchange.export_connections(ctx.connections, ids)
+    return JSONResponse(
+        document, headers={"Content-Disposition": 'attachment; filename="connections.nodestro-connection.json"'}
+    )
+
+
+@router.post("/connections/import", dependencies=ADMIN, openapi_extra=exchange_body("ConnectionPackage"))
+async def import_connections(ctx: Ctx, request: Request, dry_run: bool = False) -> exchange.ImportReport:
+    """Preview (``dry_run``) or apply a ``nodestro-connection/1`` file (the request body). Each connection is checked
+    like creating it by hand (type and mode, provider, settings, address rules, a unique name); applying creates all
+    of them or none, without secrets (``secrets_to_reenter`` names those to enter). The raw body goes to the shared
+    check (size, nesting, format and version: a newer one is refused with ``exchange.version_newer``)."""
+    raw = await request.body()
+    return await asyncio.to_thread(
+        exchange.import_connections, ctx.connections, raw, dry_run=dry_run, actor=_actor(request)
+    )
 
 
 @router.get("/connections/events", dependencies=ADMIN)

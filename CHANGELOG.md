@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- New (N-14, needs the pinned runtime): exchange files with one import check ([docs/exchange.md](docs/exchange.md)).
+  `GET /api/mcp/export`, `POST /api/mcp/import`, `GET /api/connections/export`, `POST /api/connections/import`
+  (`admin`; `nodestro-mcp/1`, `nodestro-connection/1`, never a secret), `GET /api/knowledge/collections/export`
+  (`read`) and `POST /api/knowledge/collections/import` (`edit`, an upload; `nodestro-collection/1`); every import
+  has a preview (`dry_run`) and stores all or nothing. `POST /api/workflows/import` accepts `format` and refuses a
+  newer `nodestro-workflow` version (`422 exchange.version_newer`). New `exchange.*` codes; both OpenAPI documents
+  are regenerated (additive). The JSON imports pass the raw body to the import check (size and nesting before
+  parsing); their documented request bodies are `McpPackage` and `ConnectionPackage`.
 - Folder index state (N-12 follow-up, Welle 5; behind `NODESTRO_FOLDER_GRANTS`, off): every answer with a folder
   grant has `index_state` (`FolderIndexInfo`: `state` `off`, `indexing`, `ready`, `budget_exceeded` or `failed`,
   `files`, `chunks`, `skipped`, `last_indexed_at`, `code`), read from the runtime's `FolderIndex.state`; never a file

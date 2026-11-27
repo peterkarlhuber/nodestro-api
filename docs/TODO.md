@@ -11,7 +11,7 @@
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 1 |
-| P2 Medium | 7 |
+| P2 Medium | 8 |
 | P3 Low | 13 |
 | P4 Optional | 7 |
 
@@ -42,6 +42,18 @@ None known.
 
 Tool approvals (`NODESTRO_TOOL_APPROVALS`, off by default and staying off) need the independent S-2 review tracked as
 nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes here. No separate entry in this file.
+
+### API-078 · Exchange files (N-14): review and follow-ups
+
+- **Priority:** P2 Medium · **Status:** In review · **Refs:** [exchange.md](exchange.md), nodestro-runtime RT-095 and
+  `docs/exchange-formats.md`, `tests/test_exchange_api.py`
+- **What:** `GET`/`POST /api/mcp/export|import` and `/api/connections/export|import` (`admin`),
+  `/api/knowledge/collections/export` (`read`) and `/import` (`edit`) with preview (`dry_run`); the workflow import
+  checks `format` (`exchange.version_newer`). Exports never hold a secret; imports create new entries without
+  secrets, MCP servers switched off.
+- **Open:** the studio's import and export dialogs (preview, confirmation, re-entry of secrets; studio work); the
+  studio's workflow export does not write `format` yet; the independent review together with the runtime part.
+- **Next step:** the review; then the studio surfaces.
 
 ### API-077 · The owner's consent for private memory spaces and private runs in every channel (RT-089d)
 
