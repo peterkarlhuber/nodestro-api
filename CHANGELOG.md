@@ -8,7 +8,8 @@
   (`read`) and `POST /api/knowledge/collections/import` (`edit`, an upload; `nodestro-collection/1`); every import
   has a preview (`dry_run`) and stores all or nothing. `POST /api/workflows/import` accepts `format` and refuses a
   newer `nodestro-workflow` version (`422 exchange.version_newer`). New `exchange.*` codes; both OpenAPI documents
-  are regenerated (additive).
+  are regenerated (additive). The JSON imports pass the raw body to the import check (size and nesting before
+  parsing); their documented request bodies are `McpPackage` and `ConnectionPackage`.
 - Tests (Welle 5): `tests/test_rereview_reclassify_destructive.py::test_a_reclassification_racing_an_approval_never_runs_the_call`
   was nondeterministic (master push 60d8f52, Python 3.11: `assert (True and None == 'tool.approval_stale')`). The
   cause was the test, not the product: it started the race while the waiting run kept polling its request every

@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
-import json
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, Request
@@ -31,7 +30,7 @@ from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.python_envs import DependencyStatus, Plan
 from pydantic import BaseModel, Field
 
-from .api import Ctx
+from .api import Ctx, exchange_body
 from .permissions import ADMIN, READ
 
 router = APIRouter(prefix="/api/mcp")
@@ -178,17 +177,15 @@ def export_servers(ctx: Ctx, ids: Annotated[list[str] | None, Query(max_length=M
     )
 
 
-@router.post("/import", dependencies=ADMIN)
-def import_servers(ctx: Ctx, request: Request, body: dict[str, Any], dry_run: bool = False) -> ImportReport:
-    """Preview (``dry_run``) or apply a ``nodestro-mcp/1`` file. Each server is checked like adding it by hand
-    (address rules, a stdio server only with the Docker sandbox, the server limit); applying adds all of them or none,
-    each switched off, without a token and with no tool approved (``secrets_to_reenter`` names the tokens and sign-ins
-    to enter). A newer format version is refused (``exchange.version_newer``)."""
-    return exchange.import_mcp(ctx.mcp, _raw(body), dry_run=dry_run, actor=_actor(request))
-
-
-def _raw(body: dict[str, Any]) -> bytes:
-    return json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode()
+@router.post("/import", dependencies=ADMIN, openapi_extra=exchange_body("McpPackage"))
+async def import_servers(ctx: Ctx, request: Request, dry_run: bool = False) -> ImportReport:
+    """Preview (``dry_run``) or apply a ``nodestro-mcp/1`` file (the request body). Each server is checked like adding
+    it by hand (address rules, a stdio server only with the Docker sandbox, the server limit); applying adds all of
+    them or none, each switched off, without a token and with no tool approved (``secrets_to_reenter`` names the
+    tokens and sign-ins to enter). The raw body goes to the shared check (size, nesting, format and version: a newer
+    one is refused with ``exchange.version_newer``)."""
+    raw = await request.body()
+    return await asyncio.to_thread(exchange.import_mcp, ctx.mcp, raw, dry_run=dry_run, actor=_actor(request))
 
 
 @router.get("/servers", dependencies=READ)

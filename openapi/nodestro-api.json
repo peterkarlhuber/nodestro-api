@@ -36630,7 +36630,7 @@
     },
     "/api/connections/import": {
       "post": {
-        "description": "Preview (``dry_run``) or apply a ``nodestro-connection/1`` file. Each connection is checked like creating it by\nhand (type and mode, provider, settings, address rules, a unique name); applying creates all of them or none,\nwithout secrets (``secrets_to_reenter`` names those to enter). A newer format version is refused\n(``exchange.version_newer``).",
+        "description": "Preview (``dry_run``) or apply a ``nodestro-connection/1`` file (the request body). Each connection is checked\nlike creating it by hand (type and mode, provider, settings, address rules, a unique name); applying creates all\nof them or none, without secrets (``secrets_to_reenter`` names those to enter). The raw body goes to the shared\ncheck (size, nesting, format and version: a newer one is refused with ``exchange.version_newer``).",
         "operationId": "import_connections_api_connections_import_post",
         "parameters": [
           {
@@ -36648,9 +36648,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
-                "title": "Body",
-                "type": "object"
+                "$ref": "#/components/schemas/ConnectionPackage"
               }
             }
           },
@@ -40933,7 +40931,7 @@
     },
     "/api/mcp/import": {
       "post": {
-        "description": "Preview (``dry_run``) or apply a ``nodestro-mcp/1`` file. Each server is checked like adding it by hand\n(address rules, a stdio server only with the Docker sandbox, the server limit); applying adds all of them or none,\neach switched off, without a token and with no tool approved (``secrets_to_reenter`` names the tokens and sign-ins\nto enter). A newer format version is refused (``exchange.version_newer``).",
+        "description": "Preview (``dry_run``) or apply a ``nodestro-mcp/1`` file (the request body). Each server is checked like adding\nit by hand (address rules, a stdio server only with the Docker sandbox, the server limit); applying adds all of\nthem or none, each switched off, without a token and with no tool approved (``secrets_to_reenter`` names the\ntokens and sign-ins to enter). The raw body goes to the shared check (size, nesting, format and version: a newer\none is refused with ``exchange.version_newer``).",
         "operationId": "import_servers_api_mcp_import_post",
         "parameters": [
           {
@@ -40951,9 +40949,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
-                "title": "Body",
-                "type": "object"
+                "$ref": "#/components/schemas/McpPackage"
               }
             }
           },

@@ -15,7 +15,7 @@ secret, checks, sends a test (NAL-A4), exports, imports and reads the audit even
 
 from __future__ import annotations
 
-import json
+import asyncio
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Query, Request
@@ -31,7 +31,7 @@ from nodestro_runtime.connections import (
 from nodestro_runtime.problems import NodestroError
 from pydantic import BaseModel, Field
 
-from .api import Ctx
+from .api import Ctx, exchange_body
 from .permissions import ADMIN, READ
 
 router = APIRouter(prefix="/api")
@@ -122,16 +122,16 @@ def export_connections(
     )
 
 
-@router.post("/connections/import", dependencies=ADMIN)
-def import_connections(
-    ctx: Ctx, request: Request, body: dict[str, Any], dry_run: bool = False
-) -> exchange.ImportReport:
-    """Preview (``dry_run``) or apply a ``nodestro-connection/1`` file. Each connection is checked like creating it by
-    hand (type and mode, provider, settings, address rules, a unique name); applying creates all of them or none,
-    without secrets (``secrets_to_reenter`` names those to enter). A newer format version is refused
-    (``exchange.version_newer``)."""
-    raw = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode()
-    return exchange.import_connections(ctx.connections, raw, dry_run=dry_run, actor=_actor(request))
+@router.post("/connections/import", dependencies=ADMIN, openapi_extra=exchange_body("ConnectionPackage"))
+async def import_connections(ctx: Ctx, request: Request, dry_run: bool = False) -> exchange.ImportReport:
+    """Preview (``dry_run``) or apply a ``nodestro-connection/1`` file (the request body). Each connection is checked
+    like creating it by hand (type and mode, provider, settings, address rules, a unique name); applying creates all
+    of them or none, without secrets (``secrets_to_reenter`` names those to enter). The raw body goes to the shared
+    check (size, nesting, format and version: a newer one is refused with ``exchange.version_newer``)."""
+    raw = await request.body()
+    return await asyncio.to_thread(
+        exchange.import_connections, ctx.connections, raw, dry_run=dry_run, actor=_actor(request)
+    )
 
 
 @router.get("/connections/events", dependencies=ADMIN)

@@ -39,8 +39,10 @@ files), importing it `edit` (like an upload).
 
 ## Limits
 
-The JSON imports are read as ordinary JSON requests (`NODESTRO_MAX_REQUEST_BYTES`, default 2 MiB) and refused above
-1 MB by the import check. A collection import is an upload (`NODESTRO_MAX_UPLOAD_BYTES`, default 256 MiB, see
+The JSON imports are limited like ordinary JSON requests (`NODESTRO_MAX_REQUEST_BYTES`, default 2 MiB); the route
+passes the raw body, unparsed, to the shared import check, which refuses it above 1 MB (`413 exchange.too_large`) and
+when objects and lists nest deeper than 32 levels (`422 exchange.content_invalid`, problem `too_deep`), both before
+the JSON is parsed. The OpenAPI document names `McpPackage` and `ConnectionPackage` as the request bodies. A collection import is an upload (`NODESTRO_MAX_UPLOAD_BYTES`, default 256 MiB, see
 `body_limit`), and the import check refuses a file above 256 MiB, with more than 500 documents or 512 MiB unpacked.
 A collection export is written to a temporary file of the server and deleted after it was sent.
 

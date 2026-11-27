@@ -230,6 +230,18 @@ def actor_id(request: Request) -> str:
 _NOT_FOUND_KINDS = {"workflow_id": "workflow", "run_id": "run", "publication_id": "publication"}
 
 
+def exchange_body(schema: str) -> dict[str, Any]:
+    """The documented request body of an exchange import (N-14): a JSON exchange file of the component ``schema``.
+    The route reads the raw body itself and passes the bytes to the shared check of
+    :mod:`nodestro_runtime.exchange` (size first, then nesting, JSON, format and version, content)."""
+    return {
+        "requestBody": {
+            "required": True,
+            "content": {"application/json": {"schema": {"$ref": f"#/components/schemas/{schema}"}}},
+        }
+    }
+
+
 def _error(status_code: int, code: str, detail: str, **params: Any) -> JSONResponse:
     """An error response: ``detail`` is the technical text, ``code``/``params`` the UI message."""
     return JSONResponse({"detail": detail, "code": code, "params": params}, status_code=status_code)

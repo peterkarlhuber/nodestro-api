@@ -73,6 +73,17 @@ def test_mcp_imports_refuse_newer_tampered_oversized_and_unisolated_files(make_a
     big = {"format": "nodestro-mcp/1", "servers": [], "pad": "x" * 1_100_000}
     answer = client.post("/api/mcp/import", json=big)
     assert answer.status_code == 413 and answer.json()["code"] == "exchange.too_large"
+    # The raw body goes to the shared check: its own size (not a re-serialization), nesting before parsing.
+    spaced = b'{"format": "nodestro-mcp/1", "servers": []' + b" " * 1_000_000 + b"}"
+    answer = client.post("/api/mcp/import", content=spaced, headers={"Content-Type": "application/json"})
+    assert answer.status_code == 413 and answer.json()["code"] == "exchange.too_large"
+    deep = b'{"format": "nodestro-mcp/1", "servers": [], "x": ' + b"[" * 50_000 + b"]" * 50_000 + b"}"
+    for path in ("/api/mcp/import", "/api/connections/import"):
+        answer = client.post(path, content=deep, headers={"Content-Type": "application/json"})
+        assert answer.status_code == 422 and answer.json()["code"] == "exchange.content_invalid"
+        assert answer.json()["params"]["problems"] == [{"field": "file", "reason": "too_deep"}]
+        answer = client.post(path, content=b"[1, 2", headers={"Content-Type": "application/json"})
+        assert answer.status_code == 422 and answer.json()["code"] == "exchange.invalid_json"
     stdio = {"requirements": ["mcp-demo==1.0"], "module": "mcp_demo"}
     local = {"format": "nodestro-mcp/1", "servers": [{"name": "Local", "transport": "stdio", "stdio": stdio}]}
     preview = _ok(client.post("/api/mcp/import", params={"dry_run": True}, json=local))
