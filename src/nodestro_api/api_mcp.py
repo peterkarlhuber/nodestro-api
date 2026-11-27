@@ -169,9 +169,7 @@ def mcp_status(ctx: Ctx) -> McpStatus:
 
 
 @router.get("/export", dependencies=ADMIN, responses={200: {"model": exchange.McpPackage}})
-def export_servers(
-    ctx: Ctx, ids: Annotated[list[str] | None, Query(max_length=MAX_ITEMS)] = None
-) -> JSONResponse:
+def export_servers(ctx: Ctx, ids: Annotated[list[str] | None, Query(max_length=MAX_ITEMS)] = None) -> JSONResponse:
     """The servers (``ids``: only these) as ``nodestro-mcp/1``: their configuration, never a token, a sign-in, an id,
     the switch or the tool approvals. An export that would hold a secret is refused (``exchange.secret_detected``)."""
     document = exchange.export_mcp(ctx.mcp, ids)
