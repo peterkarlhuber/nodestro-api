@@ -148,6 +148,31 @@ version 1 (note `import`) with the origin `import:<sha256 of the file>`; a later
 keeps that origin. The backup of a workspace keeps every version (`agent_template_versions`).
 `tests/test_product_host_agents.py` holds these rules for a product app.
 
+### Connected MCP services in a product (N-23)
+
+A product that selects the group `mcp` serves the studio's MCP routes (`/api/mcp`) unchanged, on the same workspace
+and with no MCP code of its own: the administrator's decision per tool (approved only with the reviewed definition
+hash), the sign-in with OAuth, tokens that are write-only and sealed with the vault key (`NODESTRO_VAULT_KEY`), the
+operator's endpoint list, the statistics and the events. With the groups `tools`, `workflows` and `runs` its agents
+use the approved tools; with `approvals` a person decides the calls that are asked. What holds in a product as in the
+studio:
+
+- A tool that changes data stays behind the tool approval gate (G-2, `NODESTRO_TOOL_APPROVALS`, off by default and
+  staying off): while the gate is off it is never usable (`mcp.write_not_supported`), not in the tool panel and not
+  in a run (the run does not start, `run.agents_invalid`); with the gate on every changing call waits for a person.
+  The tool panel never runs one.
+- A local (stdio) server runs only in the Docker sandbox's containers (`sandbox.isolation_required` without it); a
+  local development server over loopback `http` is possible only on the desktop, never in a local container.
+- Every MCP tool reaches outside (`reach` `external`), so an MCP server counts as a recipient in the egress
+  protection (N-08, runtime `docs/content-provenance.md`, off by default): once a run holds content of a granted
+  source, a call of even a read-only MCP tool is asked (refused when nobody watches) until a grant on exactly that
+  server (`/api/access/grants`, `mcp_server`) covers it.
+
+Nodestro's own MCP server (`/api/published/_mcp`) is the separate group `mcp_server`. The sign-in's browser callback
+(`/api/mcp/oauth/callback`) sends the browser back to the studio's page `/tools?tab=services`; a product with its
+own pages serves that path or accepts the redirect. `tests/test_product_host_mcp.py` holds these rules for a product
+app.
+
 Error codes: every code is listed by `GET /api/error-codes` (group `core`) for the whole package; a group's routes
 answer only with codes from that catalog.
 
