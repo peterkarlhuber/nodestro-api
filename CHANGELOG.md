@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Tests (N-23): connected MCP services in a product app (`tests/test_product_host_mcp.py`): the group `mcp` serves
+  the studio's routes, a tool that changes data stays behind the tool approval gate (off by default), stdio only with
+  the container sandbox, no loopback server in a local container, and an MCP server counts as a recipient in the
+  egress protection (N-08). `docs/embedding.md` describes it. No code or API contract change.
 - New (N-14, needs the pinned runtime): exchange files with one import check ([docs/exchange.md](docs/exchange.md)).
   `GET /api/mcp/export`, `POST /api/mcp/import`, `GET /api/connections/export`, `POST /api/connections/import`
   (`admin`; `nodestro-mcp/1`, `nodestro-connection/1`, never a secret), `GET /api/knowledge/collections/export`
