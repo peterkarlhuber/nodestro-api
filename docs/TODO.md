@@ -11,7 +11,7 @@
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 1 |
-| P2 Medium | 9 |
+| P2 Medium | 10 |
 | P3 Low | 14 |
 | P4 Optional | 7 |
 
@@ -42,6 +42,21 @@ None known.
 
 Tool approvals (`NODESTRO_TOOL_APPROVALS`, off by default and staying off) need the independent S-2 review tracked as
 nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes here. No separate entry in this file.
+
+### API-081 · The data-only extension store (N-22, owner decision 2026-11-27): the api's part
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** nodestro-runtime RT-098 and `docs/extension-isolation.md`
+  (section "Architecture decision")
+- **What:** binding owner decision: foreign extension packages are never installed into the host Python environment,
+  never loaded through the host import path and never run in the host process. They come only from a separate store
+  `<data>/extensions/<sha256>/`, strictly apart from the host environment, and run only in the Docker sandbox. Until
+  the store is built and security-reviewed, foreign extension tools stay locked by default (no automatic activation).
+- **The api's part:** admin-only, audited routes to upload, list and remove store packages (OpenAPI, SDK sync); an
+  upload is checked by the runtime (zip safety, RECORD hashes, size limits; no `.pth`, scripts or data parts run).
+- **Acceptance:** the store's criteria in RT-098, cross-user and cross-tenant refusal tests, and an independent
+  security review before any G-6 class is unlocked.
+- **Residual risk:** checks inside the process cannot catch a foreign package already in the host environment; the
+  boundary is enforced by the environment (only the shipped lock, no pip in the products).
 
 ### API-080 · Memory entries (N-24): the api's part
 
