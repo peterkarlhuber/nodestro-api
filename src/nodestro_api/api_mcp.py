@@ -283,12 +283,28 @@ def list_events(ctx: Ctx, limit: int = Query(200, ge=1, le=1000)) -> list[McpEve
 # ---- OAuth 2.1 (WP-6) -------------------------------------------------------------------------
 
 _CALLBACK = "/api/mcp/oauth/callback"
+#: Where the browser continues after a sign-in, by default the studio's services page. A product that embeds the API
+#: names its own page (``Branding.mcp_sign_in_page``, :mod:`nodestro_api.host`), kept in ``app.state``.
+SIGN_IN_PAGE = "/tools?tab=services"
 _LOOPBACK = frozenset({"127.0.0.1", "::1", "localhost"})
 
 
 class McpOAuthStart(BaseModel):
     #: Open this URL in the browser to sign in at the server's authorization server.
     authorization_url: str
+
+
+def sign_in_page(page: str) -> str:
+    """``page`` if it is a path of this origin (``/...``, no scheme, host, backslash or fragment), else ``ValueError``:
+    the callback must never send the browser to another site (no open redirect)."""
+    if (
+        not page.startswith("/")
+        or page.startswith("//")
+        or any(char in page for char in "\\#")
+        or any(ord(char) < 0x21 or ord(char) == 0x7F for char in page)
+    ):
+        raise ValueError(f"The MCP sign-in page must be a path of this origin (like /tools), not {page!r}")
+    return page
 
 
 def _redirect_uri(request: Request) -> str:
@@ -330,20 +346,22 @@ async def oauth_callback(
     iss: str | None = Query(None, max_length=2000),
     error: str | None = Query(None, max_length=200),
 ) -> RedirectResponse:
-    """Where the authorization server sends the browser back; continues on the studio's services page.
+    """Where the authorization server sends the browser back; continues on the host's sign-in page (the studio's
+    services page unless the embedding product names its own, :data:`SIGN_IN_PAGE`).
 
-    The result is shown by the studio (``oauth=connected`` or ``oauth_error=<code>``); no token, code or state is
+    The result is shown by that page (``oauth=connected`` or ``oauth_error=<code>``); no token, code or state is
     put in the URL."""
-    target = "/tools?tab=services"
+    target = getattr(request.app.state, "mcp_sign_in_page", None) or SIGN_IN_PAGE
+    join = "&" if "?" in target else "?"
     if error or not state or not code:
         # The started sign-in stays unused and expires (runtime: 10 minutes).
         reason = "mcp.oauth_denied" if error else "mcp.oauth_state_invalid"
-        return _back(f"{target}&oauth_error={reason}")
+        return _back(f"{target}{join}oauth_error={reason}")
     try:
         server = await ctx.mcp.acomplete_oauth(state, code, iss, actor=_actor(request))
     except NodestroError as exc:
-        return _back(f"{target}&oauth_error={exc.code}")
-    return _back(f"{target}&oauth=connected&server={server.id}")
+        return _back(f"{target}{join}oauth_error={exc.code}")
+    return _back(f"{target}{join}oauth=connected&server={server.id}")
 
 
 def _back(url: str) -> RedirectResponse:

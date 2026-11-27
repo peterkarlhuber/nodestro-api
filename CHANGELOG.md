@@ -5,6 +5,11 @@
 - New (N-20, off by default): `GET /api/meta` lists `workflow_tools` in `features` exactly while
   `NODESTRO_WORKFLOW_TOOLS=1`, so an interface offers adding a workflow as an agent's tool only then (the studio's
   "Add workflow as tool" dialog). The field and its type are unchanged (a new value of the list).
+- Fix (N-23 product neutrality, E-P-1; host interface 4): the MCP sign-in's browser callback continues on the
+  embedding product's page, `Branding.mcp_sign_in_page` (a path of the app's own origin; anything else raises
+  `ValueError`, so there is no open redirect). The default stays the studio's `/tools?tab=services`, so the studio
+  behaves as before. The callback is unchanged as a route and not part of the OpenAPI document.
+
 - Tests (API-082): the crash tests start each child in a process group of its own and kill it with its helper
   processes; the desktop test reopened the data directory while a Docker CLI helper of the killed child, still
   between fork and exec, held the lock's file (`workspace.in_use`, flaky on CI). New test with such a helper.

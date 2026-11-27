@@ -78,13 +78,18 @@ def mcp_server() -> Iterator[tuple[Any, Seen]]:
     handle.stop()
 
 
-def _product(tmp_path: Any, script: dict[str, list[Any]] | None = None, groups: tuple[str, ...] = GROUPS) -> FastAPI:
+def _product(
+    tmp_path: Any,
+    script: dict[str, list[Any]] | None = None,
+    groups: tuple[str, ...] = GROUPS,
+    branding: Branding | None = None,
+) -> FastAPI:
     model = ScriptedClient(script or {})
     app = create_product_app(
         "desktop",
         tmp_path / "data",
         list(groups),
-        Branding(title="Test Product", version="1.0.0"),
+        branding or Branding(title="Test Product", version="1.0.0"),
         HostSwitches(scheduler=False),
         config=AppConfig(data_dir=tmp_path / "ignored"),
         integrations=[],
@@ -194,9 +199,42 @@ def test_the_mcp_group_serves_connected_services_in_a_product(tmp_path: Any, mcp
         assert {"/api/mcp/status", "/api/mcp/servers", "/api/mcp/servers/{server_id}/oauth/start"} <= paths
         # The sign-in's browser callback is served too (outside the document); a forged one changes nothing.
         callback = client.get("/api/mcp/oauth/callback", params={"state": "x", "code": "y"}, follow_redirects=False)
-        assert callback.status_code == 303 and "oauth_error=mcp.oauth_state_invalid" in callback.headers["location"]
+        assert callback.status_code == 303
+        # Without a page of its own the product gets the studio's default page.
+        assert callback.headers["location"] == "/tools?tab=services&oauth_error=mcp.oauth_state_invalid"
         # Nodestro's own MCP server is another group; a product that does not select it does not serve it.
         assert client.post("/api/published/_mcp", json={}).json()["code"] == "route.not_found"
+
+
+@pytest.mark.parametrize(("page", "location"), [("/connections", "/connections?"), ("/app?view=mcp", "/app?view=mcp&")])
+def test_the_sign_in_continues_on_the_products_own_page(tmp_path: Any, page: str, location: str) -> None:
+    """The callback is product neutral (E-P-1): a product names its own page; the studio's page is only the default."""
+    branding = Branding(title="Test Product", version="1.0.0", mcp_sign_in_page=page)
+    with _client(_product(tmp_path, branding=branding)) as client:
+        forged = client.get("/api/mcp/oauth/callback", params={"state": "x", "code": "y"}, follow_redirects=False)
+        assert forged.status_code == 303
+        assert forged.headers["location"] == f"{location}oauth_error=mcp.oauth_state_invalid"
+        denied = client.get("/api/mcp/oauth/callback", params={"error": "access_denied"}, follow_redirects=False)
+        assert denied.headers["location"] == f"{location}oauth_error=mcp.oauth_denied"
+        assert denied.headers["cache-control"] == "no-store" and denied.headers["referrer-policy"] == "no-referrer"
+
+
+@pytest.mark.parametrize(
+    "page",
+    [
+        "",
+        "tools",
+        "https://elsewhere.example/tools",
+        "//elsewhere.example/tools",
+        "/\\elsewhere.example",
+        "/a#b",
+        "/a b",
+        "/a\nb",
+    ],
+)
+def test_a_sign_in_page_of_another_site_is_refused(tmp_path: Any, page: str) -> None:
+    with pytest.raises(ValueError, match="path of this origin"):
+        _product(tmp_path, branding=Branding(mcp_sign_in_page=page))
 
 
 def test_a_product_without_the_group_serves_no_mcp_route(tmp_path: Any) -> None:
