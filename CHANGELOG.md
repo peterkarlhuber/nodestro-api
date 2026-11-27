@@ -10,6 +10,13 @@
   newer `nodestro-workflow` version (`422 exchange.version_newer`). New `exchange.*` codes; both OpenAPI documents
   are regenerated (additive). The JSON imports pass the raw body to the import check (size and nesting before
   parsing); their documented request bodies are `McpPackage` and `ConnectionPackage`.
+
+- Tests (Welle 5, needs the runtime of branch `claude/w5-rests`): a gated MCP call the runtime refuses right before
+  the send now has `tool.approval_stale` on its approval record and a `stale` audit event;
+  `test_an_approval_read_before_the_reclassification_is_not_sent` asserts both. Backups and the data export hold no
+  broken legacy vector table (runtime `strip_index_sources`). `tests/test_export.py` counts the two runtime modules
+  an export carries since N-22 (`trusted_integrations`, `extension_sandbox`) when the installed runtime has them. No
+  API contract change.
 - Folder index state (N-12 follow-up, Welle 5; behind `NODESTRO_FOLDER_GRANTS`, off): every answer with a folder
   grant has `index_state` (`FolderIndexInfo`: `state` `off`, `indexing`, `ready`, `budget_exceeded` or `failed`,
   `files`, `chunks`, `skipped`, `last_indexed_at`, `code`), read from the runtime's `FolderIndex.state`; never a file
