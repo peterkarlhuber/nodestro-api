@@ -94,7 +94,21 @@ runtime's `docs/folders.md`, "The search index"); `search_files` then searches i
 with the rights: a grant wakes the indexer for that folder, and `DELETE /api/folders/{id}`, `POST /api/access/denies`,
 `DELETE /api/access/grants/{id}` and `DELETE /api/access/denies/{id}` call `Workspace.folder_access_changed`, which
 drops the index (chunks and vectors) of every folder grant that ended before the answer and syncs the indexes soon.
-An expiry is dropped by the runtime's sweep. The API shows no index state yet. Backups and the data export leave a
+An expiry is dropped by the runtime's sweep.
+
+Every answer with a folder grant (`GET /api/folders`, `GET /api/folders/{id}`, `POST /api/folders`,
+`DELETE /api/folders/{id}`) has `index_state` (`FolderIndexInfo`), read from the runtime's `FolderIndex.state`, for
+the same administrators who see the grant:
+
+| Field | Meaning |
+|---|---|
+| `state` | `off` (no index, or the grant ended and its index is dropped), `indexing` (the first sync has not ended), `ready`, `budget_exceeded` (ready, but files were left out at the grant's file limit or the folder's chunk or byte budget), `failed` (the folder could not be read at all) |
+| `files`, `chunks`, `skipped` | Indexed files, their chunks, and files that could not be read |
+| `last_indexed_at` | When the last sync ended (`null` before) |
+| `code` | Why it `failed` (an `fs.*` or `folder.*` code), else `null` |
+
+It never holds a file name, a path below the folder or a content. Test:
+`tests/test_folders_api.py::test_every_folder_grant_answer_shows_the_state_of_its_search_index`. Backups and the data export leave a
 folder's index out (review M-1, [backup.md](backup.md)). Tests:
 `tests/test_folders_api.py::test_a_folder_index_is_built_on_a_grant_and_dropped_at_once_on_a_revocation`,
 `tests/test_folders_api.py::test_backups_and_the_data_export_hold_nothing_of_a_folder_index`.
