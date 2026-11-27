@@ -69,9 +69,10 @@ def test_a_saved_version_as_a_tool_and_a_conversation_that_calls_it(client: Test
     info = found.json()
     binding = info["binding"]
     assert (binding["version"], binding["name"], info["latest_version"]) == (1, "workflow_check", 1)
+    # Reads only, but its agent's cloud model reaches outside (review M2).
     assert (binding["effect"]["access"], binding["effect"]["reach"], binding["effect"]["approvals"]) == (
         "read",
-        "internal",
+        "external",
         1,
     )
     assert info["input_schema"]["required"] == ["customer"]

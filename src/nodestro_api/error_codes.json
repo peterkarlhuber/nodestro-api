@@ -1293,6 +1293,7 @@
   "workflow_tool.disabled": {"params": ["node"], "source": "runtime"},
   "workflow_tool.missing": {"params": ["name"], "source": "runtime"},
   "workflow_tool.name_taken": {"params": ["name"], "source": "runtime"},
+  "workflow_tool.not_waiting": {"params": ["status"], "source": "runtime"},
   "workspace.db": {"params": [], "source": "runtime"},
   "workspace.in_use": {"params": ["path"], "source": "runtime"}
  },
