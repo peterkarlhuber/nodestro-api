@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Tests (API-082): the crash tests start each child in a process group of its own and kill it with its helper
+  processes; the desktop test reopened the data directory while a Docker CLI helper of the killed child, still
+  between fork and exec, held the lock's file (`workspace.in_use`, flaky on CI). New test with such a helper.
 - Docs: `docs/TODO.md` API-081 records the owner's decision on the data-only extension store (N-22): the api's
   part (admin routes) is planned; foreign extension tools stay locked until the store is built and reviewed.
 - New (N-24, needs the pinned runtime): `GET /api/memory/{space}` lists each entry with `updated_at`, `origin`

@@ -61,7 +61,12 @@ pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="SIGKILL")
 
 
 class Child:
-    """``crash_child.py`` in a process of its own, with its output read line by line."""
+    """``crash_child.py`` in a process of its own, with its output read line by line.
+
+    The child runs in a session (and process group) of its own, with the helper processes it starts (the Docker CLI of
+    a desktop context's reaper and status check). It is killed with them: a helper still between fork and exec holds a
+    copy of the data directory lock's file, so the lock is free only once the whole group has ended.
+    """
 
     def __init__(self, *args: str) -> None:
         self.process = subprocess.Popen(
@@ -70,6 +75,7 @@ class Child:
             stderr=subprocess.PIPE,
             text=True,
             env=dict(os.environ),
+            start_new_session=True,
         )
         self.lines: queue.Queue[str] = queue.Queue()
         self.errors: list[str] = []
@@ -91,15 +97,28 @@ class Child:
                 return line
 
     def kill(self) -> None:
-        self.process.send_signal(signal.SIGKILL)
+        os.killpg(self.process.pid, signal.SIGKILL)  # the child is alive here, so its group id is still its own
         self.wait(-signal.SIGKILL)
 
     def wait(self, code: int, timeout: float = 60) -> None:
         assert self.process.wait(timeout) == code, "".join(self.errors)[-3000:]
+        if code == -signal.SIGKILL:
+            self._wait_group_ended(timeout)
+
+    def _wait_group_ended(self, timeout: float) -> None:
+        """Until no process of the killed child's group is left (signal 0 only tests; it is never sent)."""
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                os.killpg(self.process.pid, 0)
+            except ProcessLookupError:
+                return
+            assert time.monotonic() < deadline, "a helper process of the killed child is still alive"
+            time.sleep(0.01)
 
     def close(self) -> None:
         if self.process.poll() is None:
-            self.process.kill()
+            os.killpg(self.process.pid, signal.SIGKILL)
             self.process.wait(10)
 
 
@@ -153,6 +172,26 @@ def test_a_desktop_killed_while_it_deletes_a_workflow_keeps_the_whole_workflow(
         assert reopened.store.get_raw("workflows", workflow_id) is None
         assert reopened.versions.all(workflow_id) == []
         assert reopened.store.get_raw(SCHEDULES, schedule_id) is None
+    finally:
+        reopened.close()
+
+
+def test_a_desktop_killed_while_a_helper_process_starts_frees_its_data_directory(
+    tmp_path: Path, children: list[Child]
+) -> None:
+    data = tmp_path / "data"
+    ctx = Nodestro(AppConfig(data_dir=data), integrations=[])
+    workflow_id, schedule_id = _workflow_with_history(ctx)
+    ctx.close()
+
+    child = Child("delete-desktop", str(data), workflow_id, "helper")  # the helper waits between fork and exec
+    children.append(child)
+    child.expect("crashing")
+    child.wait(-signal.SIGKILL)
+
+    reopened = Nodestro(AppConfig(data_dir=data), integrations=[])  # killed with the desktop, the helper frees the lock
+    try:
+        _complete(reopened, workflow_id, schedule_id)
     finally:
         reopened.close()
 

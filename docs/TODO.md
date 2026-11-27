@@ -13,7 +13,7 @@
 | P1 High | 1 |
 | P2 Medium | 10 |
 | P3 Low | 14 |
-| P4 Optional | 7 |
+| P4 Optional | 8 |
 
 **Release blockers:** None for this repository; every entry below is not a release blocker. The next desktop
 preview is gated by nodestro-desktop DSK-001 (new candidate and Go/No-Go).
@@ -414,6 +414,16 @@ None known.
   then request `display: summarized` only while it is on.
 
 ## Tests and quality assurance
+
+### API-082 · A killed desktop's helper process can hold the data directory lock for a moment
+
+- **Priority:** P4 Optional · **Status:** Open · **Refs:** `tests/test_crash_recovery.py` (C-16), runtime
+  `DataDirectoryLock`, `docker_status` (reaper and status check)
+- **What:** the lock is a `flock` on `nodestro.lock`; a helper the process forked (the Docker CLI) shares it until it
+  execs. The crash tests now kill the child's whole process group and wait for it (fixed 2026-11-27, flaky
+  `workspace.in_use` on CI). A desktop killed alone (not its group) can leave the lock held for that moment; a start
+  in it is refused and works when repeated.
+- **Next step:** none planned; consider a per-process lock in nodestro-runtime if it is ever seen outside the tests.
 
 ### API-068 · Dependency confusion: the poisoned-index job and the studio origin commit (TABRION DC-NA-1)
 

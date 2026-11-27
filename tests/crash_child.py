@@ -1,9 +1,11 @@
 """A process that the crash tests kill (``tests/test_crash_recovery.py``, API-022): it is started as its own Python
 process and ends with SIGKILL, as a crashed or killed API process would.
 
-``python crash_child.py delete-desktop DATA_DIR WORKFLOW_ID``
+``python crash_child.py delete-desktop DATA_DIR WORKFLOW_ID [helper]``
     Opens the desktop context on ``DATA_DIR`` and deletes the workflow; in the middle of the delete's transaction (after
-    the workflow, its versions and its schedules were deleted) the process kills itself.
+    the workflow, its versions and its schedules were deleted) the process kills itself. With ``helper`` it first
+    starts a helper process that stays between fork and exec (as the Docker CLI that the context's reaper and status
+    check start can be when the process is killed): it holds a copy of the data directory lock's file.
 ``python crash_child.py delete-server SCHEMA DATA_ROOT TENANT WORKFLOW_ID``
     The same on a server tenant's PostgreSQL stores (``NODESTRO_TEST_POSTGRES``).
 ``python crash_child.py test-series SCHEMA DATA_ROOT TENANT SUITE_ID``
@@ -17,7 +19,9 @@ import asyncio
 import os
 from pathlib import Path
 import signal
+import subprocess
 import sys
+import threading
 import time
 from typing import Any
 
@@ -28,6 +32,11 @@ from conftest import ScriptedClient
 
 def _kill(*_args: Any, **_kwargs: Any) -> None:
     print("crashing", flush=True)
+    # The whole process group: the process and the helper processes it started end together, as when a desktop or an
+    # API process is killed with its processes. The tests start each child in a session of its own; started otherwise
+    # (a shell's group), only the process itself is killed.
+    if os.getpgid(0) == os.getpid():
+        os.killpg(0, signal.SIGKILL)
     os.kill(os.getpid(), signal.SIGKILL)
 
 
@@ -55,12 +64,31 @@ def _delete(ctx: Any, workflow_id: str) -> None:
     print("not killed", flush=True)
 
 
+def _start_helper() -> None:
+    """Start a helper process that waits between fork and exec (preexec_fn runs before it closes its descriptors);
+    returns once it was forked. Popen waits for the exec, so it runs in a thread of its own."""
+    forked, tell = os.pipe()
+
+    def between_fork_and_exec() -> None:
+        os.write(tell, b"1")
+        time.sleep(60)
+
+    threading.Thread(
+        target=lambda: subprocess.Popen([sys.executable, "-c", "pass"], preexec_fn=between_fork_and_exec),
+        daemon=True,
+    ).start()
+    os.read(forked, 1)
+
+
 def main(argv: list[str]) -> None:
     mode = argv[0]
     if mode == "delete-desktop":
         from nodestro_api.context import AppConfig, Nodestro
 
-        _delete(Nodestro(AppConfig(data_dir=Path(argv[1])), integrations=[]), argv[2])
+        ctx = Nodestro(AppConfig(data_dir=Path(argv[1])), integrations=[])
+        if argv[3:] == ["helper"]:
+            _start_helper()
+        _delete(ctx, argv[2])
     elif mode == "delete-server":
         _delete(_server_context(argv[1], argv[2], argv[3]), argv[4])
     elif mode == "test-series":
