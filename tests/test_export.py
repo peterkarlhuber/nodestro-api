@@ -188,6 +188,12 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     # agent's workflow tools with it; they do nothing while NODESTRO_WORKFLOW_TOOLS is off (the default).
     with_workflow_tools = (Path(nodestro_runtime.__file__).parent / "workflow_tools.py").is_file()
     assert ("nodestro_runtime.workflow_tools" in modules) is with_workflow_tools
+    # + nodestro_runtime.extension_classes and .extension_seccomp with nodestro-runtime ce68698 and later (N-22, W6):
+    # the extension sandbox's tool classes (none released) and its own seccomp profile; nothing runs while
+    # NODESTRO_EXTENSION_TOOLS is off (the default), and foreign packages in the host environment are refused.
+    with_classes = (Path(nodestro_runtime.__file__).parent / "extension_classes.py").is_file()
+    n22_classes = {"nodestro_runtime.extension_classes", "nodestro_runtime.extension_seccomp"}
+    assert (n22_classes <= set(modules)) is with_classes
     assert len(modules) == (
         79
         + with_error_texts
@@ -197,6 +203,7 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
         + with_folder_index
         + 2 * with_trusted
         + with_workflow_tools
+        + 2 * with_classes
     )
     assert expected | {"nodestro_runtime.local_models"} <= set(modules)
     assert "nodestro_runtime.local_service" not in modules
