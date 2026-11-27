@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- New (N-14, needs the pinned runtime): exchange files with one import check ([docs/exchange.md](docs/exchange.md)).
+  `GET /api/mcp/export`, `POST /api/mcp/import`, `GET /api/connections/export`, `POST /api/connections/import`
+  (`admin`; `nodestro-mcp/1`, `nodestro-connection/1`, never a secret), `GET /api/knowledge/collections/export`
+  (`read`) and `POST /api/knowledge/collections/import` (`edit`, an upload; `nodestro-collection/1`); every import
+  has a preview (`dry_run`) and stores all or nothing. `POST /api/workflows/import` accepts `format` and refuses a
+  newer `nodestro-workflow` version (`422 exchange.version_newer`). New `exchange.*` codes; both OpenAPI documents
+  are regenerated (additive). The JSON imports pass the raw body to the import check (size and nesting before
+  parsing); their documented request bodies are `McpPackage` and `ConnectionPackage`.
+
 - Tests (Welle 5, needs the runtime of branch `claude/w5-rests`): a gated MCP call the runtime refuses right before
   the send now has `tool.approval_stale` on its approval record and a `stale` audit event;
   `test_an_approval_read_before_the_reclassification_is_not_sent` asserts both. Backups and the data export hold no
