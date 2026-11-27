@@ -4,6 +4,11 @@ The first test is the independent reviewer's regression test (``test_rereview_re
 over unchanged in substance: a call asked as ``write``, the tool reclassified as ``destructive`` while it waits, an
 operator (``run``) approves. The other tests cover both directions, rejections, administrator rights and parallel
 decisions. Every case counts the calls that reached the MCP server.
+
+The races are made deterministic like the runtime's own (RT-087): the waiting run is held between two reads of its
+request (:class:`HeldPolls`), so what a test does meanwhile lands before the engine reads the request again, whatever
+the timing on the machine. Without it, the racing test depended on the engine's poll interval and failed on busy CI
+runners when the run read the approval before the reclassification landed.
 """
 
 from __future__ import annotations
@@ -13,7 +18,8 @@ import threading
 from typing import Any
 
 from fastapi.testclient import TestClient
-from nodestro_runtime.tool_approvals import ENABLE_ENV
+from nodestro_runtime.mcp.service import McpService
+from nodestro_runtime.tool_approvals import ENABLE_ENV, ToolApprovals
 import pytest
 import test_mcp_review_api as review  # reuse the fixtures of the fix round
 from test_mcp_review_api import DELETE, SCRIPT, Counting, _finished, _waiting, as_role, connected, save_workflow
@@ -21,6 +27,31 @@ from test_mcp_review_api import DELETE, SCRIPT, Counting, _finished, _waiting, a
 mcp_server = review.mcp_server
 
 MakeApp = Callable[..., TestClient]
+
+
+class HeldPolls:
+    """Holds the waiting run between two reads of its approval request (as in the runtime's RT-087 tests): ``held``
+    waits until the run sits in such a pause, and until ``release`` it reads nothing. What happens in between lands
+    before the engine reads the request again, whatever the timing on the machine."""
+
+    def __init__(self, approvals: ToolApprovals) -> None:
+        self._entered = threading.Event()
+        self._release = threading.Event()
+        original = approvals.sleep
+
+        def sleep(seconds: float) -> None:
+            self._entered.set()
+            if not self._release.wait(timeout=30):
+                raise AssertionError("the waiting run was held too long")
+            original(seconds)
+
+        approvals.sleep = sleep
+
+    def held(self) -> None:
+        assert self._entered.wait(timeout=30), "the run never waited for its approval"
+
+    def release(self) -> None:
+        self._release.set()
 
 
 def _server_and_tool(client: TestClient) -> tuple[str, dict[str, Any]]:
@@ -170,17 +201,25 @@ def test_parallel_decisions_store_exactly_one(
     assert seen.deleted == (["7"] if won == ["approved"] else [])
 
 
+@pytest.mark.parametrize("attempt", range(4))
 def test_a_reclassification_racing_an_approval_never_runs_the_call(
-    make_app: MakeApp, monkeypatch: pytest.MonkeyPatch, mcp_server: tuple[Any, Counting]
+    make_app: MakeApp, monkeypatch: pytest.MonkeyPatch, mcp_server: tuple[Any, Counting], attempt: int
 ) -> None:
     """An operator approves while an administrator reclassifies the tool as ``destructive`` at the same moment:
-    whichever wins, the call is not made."""
+    whichever wins, the call is not made.
+
+    Both land before the waiting run reads its request again (:class:`HeldPolls`): the race is between the two
+    people, and the engine must refuse whichever won. A run that read the approval before the reclassification is
+    the next test's case."""
     monkeypatch.setenv(ENABLE_ENV, "1")
     handle, seen = mcp_server
     client, run_id, request = _start(make_app, handle.url, "write")
     nodestro = client.app.state.nodestro  # type: ignore[attr-defined]
     server_id, tool = _server_and_tool(client)
+    polls = HeldPolls(nodestro.runs.tool_gate.approvals)
+    polls.held()
     barrier = threading.Barrier(2)
+    refused: list[str] = []
 
     def approve() -> None:
         barrier.wait()
@@ -194,7 +233,7 @@ def test_a_reclassification_racing_an_approval_never_runs_the_call(
                 current=nodestro.tools.get(DELETE).capability,
             )
         except Exception as exc:  # refused: stale (the reclassification came first)
-            assert getattr(exc, "code", None) == "tool.approval_stale", exc
+            refused.append(str(getattr(exc, "code", exc)))
 
     def reclassify() -> None:
         barrier.wait()
@@ -207,6 +246,47 @@ def test_a_reclassification_racing_an_approval_never_runs_the_call(
         thread.start()
     for thread in threads:
         thread.join()
+    polls.release()
+    assert refused in ([], ["tool.approval_stale"]), refused
     call = _call_of(client, run_id)
     assert call["is_error"] and call["approval"]["code"] == "tool.approval_stale"
     assert seen.deleted == []
+
+
+def test_an_approval_read_before_the_reclassification_is_not_sent(
+    make_app: MakeApp, monkeypatch: pytest.MonkeyPatch, mcp_server: tuple[Any, Counting]
+) -> None:
+    """The other order of the race above, made deterministic: the run reads the approval and its gate lets the call
+    run as ``write``, then the tool is reclassified as ``destructive`` before the request reaches the MCP server (here:
+    while the service fetches the credential). The service checks the binding again right before it sends and does
+    not send. This is the interleaving that made the racing test fail on CI before it held the run's polls."""
+    monkeypatch.setenv(ENABLE_ENV, "1")
+    handle, seen = mcp_server
+    client, run_id, request = _start(make_app, handle.url, "write")
+    nodestro = client.app.state.nodestro  # type: ignore[attr-defined]
+    server_id, tool = _server_and_tool(client)
+    original = McpService.credential
+    armed = threading.Event()
+
+    def credential(self: McpService, found: Any) -> Any:
+        if armed.is_set():
+            armed.clear()
+            nodestro.mcp.decide(
+                server_id, "delete_page", approve=True, access="destructive", expected_hash=tool["hash"], actor="admin"
+            )
+        return original(self, found)
+
+    monkeypatch.setattr(McpService, "credential", credential)
+    armed.set()
+    nodestro.runs.decide_tool_call(
+        run_id,
+        request["id"],
+        approved=True,
+        by="operator",
+        arguments=request["arguments_hash"],
+        current=nodestro.tools.get(DELETE).capability,
+    )
+    call = _call_of(client, run_id)
+    assert not armed.is_set(), "the reclassification did not land inside the call"
+    assert call["is_error"] and (call["output"] or "").startswith("tool.approval_stale:"), call
+    assert seen.deleted == [], "the call was sent although the tool was reclassified before the request"
