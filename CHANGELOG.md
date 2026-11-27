@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- New (N-20, off by default): `GET /api/meta` lists `workflow_tools` in `features` exactly while
+  `NODESTRO_WORKFLOW_TOOLS=1`, so an interface offers adding a workflow as an agent's tool only then (the studio's
+  "Add workflow as tool" dialog). The field and its type are unchanged (a new value of the list).
 - Tests (API-082): the crash tests start each child in a process group of its own and kill it with its helper
   processes; the desktop test reopened the data directory while a Docker CLI helper of the killed child, still
   between fork and exec, held the lock's file (`workspace.in_use`, flaky on CI). New test with such a helper.
