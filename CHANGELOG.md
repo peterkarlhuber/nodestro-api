@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- New (N-20, needs the pinned runtime; off until `NODESTRO_WORKFLOW_TOOLS=1`): `GET
+  /api/workflows/{workflow_id}/versions/{number}/tool` describes a saved workflow version as a tool of an agent (the
+  binding with its effect, the arguments, the newest version). Conversation messages carry a workflow tool's run,
+  its approval cards and result files (`tool_calls[].workflow`, `result_files`) and the conversation the reported
+  newer versions (`workflow_tool_updates`); decisions and downloads use the run routes.
+
 - New (N-14, needs the pinned runtime): exchange files with one import check ([docs/exchange.md](docs/exchange.md)).
   `GET /api/mcp/export`, `POST /api/mcp/import`, `GET /api/connections/export`, `POST /api/connections/import`
   (`admin`; `nodestro-mcp/1`, `nodestro-connection/1`, never a secret), `GET /api/knowledge/collections/export`

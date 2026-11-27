@@ -1150,6 +1150,14 @@
             },
             "title": "Tools",
             "type": "array"
+          },
+          "workflow_tools": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowToolConfig"
+            },
+            "maxItems": 20,
+            "title": "Workflow Tools",
+            "type": "array"
           }
         },
         "title": "AgentConfig",
@@ -1308,6 +1316,13 @@
           },
           "usage": {
             "$ref": "#/components/schemas/Usage"
+          },
+          "workflow_tool_updates": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowToolUpdate"
+            },
+            "title": "Workflow Tool Updates",
+            "type": "array"
           }
         },
         "required": [
@@ -1848,6 +1863,45 @@
           "prompt"
         ],
         "title": "AgentTestResult",
+        "type": "object"
+      },
+      "AnswerFile": {
+        "description": "A result file of a workflow tool's run: an attachment of the answer (N-20), downloaded with the run routes\n(``GET /api/runs/{run_id}/files/{file_id}``).",
+        "properties": {
+          "file_id": {
+            "title": "File Id",
+            "type": "string"
+          },
+          "format": {
+            "title": "Format",
+            "type": "string"
+          },
+          "media_type": {
+            "default": "",
+            "title": "Media Type",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "size": {
+            "default": 0,
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run_id",
+          "file_id",
+          "name",
+          "format"
+        ],
+        "title": "AnswerFile",
         "type": "object"
       },
       "ApiCheck": {
@@ -8018,6 +8072,13 @@
               }
             ],
             "title": "Reply To"
+          },
+          "result_files": {
+            "items": {
+              "$ref": "#/components/schemas/AnswerFile"
+            },
+            "title": "Result Files",
+            "type": "array"
           },
           "role": {
             "enum": [
@@ -29167,6 +29228,16 @@
             "format": "date-time",
             "title": "Started At",
             "type": "string"
+          },
+          "workflow": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowCall"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -29245,6 +29316,16 @@
             "format": "date-time",
             "title": "Started At",
             "type": "string"
+          },
+          "workflow": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowCallView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -31247,6 +31328,130 @@
         "title": "Workflow",
         "type": "object"
       },
+      "WorkflowApprovalCard": {
+        "description": "An approval step inside a workflow tool's run that waits for a person (N-20): decided with the run routes\n(``POST /api/runs/{run_id}/approvals/{node_id}``).",
+        "properties": {
+          "instructions": {
+            "default": "",
+            "title": "Instructions",
+            "type": "string"
+          },
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "node_id"
+        ],
+        "title": "WorkflowApprovalCard",
+        "type": "object"
+      },
+      "WorkflowCall": {
+        "description": "The run of a workflow tool's call (N-20): a child run of the agent's run, below the agent's step.",
+        "properties": {
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "workflow_id": {
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workflow_id",
+          "version",
+          "run_id"
+        ],
+        "title": "WorkflowCall",
+        "type": "object"
+      },
+      "WorkflowCallView": {
+        "description": "A workflow tool's call (N-20): the workflow in its fixed version, its run, what it waits for and its files.",
+        "properties": {
+          "approvals": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowApprovalCard"
+            },
+            "title": "Approvals",
+            "type": "array"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Problem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/AnswerFile"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tool_approvals": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowToolApprovalCard"
+            },
+            "title": "Tool Approvals",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "workflow_id": {
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workflow_id",
+          "version",
+          "run_id",
+          "status"
+        ],
+        "title": "WorkflowCallView",
+        "type": "object"
+      },
       "WorkflowCheck": {
         "properties": {
           "agents": {
@@ -31303,6 +31508,56 @@
           }
         },
         "title": "WorkflowDependencyRequest",
+        "type": "object"
+      },
+      "WorkflowEffect": {
+        "description": "What a workflow may do as a whole (N-20): the highest ``access`` and ``reach`` of everything it contains (its\nagents' tools, MCP tools and server tools, its result files, its sub-workflows, teams and workflow tools, at every\ndepth). Something unknown (a tool that is not there, a team chosen at run time, a workflow that cannot be read)\ncounts as ``write`` + ``external`` (:data:`~nodestro_runtime.tool_policy.UNKNOWN`) and is named in ``unknown``.\nSee :mod:`nodestro_runtime.workflow_tools`.",
+        "properties": {
+          "access": {
+            "default": "write",
+            "enum": [
+              "read",
+              "write",
+              "destructive"
+            ],
+            "title": "Access",
+            "type": "string"
+          },
+          "approvals": {
+            "default": 0,
+            "title": "Approvals",
+            "type": "integer"
+          },
+          "memory": {
+            "default": false,
+            "title": "Memory",
+            "type": "boolean"
+          },
+          "reach": {
+            "default": "external",
+            "enum": [
+              "internal",
+              "external"
+            ],
+            "title": "Reach",
+            "type": "string"
+          },
+          "unknown": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unknown",
+            "type": "array"
+          },
+          "workflows": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Workflows",
+            "type": "array"
+          }
+        },
+        "title": "WorkflowEffect",
         "type": "object"
       },
       "WorkflowImport": {
@@ -31607,6 +31862,150 @@
           "updated_at"
         ],
         "title": "WorkflowSummary",
+        "type": "object"
+      },
+      "WorkflowToolApprovalCard": {
+        "description": "A tool call inside a workflow tool's run that waits for a person's approval (N-20, S-2).",
+        "properties": {
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "request_id",
+          "tool"
+        ],
+        "title": "WorkflowToolApprovalCard",
+        "type": "object"
+      },
+      "WorkflowToolConfig": {
+        "description": "A saved workflow in one fixed version that an agent may call as a tool (N-20).\n\nThe version never changes by itself: a newer version of the workflow is only reported\n(:func:`~nodestro_runtime.workflow_tools.newer_versions`). The arguments are the workflow's start form; the\nresult is its output and its result files. ``effect`` is what the workflow may do, computed when it was added\n(:func:`~nodestro_runtime.workflow_tools.describe`); every call computes it again and the higher one counts.",
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Description",
+            "type": "string"
+          },
+          "effect": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowEffect"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "pattern": "^[a-zA-Z0-9_-]{1,64}$",
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          },
+          "workflow_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workflow_id",
+          "version",
+          "name"
+        ],
+        "title": "WorkflowToolConfig",
+        "type": "object"
+      },
+      "WorkflowToolInfo": {
+        "description": "A workflow in one version as a tool (N-20): the binding to store with an agent, and what the model sees.",
+        "properties": {
+          "binding": {
+            "$ref": "#/components/schemas/WorkflowToolConfig"
+          },
+          "blocked_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blocked Fields",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "input_schema": {
+            "additionalProperties": true,
+            "title": "Input Schema",
+            "type": "object"
+          },
+          "latest_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Version"
+          },
+          "workflow_name": {
+            "title": "Workflow Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "binding",
+          "workflow_name",
+          "description",
+          "input_schema"
+        ],
+        "title": "WorkflowToolInfo",
+        "type": "object"
+      },
+      "WorkflowToolUpdate": {
+        "description": "A workflow tool whose workflow has a newer saved version (only reported, never used by itself).",
+        "properties": {
+          "latest_version": {
+            "title": "Latest Version",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "workflow_id": {
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "workflow_id",
+          "version",
+          "latest_version"
+        ],
+        "title": "WorkflowToolUpdate",
         "type": "object"
       },
       "WorkflowVersion": {
@@ -51067,6 +51466,75 @@
           }
         },
         "summary": "Restore Version",
+        "tags": [
+          "workflows"
+        ]
+      }
+    },
+    "/api/workflows/{workflow_id}/versions/{number}/tool": {
+      "get": {
+        "description": "A saved workflow version as a tool an agent may call (N-20; runtime ``docs/workflow-tools.md``): the binding to\nstore in the agent's ``workflow_tools`` (its effect computed now), what the model sees and the newest saved\nversion. Reads only; calling it needs ``NODESTRO_WORKFLOW_TOOLS=1`` when the agent runs.",
+        "operationId": "version_as_tool_api_workflows__workflow_id__versions__number__tool_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workflow_id",
+            "required": true,
+            "schema": {
+              "title": "Workflow Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "title": "Number",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[a-zA-Z0-9_-]{1,64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowToolInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Version As Tool",
         "tags": [
           "workflows"
         ]

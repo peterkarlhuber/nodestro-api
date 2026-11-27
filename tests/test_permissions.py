@@ -163,7 +163,8 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # read: + whether folder grants are on, and the default limits (N-10)
         # read: + the owner's consents for private memory spaces: list, preview, revoke (RT-089d; one's own only)
         # read: + exporting a knowledge collection (N-14)
-        "read": 164,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
+        # read: + a saved workflow version as a tool (N-20)
+        "read": 165,  # + price catalog, status, history, reviews (PRICING-1); gate report (Q-3); case proposal (Q-4);
         # MCP status, servers, server, tools (WP-3); tool approval inbox, run questions, pre-grants, state (S-2b)
         # edit: + starting and cancelling a portable export job (like the synchronous export)
         # edit: + uploading and removing a conversation's files (assistant files)
