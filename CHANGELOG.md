@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Security (API-081, runtime RT-098; nothing enabled): admin routes of the data-only extension store,
+  `/api/extensions` (list, upload, remove, revoke; a signed-in person only, `404 extension_store.disabled` on a
+  server). The runtime checks and audits every upload; the package is never installed or imported here. New codes
+  `extension_store.*` (`docs/extension-store.md`); OpenAPI regenerated (also activity source `extension`).
+
 - Tests (API-082): the crash tests start each child in a process group of its own and kill it with its helper
   processes; the desktop test reopened the data directory while a Docker CLI helper of the killed child, still
   between fork and exec, held the lock's file (`workspace.in_use`, flaky on CI). New test with such a helper.

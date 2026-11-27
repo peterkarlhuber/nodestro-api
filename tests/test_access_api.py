@@ -268,7 +268,8 @@ def test_the_published_api_strips_the_source_from_run_errors() -> None:
 def test_only_the_admin_routes_write_grants_and_denies() -> None:
     """No tool, assistant, MCP server route or published route builds a :class:`Person` or writes a record: only
     :mod:`nodestro_api.api_access` and the folder grants of :mod:`nodestro_api.api_folders` (N-10), behind
-    ``admin`` and the signed-in principal."""
+    ``admin`` and the signed-in principal. The extension store's routes (:mod:`nodestro_api.api_extensions`, API-081)
+    build a :class:`Person` only to refuse a principal that is not a person; they write no grant or deny."""
     package = Path(nodestro_api.__file__).parent
     writers: set[str] = set()
     for source in package.rglob("*.py"):
@@ -276,7 +277,7 @@ def test_only_the_admin_routes_write_grants_and_denies() -> None:
         for node in ast.walk(tree):
             if isinstance(node, ast.Name) and node.id in ("AccessRules", "Person", "FolderGrants"):
                 writers.add(source.name)
-    assert writers == {"api_access.py", "api_folders.py"}
+    assert writers == {"api_access.py", "api_folders.py", "api_extensions.py"}
 
 
 def test_a_tool_grant_is_refused_when_the_tool_changed_since_it_was_shown(granting: TestClient) -> None:

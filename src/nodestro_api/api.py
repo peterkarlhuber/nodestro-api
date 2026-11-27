@@ -278,6 +278,11 @@ NODESTRO_ERROR_STATUS = {
     "folder.not_grantable": 422,
     "folder.invalid_name": 422,
     "folder.invalid_pattern": 422,
+    # The data-only extension store (RT-098, API-081): none here, an unknown package, a refused upload, its index.
+    "extension_store.disabled": 404,
+    "extension_store.not_found": 404,
+    "extension_store.refused": 422,
+    "extension_store.unreadable": 409,
     # Memory spaces with an owner (RT-089c): another person's space, one without an owner, or none.
     "memory.space_not_found": 404,
     # The owner's consent (RT-089d): missing, given for other content than the owner saw, or too many workflows.
@@ -493,6 +498,7 @@ PATH_TAGS: dict[str, str] = {
     "folders": "access grants",
     "python": "Python environments",
     "sandbox": "tools",
+    "extensions": "tools",
     "agents": "agents",
     "skills": "skills",
     "skill-groups": "skills",

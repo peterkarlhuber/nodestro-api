@@ -195,7 +195,8 @@ def test_every_route_and_method_is_classified(app: FastAPI) -> None:
         # admin: + granted folders: list, grant, get, access log, revoke (N-10)
         # admin: + the folder browser (N-11)
         # admin: + MCP servers and service connections: export and import (N-14)
-        "admin": 76,  # + price sync, reviews, overrides, billing keys and reconciliation (PRICING-1); gate (Q-3);
+        # admin: + the data-only extension store: list, upload, remove, revoke (RT-098, API-081)
+        "admin": 80,  # + price sync, reviews, overrides, billing keys and reconciliation (PRICING-1); gate (Q-3);
         # MCP add, change, remove, discover, decision, events (WP-3); pre-grants, audit, activation (S-2b);
         # MCP OAuth start, callback, sign-out (WP-6); MCP stdio package plan (WP-8); MCP stats (WP-7);
         # Amazon Bedrock verification (a settings action)
