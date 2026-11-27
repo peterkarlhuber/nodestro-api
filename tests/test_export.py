@@ -179,7 +179,14 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     # indexes; an exported application never builds one (folders stay off there).
     with_folder_index = (Path(nodestro_runtime.__file__).parent / "folder_index.py").is_file()
     assert ("nodestro_runtime.folder_index" in modules) is with_folder_index
-    assert len(modules) == 79 + with_error_texts + with_offline + 2 * with_folders + with_consents + with_folder_index
+    # + nodestro_runtime.trusted_integrations and .extension_sandbox with nodestro-runtime dc58a97 and later (N-22): the
+    # extensions module verifies Nodestro's own integration and runs other integrations' tools only in the sandbox.
+    with_trusted = (Path(nodestro_runtime.__file__).parent / "trusted_integrations.py").is_file()
+    n22 = {"nodestro_runtime.trusted_integrations", "nodestro_runtime.extension_sandbox"}
+    assert (n22 <= set(modules)) is with_trusted
+    assert len(modules) == (
+        79 + with_error_texts + with_offline + 2 * with_folders + with_consents + with_folder_index + 2 * with_trusted
+    )
     assert expected | {"nodestro_runtime.local_models"} <= set(modules)
     assert "nodestro_runtime.local_service" not in modules
     # The audit/usage hook protocol is exported (tool approvals and the usage log import it); the Axentra

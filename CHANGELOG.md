@@ -5,7 +5,9 @@
 - Tests (Welle 5, needs the runtime of branch `claude/w5-rests`): a gated MCP call the runtime refuses right before
   the send now has `tool.approval_stale` on its approval record and a `stale` audit event;
   `test_an_approval_read_before_the_reclassification_is_not_sent` asserts both. Backups and the data export hold no
-  broken legacy vector table (runtime `strip_index_sources`). No API contract change.
+  broken legacy vector table (runtime `strip_index_sources`). `tests/test_export.py` counts the two runtime modules
+  an export carries since N-22 (`trusted_integrations`, `extension_sandbox`) when the installed runtime has them. No
+  API contract change.
 
 - Tests (Welle 5): `tests/test_rereview_reclassify_destructive.py::test_a_reclassification_racing_an_approval_never_runs_the_call`
   was nondeterministic (master push 60d8f52, Python 3.11: `assert (True and None == 'tool.approval_stale')`). The
