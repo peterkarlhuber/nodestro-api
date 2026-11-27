@@ -8,7 +8,8 @@ take elsewhere, not for a restore (that is what a backup is for). It is a ZIP fi
 - ``documents/<collection>.jsonl``: every stored document, one JSON object per line (``id``, ``updated_at``,
   ``data``), from the same sanitized snapshot a backup is made of: no provider key, no sealed token or connection
   secret, no key of a published API, no idempotency record and no check value of the data directory's key,
-- ``memory.jsonl``: the files of every memory space (``namespace``, ``path``, ``content``, ``updated_at``),
+- ``memory.jsonl``: the files of every memory space (``namespace``, ``path``, ``content``, ``updated_at``,
+  ``origin``),
 - ``stored-files.jsonl`` and ``stored-files/<n>``: the stored files (knowledge files and others) with their entry,
 - ``tools/<name>/v<n>.json`` and ``inputs/``: as in a backup.
 

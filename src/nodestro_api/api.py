@@ -30,6 +30,7 @@ from nodestro_runtime.launcher import launch
 from nodestro_runtime.local_models import LOCAL_ASSISTANT_MODEL, LOCAL_DEFAULT_MODEL
 from nodestro_runtime.memory_consents import ConsentTarget, combined_digest, consent_targets
 from nodestro_runtime.memory_spaces import (
+    ORIGIN_ASSISTANT,
     ORIGIN_USER,
     BrowsableMemory,
     MemoryConsent,
@@ -93,6 +94,7 @@ from nodestro_runtime.versions import VersionSummary, WorkflowVersion
 from nodestro_runtime.workflow_tools import WorkflowToolInfo
 from orkexa import OrkexaError, ProviderError, UsageTracker
 from orkexa import __version__ as library_version
+from orkexa.memory import MEMORY_MAX_PATH
 from orkexa.retrieval import RetrievalError
 from pydantic import BaseModel, Field, model_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -2784,7 +2786,7 @@ def _quote(name: str) -> str:
 
 
 class MemoryText(BaseModel):
-    path: str
+    path: str = Field(max_length=MEMORY_MAX_PATH)
     content: str
 
 
@@ -2848,10 +2850,14 @@ def read_memory(space: str, path: str, ctx: Ctx, request: Request) -> MemoryText
 
 
 @memory_router.put("/memory/{space}/file", dependencies=EDIT)
-def write_memory(space: str, body: MemoryText, ctx: Ctx, request: Request) -> MemoryText:
+def write_memory(space: str, body: MemoryText, ctx: Ctx, request: Request, proposed: bool = False) -> MemoryText:
     """Write a file: a person remembers or edits an entry by this explicit action, recorded with the origin ``user``
-    (N-24; no model tool writes this way). On a server the first writer of a new space becomes its owner (RT-089c)."""
-    ctx.memory.open_for(space, owner_of(request)).write(body.path, body.content, origin=ORIGIN_USER)
+    (N-24; no model tool writes this way). ``proposed=true`` marks text the person saves from the memory assistant's
+    proposal (``/api/memory/propose``): it is model output and is recorded with the origin ``assistant``. The flag
+    can only lower the origin; no request records anything but ``user`` or ``assistant``. On a server the first writer
+    of a new space becomes its owner (RT-089c)."""
+    origin = ORIGIN_ASSISTANT if proposed else ORIGIN_USER
+    ctx.memory.open_for(space, owner_of(request)).write(body.path, body.content, origin=origin)
     return body
 
 

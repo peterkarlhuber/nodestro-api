@@ -48,10 +48,10 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
 - **Priority:** P3 Low · **Status:** In review · **Refs:** nodestro-runtime RT-097 and `docs/memory-entries.md`,
   `tests/test_memory_entries_api.py`, `tests/test_memory_space_owners.py`
 - **What:** `GET /api/memory/{space}` lists entries with `updated_at`, `origin` and `scope`; `PUT` is the explicit
-  manual write (origin `user`); owner and tenant checks of RT-089c unchanged; backups keep the origin (a restore adds
+  manual write (origin `user`, or `assistant` with `proposed=true` for the memory assistant's proposal); owner and tenant checks of RT-089c unchanged; backups keep the origin (a restore adds
   the column to an older database first).
 - **Open:** a server backup of PostgreSQL is the operator's dump (it holds the column); no route filters entries by
-  origin.
+  origin; `GET /api/memory/{space}` has no paging (N-24 review L3).
 
 ### API-079 · Workflows as tools of an agent (N-20): the api's part
 

@@ -67,6 +67,7 @@ import zlib
 from nodestro_runtime.folder_index import FILES as FOLDER_INDEX_FILES
 from nodestro_runtime.folder_index import STATES as FOLDER_INDEX_STATES
 from nodestro_runtime.knowledge import FOLDER_SOURCE
+from nodestro_runtime.memory_spaces import ORIGINS
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.providers import has_credentials
 from nodestro_runtime.schemas import (
@@ -865,6 +866,14 @@ def _copy_tables(connection: sqlite3.Connection, source: Path, keep_settings: di
                 if columns:
                     connection.execute(
                         f"INSERT INTO main.{table} ({columns}) SELECT {columns} FROM restore_source.{table}"
+                    )
+                if name == "memory_files" and "origin" in source_columns:
+                    # An origin this version does not write is unknown (None), never shown as someone's (N-24 L5).
+                    known = sorted(ORIGINS)
+                    connection.execute(
+                        "UPDATE main.memory_files SET origin = NULL WHERE origin IS NOT NULL"
+                        f" AND origin NOT IN ({', '.join('?' for _ in known)})",
+                        known,
                     )
             for name in main_tables - set(backup_tables):
                 if not _DERIVED.match(name):

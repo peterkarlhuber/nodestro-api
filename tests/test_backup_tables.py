@@ -41,6 +41,37 @@ def test_unknown_tables_and_hostile_names_from_a_backup_are_not_executed(tmp_pat
     ] == ["new"]
 
 
+def test_a_restore_keeps_known_origins_and_forgets_unknown_ones(tmp_path: Path) -> None:
+    """N-24 L5: an origin in the archive that this version never writes is restored as unknown (NULL)."""
+    source = tmp_path / "backup.db"
+    with sqlite3.connect(source) as backup:
+        backup.execute(KNOWN_TABLES["nodestro_documents"])
+        backup.execute(KNOWN_TABLES["memory_files"])
+        backup.executemany(
+            "INSERT INTO memory_files VALUES ('team', ?, 'x', '2026-01-01T00:00:00Z', ?)",
+            [
+                ("/memories/a.md", "tool"),
+                ("/memories/b.md", "user"),
+                ("/memories/c.md", "import"),
+                ("/memories/d.md", "assistant"),
+                ("/memories/e.md", "admin"),
+                ("/memories/f.md", "User"),
+                ("/memories/g.md", None),
+            ],
+        )
+    connection = _main(tmp_path / "main.db")
+    _copy_tables(connection, source, {})
+    assert connection.execute("SELECT path, origin FROM memory_files ORDER BY path").fetchall() == [
+        ("/memories/a.md", "tool"),
+        ("/memories/b.md", "user"),
+        ("/memories/c.md", "import"),
+        ("/memories/d.md", "assistant"),
+        ("/memories/e.md", None),
+        ("/memories/f.md", None),
+        ("/memories/g.md", None),
+    ]
+
+
 def test_identifiers_are_quoted() -> None:
     assert quote_identifier("plain") == '"plain"'
     assert quote_identifier('a"b') == '"a""b"'
