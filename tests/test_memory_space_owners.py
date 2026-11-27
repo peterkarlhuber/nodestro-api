@@ -92,6 +92,45 @@ def test_poc_another_member_cannot_read_a_space(server: Server) -> None:
     assert attached.status_code == 200, attached.text
 
 
+def test_only_the_owner_sees_edits_and_deletes_the_entries_of_a_space(server: Server) -> None:
+    """N-24: the owner lists the entries of their space with time and origin (``user`` for their explicit write,
+    ``tool`` for an agent's memory tool), edits and deletes them; another member of the tenant (an administrator
+    included) and a member of another tenant see no entry, no origin and no time, and change nothing."""
+    alice = server.member("acme", "alice", "editor")
+    bob = server.member("acme", "bob", "admin")
+    mallory = server.member("globex", "mallory", "owner")
+    assert alice.put("/api/memory/team/file", json=FILE).status_code == 200
+    workspace = server.app.state.tenants.get("acme")
+    workspace.memory.open("team").execute({"command": "create", "path": "/memories/learned.md", "file_text": "tea"})
+    entries = {entry["path"]: entry for entry in alice.get("/api/memory/team").json()}
+    assert {path: entry["origin"] for path, entry in entries.items()} == {
+        "/memories/learned.md": "tool",
+        "/memories/note.md": "user",
+    }
+    assert all(entry["updated_at"] and entry["scope"] == "user" for entry in entries.values())
+    for other in (bob, mallory):
+        listed = other.get("/api/memory/team")
+        assert _refused(listed) and "origin" not in listed.text and "learned" not in listed.text
+    edited = bob.put("/api/memory/team/file", json={"path": "/memories/learned.md", "content": "coffee"})
+    assert _refused(edited) or edited.status_code == 403
+    deleted = bob.delete("/api/memory/team/file", params={"path": "/memories/learned.md"})
+    assert _refused(deleted) or deleted.status_code == 403
+    # Another tenant's ``team`` is a space of its own: Mallory's write and delete reach only hers.
+    assert mallory.put("/api/memory/team/file", json={"path": "/memories/learned.md", "content": "coffee"}).is_success
+    assert mallory.delete("/api/memory/team/file", params={"path": "/memories/learned.md"}).status_code == 204
+    assert {entry["path"]: entry["origin"] for entry in alice.get("/api/memory/team").json()} == {
+        "/memories/learned.md": "tool",
+        "/memories/note.md": "user",
+    }
+    assert alice.get("/api/memory/team/file", params={"path": "/memories/learned.md"}).json()["content"] == "tea"
+    # The owner corrects the agent's entry (now hers) and deletes her own.
+    assert alice.put("/api/memory/team/file", json={"path": "/memories/learned.md", "content": "green tea"}).is_success
+    assert alice.delete("/api/memory/team/file", params={"path": FILE["path"]}).status_code == 204
+    [entry] = alice.get("/api/memory/team").json()
+    assert (entry["path"], entry["origin"]) == ("/memories/learned.md", "user")
+    assert alice.get("/api/memory/team/file", params={"path": "/memories/learned.md"}).json()["content"] == "green tea"
+
+
 def test_a_space_without_an_owner_is_nobodys_until_the_operator_assigns_one(server: Server) -> None:
     alice = server.member("acme", "alice", "editor")
     bob = server.member("acme", "bob", "owner")

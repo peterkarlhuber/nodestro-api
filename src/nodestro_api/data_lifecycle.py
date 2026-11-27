@@ -144,10 +144,14 @@ def export_all(nodestro: Nodestro, target: Path, profile: BackupProfile | None =
                 collections[f"documents/{name}.jsonl"] = collection
                 entries[f"documents/{name}.jsonl"] = _jsonl(rows)
             if "memory_files" in tables:
+                # N-24: with the origin of each file where the table has one (an older table has none: null).
+                columns = {row[1] for row in connection.execute("PRAGMA table_info(memory_files)")}
+                origin = "origin" if "origin" in columns else "NULL"
                 memory = [
-                    {"namespace": namespace, "path": path, "content": content, "updated_at": updated}
-                    for namespace, path, content, updated in connection.execute(
-                        "SELECT namespace, path, content, updated_at FROM memory_files ORDER BY namespace, path"
+                    {"namespace": namespace, "path": path, "content": content, "updated_at": updated, "origin": who}
+                    for namespace, path, content, updated, who in connection.execute(
+                        f"SELECT namespace, path, content, updated_at, {origin} FROM memory_files"
+                        " ORDER BY namespace, path"
                     )
                 ]
                 entries["memory.jsonl"] = _jsonl(memory)

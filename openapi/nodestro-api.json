@@ -15724,14 +15724,48 @@
         "type": "object"
       },
       "MemoryFile": {
+        "description": "One entry of a memory space (N-24: with the time and origin of its last write).",
         "properties": {
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin"
+          },
           "path": {
             "title": "Path",
+            "type": "string"
+          },
+          "scope": {
+            "default": "user",
+            "enum": [
+              "user",
+              "project",
+              "agent"
+            ],
+            "title": "Scope",
             "type": "string"
           },
           "size": {
             "title": "Size",
             "type": "integer"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
           }
         },
         "required": [
@@ -15870,6 +15904,16 @@
           },
           "name": {
             "title": "Name",
+            "type": "string"
+          },
+          "scope": {
+            "default": "user",
+            "enum": [
+              "user",
+              "project",
+              "agent"
+            ],
+            "title": "Scope",
             "type": "string"
           },
           "size": {
@@ -42355,6 +42399,7 @@
         ]
       },
       "get": {
+        "description": "The entries of a space (N-24): each file with its size, the time and origin of its last write (``tool``: an\nagent's memory tool, ``user``: a person's explicit write, ``null``: unknown) and its scope (``user``). Only the\nspace's owner sees them (RT-089c).",
         "operationId": "list_memory_api_memory__space__get",
         "parameters": [
           {
@@ -42401,6 +42446,7 @@
     },
     "/api/memory/{space}/file": {
       "delete": {
+        "description": "Delete an entry (a file, or a directory with its files); only the space's owner (RT-089c).",
         "operationId": "delete_memory_api_memory__space__file_delete",
         "parameters": [
           {
@@ -42492,7 +42538,7 @@
         ]
       },
       "put": {
-        "description": "Write a file; on a server the first writer of a new space becomes its owner (RT-089c).",
+        "description": "Write a file: a person remembers or edits an entry by this explicit action, recorded with the origin ``user``\n(N-24; no model tool writes this way). On a server the first writer of a new space becomes its owner (RT-089c).",
         "operationId": "write_memory_api_memory__space__file_put",
         "parameters": [
           {

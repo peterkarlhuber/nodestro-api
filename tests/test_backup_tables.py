@@ -34,7 +34,7 @@ def test_unknown_tables_and_hostile_names_from_a_backup_are_not_executed(tmp_pat
     assert "planted" not in tables and 'planted" (x); --' not in tables
     # The missing known table is created with this version's definition, and only its columns are copied.
     columns = [row[1] for row in connection.execute("PRAGMA table_info(memory_files)")]
-    assert columns == ["namespace", "path", "content", "updated_at"]
+    assert columns == ["namespace", "path", "content", "updated_at", "origin"]
     assert connection.execute("SELECT content FROM memory_files").fetchall() == [("Wissen",)]
     assert [
         row[0] for row in connection.execute("SELECT id FROM nodestro_documents WHERE collection = 'workflows'")

@@ -30,6 +30,7 @@ from nodestro_runtime.launcher import launch
 from nodestro_runtime.local_models import LOCAL_ASSISTANT_MODEL, LOCAL_DEFAULT_MODEL
 from nodestro_runtime.memory_consents import ConsentTarget, combined_digest, consent_targets
 from nodestro_runtime.memory_spaces import (
+    ORIGIN_USER,
     BrowsableMemory,
     MemoryConsent,
     MemoryFile,
@@ -2835,6 +2836,9 @@ def propose_memory(body: MemoryProposalRequest, ctx: Ctx, request: Request) -> M
 
 @memory_router.get("/memory/{space}", dependencies=READ)
 def list_memory(space: str, ctx: Ctx, request: Request) -> list[MemoryFile]:
+    """The entries of a space (N-24): each file with its size, the time and origin of its last write (``tool``: an
+    agent's memory tool, ``user``: a person's explicit write, ``null``: unknown) and its scope (``user``). Only the
+    space's owner sees them (RT-089c)."""
     return _usable_space(ctx, request, space).entries()
 
 
@@ -2845,13 +2849,15 @@ def read_memory(space: str, path: str, ctx: Ctx, request: Request) -> MemoryText
 
 @memory_router.put("/memory/{space}/file", dependencies=EDIT)
 def write_memory(space: str, body: MemoryText, ctx: Ctx, request: Request) -> MemoryText:
-    """Write a file; on a server the first writer of a new space becomes its owner (RT-089c)."""
-    ctx.memory.open_for(space, owner_of(request)).write(body.path, body.content)
+    """Write a file: a person remembers or edits an entry by this explicit action, recorded with the origin ``user``
+    (N-24; no model tool writes this way). On a server the first writer of a new space becomes its owner (RT-089c)."""
+    ctx.memory.open_for(space, owner_of(request)).write(body.path, body.content, origin=ORIGIN_USER)
     return body
 
 
 @memory_router.delete("/memory/{space}/file", status_code=204, dependencies=EDIT)
 def delete_memory(space: str, path: str, ctx: Ctx, request: Request) -> Response:
+    """Delete an entry (a file, or a directory with its files); only the space's owner (RT-089c)."""
     _usable_space(ctx, request, space).remove(path)
     return Response(status_code=204)
 

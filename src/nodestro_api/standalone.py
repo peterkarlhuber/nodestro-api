@@ -40,7 +40,7 @@ from nodestro_runtime.agent_builder import AgentBuilder
 from nodestro_runtime.engine import RunEnvironment, RunManager
 from nodestro_runtime.input_files import FileCatalog, InputFiles
 from nodestro_runtime.knowledge import KnowledgeBase
-from nodestro_runtime.memory_spaces import MemorySpaces
+from nodestro_runtime.memory_spaces import ORIGIN_IMPORT, MemorySpaces
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.providers import Connection, environment_connection, provider_of
 from nodestro_runtime.release import ReleaseBundle, materialize_tools
@@ -317,7 +317,7 @@ class StandaloneHost:
                 if space.entries():
                     continue  # the project's own memory already has content: never overwritten
                 for item in seed.get("files", []):
-                    space.write(item["path"], item["content"])
+                    space.write(item["path"], item["content"], origin=ORIGIN_IMPORT)
 
     def _docker_sandbox(self, data_dir: Path) -> DockerSandbox:
         """``TOOL_SANDBOX=docker``: Orkexa's container sandbox (its ``orkexa-sandbox`` image, which the operator builds
