@@ -25,8 +25,9 @@ runtime: only while ``NODESTRO_FOLDER_GRANTS=1``, and never in the server profil
   browser marks as from another site (``Sec-Fetch-Site``) is refused (``403 request.cross_site``).
 
 A grant with ``index`` keeps a search index of the folder (runtime N-12, ``docs/folders.md`` "The search index"): the
-grant wakes the workspace's indexer, and every change of a folder grant or an access record
-(:mod:`nodestro_api.api_access`) drops the index of every grant that ended at once
+grant wakes the workspace's indexer, every answer with a grant shows the index's state (``index_state``,
+:class:`FolderIndexInfo`: counts and an error code, never a file name or a content), and every change of a folder
+grant or an access record (:mod:`nodestro_api.api_access`) drops the index of every grant that ended at once
 (``Workspace.folder_access_changed``).
 
 While the switch is off, and always on a server, every route but ``state`` answers ``404 folder.disabled`` and
@@ -43,7 +44,8 @@ import os
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query, Request
-from nodestro_runtime.folder_grants import FolderAccessEntry, FolderGrants, FolderGrantView
+from nodestro_runtime.folder_grants import FolderAccessEntry, FolderGrants
+from nodestro_runtime.folder_grants import FolderGrantView as GrantView
 from nodestro_runtime.folders import FolderLimits, folders_enabled
 from nodestro_runtime.tool_approvals import Person
 from nodestro_runtime.tool_policy import AccessMode
@@ -92,6 +94,30 @@ class FolderGrantIn(BaseModel):
     mode: AccessMode = "supervised"
     #: Until when the grant holds; ``None``: until revoked.
     expires_at: AwareDatetime | None = None
+
+
+class FolderIndexInfo(BaseModel):
+    """The search index of a folder grant (N-12) as the administration sees it: its state and counts, never a file
+    name or a content.
+
+    ``off``: the grant keeps no index, or it ended (its index is dropped). ``indexing``: the first sync has not ended
+    yet (or not started). ``ready``: the index is complete. ``budget_exceeded``: the index is ready but left files out
+    at a limit (the grant's file limit or the folder's chunk or byte budget). ``failed``: the folder could not be read
+    at all; ``code`` names why (an ``fs.*`` or ``folder.*`` code)."""
+
+    state: Literal["off", "indexing", "ready", "failed", "budget_exceeded"]
+    files: int = 0
+    chunks: int = 0
+    #: Files that could not be read (too large, binary, a PDF over its budget, changed meanwhile).
+    skipped: int = 0
+    last_indexed_at: AwareDatetime | None = None
+    code: str | None = None
+
+
+class FolderGrantView(GrantView):
+    """A folder grant with the state of its access grant and of its search index, as the administration shows it."""
+
+    index_state: FolderIndexInfo = Field(default_factory=lambda: FolderIndexInfo(state="off"))
 
 
 class FolderBrowseIn(BaseModel):
@@ -150,6 +176,28 @@ def _grants(ctx: Ctx) -> FolderGrants:
     return FolderGrants(ctx.store, str(ctx.data_dir.resolve()))
 
 
+def _index_info(ctx: Ctx, view: GrantView) -> FolderIndexInfo:
+    """The state of the grant's search index (runtime ``FolderIndex.state``)."""
+    index = ctx.folder_index
+    if not view.folder.index or view.status != "active" or index is None:
+        return FolderIndexInfo(state="off")
+    state = index.state(view.folder.id)
+    if state is None:
+        return FolderIndexInfo(state="indexing")
+    return FolderIndexInfo(
+        state="budget_exceeded" if state.state == "ready" and state.truncated else state.state,
+        files=state.files,
+        chunks=state.chunks,
+        skipped=state.skipped,
+        last_indexed_at=state.synced_at,
+        code=state.code,
+    )
+
+
+def _view(ctx: Ctx, view: GrantView) -> FolderGrantView:
+    return FolderGrantView(**dict(view), index_state=_index_info(ctx, view))
+
+
 def _person(request: Request) -> Person:
     """The signed-in person of the request; anything else is refused (``access.person_required``)."""
     principal: Principal = request.state.principal
@@ -163,7 +211,7 @@ def folder_state(ctx: Ctx) -> FolderState:
 
 @router.get("", dependencies=ADMIN)
 def list_folders(ctx: Ctx) -> list[FolderGrantView]:
-    return _grants(ctx).list()
+    return [_view(ctx, view) for view in _grants(ctx).list()]
 
 
 @router.post("", status_code=201, dependencies=ADMIN)
@@ -185,7 +233,7 @@ def grant_folder(body: FolderGrantIn, ctx: Ctx, request: Request) -> FolderGrant
         expires_at=body.expires_at,
     )
     ctx.folder_access_changed(view.folder.id)  # N-12: a grant with an index is indexed at once
-    return view
+    return _view(ctx, view)
 
 
 @router.post("/browse", dependencies=ADMIN)
@@ -215,7 +263,7 @@ def browse_folders(body: FolderBrowseIn, ctx: Ctx, request: Request) -> FolderBr
 
 @router.get("/{folder_id}", dependencies=ADMIN)
 def get_folder(folder_id: str, ctx: Ctx) -> FolderGrantView:
-    return _grants(ctx).get(folder_id)
+    return _view(ctx, _grants(ctx).get(folder_id))
 
 
 @router.get("/{folder_id}/accesses", dependencies=ADMIN)
@@ -230,7 +278,7 @@ def revoke_folder(folder_id: str, ctx: Ctx, request: Request) -> FolderGrantView
     """Revoke a folder grant: every later call of the folder tools on it is refused."""
     view = _grants(ctx).revoke(folder_id, by=_person(request))
     ctx.folder_access_changed()  # N-12: the folder's index (chunks and vectors) is dropped now
-    return view
+    return _view(ctx, view)
 
 
 __all__ = [
@@ -238,6 +286,8 @@ __all__ = [
     "FolderBrowse",
     "FolderBrowseIn",
     "FolderGrantIn",
+    "FolderGrantView",
+    "FolderIndexInfo",
     "FolderLimitBounds",
     "FolderPlace",
     "FolderState",
