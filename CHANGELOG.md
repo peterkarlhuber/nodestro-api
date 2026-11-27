@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- New (N-14, needs the pinned runtime): exchange files with one import check ([docs/exchange.md](docs/exchange.md)).
+  `GET /api/mcp/export`, `POST /api/mcp/import`, `GET /api/connections/export`, `POST /api/connections/import`
+  (`admin`; `nodestro-mcp/1`, `nodestro-connection/1`, never a secret), `GET /api/knowledge/collections/export`
+  (`read`) and `POST /api/knowledge/collections/import` (`edit`, an upload; `nodestro-collection/1`); every import
+  has a preview (`dry_run`) and stores all or nothing. `POST /api/workflows/import` accepts `format` and refuses a
+  newer `nodestro-workflow` version (`422 exchange.version_newer`). New `exchange.*` codes; both OpenAPI documents
+  are regenerated (additive).
+
 - Security (RT-089d, needs the pinned runtime): a workflow or agent test uses a person's private memory space on a
   server only with that person's explicit consent for exactly its content. New routes `GET /api/memory-consents`,
   `GET /api/memory-consents/preview`, `POST /api/memory-consents`, `DELETE /api/memory-consents/{consent_id}`; codes

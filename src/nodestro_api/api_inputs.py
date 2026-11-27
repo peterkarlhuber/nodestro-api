@@ -3,15 +3,23 @@
 Files a user attached to a Nodestro Assistant conversation are input files too (``origin="assistant"``). On a server
 they are private to the user who uploaded them: these routes (and the adoption into knowledge) answer 404 for another
 user's assistant file, so a file id from someone else's conversation reveals nothing.
+
+A knowledge collection travels as ``nodestro-collection/1`` (N-14, :mod:`nodestro_runtime.exchange`): ``GET
+/api/knowledge/collections/export`` (``read``) writes its documents with the retrieval settings and embedding identity;
+``POST /api/knowledge/collections/import`` (``edit``) checks such a file completely, previews it (``dry_run``) or
+stores its documents into a new collection, indexed again by this workspace.
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
+import tempfile
 from typing import Annotated, Any
 
-from fastapi import APIRouter, File, Form, Request, UploadFile
-from fastapi.responses import Response
+from fastapi import APIRouter, File, Form, Query, Request, UploadFile
+from fastapi.responses import FileResponse, Response
+from nodestro_runtime import exchange
 from nodestro_runtime.adoption import AdoptCheck, AdoptConfirm, AdoptOutcome, AdoptRequest, adopt, check
 from nodestro_runtime.file_delivery import INLINE_FILE_CHARS, INLINE_TOTAL_CHARS
 from nodestro_runtime.file_formats import (
@@ -28,6 +36,7 @@ from nodestro_runtime.input_files import CleanupResult, InputFileOut, StorageInf
 from nodestro_runtime.knowledge import CollectionInfo
 from nodestro_runtime.problems import Problem
 from pydantic import BaseModel, Field
+from starlette.background import BackgroundTask
 
 from .api import Ctx, actor_id, owner_of, uploaded_file_headers
 from .conversation_owners import chat_file_visible
@@ -272,6 +281,55 @@ def run_inputs(run_id: str, ctx: Ctx) -> list[RunInput]:
 @router.get("/knowledge/collections", dependencies=READ)
 def knowledge_collections(ctx: Ctx) -> list[CollectionInfo]:
     return ctx.knowledge.collections()
+
+
+@router.get(
+    "/knowledge/collections/export",
+    dependencies=READ,
+    response_class=FileResponse,
+    responses={200: {"content": {"application/zip": {}}, "description": "The ``nodestro-collection/1`` file"}},
+)
+async def export_collection(ctx: Ctx, name: Annotated[str, Query(min_length=1, max_length=120)]) -> FileResponse:
+    """The collection ``name`` as ``nodestro-collection/1`` (a ZIP file): its documents' stored bytes, the retrieval
+    settings and the embedding identity of the index (never vectors or provenance). 404
+    ``exchange.collection_not_found`` for a name without files."""
+    handle, path = tempfile.mkstemp(prefix="nodestro-collection-", suffix=".zip")
+    try:
+        with os.fdopen(handle, "wb") as target:
+            await asyncio.to_thread(exchange.export_collection, ctx.knowledge, name, target)
+    except BaseException:
+        os.unlink(path)
+        raise
+    file_name = "".join(c if c.isalnum() or c in "-_" else "-" for c in name).strip("-") or "collection"
+    return FileResponse(
+        path,
+        media_type="application/zip",
+        filename=f"{file_name}.nodestro-collection.zip",
+        background=BackgroundTask(os.unlink, path),
+    )
+
+
+@router.post("/knowledge/collections/import", dependencies=EDIT)
+async def import_collection(
+    ctx: Ctx,
+    request: Request,
+    file: Annotated[UploadFile, File()],
+    dry_run: Annotated[bool, Form()] = False,
+    collection: Annotated[str | None, Form(max_length=120)] = None,
+) -> exchange.ImportReport:
+    """Preview (``dry_run``) or apply a ``nodestro-collection/1`` file: size, entries, paths, ZIP bombs, format and
+    version (``exchange.version_newer``), the manifest's content and every document's checksum are checked first.
+    Applying stores the documents into a new collection (``collection``, else the file's name; one with files already
+    is refused, ``exchange.collection_exists``) with the rules of an upload, all of them or none; a document whose
+    content this workspace has already is left as it is (``exists``). The workspace's settings are never changed."""
+    return await asyncio.to_thread(
+        exchange.import_collection,
+        ctx.knowledge,
+        file.file,
+        dry_run=dry_run,
+        collection=collection,
+        actor=actor_id(request),
+    )
 
 
 def _adoptable(ctx: Ctx, request: Request, body: AdoptRequest) -> None:

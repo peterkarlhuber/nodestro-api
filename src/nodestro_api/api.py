@@ -17,7 +17,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 import nodestro_examples as library
 from nodestro_examples import samples as library_samples
-from nodestro_runtime import output_limits, run_budget
+from nodestro_runtime import exchange, output_limits, run_budget
 from nodestro_runtime.agent_builder import ConfigIssue
 from nodestro_runtime.agent_test import AgentTestIn, AgentTestResult
 from nodestro_runtime.catalog import SERVER_TOOLS, ModelInfo, ServerToolInfo, model_capabilities, models
@@ -268,6 +268,25 @@ NODESTRO_ERROR_STATUS = {
     "memory.consent_stale": 409,
     "memory.consent_too_large": 422,
     "memory.consent_unavailable": 404,
+    # Exchange files (N-14): too large, not readable, a newer version or a refused entry, a collection name in use.
+    "exchange.too_large": 413,
+    "exchange.too_many_entries": 413,
+    "exchange.zip_bomb": 413,
+    "exchange.format_invalid": 422,
+    "exchange.format_mismatch": 422,
+    "exchange.version_newer": 422,
+    "exchange.invalid_json": 422,
+    "exchange.content_invalid": 422,
+    "exchange.items_refused": 422,
+    "exchange.zip_invalid": 422,
+    "exchange.unsafe_path": 422,
+    "exchange.unexpected_file": 422,
+    "exchange.incomplete": 422,
+    "exchange.checksum": 422,
+    "exchange.collection_name_invalid": 422,
+    "exchange.collection_not_found": 404,
+    "exchange.collection_exists": 409,
+    "exchange.secret_detected": 409,
 }
 
 
@@ -897,6 +916,8 @@ def create_workflow(body: WorkflowIn, request: Request, ctx: Ctx) -> Workflow:
 class WorkflowImport(WorkflowIn):
     #: The Python libraries of an exported workflow (no approvals: they are given again here).
     python: ExportedDefinition | None = None
+    #: The exchange format (N-14): ``nodestro-workflow/1``; a file without it is an export of an earlier release.
+    format: str | None = Field(default=None, max_length=60)
 
 
 @workflows_router.post("/workflows/import", status_code=201, dependencies=EDIT)
@@ -904,14 +925,18 @@ def import_workflow(body: WorkflowImport, request: Request, ctx: Ctx) -> Workflo
     """Import an exported workflow as a new copy (new id).
 
     A file that is not a workflow export (no ``nodes`` list) is refused with 400 ``workflow.import_invalid``; a
-    graph the check finds broken with its code (``workflow.edge_dangling``, ``workflow.node_duplicate``)."""
+    graph the check finds broken with its code (``workflow.edge_dangling``, ``workflow.node_duplicate``). A file that
+    names its ``format`` must be ``nodestro-workflow/1``: a newer version is refused with 422
+    ``exchange.version_newer``, another format with ``exchange.format_invalid`` or ``exchange.format_mismatch``."""
+    if body.format is not None:
+        exchange.format_version(body.format, "nodestro-workflow")
     if "nodes" not in body.model_fields_set:
         raise NodestroError(
             "workflow.import_invalid",
             "This file is not a Nodestro workflow export: it has no nodes",
             missing=["nodes"],
         )
-    workflow = ctx.save_workflow(_checked(WorkflowIn(**body.model_dump(exclude={"python"})), request))
+    workflow = ctx.save_workflow(_checked(WorkflowIn(**body.model_dump(exclude={"python", "format"})), request))
     if body.python is not None:
         ctx.python.adopt("workflow", workflow.id, body.python, label=workflow.name, change="imported")
     return workflow
