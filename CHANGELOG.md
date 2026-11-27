@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Docs: `docs/TODO.md` API-081 records the owner's decision on the data-only extension store (N-22): the api's
+  part (admin routes) is planned; foreign extension tools stay locked until the store is built and reviewed.
 - New (N-24, needs the pinned runtime): `GET /api/memory/{space}` lists each entry with `updated_at`, `origin`
   (`tool`, `user`, `import`, `assistant`, `null`) and `scope`; `GET /api/memory` names each space's `scope`. `PUT
   /api/memory/{space}/file` is the explicit way a person remembers or edits an entry (origin `user`); with
