@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- New (N-20, needs the pinned runtime; off until `NODESTRO_WORKFLOW_TOOLS=1`): `GET
+  /api/workflows/{workflow_id}/versions/{number}/tool` describes a saved workflow version as a tool of an agent (the
+  binding with its effect, the arguments, the newest version). Conversation messages carry a workflow tool's run,
+  its approval cards and result files (`tool_calls[].workflow`, `result_files`) and the conversation the reported
+  newer versions (`workflow_tool_updates`); decisions and downloads use the run routes.
 - Tests (N-23): connected MCP services in a product app (`tests/test_product_host_mcp.py`): the group `mcp` serves
   the studio's routes, a tool that changes data stays behind the tool approval gate (off by default), stdio only with
   the container sandbox, no loopback server in a local container, and an MCP server counts as a recipient in the

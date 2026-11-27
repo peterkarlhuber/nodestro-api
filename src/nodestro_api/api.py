@@ -55,6 +55,7 @@ from nodestro_runtime.sanitize import sanitize_run
 from nodestro_runtime.schemas import (
     DEFAULT_AGENT_MODEL,
     DEFAULT_ASSISTANT_MODEL,
+    WORKFLOW_TOOL_NAME,
     AgentConfig,
     AgentTemplate,
     Language,
@@ -88,6 +89,7 @@ from nodestro_runtime.tool_library import (
 from nodestro_runtime.traces import MAX_TRACE_BYTES, TraceImportError, import_trace
 from nodestro_runtime.usage_log import USAGE_SOURCES, UsageEntry
 from nodestro_runtime.versions import VersionSummary, WorkflowVersion
+from nodestro_runtime.workflow_tools import WorkflowToolInfo
 from orkexa import OrkexaError, ProviderError, UsageTracker
 from orkexa import __version__ as library_version
 from orkexa.retrieval import RetrievalError
@@ -1131,6 +1133,22 @@ def list_versions(workflow_id: str, ctx: Ctx) -> list[VersionSummary]:
 def get_version(workflow_id: str, number: int, ctx: Ctx) -> WorkflowVersion:
     _workflow(ctx, workflow_id)
     return ctx.versions.get(workflow_id, number)
+
+
+@workflows_router.get("/workflows/{workflow_id}/versions/{number}/tool", dependencies=READ)
+def version_as_tool(
+    workflow_id: str,
+    number: int,
+    ctx: Ctx,
+    name: Annotated[str | None, Query(pattern=WORKFLOW_TOOL_NAME)] = None,
+) -> WorkflowToolInfo:
+    """A saved workflow version as a tool an agent may call (N-20; runtime ``docs/workflow-tools.md``): the binding to
+    store in the agent's ``workflow_tools`` (its effect computed now), what the model sees and the newest saved
+    version. Reads only; calling it needs ``NODESTRO_WORKFLOW_TOOLS=1`` when the agent runs."""
+    current = _workflow(ctx, workflow_id)
+    version = ctx.versions.get(workflow_id, number)
+    snapshot = Workflow(**version.snapshot.model_dump(), id=current.id)
+    return ctx.runs.describe_workflow_tool(snapshot, number, name=name)
 
 
 @workflows_router.patch("/workflows/{workflow_id}/versions/{number}", dependencies=EDIT)

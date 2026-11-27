@@ -1289,6 +1289,11 @@
   "workflow.self_loop": {"params": ["edge_id", "node_id"], "source": "both"},
   "workflow.start_has_inputs": {"params": ["edge_id", "node_id"], "source": "both"},
   "workflow.subworkflow_missing": {"params": [], "source": "runtime"},
+  "workflow_tool.approval_required": {"params": [], "source": "runtime"},
+  "workflow_tool.disabled": {"params": ["node"], "source": "runtime"},
+  "workflow_tool.missing": {"params": ["name"], "source": "runtime"},
+  "workflow_tool.name_taken": {"params": ["name"], "source": "runtime"},
+  "workflow_tool.not_waiting": {"params": ["status"], "source": "runtime"},
   "workspace.db": {"params": [], "source": "runtime"},
   "workspace.in_use": {"params": ["path"], "source": "runtime"}
  },

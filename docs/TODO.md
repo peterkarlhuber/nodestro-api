@@ -11,7 +11,7 @@
 |---|---|
 | P0 Critical | 0 |
 | P1 High | 1 |
-| P2 Medium | 8 |
+| P2 Medium | 9 |
 | P3 Low | 13 |
 | P4 Optional | 7 |
 
@@ -42,6 +42,17 @@ None known.
 
 Tool approvals (`NODESTRO_TOOL_APPROVALS`, off by default and staying off) need the independent S-2 review tracked as
 nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes here. No separate entry in this file.
+
+### API-079 · Workflows as tools of an agent (N-20): the api's part
+
+- **Priority:** P2 Medium · **Status:** In review · **Refs:** nodestro-runtime RT-096 and `docs/workflow-tools.md`,
+  `tests/test_workflow_tools_api.py`
+- **What:** `GET /api/workflows/{workflow_id}/versions/{number}/tool` (`read`): a saved version as a tool (the
+  binding with its effect, the model's arguments, the newest version); agents store it in `workflow_tools`. Cards and
+  attachments of a conversation's answer come with the message (`tool_calls[].workflow`, `result_files`) and are
+  decided and downloaded with the existing run routes (owner-bound, H-1). Off until `NODESTRO_WORKFLOW_TOOLS=1`.
+- **Open:** texts for the `workflow_tool.*` codes and the studio's cards, attachments and the "add a workflow as a
+  tool" dialog (studio work); switching it on waits for the tool approval review (RT-001).
 
 ### API-078 · Exchange files (N-14): review and follow-ups
 

@@ -184,8 +184,19 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     with_trusted = (Path(nodestro_runtime.__file__).parent / "trusted_integrations.py").is_file()
     n22 = {"nodestro_runtime.trusted_integrations", "nodestro_runtime.extension_sandbox"}
     assert (n22 <= set(modules)) is with_trusted
+    # + nodestro_runtime.workflow_tools with nodestro-runtime claude/w6-n20 and later (N-20): the engine builds an
+    # agent's workflow tools with it; they do nothing while NODESTRO_WORKFLOW_TOOLS is off (the default).
+    with_workflow_tools = (Path(nodestro_runtime.__file__).parent / "workflow_tools.py").is_file()
+    assert ("nodestro_runtime.workflow_tools" in modules) is with_workflow_tools
     assert len(modules) == (
-        79 + with_error_texts + with_offline + 2 * with_folders + with_consents + with_folder_index + 2 * with_trusted
+        79
+        + with_error_texts
+        + with_offline
+        + 2 * with_folders
+        + with_consents
+        + with_folder_index
+        + 2 * with_trusted
+        + with_workflow_tools
     )
     assert expected | {"nodestro_runtime.local_models"} <= set(modules)
     assert "nodestro_runtime.local_service" not in modules
