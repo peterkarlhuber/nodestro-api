@@ -4,8 +4,8 @@ nodestro-api can be embedded by a product that serves only part of the studio AP
 `nodestro_api.host.create_product_app` builds such an app from named **router groups**. It is the studio app with
 fewer routes, never with fewer protections, and it never imports `nodestro_studio`.
 
-Host interface version: **3** (`nodestro_api.host.HOST_API_VERSION`; 2 added the group `activity`, 3 the group
-`conversations`).
+Host interface version: **4** (`nodestro_api.host.HOST_API_VERSION`; 2 added the group `activity`, 3 the group
+`conversations`, 4 the field `Branding.mcp_sign_in_page`).
 
 ## Entry point
 
@@ -50,7 +50,8 @@ def create_product_app(
 - `data_dir`: the workspace directory. It replaces the one in `config`.
 - `routers`: group names (table below) and the product's own `APIRouter` objects. Groups are included in the
   registry's fixed order, the product's routers after them. An unknown group name raises `ValueError`.
-- `branding`: `title`, `version`, `description` of the OpenAPI document and the API reference page (`/api/docs`).
+- `branding`: `title`, `version`, `description` of the OpenAPI document and the API reference page (`/api/docs`);
+  `mcp_sign_in_page`, the product's page after an MCP server sign-in (see the `mcp` group below).
 - `switches`: `scheduler` (default on) runs due schedules in the background; off, schedules only run on explicit
   ticks (tests). No switch can weaken a guard.
 - `config`: every other setting (listen address, allowed hosts, launch secret, access key, price sync, ...). By
@@ -169,8 +170,10 @@ studio:
   server (`/api/access/grants`, `mcp_server`) covers it.
 
 Nodestro's own MCP server (`/api/published/_mcp`) is the separate group `mcp_server`. The sign-in's browser callback
-(`/api/mcp/oauth/callback`) sends the browser back to the studio's page `/tools?tab=services`; a product with its
-own pages serves that path or accepts the redirect. `tests/test_product_host_mcp.py` holds these rules for a product
+(`/api/mcp/oauth/callback`) sends the browser back to `Branding.mcp_sign_in_page` (host interface 4), by default
+the studio's page `/tools?tab=services`; a product with its own pages names its page there, a path of its own origin
+(anything else is refused with `ValueError`, so the callback never redirects to another site). The result is added
+to the page's query: `oauth=connected&server=<id>` or `oauth_error=<code>`. `tests/test_product_host_mcp.py` holds these rules for a product
 app.
 
 Error codes: every code is listed by `GET /api/error-codes` (group `core`) for the whole package; a group's routes

@@ -252,7 +252,8 @@ def test_unknown_groups_and_other_objects_are_refused(tmp_path: Path) -> None:
 
 def test_the_host_interface_is_frozen() -> None:
     """A change of the composition interface breaks this test: raise HOST_API_VERSION and update docs/embedding.md."""
-    assert HOST_API_VERSION == 3  # 2: the group "activity" (N-13), 3: the group "conversations" (N-04)
+    # 2: the group "activity" (N-13), 3: the group "conversations" (N-04), 4: Branding.mcp_sign_in_page (Welle 7)
+    assert HOST_API_VERSION == 4
     assert str(inspect.signature(create_product_app)) == (
         "(profile: 'ProfileKind', data_dir: 'Path | str', routers: 'Sequence[str | APIRouter]', "
         "branding: 'Branding | None' = None, switches: 'HostSwitches | None' = None, *, "
@@ -295,6 +296,7 @@ def test_the_host_interface_is_frozen() -> None:
         ("title", "Nodestro"),
         ("version", __version__),
         ("description", ""),
+        ("mcp_sign_in_page", "/tools?tab=services"),
     ]
     assert [(item.name, item.default) for item in fields(HostSwitches)] == [("scheduler", True)]
     assert sorted(host.__all__) == [

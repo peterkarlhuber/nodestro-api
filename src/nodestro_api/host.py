@@ -23,24 +23,31 @@ from nodestro_runtime.extensions import Integration
 from nodestro_runtime.profile import ProfileKind
 
 from . import __version__
+from .api_mcp import SIGN_IN_PAGE, sign_in_page
 from .app import compose_app, install_guards, service_lifespan
 from .context import AppConfig
 from .router_groups import GROUPS, REQUIRED_GROUPS
 
 #: The version of the host interface; a change of it (a signature, a field or a group name) raises it.
 #: 1: N-01. 2: the group ``activity`` (N-13, the activity log); nothing else changed. 3: the group ``conversations``
-#: (N-04, conversations with own agents); nothing else changed.
-HOST_API_VERSION = 3
+#: (N-04, conversations with own agents); nothing else changed. 4: ``Branding.mcp_sign_in_page`` (Welle 7, the MCP
+#: sign-in's page is the product's, not fixed to the studio's).
+HOST_API_VERSION = 4
 
 
 @dataclass(frozen=True)
 class Branding:
     """How the product names its API: the OpenAPI document's title, version and description, and the title of the
-    API reference page (``/api/docs``)."""
+    API reference page (``/api/docs``).
+
+    ``mcp_sign_in_page``: the product's page where the browser continues after signing in to an MCP server (group
+    ``mcp``), with ``oauth=connected&server=<id>`` or ``oauth_error=<code>`` added to its query. A path of the app's
+    own origin (``/...``); by default the studio's services page."""
 
     title: str = "Nodestro"
     version: str = __version__
     description: str = ""
+    mcp_sign_in_page: str = SIGN_IN_PAGE
 
 
 @dataclass(frozen=True)
@@ -75,16 +82,18 @@ def create_product_app(
     The remaining settings (host, launch secret, access key, allowed hosts, ...) come from ``config``, by default
     from the environment as for the studio (:meth:`AppConfig.from_env`); ``profile`` and ``data_dir`` replace
     the ones there. ``integrations`` and ``client_factory`` are passed to the workspace as by ``create_app``.
-    A database that only the user may repair gives the recovery app, as for the studio."""
+    A database that only the user may repair gives the recovery app, as for the studio. A
+    ``branding.mcp_sign_in_page`` that is not a path of this origin raises ``ValueError`` (no open redirect)."""
     names = [item for item in routers if isinstance(item, str)]
     own = [item for item in routers if not isinstance(item, str)]
     for item in own:
         if not isinstance(item, APIRouter):
             raise TypeError(f"A product router must be a group name or an APIRouter, not {type(item).__name__}")
     branding = branding or Branding()
+    page = sign_in_page(branding.mcp_sign_in_page)
     switches = switches or HostSwitches()
     base = config if config is not None else AppConfig.from_env()
-    return compose_app(
+    app = compose_app(
         replace(base, profile_kind=profile, data_dir=Path(data_dir)),
         names,
         routers=own,
@@ -95,6 +104,8 @@ def create_product_app(
         integrations=integrations,
         scheduler=switches.scheduler,
     )
+    app.state.mcp_sign_in_page = page
+    return app
 
 
 __all__ = [
