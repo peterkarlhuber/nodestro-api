@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- New (N-24, needs the pinned runtime): `GET /api/memory/{space}` lists each entry with `updated_at`, `origin`
+  (`tool`, `user`, `import`, `assistant`, `null`) and `scope`; `GET /api/memory` names each space's `scope`. `PUT
+  /api/memory/{space}/file` is the explicit way a person remembers or edits an entry (origin `user`); with
+  `proposed=true` it saves the memory assistant's proposal as origin `assistant` (the flag can only lower the
+  origin). A memory path is at most 512 characters (422 otherwise). Only the
+  space's owner sees and changes entries (RT-089c, unchanged). Backups, their restore (also into an older database)
+  and "export everything" keep the origin; a restore records an origin this version never writes as `null`.
+
 - New (N-20, needs the pinned runtime; off until `NODESTRO_WORKFLOW_TOOLS=1`): `GET
   /api/workflows/{workflow_id}/versions/{number}/tool` describes a saved workflow version as a tool of an agent (the
   binding with its effect, the arguments, the newest version). Conversation messages carry a workflow tool's run,

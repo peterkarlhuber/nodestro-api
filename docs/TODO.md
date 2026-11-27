@@ -12,7 +12,7 @@
 | P0 Critical | 0 |
 | P1 High | 1 |
 | P2 Medium | 9 |
-| P3 Low | 13 |
+| P3 Low | 14 |
 | P4 Optional | 7 |
 
 **Release blockers:** None for this repository; every entry below is not a release blocker. The next desktop
@@ -42,6 +42,16 @@ None known.
 
 Tool approvals (`NODESTRO_TOOL_APPROVALS`, off by default and staying off) need the independent S-2 review tracked as
 nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes here. No separate entry in this file.
+
+### API-080 · Memory entries (N-24): the api's part
+
+- **Priority:** P3 Low · **Status:** In review · **Refs:** nodestro-runtime RT-097 and `docs/memory-entries.md`,
+  `tests/test_memory_entries_api.py`, `tests/test_memory_space_owners.py`
+- **What:** `GET /api/memory/{space}` lists entries with `updated_at`, `origin` and `scope`; `PUT` is the explicit
+  manual write (origin `user`, or `assistant` with `proposed=true` for the memory assistant's proposal); owner and tenant checks of RT-089c unchanged; backups keep the origin (a restore adds
+  the column to an older database first).
+- **Open:** a server backup of PostgreSQL is the operator's dump (it holds the column); no route filters entries by
+  origin; `GET /api/memory/{space}` has no paging (N-24 review L3).
 
 ### API-079 · Workflows as tools of an agent (N-20): the api's part
 

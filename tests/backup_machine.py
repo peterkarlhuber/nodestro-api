@@ -115,7 +115,8 @@ def state(client: TestClient) -> dict[str, Any]:
                 documents.setdefault(collection, {})[key] = json.loads(data)
         tables = {
             "memory_files": database.execute(
-                "SELECT namespace, path, content FROM memory_files ORDER BY 1, 2"
+                # N-24: with the time and origin of each file.
+                "SELECT namespace, path, content, updated_at, origin FROM memory_files ORDER BY 1, 2"
             ).fetchall(),
             "stored_files": [
                 [namespace, key, entry, hashlib.sha256(data).hexdigest()]

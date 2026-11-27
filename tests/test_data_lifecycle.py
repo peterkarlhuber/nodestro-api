@@ -83,6 +83,10 @@ def test_a_backup_from_one_computer_restores_identically_on_another(tmp_path: Pa
         assert b["api"][name] == a["api"][name], name
     # And as the database holds it: every document, memory, stored files, the search index, tool and input files.
     assert b["tables"] == a["tables"] and all(a["tables"].values())
+    # N-24: memory entries keep their time and origin (a person's explicit write).
+    assert [row[1:] for row in a["tables"]["memory_files"]] == [
+        ["a.md", "Team knowledge", a["tables"]["memory_files"][0][3], "user"]
+    ]
     files = {name: digest for name, digest in a["files"].items() if not name.endswith(".lock")}
     assert b["files"] == files and any(name.startswith("inputs/blobs/") for name in files)
     differs = {
@@ -144,6 +148,9 @@ def test_a_backup_from_before_the_product_field_stays_readable(make_app: Callabl
     assert len(client.get("/api/runs").json()) == 1
     assert [item["agent"]["name"] for item in client.get("/api/agents/templates").json()] == ["Helper"]
     assert client.get("/api/memory/Team/file", params={"path": "/memories/a.md"}).json()["content"] == "Team knowledge"
+    # N-24: the entry from before origins were kept lists its time and no origin.
+    [entry] = client.get("/api/memory/Team").json()
+    assert (entry["path"], entry["origin"], entry["scope"]) == ("/memories/a.md", None, "user") and entry["updated_at"]
     assert [item["name"] for item in client.get("/api/knowledge").json()] == ["note.txt"]
     assert client.get("/api/tools/double_it").json()["trust"] == "untrusted"
     assert client.get("/api/organize").json()["items"][f"workflow:{workflow['id']}"]["favorite"] is True

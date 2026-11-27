@@ -67,6 +67,7 @@ import zlib
 from nodestro_runtime.folder_index import FILES as FOLDER_INDEX_FILES
 from nodestro_runtime.folder_index import STATES as FOLDER_INDEX_STATES
 from nodestro_runtime.knowledge import FOLDER_SOURCE
+from nodestro_runtime.memory_spaces import ORIGINS
 from nodestro_runtime.problems import NodestroError
 from nodestro_runtime.providers import has_credentials
 from nodestro_runtime.schemas import (
@@ -101,6 +102,9 @@ PRODUCT_ID = re.compile(r"^[a-z][a-z0-9-]{0,39}$")
 COMPONENTS = ("tools", "inputs")
 _TOOL_FILE = re.compile(r"^tools/[A-Za-z_][A-Za-z0-9_]*/v\d+\.json$")
 _INPUT_FILE = re.compile(r"^inputs/(catalog\.json|blobs/[0-9a-f]{16})$")
+#: Columns a table of this version has that an older database of this computer may lack (N-24: the origin of a memory
+#: file), each with its definition: a restore adds them before it copies, so a backup's values are never left out.
+_ADDED_COLUMNS: dict[str, dict[str, str]] = {"memory_files": {"origin": "TEXT"}}
 #: Tables that SQLite, the full-text index or the legacy ``vec0`` vector table (``index_vec`` and its shadow tables)
 #: maintain themselves; they are not copied. The vectors of the semantic index (``index_spaces``, ``index_vectors``)
 #: are data: they belong to the chunks of the same backup and are restored with them.
@@ -115,7 +119,7 @@ KNOWN_TABLES: dict[str, str] = {
     ),
     "memory_files": (
         "CREATE TABLE IF NOT EXISTS memory_files (namespace TEXT NOT NULL, path TEXT NOT NULL, content TEXT NOT NULL,"
-        " updated_at TEXT NOT NULL, PRIMARY KEY (namespace, path))"
+        " updated_at TEXT NOT NULL, origin TEXT, PRIMARY KEY (namespace, path))"
     ),
     "index_chunks": (
         "CREATE TABLE IF NOT EXISTS index_chunks (id INTEGER PRIMARY KEY, namespace TEXT NOT NULL,"
@@ -849,6 +853,12 @@ def _copy_tables(connection: sqlite3.Connection, source: Path, keep_settings: di
                     connection.execute(KNOWN_TABLES[name])  # this version's definition, never the archive's
                 table = quote_identifier(name)
                 main_columns = [row[1] for row in connection.execute(f"PRAGMA main.table_info({table})")]
+                for column, definition in _ADDED_COLUMNS.get(name, {}).items():
+                    if column not in main_columns:  # constants of this version, never the archive's
+                        connection.execute(
+                            f"ALTER TABLE main.{table} ADD COLUMN {quote_identifier(column)} {definition}"
+                        )
+                        main_columns.append(column)
                 source_columns = {row[1] for row in connection.execute(f"PRAGMA restore_source.table_info({table})")}
                 # Only this version's columns, each quoted (a column name in the archive is data, not SQL).
                 columns = ", ".join(quote_identifier(column) for column in main_columns if column in source_columns)
@@ -856,6 +866,14 @@ def _copy_tables(connection: sqlite3.Connection, source: Path, keep_settings: di
                 if columns:
                     connection.execute(
                         f"INSERT INTO main.{table} ({columns}) SELECT {columns} FROM restore_source.{table}"
+                    )
+                if name == "memory_files" and "origin" in source_columns:
+                    # An origin this version does not write is unknown (None), never shown as someone's (N-24 L5).
+                    known = sorted(ORIGINS)
+                    connection.execute(
+                        "UPDATE main.memory_files SET origin = NULL WHERE origin IS NOT NULL"
+                        f" AND origin NOT IN ({', '.join('?' for _ in known)})",
+                        known,
                     )
             for name in main_tables - set(backup_tables):
                 if not _DERIVED.match(name):

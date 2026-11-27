@@ -230,7 +230,8 @@ def test_persistent_memory_survives_runs(make_app: Callable[..., TestClient]) ->
     memory = {"mode": "persistent", "space": "Team"}
     workflow_id = create(client, [agent_node("mem", "MEM", memory=memory)], [])
     assert start(client, workflow_id)["status"] == "succeeded"
-    assert client.get("/api/memory").json() == [{"name": "Team", "files": 1, "size": 5}]
+    assert client.get("/api/memory").json() == [{"name": "Team", "files": 1, "size": 5, "scope": "user"}]
+    assert [f["origin"] for f in client.get("/api/memory/Team").json()] == ["tool"]
     content = client.get("/api/memory/Team/file", params={"path": "/memories/p.md"}).json()["content"]
     assert content == "Peter"
 

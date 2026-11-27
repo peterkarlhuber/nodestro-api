@@ -222,7 +222,9 @@ def test_context_knowledge_is_sent_before_the_task(make_app: Callable[..., TestC
 def test_memory_spaces_can_be_edited(make_app: Callable[..., TestClient]) -> None:
     client = make_app()
     client.put("/api/memory/Projekt/file", json={"path": "/memories/a.md", "content": "eins"})
-    assert client.get("/api/memory/Projekt").json() == [{"path": "/memories/a.md", "size": 4}]
+    [entry] = client.get("/api/memory/Projekt").json()
+    assert entry.pop("updated_at")  # N-24: the time and origin of the entry
+    assert entry == {"path": "/memories/a.md", "size": 4, "origin": "user", "scope": "user"}
     assert client.get("/api/memory/Projekt/file", params={"path": "/memories/a.md"}).json()["content"] == "eins"
     assert client.put("/api/memory/Projekt/file", json={"path": "/etc/x", "content": "x"}).status_code == 422
     client.delete("/api/memory/Projekt/file", params={"path": "/memories/a.md"})

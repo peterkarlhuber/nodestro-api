@@ -30,6 +30,8 @@ from nodestro_runtime.launcher import launch
 from nodestro_runtime.local_models import LOCAL_ASSISTANT_MODEL, LOCAL_DEFAULT_MODEL
 from nodestro_runtime.memory_consents import ConsentTarget, combined_digest, consent_targets
 from nodestro_runtime.memory_spaces import (
+    ORIGIN_ASSISTANT,
+    ORIGIN_USER,
     BrowsableMemory,
     MemoryConsent,
     MemoryFile,
@@ -92,6 +94,7 @@ from nodestro_runtime.versions import VersionSummary, WorkflowVersion
 from nodestro_runtime.workflow_tools import WorkflowToolInfo
 from orkexa import OrkexaError, ProviderError, UsageTracker
 from orkexa import __version__ as library_version
+from orkexa.memory import MEMORY_MAX_PATH
 from orkexa.retrieval import RetrievalError
 from pydantic import BaseModel, Field, model_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -2783,7 +2786,7 @@ def _quote(name: str) -> str:
 
 
 class MemoryText(BaseModel):
-    path: str
+    path: str = Field(max_length=MEMORY_MAX_PATH)
     content: str
 
 
@@ -2835,6 +2838,9 @@ def propose_memory(body: MemoryProposalRequest, ctx: Ctx, request: Request) -> M
 
 @memory_router.get("/memory/{space}", dependencies=READ)
 def list_memory(space: str, ctx: Ctx, request: Request) -> list[MemoryFile]:
+    """The entries of a space (N-24): each file with its size, the time and origin of its last write (``tool``: an
+    agent's memory tool, ``user``: a person's explicit write, ``null``: unknown) and its scope (``user``). Only the
+    space's owner sees them (RT-089c)."""
     return _usable_space(ctx, request, space).entries()
 
 
@@ -2844,14 +2850,20 @@ def read_memory(space: str, path: str, ctx: Ctx, request: Request) -> MemoryText
 
 
 @memory_router.put("/memory/{space}/file", dependencies=EDIT)
-def write_memory(space: str, body: MemoryText, ctx: Ctx, request: Request) -> MemoryText:
-    """Write a file; on a server the first writer of a new space becomes its owner (RT-089c)."""
-    ctx.memory.open_for(space, owner_of(request)).write(body.path, body.content)
+def write_memory(space: str, body: MemoryText, ctx: Ctx, request: Request, proposed: bool = False) -> MemoryText:
+    """Write a file: a person remembers or edits an entry by this explicit action, recorded with the origin ``user``
+    (N-24; no model tool writes this way). ``proposed=true`` marks text the person saves from the memory assistant's
+    proposal (``/api/memory/propose``): it is model output and is recorded with the origin ``assistant``. The flag
+    can only lower the origin; no request records anything but ``user`` or ``assistant``. On a server the first writer
+    of a new space becomes its owner (RT-089c)."""
+    origin = ORIGIN_ASSISTANT if proposed else ORIGIN_USER
+    ctx.memory.open_for(space, owner_of(request)).write(body.path, body.content, origin=origin)
     return body
 
 
 @memory_router.delete("/memory/{space}/file", status_code=204, dependencies=EDIT)
 def delete_memory(space: str, path: str, ctx: Ctx, request: Request) -> Response:
+    """Delete an entry (a file, or a directory with its files); only the space's owner (RT-089c)."""
     _usable_space(ctx, request, space).remove(path)
     return Response(status_code=204)
 

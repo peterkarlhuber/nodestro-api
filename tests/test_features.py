@@ -42,7 +42,11 @@ def test_agent_test_keeps_persistent_memory_unchanged(make_app: Callable[..., Te
     assert result["status"] == "succeeded", result
     assert result["memory_isolated"] is True
     assert result["memory"] == {"/memories/alt.md": "bleibt", "/memories/neu.md": "Test"}
-    assert client.get("/api/memory/Team").json() == [{"path": "/memories/alt.md", "size": 6}]
+    files = client.get("/api/memory/Team").json()
+    assert [{k: f[k] for k in ("path", "size", "origin", "scope")} for f in files] == [
+        {"path": "/memories/alt.md", "size": 6, "origin": "user", "scope": "user"}
+    ]
+    assert files[0]["updated_at"]
 
 
 def test_agent_test_reports_errors_and_refuses_invalid_configurations(make_app: Callable[..., TestClient]) -> None:
