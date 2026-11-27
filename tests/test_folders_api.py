@@ -251,3 +251,48 @@ def test_backups_and_the_data_export_hold_nothing_of_a_folder_index(
     assert [
         source for source in nodestro.knowledge.chunk_sources() if source.startswith(FOLDER_SOURCE)
     ] == folder_chunks
+
+
+def test_every_folder_grant_answer_shows_the_state_of_its_search_index(
+    make_app: Callable[..., TestClient], docs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """N-12 index state: each answer with a folder grant has ``index_state`` (state, counts, last sync, an error code),
+    never a file name or a content; ``off`` without an index and once the grant ended."""
+    from nodestro_runtime.folder_index import STATES, FolderIndexState
+    from nodestro_runtime.tool_approvals import ACCESS_ENV, ENABLE_ENV
+
+    for name in (FOLDERS_ENV, ACCESS_ENV, ENABLE_ENV):
+        monkeypatch.setenv(name, "1")
+    client = make_app()
+    nodestro = client.app.state.nodestro  # type: ignore[attr-defined]
+    nodestro.folder_indexer.stop()  # the test syncs itself, so no background sync overwrites a state it sets
+    plain = client.post(FOLDERS, json={"name": "Plain", "path": str(docs / "notes")})
+    assert plain.status_code == 201, plain.text
+    assert plain.json()["index_state"] == {
+        "state": "off",
+        "files": 0,
+        "chunks": 0,
+        "skipped": 0,
+        "last_indexed_at": None,
+        "code": None,
+    }
+    created = client.post(FOLDERS, json={"name": "Docs", "path": str(docs), "index": True}).json()
+    folder_id = created["folder"]["id"]
+    assert created["index_state"]["state"] == "indexing"
+    nodestro.folder_index.sync(folder_id)
+    ready = client.get(f"{FOLDERS}/{folder_id}").json()["index_state"]
+    assert ready["state"] == "ready" and ready["files"] == 1 and ready["chunks"] >= 1, ready
+    assert ready["last_indexed_at"] and ready["code"] is None
+    assert "plan" not in str(ready) and "budget" not in str(ready)
+    listed = {view["folder"]["id"]: view["index_state"]["state"] for view in client.get(FOLDERS).json()}
+    assert listed[folder_id] == "ready" and listed[plain.json()["folder"]["id"]] == "off"
+
+    state = nodestro.folder_index.state(folder_id)
+    nodestro.store.put(STATES, folder_id, state.model_copy(update={"truncated": True}))
+    assert client.get(f"{FOLDERS}/{folder_id}").json()["index_state"]["state"] == "budget_exceeded"
+    nodestro.store.put(STATES, folder_id, FolderIndexState(folder_id=folder_id, state="failed", code="fs.not_found"))
+    failed = client.get(f"{FOLDERS}/{folder_id}").json()["index_state"]
+    assert (failed["state"], failed["code"]) == ("failed", "fs.not_found")
+
+    revoked = client.delete(f"{FOLDERS}/{folder_id}").json()
+    assert revoked["status"] == "revoked" and revoked["index_state"]["state"] == "off"

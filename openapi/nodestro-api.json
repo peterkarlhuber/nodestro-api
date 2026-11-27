@@ -10543,7 +10543,7 @@
         "type": "object"
       },
       "FolderGrantView": {
-        "description": "A folder grant with the state of its access grant, as the administration shows it.",
+        "description": "A folder grant with the state of its access grant and of its search index, as the administration shows it.",
         "properties": {
           "agents": {
             "items": {
@@ -10566,6 +10566,9 @@
           },
           "folder": {
             "$ref": "#/components/schemas/FolderGrant"
+          },
+          "index_state": {
+            "$ref": "#/components/schemas/FolderIndexInfo"
           },
           "mode": {
             "enum": [
@@ -10625,6 +10628,65 @@
           "mode"
         ],
         "title": "FolderGrantView",
+        "type": "object"
+      },
+      "FolderIndexInfo": {
+        "description": "The search index of a folder grant (N-12) as the administration sees it: its state and counts, never a file\nname or a content.\n\n``off``: the grant keeps no index, or it ended (its index is dropped). ``indexing``: the first sync has not ended\nyet (or not started). ``ready``: the index is complete. ``budget_exceeded``: the index is ready but left files out\nat a limit (the grant's file limit or the folder's chunk or byte budget). ``failed``: the folder could not be read\nat all; ``code`` names why (an ``fs.*`` or ``folder.*`` code).",
+        "properties": {
+          "chunks": {
+            "default": 0,
+            "title": "Chunks",
+            "type": "integer"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "files": {
+            "default": 0,
+            "title": "Files",
+            "type": "integer"
+          },
+          "last_indexed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Indexed At"
+          },
+          "skipped": {
+            "default": 0,
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "state": {
+            "enum": [
+              "off",
+              "indexing",
+              "ready",
+              "failed",
+              "budget_exceeded"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "FolderIndexInfo",
         "type": "object"
       },
       "FolderLimitBounds": {

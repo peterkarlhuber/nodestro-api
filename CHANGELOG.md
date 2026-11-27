@@ -10,6 +10,13 @@
   newer `nodestro-workflow` version (`422 exchange.version_newer`). New `exchange.*` codes; both OpenAPI documents
   are regenerated (additive). The JSON imports pass the raw body to the import check (size and nesting before
   parsing); their documented request bodies are `McpPackage` and `ConnectionPackage`.
+- Folder index state (N-12 follow-up, Welle 5; behind `NODESTRO_FOLDER_GRANTS`, off): every answer with a folder
+  grant has `index_state` (`FolderIndexInfo`: `state` `off`, `indexing`, `ready`, `budget_exceeded` or `failed`,
+  `files`, `chunks`, `skipped`, `last_indexed_at`, `code`), read from the runtime's `FolderIndex.state`; never a file
+  name or a content, and only for the administrators who see the grant. Both OpenAPI documents are regenerated
+  (additive: `FolderGrantView.index_state`, new `FolderIndexInfo`); the SDK syncs. No runtime change. See
+  `docs/folders.md`, "The search index".
+
 - Tests (Welle 5): `tests/test_rereview_reclassify_destructive.py::test_a_reclassification_racing_an_approval_never_runs_the_call`
   was nondeterministic (master push 60d8f52, Python 3.11: `assert (True and None == 'tool.approval_stale')`). The
   cause was the test, not the product: it started the race while the waiting run kept polling its request every
