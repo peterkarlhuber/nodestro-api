@@ -112,7 +112,7 @@ its inbox or notifications last. `core` is always served. OpenAPI tags come from
 | `connections` | `api_connections` | `/api/connections`, `/api/tools/builtin` |
 | `mcp` | `api_mcp` | `/api/mcp` (connected MCP services) |
 | `budget` | `api_budget` | `/api/budget-requests`, budget decisions of runs |
-| `approvals` | `api_tool_approvals`, `api_access`, `api_folders` | `/api/tool-approvals`, `/api/tool-pre-grants`, tool decisions of runs, `/api/access` (grants and denies, [access-grants.md](access-grants.md)), `/api/folders` (granted folders, [folders.md](folders.md); never served on a server) |
+| `approvals` | `api_tool_approvals`, `api_access`, `api_folders`, `api_extensions` | `/api/tool-approvals`, `/api/tool-pre-grants`, tool decisions of runs, `/api/access` (grants and denies, [access-grants.md](access-grants.md)), `/api/folders` (granted folders, [folders.md](folders.md); never served on a server), `/api/extensions` (the data-only extension store, [extension-store.md](extension-store.md); `404` on a server) |
 | `activity` | `api_activity` | `/api/activity`, `/api/activity/export` (the activity log, [activity-log.md](activity-log.md)) |
 | `runs` | `api_run_chat`, `api.runs_router` | `/api/runs`, `/api/approvals`, runs of a workflow |
 | `core` | `error_codes`, `api.core_router` | `/api/health`, `/api/meta`, `/api/error-codes` |

@@ -503,7 +503,8 @@
               "connection",
               "workflow",
               "agent",
-              "file"
+              "file",
+              "extension"
             ],
             "title": "Source",
             "type": "string"
@@ -5118,6 +5119,45 @@
           "workflow_id"
         ],
         "title": "Body_parse_batch_file_api_batches_parse_post",
+        "type": "object"
+      },
+      "Body_upload_extension_api_extensions_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "origin": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Origin",
+            "type": "string"
+          },
+          "replaces": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replaces"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "sha256",
+          "origin"
+        ],
+        "title": "Body_upload_extension_api_extensions_post",
         "type": "object"
       },
       "Body_upload_files_api_assistant_conversations__conversation_id__files_post": {
@@ -9922,6 +9962,53 @@
           }
         },
         "title": "ExportedDefinition",
+        "type": "object"
+      },
+      "ExtensionStoreView": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "host_refused": {
+            "items": {
+              "$ref": "#/components/schemas/RefusedExtension"
+            },
+            "title": "Host Refused",
+            "type": "array"
+          },
+          "max_bytes": {
+            "title": "Max Bytes",
+            "type": "integer"
+          },
+          "packages": {
+            "items": {
+              "$ref": "#/components/schemas/StoredExtension"
+            },
+            "title": "Packages",
+            "type": "array"
+          },
+          "revoked": {
+            "items": {
+              "$ref": "#/components/schemas/RevokedExtension"
+            },
+            "title": "Revoked",
+            "type": "array"
+          },
+          "tools_switch": {
+            "title": "Tools Switch",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled",
+          "tools_switch",
+          "max_bytes",
+          "packages",
+          "revoked",
+          "host_refused"
+        ],
+        "title": "ExtensionStoreView",
         "type": "object"
       },
       "FieldError": {
@@ -21611,6 +21698,41 @@
         "title": "Refresh",
         "type": "object"
       },
+      "RefusedExtension": {
+        "description": "A package found in the backend's Python environment: never imported, never offered (``invalid``).",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "distribution": {
+            "title": "Distribution",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "distribution",
+          "version"
+        ],
+        "title": "RefusedExtension",
+        "type": "object"
+      },
       "ReindexIn": {
         "properties": {
           "model": {
@@ -22625,6 +22747,29 @@
           "issues"
         ],
         "title": "ReviewOut",
+        "type": "object"
+      },
+      "RevokedExtension": {
+        "properties": {
+          "revoked_at": {
+            "title": "Revoked At",
+            "type": "string"
+          },
+          "revoked_by": {
+            "title": "Revoked By",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha256",
+          "revoked_at",
+          "revoked_by"
+        ],
+        "title": "RevokedExtension",
         "type": "object"
       },
       "Run": {
@@ -27373,6 +27518,116 @@
           }
         },
         "title": "StorageInfo",
+        "type": "object"
+      },
+      "StoredExtension": {
+        "description": "One package of the store and how it stands in this process.",
+        "properties": {
+          "bytes": {
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "distribution": {
+            "title": "Distribution",
+            "type": "string"
+          },
+          "entries": {
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "files": {
+            "title": "Files",
+            "type": "integer"
+          },
+          "installed_at": {
+            "title": "Installed At",
+            "type": "string"
+          },
+          "installed_by": {
+            "title": "Installed By",
+            "type": "string"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "pending",
+            "title": "Reason"
+          },
+          "replaces": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replaces"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "state": {
+            "default": "locked",
+            "enum": [
+              "sandboxed",
+              "locked"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tools",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha256",
+          "distribution",
+          "version",
+          "entries",
+          "origin",
+          "installed_at",
+          "installed_by",
+          "files",
+          "bytes"
+        ],
+        "title": "StoredExtension",
         "type": "object"
       },
       "SubmitResult": {
@@ -32948,7 +33203,8 @@
                       "connection",
                       "workflow",
                       "agent",
-                      "file"
+                      "file",
+                      "extension"
                     ],
                     "type": "string"
                   },
@@ -33206,7 +33462,8 @@
                       "connection",
                       "workflow",
                       "agent",
-                      "file"
+                      "file",
+                      "extension"
                     ],
                     "type": "string"
                   },
@@ -38532,6 +38789,164 @@
         "summary": "Download Export",
         "tags": [
           "publications"
+        ]
+      }
+    },
+    "/api/extensions": {
+      "get": {
+        "description": "The store's packages, the revoked hashes and the packages refused in the host environment.",
+        "operationId": "list_extensions_api_extensions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtensionStoreView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Extensions",
+        "tags": [
+          "tools"
+        ]
+      },
+      "post": {
+        "description": "Take a pure-Python wheel into the store after every check of the runtime (nothing is installed or imported).",
+        "operationId": "upload_extension_api_extensions_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_extension_api_extensions_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoredExtension"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Upload Extension",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/extensions/{sha256}": {
+      "delete": {
+        "description": "Remove a package: later calls of its tools are refused at once.",
+        "operationId": "remove_extension_api_extensions__sha256__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sha256",
+            "required": true,
+            "schema": {
+              "title": "Sha256",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtensionStoreView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Remove Extension",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/extensions/{sha256}/revoke": {
+      "post": {
+        "description": "Revoke a hash: removed when installed, refused at every later upload.",
+        "operationId": "revoke_extension_api_extensions__sha256__revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sha256",
+            "required": true,
+            "schema": {
+              "title": "Sha256",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtensionStoreView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Revoke Extension",
+        "tags": [
+          "tools"
         ]
       }
     },

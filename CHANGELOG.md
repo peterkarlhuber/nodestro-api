@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Security (API-081, runtime RT-098; nothing enabled): admin routes of the data-only extension store,
+  `/api/extensions` (list, upload, remove, revoke; a signed-in person only, `404 extension_store.disabled` on a
+  server). The runtime checks and audits every upload; the package is never installed or imported here. New codes
+  `extension_store.*` (`docs/extension-store.md`); OpenAPI regenerated (also activity source `extension`).
+  With the runtime's review fixes, refusals also name `reserved_name` and `storage`.
 - New (N-20, off by default): `GET /api/meta` lists `workflow_tools` in `features` exactly while
   `NODESTRO_WORKFLOW_TOOLS=1`, so an interface offers adding a workflow as an agent's tool only then (the studio's
   "Add workflow as tool" dialog). The field and its type are unchanged (a new value of the list).

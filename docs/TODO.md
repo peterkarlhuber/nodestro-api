@@ -45,21 +45,25 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
 
 ### API-081 · The data-only extension store (N-22, owner decision 2026-11-27): the api's part
 
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** nodestro-runtime RT-098 and `docs/extension-isolation.md`
-  (section "Architecture decision")
-- **What:** binding owner decision: foreign extension packages are never installed into the host Python environment,
-  never loaded through the host import path and never run in the host process. They come only from a separate store
-  `<data>/extensions/<sha256>/`, strictly apart from the host environment, and run only in the Docker sandbox. Until
-  the store is built and security-reviewed, foreign extension tools stay locked by default (no automatic activation).
-- **The api's part:** admin-only, audited routes to upload, list and remove store packages (OpenAPI, SDK sync); an
-  upload is checked by the runtime (zip safety, RECORD hashes, size limits; no `.pth`, scripts or data parts run).
-- **Acceptance:** the store's criteria in RT-098, cross-user and cross-tenant refusal tests, and an independent
-  security review before any G-6 class is unlocked.
+- **Priority:** P2 Medium · **Status:** In review · **Refs:** nodestro-runtime RT-098 and `docs/extension-isolation.md`,
+  [extension-store.md](extension-store.md), `src/nodestro_api/api_extensions.py`, `tests/test_extensions_api.py`,
+  `tests/test_extensions_api_server.py`
+- **What:** `GET`/`POST /api/extensions`, `DELETE /api/extensions/{sha256}`, `POST /api/extensions/{sha256}/revoke`:
+  admin and a signed-in person only, checked and audited by the runtime, `404 extension_store.disabled` on a server.
+  OpenAPI regenerated; the SDK sync follows in nodestro-sdk.
+- **Review (Welle 7):** the store routes passed a review with two findings of severity Info, both accepted as
+  known and left unchanged: the upload is read into memory (at most `MAX_WHEEL_BYTES` + 1 = 8 MiB, the body limit of
+  a large route) instead of being streamed; the multipart body is parsed before the `admin` check, as for the other
+  large routes (the body limit applies first).
+- **Open:** the studio's package view and upload (in review, studio `claude/w7-ext-store`); the independent security
+  review of the store (G-6) before any class is unlocked. A change is listed for its tools only when the workspace
+  opens next (`pending`).
 - **Residual risk:** checks inside the process cannot catch a foreign package already in the host environment; the
   boundary is enforced by the environment (only the shipped lock, no pip in the products).
 
 - **Export count (2026-11-27):** with nodestro-runtime ce68698 an export holds two more runtime modules
-  (`extension_classes`, `extension_seccomp`); `tests/test_export.py` counts them when the runtime has them.
+  (`extension_classes`, `extension_seccomp`); `tests/test_export.py` counts them when the runtime has them. The
+  store (`extension_store`) is not part of an export.
 
 ### API-080 · Memory entries (N-24): the api's part
 
