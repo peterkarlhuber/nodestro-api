@@ -51,8 +51,13 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
 - **What:** `GET`/`POST /api/extensions`, `DELETE /api/extensions/{sha256}`, `POST /api/extensions/{sha256}/revoke`:
   admin and a signed-in person only, checked and audited by the runtime, `404 extension_store.disabled` on a server.
   OpenAPI regenerated; the SDK sync follows in nodestro-sdk.
-- **Open:** the studio's package view and upload; the independent security review of the store (G-6) before any class
-  is unlocked. A change is listed for its tools only when the workspace opens next (`pending`).
+- **Review (Welle 7):** the store routes passed a review with two findings of severity Info, both accepted as
+  known and left unchanged: the upload is read into memory (at most `MAX_WHEEL_BYTES` + 1 = 8 MiB, the body limit of
+  a large route) instead of being streamed; the multipart body is parsed before the `admin` check, as for the other
+  large routes (the body limit applies first).
+- **Open:** the studio's package view and upload (in review, studio `claude/w7-ext-store`); the independent security
+  review of the store (G-6) before any class is unlocked. A change is listed for its tools only when the workspace
+  opens next (`pending`).
 - **Residual risk:** checks inside the process cannot catch a foreign package already in the host environment; the
   boundary is enforced by the environment (only the shipped lock, no pip in the products).
 
