@@ -194,6 +194,10 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
     with_classes = (Path(nodestro_runtime.__file__).parent / "extension_classes.py").is_file()
     n22_classes = {"nodestro_runtime.extension_classes", "nodestro_runtime.extension_seccomp"}
     assert (n22_classes <= set(modules)) is with_classes
+    # + nodestro_runtime.step_slots with nodestro-runtime 74f01c6 and later (RT-096): the engine keeps a workflow tool's
+    # working and waiting step slots per depth with it; workflow tools stay off by default (NODESTRO_WORKFLOW_TOOLS).
+    with_step_slots = (Path(nodestro_runtime.__file__).parent / "step_slots.py").is_file()
+    assert ("nodestro_runtime.step_slots" in modules) is with_step_slots
     assert len(modules) == (
         79
         + with_error_texts
@@ -204,6 +208,7 @@ def test_export_check_names_what_is_and_is_not_included(make_app: Callable[..., 
         + 2 * with_trusted
         + with_workflow_tools
         + 2 * with_classes
+        + with_step_slots
     )
     assert expected | {"nodestro_runtime.local_models"} <= set(modules)
     assert "nodestro_runtime.local_service" not in modules

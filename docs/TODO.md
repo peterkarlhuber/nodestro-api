@@ -63,7 +63,7 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
 
 - **Export count (2026-11-27):** with nodestro-runtime ce68698 an export holds two more runtime modules
   (`extension_classes`, `extension_seccomp`); `tests/test_export.py` counts them when the runtime has them. The
-  store (`extension_store`) is not part of an export.
+  store (`extension_store`) is not part of an export. With runtime 74f01c6 and later (RT-096) it holds `step_slots` too, counted the same way.
 
 ### API-080 · Memory entries (N-24): the api's part
 
