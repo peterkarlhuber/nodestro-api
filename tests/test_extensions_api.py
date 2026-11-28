@@ -126,6 +126,8 @@ def test_an_administrator_uploads_lists_updates_removes_and_revokes(make_app: Ca
         (lambda: wheel(extra={"evil.pth": b"import os\n"}), {}, 422, "unsafe_member"),
         (lambda: wheel(extra={"acme_store-1.0.data/scripts/x": b"#!/bin/sh\n"}), {}, 422, "data_part"),
         (lambda: b"not a wheel", {}, 422, "archive"),
+        (lambda: wheel(name="nodestro-integrations"), {}, 422, "reserved_name"),
+        (lambda: wheel(extra={f"{MODULE}/aux.py": b"x = 1\n"}), {}, 422, "unsafe_path"),
     ],
 )
 def test_an_unsafe_upload_is_refused_and_nothing_is_written(

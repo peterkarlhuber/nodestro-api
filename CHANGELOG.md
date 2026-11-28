@@ -6,6 +6,7 @@
   `/api/extensions` (list, upload, remove, revoke; a signed-in person only, `404 extension_store.disabled` on a
   server). The runtime checks and audits every upload; the package is never installed or imported here. New codes
   `extension_store.*` (`docs/extension-store.md`); OpenAPI regenerated (also activity source `extension`).
+  With the runtime's review fixes, refusals also name `reserved_name` and `storage`.
 - Fix (N-23 product neutrality, E-P-1; host interface 4): the MCP sign-in's browser callback continues on the
   embedding product's page, `Branding.mcp_sign_in_page` (a path of the app's own origin; anything else raises
   `ValueError`, so there is no open redirect). The default stays the studio's `/tools?tab=services`, so the studio
