@@ -79,8 +79,10 @@ nodestro-runtime RT-001 (`Needs external review`); it covers the approval routes
   binding with its effect, the model's arguments, the newest version); agents store it in `workflow_tools`. Cards and
   attachments of a conversation's answer come with the message (`tool_calls[].workflow`, `result_files`) and are
   decided and downloaded with the existing run routes (owner-bound, H-1). Off until `NODESTRO_WORKFLOW_TOOLS=1`.
-- **Open:** texts for the `workflow_tool.*` codes and the studio's cards, attachments and the "add a workflow as a
-  tool" dialog (studio work); switching it on waits for the tool approval review (RT-001).
+- **Done (Welle 7):** `GET /api/meta` lists `workflow_tools` in `features` while the switch is on; the studio's
+  cards, attachments, the "add a workflow as a tool" dialog and the texts of the `workflow_tool.*` codes (nodestro-studio
+  branch `claude/w7-n20-ui`).
+- **Open:** switching it on waits for the tool approval review (RT-001).
 
 ### API-078 · Exchange files (N-14): review and follow-ups
 
