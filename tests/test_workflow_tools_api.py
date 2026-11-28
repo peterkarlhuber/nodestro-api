@@ -115,3 +115,16 @@ def test_a_saved_version_as_a_tool_and_a_conversation_that_calls_it(client: Test
     assert answer["tool_calls"][0]["workflow"]["status"] == "succeeded"
     assert "ACME is fine" in answer["tool_calls"][0]["result"]
     assert client.get(base).json()["workflow_tool_updates"] == []
+
+
+def test_meta_names_workflow_tools_only_while_they_are_switched_on(
+    make_app: Callable[..., TestClient], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The studio offers adding a workflow as a tool only when ``/api/meta`` lists the feature (off by default)."""
+    monkeypatch.delenv(WORKFLOW_TOOLS_ENV, raising=False)
+    client = make_app()
+    assert "workflow_tools" not in client.get("/api/meta").json()["features"]
+    monkeypatch.setenv(WORKFLOW_TOOLS_ENV, "0")
+    assert "workflow_tools" not in client.get("/api/meta").json()["features"]
+    monkeypatch.setenv(WORKFLOW_TOOLS_ENV, "1")
+    assert client.get("/api/meta").json()["features"] == ["workflow_tools"]

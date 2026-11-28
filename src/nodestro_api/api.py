@@ -91,7 +91,7 @@ from nodestro_runtime.tool_library import (
 from nodestro_runtime.traces import MAX_TRACE_BYTES, TraceImportError, import_trace
 from nodestro_runtime.usage_log import USAGE_SOURCES, UsageEntry
 from nodestro_runtime.versions import VersionSummary, WorkflowVersion
-from nodestro_runtime.workflow_tools import WorkflowToolInfo
+from nodestro_runtime.workflow_tools import WorkflowToolInfo, workflow_tools_enabled
 from orkexa import OrkexaError, ProviderError, UsageTracker
 from orkexa import __version__ as library_version
 from orkexa.memory import MEMORY_MAX_PATH
@@ -579,7 +579,8 @@ class Meta(BaseModel):
     #: (Nodestro Local Docker: one person, a container on this computer) or ``server`` (an organization's server).
     profile: ProfileKind = "desktop"
     #: Areas this API serves right now that are off by default, so an interface shows them only then:
-    #: ``conversations`` (N-04: ``NODESTRO_CONVERSATIONS=1`` and the app serves the router group ``conversations``).
+    #: ``conversations`` (N-04: ``NODESTRO_CONVERSATIONS=1`` and the app serves the router group ``conversations``),
+    #: ``workflow_tools`` (N-20: ``NODESTRO_WORKFLOW_TOOLS=1``, agents may call saved workflows as tools).
     features: list[str] = []
 
 
@@ -601,6 +602,8 @@ def served_features(app: Any) -> list[str]:
     found: list[str] = []
     if conversations_enabled() and "conversations" in getattr(app.state, "router_groups", ()):
         found.append("conversations")
+    if workflow_tools_enabled():
+        found.append("workflow_tools")
     return found
 
 
