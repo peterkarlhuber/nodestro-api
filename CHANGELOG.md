@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Tests: the export module count of `test_export_check_names_what_is_and_is_not_included` also counts
+  `nodestro_runtime.step_slots` when the installed runtime has it (runtime 74f01c6 and later, RT-096). No code change.
 - Security (API-081, runtime RT-098; nothing enabled): admin routes of the data-only extension store,
   `/api/extensions` (list, upload, remove, revoke; a signed-in person only, `404 extension_store.disabled` on a
   server). The runtime checks and audits every upload; the package is never installed or imported here. New codes
